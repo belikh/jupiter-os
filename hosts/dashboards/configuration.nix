@@ -7,7 +7,7 @@
   # Kiosk Mode using Cage (Wayland) + Chromium
   services.xserver.enable = false; # Wayland is lighter and faster for kiosks
   
-  programs.cage = {
+  services.cage = {
     enable = true;
     user = "kiosk";
     # Loads the Home Assistant jupiter-ops dashboard directly
