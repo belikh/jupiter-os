@@ -1,4 +1,4 @@
-{ ... }:
+{ lib, ... }:
 
 {
   imports = [ ./common.nix ];
@@ -9,7 +9,7 @@
 
   # Dummy root filesystem to allow NixOS evaluation to pass until ZFS layout is implemented
   fileSystems."/" = {
-    device = "/dev/disk/by-label/nixos";
-    fsType = "ext4";
+    device = lib.mkDefault "/dev/disk/by-label/nixos";
+    fsType = lib.mkDefault "ext4";
   };
 }

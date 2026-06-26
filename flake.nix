@@ -18,6 +18,17 @@
 
     # OpenWrt Image Builder for the Linksys MX4300 APs
     nix-openwrt-imagebuilder.url = "github:astro/nix-openwrt-imagebuilder";
+
+    # Declarative partitioning
+    disko = {
+      url = "github:nix-community/disko";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    # Impermanence (Erase your darlings)
+    impermanence = {
+      url = "github:nix-community/impermanence";
+    };
   };
 
   outputs =
@@ -27,6 +38,8 @@
       sops-nix,
       deploy-rs,
       nix-openwrt-imagebuilder,
+      disko,
+      impermanence,
       ...
     }@inputs:
     {

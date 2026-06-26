@@ -1,6 +1,12 @@
 { config, pkgs, ... }:
 
 {
+  imports = [
+    ./core/impermanence.nix
+    ./desktop/niri.nix
+    ./storage/zfs-impermanent.nix
+  ];
+
   # Common configuration applied to all hosts
 
   system.stateVersion = "24.05";
