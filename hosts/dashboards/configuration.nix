@@ -14,7 +14,7 @@
     enable = true;
     user = "kiosk";
     # Loads the Home Assistant jupiter-ops dashboard directly
-    program = "${pkgs.chromium}/bin/chromium --kiosk --incognito --app=http://10.1.1.72:8123/jupiter-ops";
+    program = "${pkgs.chromium}/bin/chromium --kiosk --incognito --app=https://ha.jupiter.au/jupiter-ops";
   };
 
   users.users.kiosk = {

@@ -104,6 +104,41 @@
           };
         };
 
+      # Deployment configuration for deploy-rs
+      deploy.nodes = {
+        lenovo = {
+          hostname = "lenovo";
+          profiles.system = {
+            user = "root";
+            path = deploy-rs.lib.x86_64-linux.activate.nixos self.nixosConfigurations.lenovo;
+          };
+        };
+        nas = {
+          hostname = "nas";
+          profiles.system = {
+            user = "root";
+            path = deploy-rs.lib.x86_64-linux.activate.nixos self.nixosConfigurations.nas;
+          };
+        };
+        elitedesk = {
+          hostname = "elitedesk";
+          profiles.system = {
+            user = "root";
+            path = deploy-rs.lib.x86_64-linux.activate.nixos self.nixosConfigurations.elitedesk;
+          };
+        };
+        dashboards = {
+          hostname = "dashboards";
+          profiles.system = {
+            user = "root";
+            path = deploy-rs.lib.x86_64-linux.activate.nixos self.nixosConfigurations.dashboards;
+          };
+        };
+      };
+
+      # Add deploy-rs checks
+      checks = builtins.mapAttrs (system: deployLib: deployLib.deployChecks self.deploy) deploy-rs.lib;
+
       # Development environment for running Terraform (for UniFi) and sops
       devShells.x86_64-linux.default = nixpkgs.legacyPackages.x86_64-linux.mkShell {
         packages = with nixpkgs.legacyPackages.x86_64-linux; [

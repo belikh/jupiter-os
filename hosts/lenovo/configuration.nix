@@ -13,6 +13,11 @@
 
   networking.hostName = "lenovo";
 
+  jupiter.backups.paths = [ 
+    "/var/lib/n8n" 
+    "/var/lib/libvirt/images" 
+  ];
+
   # Ensure the machine uses the local Headscale DNS or 1.1.1.1
   networking.nameservers = [ "1.1.1.1" ];
 

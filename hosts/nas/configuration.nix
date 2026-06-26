@@ -7,7 +7,12 @@
     ../../modules/backups.nix
   ];
 
-  networking.hostName = "jupiter-nas";
+  networking.hostName = "nas";
+
+  jupiter.backups.paths = [
+    "/mnt/nas/important_data"
+  ];
+
   networking.hostId = "deadbeef"; # Must be randomly generated 8-char hex for ZFS
 
   environment.systemPackages = with pkgs; [
