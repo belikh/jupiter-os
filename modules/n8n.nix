@@ -1,6 +1,9 @@
 { config, pkgs, ... }:
 
 {
+  # n8n uses the 'sustainableUse' license which is considered unfree by Nixpkgs
+  nixpkgs.config.allowUnfree = true;
+
   services.n8n = {
     enable = true;
     openFirewall = true; # Allow local mesh access if needed
