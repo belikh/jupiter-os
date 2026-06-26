@@ -2,13 +2,12 @@
   description = "Jupiter OS - NixOS Monorepo";
 
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-24.05";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
 
     # Secrets management
     sops-nix = {
       url = "github:Mic92/sops-nix";
-      # Intentionally NOT following nixpkgs because sops-nix master requires buildGo125Module
-      # which is only in nixos-unstable, not 24.05.
+      inputs.nixpkgs.follows = "nixpkgs";
     };
 
     # Remote deployment tool
