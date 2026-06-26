@@ -7,7 +7,8 @@
     # Secrets management
     sops-nix = {
       url = "github:Mic92/sops-nix";
-      inputs.nixpkgs.follows = "nixpkgs";
+      # Intentionally NOT following nixpkgs because sops-nix master requires buildGo125Module
+      # which is only in nixos-unstable, not 24.05.
     };
 
     # Remote deployment tool
