@@ -15,9 +15,12 @@
       url = "github:nix-community/home-manager";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # OpenWrt Image Builder for the Linksys MX4300 APs
+    nix-openwrt-imagebuilder.url = "github:astro/nix-openwrt-imagebuilder";
   };
 
-  outputs = { self, nixpkgs, sops-nix, home-manager, ... }@inputs: {
+  outputs = { self, nixpkgs, sops-nix, home-manager, nix-openwrt-imagebuilder, ... }@inputs: {
     nixosConfigurations = {
       # Current Proxmox host -> Bare-metal NixOS
       lenovo = nixpkgs.lib.nixosSystem {
@@ -57,6 +60,26 @@
           ./hosts/dashboards/configuration.nix
           sops-nix.nixosModules.sops
         ];
+      };
+    };
+
+    # OpenWrt Firmware builds for the 4x Linksys HomeWRK MX4300
+    packages.x86_64-linux = let
+      pkgs = nixpkgs.legacyPackages.x86_64-linux;
+    in {
+      mx4300-firmware = nix-openwrt-imagebuilder.lib.build {
+        inherit pkgs;
+        target = "ipq807x/generic";
+        profile = "linksys_mx4300"; # Exact profile name for 24.10+
+        packages = [ 
+          "wpad-mesh-openssl" 
+          "batctl-default" 
+          "kmod-batman-adv" 
+          "sqm-scripts" 
+          "nano"
+        ];
+        # Any static configuration files to inject into the firmware (e.g., uci-defaults)
+        files = ./hosts/access-points/mx4300-files;
       };
     };
   };
