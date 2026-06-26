@@ -6,7 +6,7 @@
   ];
 
   networking.hostName = "t460s";
-  networking.hostId = "deadbeef"; # Randomly generated 8-char hex for ZFS
+  networking.hostId = "c0ffee00"; # Randomly generated 8-char hex for ZFS
 
   # Dendritic Feature Toggles
   jupiter = {

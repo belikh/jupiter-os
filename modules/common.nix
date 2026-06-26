@@ -15,6 +15,8 @@
   # SSH & Users
   services.openssh.enable = true;
 
+  sops.age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
+
   sops.secrets.io_password = {
     sopsFile = ../secrets/secrets.yaml;
     neededForUsers = true;
