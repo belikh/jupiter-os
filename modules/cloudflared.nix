@@ -8,7 +8,6 @@
 
   services.cloudflared = {
     enable = true;
-    user = "cloudflared";
     tunnels = {
       "aa1088b8-a0e1-4073-8567-6a9bf5fb4bd7" = {
         # The path to the credentials JSON file
