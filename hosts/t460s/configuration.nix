@@ -14,4 +14,6 @@
     isNormalUser = true;
     extraGroups = [ "wheel" "networkmanager" ];
   };
+
+  fileSystems."/" = { device = "/dev/disk/by-label/nixos"; fsType = "ext4"; };
 }

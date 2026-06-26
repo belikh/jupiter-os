@@ -9,10 +9,12 @@
       dns = {
         magic_dns = true;
         base_domain = "jupiter.mesh";
-        nameservers = [
-          "1.1.1.1"
-          "1.0.0.1"
-        ];
+        nameservers = {
+          global = [
+            "1.1.1.1"
+            "1.0.0.1"
+          ];
+        };
       };
       ip_prefixes = [
         "100.64.0.0/10"
