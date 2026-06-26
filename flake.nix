@@ -22,6 +22,16 @@
 
   outputs = { self, nixpkgs, sops-nix, home-manager, nix-openwrt-imagebuilder, ... }@inputs: {
     nixosConfigurations = {
+      # HP Elitedesk 800 G4 (64GB RAM) - Netbooting Compute Node
+      elitedesk = nixpkgs.lib.nixosSystem {
+        system = "x86_64-linux";
+        specialArgs = { inherit inputs; };
+        modules = [
+          ./hosts/elitedesk/configuration.nix
+          sops-nix.nixosModules.sops
+        ];
+      };
+
       # Current Proxmox host -> Bare-metal NixOS
       lenovo = nixpkgs.lib.nixosSystem {
         system = "x86_64-linux";
