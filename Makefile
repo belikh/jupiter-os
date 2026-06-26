@@ -1,4 +1,20 @@
-.PHONY: test-lenovo test-t460s test-nas test-dashboards test-elitedesk update check
+.PHONY: test-lenovo test-t460s test-nas test-dashboards test-elitedesk update check build-all
+
+# Build all machines and firmware (useful for verifying everything compiles)
+build-all:
+	@echo "Building Lenovo compute node..."
+	nix build .#nixosConfigurations.lenovo.config.system.build.toplevel
+	@echo "Building T460s laptop..."
+	nix build .#nixosConfigurations.t460s.config.system.build.toplevel
+	@echo "Building NAS..."
+	nix build .#nixosConfigurations.nas.config.system.build.toplevel
+	@echo "Building Dashboards..."
+	nix build .#nixosConfigurations.dashboards.config.system.build.toplevel
+	@echo "Building Elitedesk..."
+	nix build .#nixosConfigurations.elitedesk.config.system.build.toplevel
+	@echo "Building Linksys MX4300 OpenWrt Firmware..."
+	nix build .#mx4300-firmware
+	@echo "All builds completed successfully!"
 
 # Build and run a QEMU virtual machine for a specific host
 # Usage: make test-lenovo
