@@ -3,7 +3,6 @@
 {
   boot.supportedFilesystems = [ "zfs" ];
   boot.zfs.forceImportRoot = false;
-  networking.hostId = "00000000"; # Overridden by the host
 
   services.zfs.autoScrub.enable = true;
   services.zfs.trim.enable = true;
