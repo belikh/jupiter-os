@@ -2,21 +2,22 @@
 
 {
   imports = [
+    ../../modules/common-stateful.nix
     ../../modules/home-assistant-vm.nix
     ../../modules/n8n.nix
     ../../modules/cloudflared.nix
     ../../modules/headscale.nix
+    ../../modules/backups.nix
+    ../../modules/pxe-server.nix
   ];
 
   networking.hostName = "lenovo";
-  system.stateVersion = "24.05";
 
   # Ensure the machine uses the local Headscale DNS or 1.1.1.1
   networking.nameservers = [ "1.1.1.1" ];
 
-  boot.loader.systemd-boot.enable = true;
-  boot.loader.efi.canTouchEfiVariables = true;
-
-  # Dummy root filesystem to allow NixOS evaluation to pass
-  fileSystems."/" = { device = "/dev/disk/by-label/nixos"; fsType = "ext4"; };
+  # Configure the network bridge for Home Assistant
+  networking.useDHCP = false;
+  networking.bridges.br0.interfaces = [ "enp1s0" ]; # Declarative bridge configured per-host
+  networking.interfaces.br0.useDHCP = true;
 }

@@ -1,4 +1,4 @@
-{ config, pkgs, ... }:
+{ pkgs, ... }:
 
 {
   # Libvirt configuration for running HAOS as a VM
@@ -11,12 +11,8 @@
     };
   };
 
-  # Create a network bridge so HAOS gets a real IP on the local network
-  networking = {
-    useDHCP = false;
-    bridges.br0.interfaces = [ "eno1" ]; # Adjust 'eno1' to match the Lenovo's actual NIC
-    interfaces.br0.useDHCP = true;
-  };
+  # Network bridge configuration is explicitly left to the host machine configuration
+  # to avoid NIC name mismatch lockouts.
 
   # Useful tools for managing the VM
   environment.systemPackages = with pkgs; [

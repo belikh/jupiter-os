@@ -2,20 +2,16 @@
 
 {
   imports = [
+    ../../modules/common-stateful.nix
     ../../modules/zfs-nas.nix
+    ../../modules/backups.nix
   ];
 
   networking.hostName = "jupiter-nas";
   networking.hostId = "deadbeef"; # Must be randomly generated 8-char hex for ZFS
-  system.stateVersion = "24.05";
 
   environment.systemPackages = with pkgs; [
     zfs
     samba
   ];
-
-  boot.loader.systemd-boot.enable = true;
-  boot.loader.efi.canTouchEfiVariables = true;
-
-  fileSystems."/" = { device = "/dev/disk/by-label/nixos"; fsType = "ext4"; };
 }

@@ -7,11 +7,15 @@ terraform {
   }
 }
 
+variable "unifi_password" {
+  type      = string
+  sensitive = true
+}
+
 provider "unifi" {
-  # These will be populated from your age/sops secrets when you run terraform
-  username = "admin"
-  password = "password"
-  api_url  = "https://10.1.1.1" # UDM Pro IP
+  username       = "admin"
+  password       = var.unifi_password
+  api_url        = "https://10.1.1.1" # UDM Pro IP
   allow_insecure = true
 }
 

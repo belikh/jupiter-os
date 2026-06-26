@@ -1,6 +1,10 @@
-{ pkgs, ... }:
+{ config, pkgs, ... }:
 
 {
+  sops.secrets.restic_password = {
+    sopsFile = ../secrets/secrets.yaml;
+  };
+
   # Restic Backup Configuration
   # This module automatically encrypts, deduplicates, and backs up critical paths
   # to a remote S3/B2/R2 bucket on a regular schedule.
@@ -27,12 +31,10 @@
       ];
 
       # The repository location (e.g., s3:s3.us-west-004.backblazeb2.com/your-bucket)
-      # repositoryFile = config.sops.secrets.restic_repo_url.path;
       repository = "s3:s3.us-west-004.backblazeb2.com/jupiter-os-backups"; # Placeholder
 
       # The password used to encrypt the backup locally before uploading
-      # passwordFile = config.sops.secrets.restic_password.path;
-      passwordFile = "/etc/nixos/restic-password.txt"; # Placeholder
+      passwordFile = config.sops.secrets.restic_password.path;
 
       # Environment variables for S3 credentials (AWS_ACCESS_KEY_ID, etc.)
       # environmentFile = config.sops.secrets.restic_env.path;
