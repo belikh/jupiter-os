@@ -79,8 +79,17 @@
           "nano"
         ];
         # Any static configuration files to inject into the firmware (e.g., uci-defaults)
-        files = ./hosts/access-points/mx4300-files;
+        files = ./hosts/parents-house/access-points/mx4300-files;
       };
+    };
+
+    # Development environment for running Terraform (for UniFi) and sops
+    devShells.x86_64-linux.default = nixpkgs.legacyPackages.x86_64-linux.mkShell {
+      packages = with nixpkgs.legacyPackages.x86_64-linux; [
+        terraform
+        sops
+        age
+      ];
     };
   };
 }
