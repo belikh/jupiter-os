@@ -109,8 +109,11 @@
               "wpad-mesh-openssl"
               "batctl-default"
               "kmod-batman-adv"
+              "kmod-8021q"     # Required for eth0.2 / bat0.2 VLAN interfaces
               "sqm-scripts"
               "nano"
+              "tcpdump"        # Essential for debugging mesh/roaming
+              "iperf3"         # Essential for testing mesh throughput
             ];
             # Any static configuration files to inject into the firmware (e.g., uci-defaults)
             files = ./hosts/parents-house/access-points/mx4300-files;

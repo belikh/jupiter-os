@@ -1,0 +1,100 @@
+#!/bin/sh
+
+# This script runs automatically on the first boot of the MX4300 OpenWrt firmware.
+# It configures a Batman-adv over 802.11s mesh network for the parents' house.
+
+# 1. System & Hostname & Logging
+uci set system.@system[0].hostname='parents-ap'
+uci set system.@system[0].log_remote='1'
+uci set system.@system[0].log_ip='elitedesk.home.jupiter.au'
+uci commit system
+
+# 2. Network & DNS
+# Point to our anonymized resolver
+uci set network.lan.dns='10.1.1.20'
+uci commit network
+
+# 3. Cleanup default wifi networks
+uci -q delete wireless.default_radio0
+uci -q delete wireless.default_radio1
+uci -q delete wireless.default_radio2
+
+# 4. Enable radios and configure channels
+# radio0: 2.4GHz
+uci set wireless.radio0.disabled='0'
+uci set wireless.radio0.channel='auto'
+# radio1: 5GHz Low
+uci set wireless.radio1.disabled='0'
+uci set wireless.radio1.channel='36'
+# radio2: 5GHz High (Dedicated Mesh Backhaul)
+uci set wireless.radio2.disabled='0'
+uci set wireless.radio2.channel='149'
+
+# 5. Batman-adv network interface
+uci set network.batnet=interface
+uci set network.batnet.proto='batadv'
+uci set network.batnet.routing_algo='BATMAN_IV'
+# Add bat0 to the LAN bridge
+uci add_list network.lan.device='bat0'
+
+# Create VLAN devices for Cameras(2) and IOT(3)
+uci set network.cameras=interface
+uci set network.cameras.type='bridge'
+uci set network.cameras.ifname='eth0.2 bat0.2'
+
+uci set network.iot=interface
+uci set network.iot.type='bridge'
+uci set network.iot.ifname='eth0.3 bat0.3'
+uci commit network
+
+# 6. Configure 802.11s Mesh on radio2 (5GHz High)
+uci set wireless.mesh0=wifi-iface
+uci set wireless.mesh0.device='radio2'
+uci set wireless.mesh0.network='batnet'
+uci set wireless.mesh0.mode='mesh'
+uci set wireless.mesh0.mesh_id='jupiter-parents-mesh'
+uci set wireless.mesh0.mesh_fwding='0' 
+uci set wireless.mesh0.encryption='sae'
+uci set wireless.mesh0.key='${PARENTS_MESH_SECRET}'
+
+# 7. Configure Client APs
+# Main LAN: 2.4GHz and 5GHz Low
+uci set wireless.ap_lan24=wifi-iface
+uci set wireless.ap_lan24.device='radio0'
+uci set wireless.ap_lan24.network='lan'
+uci set wireless.ap_lan24.mode='ap'
+uci set wireless.ap_lan24.ssid='Jupiter-Parents'
+uci set wireless.ap_lan24.encryption='psk2'
+uci set wireless.ap_lan24.key='${PARENTS_WIFI_SECRET}'
+
+uci set wireless.ap_lan5=wifi-iface
+uci set wireless.ap_lan5.device='radio1'
+uci set wireless.ap_lan5.network='lan'
+uci set wireless.ap_lan5.mode='ap'
+uci set wireless.ap_lan5.ssid='Jupiter-Parents'
+uci set wireless.ap_lan5.encryption='psk2'
+uci set wireless.ap_lan5.key='${PARENTS_WIFI_SECRET}'
+
+# Cameras Network: 2.4GHz only, VLAN 2
+uci set wireless.ap_cameras=wifi-iface
+uci set wireless.ap_cameras.device='radio0'
+uci set wireless.ap_cameras.network='cameras'
+uci set wireless.ap_cameras.mode='ap'
+uci set wireless.ap_cameras.ssid='Jupiter-Cameras'
+uci set wireless.ap_cameras.encryption='psk2'
+uci set wireless.ap_cameras.key='${PARENTS_WIFI_SECRET}'
+uci set wireless.ap_cameras.isolate='1'
+
+# IOT Network: 2.4GHz only, VLAN 3
+uci set wireless.ap_iot=wifi-iface
+uci set wireless.ap_iot.device='radio0'
+uci set wireless.ap_iot.network='iot'
+uci set wireless.ap_iot.mode='ap'
+uci set wireless.ap_iot.ssid='Jupiter-IOT'
+uci set wireless.ap_iot.encryption='psk2'
+uci set wireless.ap_iot.key='${PARENTS_WIFI_SECRET}'
+uci set wireless.ap_iot.isolate='1'
+
+uci commit wireless
+
+exit 0

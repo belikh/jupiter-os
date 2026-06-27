@@ -1,5 +1,5 @@
 # Configuration template for the Wyze Cams running wz_mini_hacks
-# Simply drop this onto the SD card in the root directory.
+# Secrets injected via sops exec-env
 
 [ENABLE_RTSP]
 # Enable RTSP server (very useful for bringing them into Home Assistant)
@@ -8,9 +8,15 @@ ENABLE_RTSP="true"
 [RTSP_SERVER]
 RTSP_PORT="8554"
 RTSP_USERNAME="admin"
-RTSP_PASSWORD="password"
+RTSP_PASSWORD="${WYZE_PASSWORD}"
 
 [ENABLE_SSH]
 # Enable dropbear SSH for remote management
 ENABLE_SSH="true"
-SSH_PASSWORD="root"
+SSH_PASSWORD="${WYZE_PASSWORD}"
+
+[SYSLOG]
+# Send logs to central logserver (Loki on elitedesk)
+ENABLE_SYSLOG="true"
+SYSLOG_SERVER="elitedesk.home.jupiter.au"
+SYSLOG_PORT="514"

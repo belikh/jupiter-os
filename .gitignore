@@ -4,3 +4,7 @@ result-*
 *.tfstate
 *.tfstate.*
 .direnv/
+
+# Generated edge configs
+hosts/parents-house/access-points/mx4300-files/etc/uci-defaults/99-mesh-setup.sh
+hosts/parents-house/wyze-cams/wz_mini.conf
