@@ -23,21 +23,47 @@ in
     services.displayManager.gdm.enable = cfg.compositor == "gnome";
     services.desktopManager.gnome.enable = cfg.compositor == "gnome";
 
-    # Common Desktop Packages for Niri (Noctalia-inspired)
-    environment.systemPackages = mkIf (cfg.compositor == "niri") (with pkgs; [
-      waybar
-      fuzzel
-      mako
-      swaybg
+    # Base Desktop Profile - Installed on ALL Jupiter OS desktops
+    environment.systemPackages = with pkgs; [
+      # Core CLI & Dev
+      git
+      htop
+      ripgrep
+      fd
+      jq
+      fzf
+      bat
+      eza
+      wget
+      curl
+      unzip
+
+      # AI Coding Prereqs
+      nodejs # Required to install @anthropic-ai/claude-code & @google/antigravity globally
+
+      # GUI Essentials
+      google-chrome
+      vscode
+      pavucontrol
+      mpv
+    ] ++ (if (cfg.compositor == "niri") then [
+      # Dank Linux / DankMaterialShell (Niri-specific)
+      # Replaces waybar/fuzzel/mako with AGS and Material You tools
+      aylurs-gtk-shell
+      dart-sass
+      swww
+      matugen
       kitty
       wl-clipboard
       xdg-utils
-    ]);
+      brightnessctl
+    ] else []);
 
     # Fonts
     fonts.packages = with pkgs; [
       inter
       jetbrains-mono
+      material-symbols
     ];
   };
 }

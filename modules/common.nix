@@ -3,7 +3,7 @@
 {
   imports = [
     ./core/impermanence.nix
-    ./desktop/niri.nix
+    ./desktop/default.nix
     ./storage/zfs-impermanent.nix
     ./services/syncthing.nix
   ];
