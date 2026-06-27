@@ -45,6 +45,7 @@ in
       kernelParams = [
         "vt.default_utf8=1"
         "fbcon=nodefer"
+        "fbcon=font:TER16x32" # Immediately load built-in Terminus font before initrd even starts
         "vt.global_cursor_default=0" # Solid block cursor
       ];
 
