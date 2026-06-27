@@ -49,9 +49,16 @@
 
   # Make it easy to log into the VM for testing
   virtualisation.vmVariant = {
-    users.users.io.password = "jupiter";
-    users.users.io.hashedPasswordFile = lib.mkForce null;
-    users.users.root.password = "jupiter";
+    users.users.io = {
+      hashedPasswordFile = lib.mkForce null;
+      password = lib.mkForce null;
+      initialHashedPassword = "$6$R3/so5inPSNTcI7n$/K9cml/ZTsJFoVOfcJh6Hug8lOmFK1CU8czgmMYUa3sl883t1Dmhlkl23ENUYACyTOZNRErj4yVJd1ND.wuEq.";
+    };
+    users.users.root = {
+      hashedPasswordFile = lib.mkForce null;
+      password = lib.mkForce null;
+      initialHashedPassword = "$6$R3/so5inPSNTcI7n$/K9cml/ZTsJFoVOfcJh6Hug8lOmFK1CU8czgmMYUa3sl883t1Dmhlkl23ENUYACyTOZNRErj4yVJd1ND.wuEq.";
+    };
   };
 
   # Nix Basics
