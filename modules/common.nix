@@ -12,6 +12,8 @@
   # Common configuration applied to all hosts
   jupiter.branding.enable = true;
 
+  nixpkgs.config.allowUnfree = true;
+
   system.stateVersion = "24.05";
   time.timeZone = "Australia/Brisbane";
 
