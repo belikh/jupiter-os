@@ -53,6 +53,12 @@
     virtualisation.useBootLoader = true;
     virtualisation.diskSize = 4096; # Increase disk size to fit the full closure
 
+    # The NixOS VM disk builder uses a legacy BIOS MBR partition table by default
+    boot.loader.grub = {
+      efiSupport = lib.mkForce false;
+      device = lib.mkForce "/dev/vda";
+    };
+
     users.users.io = {
       hashedPasswordFile = lib.mkForce null;
       password = lib.mkForce null;
