@@ -14,7 +14,7 @@ stdenvNoCC.mkDerivation rec {
 
   buildPhase = ''
     # Convert TTF to BDF at 24 pixels (good size for TTY)
-    fontforge -lang=ff -c 'Open($1); Generate($2)' ShareTechMono-Regular.ttf ShareTechMono.bdf
+    fontforge -lang=ff -c 'Open("ShareTechMono-Regular.ttf"); Generate("ShareTechMono.bdf")'
 
     # Convert BDF to PSF using bdf2psf translation tables
     bdf2psf ShareTechMono.bdf \
