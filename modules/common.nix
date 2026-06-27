@@ -6,9 +6,11 @@
     ./desktop/default.nix
     ./storage/zfs-impermanent.nix
     ./services/syncthing.nix
+    ./branding.nix
   ];
 
   # Common configuration applied to all hosts
+  jupiter.branding.enable = true;
 
   system.stateVersion = "24.05";
   time.timeZone = "Australia/Brisbane";
