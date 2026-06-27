@@ -1,4 +1,4 @@
-{ lib, stdenvNoCC, unzip, otf2bdf, bdf2psf }:
+{ lib, stdenvNoCC, unzip, fontforge, bdf2psf }:
 
 stdenvNoCC.mkDerivation rec {
   pname = "share-tech-mono-console";
@@ -6,7 +6,7 @@ stdenvNoCC.mkDerivation rec {
 
   src = ./Share_Tech_Mono.zip;
 
-  nativeBuildInputs = [ unzip otf2bdf bdf2psf ];
+  nativeBuildInputs = [ unzip fontforge bdf2psf ];
 
   unpackPhase = ''
     unzip $src
@@ -14,7 +14,7 @@ stdenvNoCC.mkDerivation rec {
 
   buildPhase = ''
     # Convert TTF to BDF at 24 pixels (good size for TTY)
-    otf2bdf -p 24 -o ShareTechMono.bdf ShareTechMono-Regular.ttf
+    fontforge -lang=ff -c 'Open($1); Generate($2)' ShareTechMono-Regular.ttf ShareTechMono.bdf
 
     # Convert BDF to PSF using bdf2psf translation tables
     bdf2psf ShareTechMono.bdf \
