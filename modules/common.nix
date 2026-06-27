@@ -15,6 +15,10 @@
   # Safer ZFS default (becomes the default in 26.11). NAS overrides explicitly.
   boot.zfs.forceImportRoot = lib.mkDefault false;
 
+  # Everything uses OUR resolver (lenovo, 10.1.1.20). No public fallback, so a
+  # leak can't bypass it. The resolver host overrides this to 127.0.0.1.
+  networking.nameservers = lib.mkDefault [ "10.1.1.20" ];
+
   # SSH & Users
   services.openssh.enable = true;
 

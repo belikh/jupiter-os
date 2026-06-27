@@ -16,6 +16,19 @@
   networking.hostName = "nas";
   networking.hostId = "deadbeef"; # Stable per-host 8-char hex, required for ZFS
 
+  # Static identity below the DHCP pool (.6-.254) so iSCSI/NFS clients have a
+  # stable target. DNS (nas.home.jupiter.au) points here. Uses OUR resolver via
+  # common.nix default (10.1.1.20). When the LACP bond is enabled, move this
+  # address onto bond0.
+  networking.useDHCP = false;
+  networking.interfaces.enp2s0f0.ipv4.addresses = [
+    {
+      address = "10.1.1.2";
+      prefixLength = 24;
+    }
+  ];
+  networking.defaultGateway = "10.1.1.1";
+
   # Aggregate the two 1GbE ports once the UniFi switch-side LACP is configured.
   # Leave disabled until then (default DHCP on a single port keeps it reachable).
   jupiter.nas.bond.enable = false;

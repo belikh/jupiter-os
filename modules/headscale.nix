@@ -10,9 +10,10 @@
         magic_dns = true;
         base_domain = "jupiter.mesh";
         nameservers = {
+          # Mesh clients use OUR resolver too -> their DNS egresses anonymized
+          # through home, and they resolve internal home.jupiter.au names.
           global = [
-            "1.1.1.1"
-            "1.0.0.1"
+            "10.1.1.20"
           ];
         };
       };
