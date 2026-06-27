@@ -49,12 +49,12 @@
 
   # Make it easy to log into the VM for testing
   virtualisation.vmVariant = {
-    # Since QEMU host GL acceleration is crashing (due to GTK DMABUF/EGL issues on the host),
-    # we rely entirely on guest software rendering via llvmpipe for Niri.
-    environment.variables = {
-      LIBGL_ALWAYS_SOFTWARE = "1";
-      NIRI_DISABLE_HARDWARE_CURSORS = "1";
-    };
+    # GTK GL on NVIDIA hosts often crashes with "lacks DMABUF support".
+    # SDL handles OpenGL presentation much better on proprietary drivers.
+    virtualisation.qemu.options = [
+      "-vga virtio"
+      "-display sdl,gl=on"
+    ];
 
     users.users.io = {
       hashedPasswordFile = lib.mkForce null;
