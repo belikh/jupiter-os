@@ -64,6 +64,7 @@ in
       inter
       jetbrains-mono
       material-symbols
+      (pkgs.callPackage ../../packages/share-tech-mono/default.nix { })
     ];
   };
 }
