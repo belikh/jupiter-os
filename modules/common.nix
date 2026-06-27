@@ -49,16 +49,11 @@
 
   # Make it easy to log into the VM for testing
   virtualisation.vmVariant = {
-    # Niri (Wayland) requires GPU acceleration, which isn't enabled by default in the QEMU VM runner
-    virtualisation.qemu.options = [
-      "-vga virtio"
-      "-display gtk,gl=on"
-    ];
-
-    # Fallback to software rendering if the host doesn't support QEMU GL
+    # Since QEMU host GL acceleration is crashing (due to GTK DMABUF/EGL issues on the host),
+    # we rely entirely on guest software rendering via llvmpipe for Niri.
     environment.variables = {
-      WLR_RENDERER = "pixman";
-      WLR_NO_HARDWARE_CURSORS = "1";
+      LIBGL_ALWAYS_SOFTWARE = "1";
+      NIRI_DISABLE_HARDWARE_CURSORS = "1";
     };
 
     users.users.io = {
