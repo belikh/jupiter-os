@@ -53,7 +53,7 @@ in
       settings = {
         default_session = {
           command = ''
-            ${pkgs.greetd.tuigreet}/bin/tuigreet \
+            ${pkgs.tuigreet}/bin/tuigreet \
               --time \
               --asterisks \
               --greeting "ROBCO INDUSTRIES UNIFIED OPERATING SYSTEM - JUPITER OS" \

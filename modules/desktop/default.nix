@@ -49,7 +49,7 @@ in
     ] ++ (if (cfg.compositor == "niri") then [
       # Dank Linux / DankMaterialShell (Niri-specific)
       # Replaces waybar/fuzzel/mako with AGS and Material You tools
-      aylurs-gtk-shell
+      ags
       dart-sass
       swww
       matugen
