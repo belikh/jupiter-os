@@ -41,82 +41,51 @@
       disko,
       impermanence,
       ...
-    }@inputs:
+    }:
+    let
+      # A helper function that injects third-party modules cleanly via a lexical closure,
+      # completely avoiding the "specialArgs" anti-pattern.
+      mkHost = hostPath: nixpkgs.lib.nixosSystem {
+        system = "x86_64-linux";
+        modules = [
+          # 1. Inject flake-provided modules natively
+          ({ ... }: {
+            imports = [
+              sops-nix.nixosModules.sops
+              impermanence.nixosModules.impermanence
+              disko.nixosModules.disko
+            ];
+          })
+          # 2. Import the actual host configuration
+          hostPath
+        ];
+      };
+    in
     {
       nixosConfigurations = {
-        # HP Elitedesk 800 G4 (64GB RAM) - Netbooting Compute Node
-        elitedesk = nixpkgs.lib.nixosSystem {
-          system = "x86_64-linux";
-          specialArgs = { inherit inputs; };
-          modules = [
-            ./hosts/elitedesk/configuration.nix
-            sops-nix.nixosModules.sops
-          ];
-        };
-
-        # Current Proxmox host -> Bare-metal NixOS
-        lenovo = nixpkgs.lib.nixosSystem {
-          system = "x86_64-linux";
-          specialArgs = { inherit inputs; };
-          modules = [
-            ./hosts/lenovo/configuration.nix
-            sops-nix.nixosModules.sops
-          ];
-        };
-
-        # Current laptop
-        t460s = nixpkgs.lib.nixosSystem {
-          system = "x86_64-linux";
-          specialArgs = { inherit inputs; };
-          modules = [
-            ./hosts/t460s/configuration.nix
-            sops-nix.nixosModules.sops
-          ];
-        };
-
-        # Future NAS
-        nas = nixpkgs.lib.nixosSystem {
-          system = "x86_64-linux";
-          specialArgs = { inherit inputs; };
-          modules = [
-            ./hosts/nas/configuration.nix
-            sops-nix.nixosModules.sops
-          ];
-        };
-
-        # Base Kiosk Dashboard Profile
-        dashboards = nixpkgs.lib.nixosSystem {
-          system = "x86_64-linux";
-          specialArgs = { inherit inputs; };
-          modules = [
-            ./hosts/dashboards/configuration.nix
-            sops-nix.nixosModules.sops
-          ];
-        };
+        elitedesk = mkHost ./hosts/elitedesk/configuration.nix;
+        lenovo = mkHost ./hosts/lenovo/configuration.nix;
+        t460s = mkHost ./hosts/t460s/configuration.nix;
+        nas = mkHost ./hosts/nas/configuration.nix;
+        dashboards = mkHost ./hosts/dashboards/configuration.nix;
       };
 
-      # OpenWrt Firmware builds for the 4x Linksys HomeWRK MX4300
       packages.x86_64-linux =
         let
           pkgs = nixpkgs.legacyPackages.x86_64-linux;
         in
         {
-          mx4300-firmware = nix-openwrt-imagebuilder.lib.build {
-            inherit pkgs;
-            target = "qualcommax/ipq807x"; # ipq807x moved under qualcommax in modern OpenWrt (23.x+)
-            profile = "linksys_mx4300"; # Exact profile name for 24.10+
-            packages = [
+          # Call the extracted builder function, allowing infinite custom variants
+          mx4300-firmware = pkgs.callPackage ./packages/openwrt-builder/default.nix {
+            nix-openwrt-imagebuilder = nix-openwrt-imagebuilder;
+            profile = "linksys_mx4300";
+            extraPackages = [
               "wpad-mesh-openssl"
               "batctl-default"
               "kmod-batman-adv"
-              "kmod-8021q"     # Required for eth0.2 / bat0.2 VLAN interfaces
+              "kmod-8021q"
               "sqm-scripts"
-              "nano"
-              "tcpdump"        # Essential for debugging mesh/roaming
-              "iperf3"         # Essential for testing mesh throughput
             ];
-            # Any static configuration files to inject into the firmware (e.g., uci-defaults)
-            files = ./hosts/parents-house/access-points/mx4300-files;
           };
         };
 
@@ -155,14 +124,9 @@
       # Add deploy-rs checks
       checks = builtins.mapAttrs (system: deployLib: deployLib.deployChecks self.deploy) deploy-rs.lib;
 
-      # Development environment for running Terraform (for UniFi) and sops
-      devShells.x86_64-linux.default = nixpkgs.legacyPackages.x86_64-linux.mkShell {
-        packages = with nixpkgs.legacyPackages.x86_64-linux; [
-          terraform
-          sops
-          age
-          deploy-rs.packages.x86_64-linux.deploy-rs
-        ];
+      # Extract devShell to a traditional shell.nix using callPackage
+      devShells.x86_64-linux.default = nixpkgs.legacyPackages.x86_64-linux.callPackage ./shell.nix {
+        deploy-rs = deploy-rs;
       };
     };
 }

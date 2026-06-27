@@ -1,13 +1,10 @@
-{ config, pkgs, lib, inputs, ... }:
+{ config, pkgs, lib, ... }:
 
 with lib;
 let
   cfg = config.jupiter.core.impermanence;
 in
 {
-  imports = [
-    inputs.impermanence.nixosModules.impermanence
-  ];
 
   options.jupiter.core.impermanence = {
     enable = mkEnableOption "Enable impermanence (erase your darlings)";
