@@ -49,6 +49,18 @@
 
   # Make it easy to log into the VM for testing
   virtualisation.vmVariant = {
+    # Niri (Wayland) requires GPU acceleration, which isn't enabled by default in the QEMU VM runner
+    virtualisation.qemu.options = [
+      "-vga virtio"
+      "-display gtk,gl=on"
+    ];
+
+    # Fallback to software rendering if the host doesn't support QEMU GL
+    environment.variables = {
+      WLR_RENDERER = "pixman";
+      WLR_NO_HARDWARE_CURSORS = "1";
+    };
+
     users.users.io = {
       hashedPasswordFile = lib.mkForce null;
       password = lib.mkForce null;
