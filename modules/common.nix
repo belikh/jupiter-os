@@ -50,6 +50,7 @@
   # Make it easy to log into the VM for testing
   virtualisation.vmVariant = {
     users.users.io.password = "jupiter";
+    users.users.io.hashedPasswordFile = lib.mkForce null;
     users.users.root.password = "jupiter";
   };
 
