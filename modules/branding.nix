@@ -16,20 +16,21 @@ in
     console = {
       enable = true;
       earlySetup = true;
-      font = "${pkgs.callPackage ../packages/share-tech-mono/console.nix {}}/share/consolefonts/ShareTechMono.psf.gz";
+      packages = [ pkgs.terminus_font ];
+      font = "ter-132n";
       colors = [
         "001100" # Black (Background)
         "1aff1a" # Red -> Green
         "1aff1a" # Green
-        "ffb642" # Yellow -> Amber
+        "1aff1a" # Yellow -> Green
         "1aff1a" # Blue -> Green
         "1aff1a" # Magenta -> Green
         "1aff1a" # Cyan -> Green
         "1aff1a" # White -> Green
-        "002200" # Bright Black
+        "001100" # Bright Black
         "1aff1a" # Bright Red -> Green
         "1aff1a" # Bright Green
-        "ffb642" # Bright Yellow -> Amber
+        "1aff1a" # Bright Yellow -> Green
         "1aff1a" # Bright Blue -> Green
         "1aff1a" # Bright Magenta -> Green
         "1aff1a" # Bright Cyan -> Green
@@ -37,15 +38,41 @@ in
       ];
     };
 
-    # Make the boot sequence verbose like a retro mainframe, disabling graphical splashes
-    boot.initrd.verbose = true;
-    boot.consoleLogLevel = 7;
-    boot.kernelParams = [ 
-      "console=tty1"
-      "loglevel=7"
-      "fbcon=nodefer"
-      "vt.global_cursor_default=0" # block cursor
-    ];
+    # 2. Bootloader and Kernel Messages
+    boot = {
+      initrd.verbose = true;
+      consoleLogLevel = 7;
+      kernelParams = [
+        "vt.default_utf8=1"
+        "fbcon=nodefer"
+        "vt.global_cursor_default=0" # Solid block cursor
+      ];
+
+      # Inject RobCo ASCII banner right as initrd starts
+      initrd.systemd.services.robco-banner = {
+        description = "RobCo Industries Boot Banner";
+        wantedBy = [ "sysinit.target" ];
+        before = [ "sysinit.target" ];
+        serviceConfig = {
+          Type = "oneshot";
+          StandardOutput = "tty";
+          StandardError = "tty";
+          DefaultDependencies = false;
+        };
+        script = ''
+          echo -e "\e[1;32m"
+          echo "========================================================================"
+          echo "||                                                                    ||"
+          echo "||                      J U P I T E R    O S                          ||"
+          echo "||                 RobCo Industries Unified System                    ||"
+          echo "||                 COPYRIGHT 2075-2077 ROBCO INDUSTRIES               ||"
+          echo "||                 CORE VERSION 4.02.08.00                            ||"
+          echo "||                                                                    ||"
+          echo "========================================================================"
+          echo -e "\e[0;32m"
+        '';
+      };
+    };
 
     # 2. Terminal Greeter (Login Screen)
     # Replaces GDM/SDDM with a retro text-based interface (tuigreet) to launch Niri
