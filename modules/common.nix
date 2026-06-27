@@ -51,6 +51,7 @@
   virtualisation.vmVariant = {
     # Test full bootloader (GRUB) in the VM instead of direct kernel boot
     virtualisation.useBootLoader = true;
+    virtualisation.diskSize = 4096; # Increase disk size to fit the full closure
 
     users.users.io = {
       hashedPasswordFile = lib.mkForce null;
