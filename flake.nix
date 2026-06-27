@@ -103,7 +103,7 @@
         {
           mx4300-firmware = nix-openwrt-imagebuilder.lib.build {
             inherit pkgs;
-            target = "ipq807x/generic";
+            target = "qualcommax/ipq807x"; # ipq807x moved under qualcommax in modern OpenWrt (23.x+)
             profile = "linksys_mx4300"; # Exact profile name for 24.10+
             packages = [
               "wpad-mesh-openssl"

@@ -1,4 +1,4 @@
-{ config, pkgs, ... }:
+{ config, pkgs, lib, ... }:
 
 {
   imports = [
@@ -11,6 +11,9 @@
 
   system.stateVersion = "24.05";
   time.timeZone = "Australia/Brisbane";
+
+  # Safer ZFS default (becomes the default in 26.11). NAS overrides explicitly.
+  boot.zfs.forceImportRoot = lib.mkDefault false;
 
   # SSH & Users
   services.openssh.enable = true;
