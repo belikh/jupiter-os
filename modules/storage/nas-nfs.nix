@@ -16,12 +16,9 @@
     # Media library for a Jellyfin/media host (read-only).
     /tank/media        10.1.1.0/24(ro,sync,no_subtree_check) 100.64.0.0/10(ro,sync,no_subtree_check)
 
-    # Netboot / diskless image store (read-only to the LAN).
-    /tank/netboot      10.1.1.0/24(ro,sync,no_subtree_check)
-
-    # VM/container storage for lenovo (read-write, restricted to that host —
-    # replace with lenovo's actual IP/mesh address).
-    /tank/vm           10.1.1.0/24(rw,sync,no_subtree_check,no_root_squash)
+    # Diskless/netboot roots on the SSD (read-only; clients overlay a tmpfs/rw
+    # layer). Block-style service data (DB, Loki) goes via iSCSI, not here.
+    /srv/netboot       10.1.1.0/24(ro,sync,no_subtree_check)
   '';
 
   networking.firewall.allowedTCPPorts = [ 2049 ];

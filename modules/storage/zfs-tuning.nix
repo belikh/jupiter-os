@@ -1,22 +1,18 @@
 { lib, ... }:
 
 # Performance tuning for the NAS (HPE MicroServer Gen10: Opteron X3216 APU,
-# 2c/1.6GHz, 1×8GB ECC currently, 2×1GbE BCM5720, all 4Kn SATA disks).
+# 2c/1.6GHz, 2×8GB ECC = 16GB dual-channel, 2×1GbE BCM5720, all 4Kn SATA disks).
 #
-# The serving ceiling is the 1GbE network and the small ARC, NOT disk speed.
+# The serving ceiling is the 1GbE network and ARC capacity, NOT disk speed.
 # So this focuses on: right-sizing ARC, keeping the weak CPU out of the way,
 # and tuning Samba/NFS + the network stack for throughput.
 {
   # ---- ZFS ARC (read cache = serving speed) --------------------------------
-  # 8GB box today, and it should become storage-only (move Docker/VM to lenovo).
-  # Reserve ~3GB for the OS + samba/nfs buffers; give the rest to ARC.
-  # ⬆️  AFTER adding RAM (target 32GB): raise to ~24GB (25769803776).
-  boot.kernelParams = [ "zfs.zfs_arc_max=5368709120" ]; # 5 GiB
-
-  # 4Kn disks — make sure new pools default to ashift=12 (tank is created with
-  # -o ashift=12 in the runbook; this is belt-and-suspenders for any zfs create).
+  # 16GB box, STORAGE-ONLY (all compute — Loki/Grafana/DB — runs on the diskless
+  # elitedesk and persists here via iSCSI/NFS). Reserve ~5GB for OS + the storage
+  # daemons (smbd/nfsd/LIO target) + buffers; give ~11GB to ARC.
   boot.extraModprobeConfig = ''
-    options zfs zfs_arc_max=5368709120
+    options zfs zfs_arc_max=11811160064
   '';
 
   # Don't let the box swap ZFS/ARC out under memory pressure.
