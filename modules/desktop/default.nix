@@ -51,7 +51,7 @@ in
       # Replaces waybar/fuzzel/mako with AGS and Material You tools
       ags
       dart-sass
-      swww
+      awww
       matugen
       kitty
       wl-clipboard

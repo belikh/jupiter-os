@@ -16,6 +16,7 @@ in
     console = {
       enable = true;
       earlySetup = true;
+      font = "${pkgs.callPackage ../packages/share-tech-mono/console.nix {}}/share/consolefonts/ShareTechMono.psf.gz";
       colors = [
         "001100" # Black (Background)
         "1aff1a" # Red -> Green
