@@ -52,28 +52,10 @@ in
       enable = true;
       settings = {
         default_session = {
-          command = ''
-            ${pkgs.tuigreet}/bin/tuigreet \
-              --time \
-              --asterisks \
-              --greeting "ROBCO INDUSTRIES UNIFIED OPERATING SYSTEM - JUPITER OS" \
-              --theme "border=green;text=green;prompt=green;time=green;action=green;button=green;container=black;input=green" \
-              --cmd niri-session
-          '';
+          command = "${pkgs.tuigreet}/bin/tuigreet --time --asterisks --greeting 'ROBCO INDUSTRIES UNIFIED OPERATING SYSTEM - JUPITER OS' --theme 'border=green;text=green;prompt=green;time=green;action=green;button=green;container=black;input=green' --cmd niri-session";
           user = "greeter";
         };
       };
-    };
-
-    # Fix systemd issues with greetd
-    systemd.services.greetd.serviceConfig = {
-      Type = "idle";
-      StandardInput = "tty";
-      StandardOutput = "tty";
-      StandardError = "journal"; # Without this, errors spam the console
-      TTYReset = true;
-      TTYVHangup = true;
-      TTYVTDisallocate = true;
     };
 
     # 3. Message of the Day (MOTD)
