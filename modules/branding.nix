@@ -30,7 +30,7 @@ in
     };
     
     # We must disable systemd-boot if we are explicitly enabling grub for EFI
-    boot.loader.systemd-boot.enable = false;
+    boot.loader.systemd-boot.enable = lib.mkForce false;
 
     # =========================================================================
     # 2. THE KERNEL STAGE: VERBOSE DIAGNOSTICS & SYSTEMD INITIALIZATION
