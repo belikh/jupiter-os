@@ -61,14 +61,14 @@ in
         };
         script = ''
           echo -e "\e[1;32m"
-          echo "========================================================================"
-          echo "||                                                                    ||"
-          echo "||                      J U P I T E R    O S                          ||"
-          echo "||                 RobCo Industries Unified System                    ||"
-          echo "||                 COPYRIGHT 2075-2077 ROBCO INDUSTRIES               ||"
-          echo "||                 CORE VERSION 4.02.08.00                            ||"
-          echo "||                                                                    ||"
-          echo "========================================================================"
+          echo "╔══════════════════════════════════════════════════════════════════════╗"
+          echo "║                                                                      ║"
+          echo "║                      J U P I T E R    O S                            ║"
+          echo "║                 RobCo Industries Unified System                      ║"
+          echo "║                 COPYRIGHT 2075-2077 ROBCO INDUSTRIES                 ║"
+          echo "║                 CORE VERSION 4.02.08.00                              ║"
+          echo "║                                                                      ║"
+          echo "╚══════════════════════════════════════════════════════════════════════╝"
           echo -e "\e[0;32m"
         '';
       };
