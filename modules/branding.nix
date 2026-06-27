@@ -20,7 +20,7 @@ in
         owner = "shvchk";
         repo = "fallout-grub-theme";
         rev = "fcc680d166fa2a723365004df4b8736359d15a62";
-        sha256 = "sha256-7kvLfD6Nz4cEMrmCA9yq4enyqVyqiTkVZV5y4RyUatU=";
+        sha256 = "sha256-dQYQYBL4RxxqCwN6V6DUiiPl7cQFNt/PH7ubpKA3YCg=";
       };
       # Keeps it looking like an old-school black terminal screen
       backgroundColor = "#000000";
