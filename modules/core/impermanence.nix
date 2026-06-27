@@ -48,6 +48,8 @@ in
           ".ssh"
           ".local/share/keyrings"
           ".local/share/direnv"
+          ".gemini"
+          ".claude"
         ];
         files = [
           ".bash_history"

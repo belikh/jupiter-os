@@ -19,5 +19,6 @@
       enable = true;
       disk = "/dev/nvme0n1";
     };
+    services.syncthing.enable = true;
   };
 }

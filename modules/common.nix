@@ -5,6 +5,7 @@
     ./core/impermanence.nix
     ./desktop/niri.nix
     ./storage/zfs-impermanent.nix
+    ./services/syncthing.nix
   ];
 
   # Common configuration applied to all hosts

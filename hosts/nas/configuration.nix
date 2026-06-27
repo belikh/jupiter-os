@@ -65,4 +65,6 @@
     samba
     sanoid # provides syncoid too, for manual runs
   ];
+
+  jupiter.services.syncthing.enable = true;
 }
