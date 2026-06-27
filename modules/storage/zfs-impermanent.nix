@@ -1,13 +1,10 @@
-{ config, pkgs, lib, inputs, ... }:
+{ config, pkgs, lib, ... }:
 
 with lib;
 let
   cfg = config.jupiter.storage.zfs;
 in
 {
-  imports = [
-    inputs.disko.nixosModules.disko
-  ];
 
   options.jupiter.storage.zfs = {
     enable = mkEnableOption "Enable ZFS Impermanent Storage Layer";
