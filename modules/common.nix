@@ -49,12 +49,8 @@
 
   # Make it easy to log into the VM for testing
   virtualisation.vmVariant = {
-    # GTK GL on NVIDIA hosts often crashes with "lacks DMABUF support".
-    # SDL handles OpenGL presentation much better on proprietary drivers.
-    virtualisation.qemu.options = [
-      "-vga virtio"
-      "-display sdl,gl=on"
-    ];
+    # Test full bootloader (GRUB) in the VM instead of direct kernel boot
+    virtualisation.useBootLoader = true;
 
     users.users.io = {
       hashedPasswordFile = lib.mkForce null;

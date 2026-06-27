@@ -10,84 +10,77 @@ in
   };
 
   config = mkIf cfg.enable {
+    # =========================================================================
+    # 1. THE BOOTLOADER: ROBCO INDUSTRIES UNIFIED OPERATING SYSTEM MENU
+    # =========================================================================
+    boot.loader.grub = {
+      enable = true;
+      # Points directly to the master fallout theme repository
+      theme = pkgs.fetchFromGitHub {
+        owner = "shvchk";
+        repo = "fallout-grub-theme";
+        rev = "fcc680d166fa2a723365004df4b8736359d15a62";
+        sha256 = "sha256-7kvLfD6Nz4cEMrmCA9yq4enyqVyqiTkVZV5y4RyUatU=";
+      };
+      # Keeps it looking like an old-school black terminal screen
+      backgroundColor = "#000000";
+      splashImage = null;
+      device = "nodev"; # Required for GRUB on EFI/VM
+      efiSupport = true;
+    };
+    
+    # We must disable systemd-boot if we are explicitly enabling grub for EFI
+    boot.loader.systemd-boot.enable = false;
 
-    # 1. TTY & Console Aesthetic
-    # Force the kernel to use a green-on-black color scheme during boot and in TTYs.
+    # =========================================================================
+    # 2. THE KERNEL STAGE: VERBOSE DIAGNOSTICS & SYSTEMD INITIALIZATION
+    # =========================================================================
+    boot.consoleLogLevel = 4;
+    boot.initrd.verbose = true;
+    boot.kernelParams = [
+      "vt.default_utf8=1"
+    ];
+
+    # Inject an authentic RobCo Bios Header into the initial RAM disk stage
+    # (Note: we disable systemd in initrd for this to work natively)
+    boot.initrd.systemd.enable = false;
+    boot.initrd.preDeviceCommands = ''
+      echo -e "\e[1;32m"
+      echo "=========================================================="
+      echo "  ROBCO INDUSTRIES UNIFIED OPERATING SYSTEM               "
+      echo "  COPYRIGHT 2075-2077 ROBCO INDUSTRIES                    "
+      echo "  CORE VERSION 4.02.08.00                                 "
+      echo "                                                          "
+      echo "  LOADING BASE ATTACHMENTS...                             "
+      echo "=========================================================="
+      echo -e "\e[0;32m"
+    '';
+
+    # =========================================================================
+    # 3. THE TEXT ENVIRONMENT: GREEN PHOSPHOR MATRIX MONOCHROME COLORWAY
+    # =========================================================================
     console = {
       enable = true;
       earlySetup = true;
-      packages = [ pkgs.terminus_font ];
-      font = "ter-132n";
+      font = "Lat2-Terminus16";
+      # Force the 16 base TTY color slots into strict dark/bright green shades
       colors = [
-        "001100" # Black (Background)
-        "1aff1a" # Red -> Green
-        "1aff1a" # Green
-        "1aff1a" # Yellow -> Green
-        "1aff1a" # Blue -> Green
-        "1aff1a" # Magenta -> Green
-        "1aff1a" # Cyan -> Green
-        "1aff1a" # White -> Green
-        "001100" # Bright Black
-        "1aff1a" # Bright Red -> Green
-        "1aff1a" # Bright Green
-        "1aff1a" # Bright Yellow -> Green
-        "1aff1a" # Bright Blue -> Green
-        "1aff1a" # Bright Magenta -> Green
-        "1aff1a" # Bright Cyan -> Green
-        "1aff1a" # Bright White -> Green
+        "000000" "00aa00" "00aa00" "00aa00" "00aa00" "00aa00" "00aa00" "aaaaaa"
+        "555555" "55ff55" "55ff55" "55ff55" "55ff55" "55ff55" "55ff55" "ffffff"
       ];
     };
 
-    # 2. Bootloader and Kernel Messages
-    boot = {
-      initrd.verbose = true;
-      consoleLogLevel = 7;
-      kernelParams = [
-        "vt.default_utf8=1"
-        "fbcon=nodefer"
-        "fbcon=font:TER16x32" # Immediately load built-in Terminus font before initrd even starts
-        "vt.global_cursor_default=0" # Solid block cursor
-      ];
-
-      # Inject RobCo ASCII banner right as initrd starts
-      initrd.systemd.services.robco-banner = {
-        description = "RobCo Industries Boot Banner";
-        wantedBy = [ "sysinit.target" ];
-        before = [ "sysinit.target" ];
-        serviceConfig = {
-          Type = "oneshot";
-          StandardOutput = "tty";
-          StandardError = "tty";
-          DefaultDependencies = false;
-        };
-        script = ''
-          echo -e "\e[1;32m"
-          echo "╔══════════════════════════════════════════════════════════════════════╗"
-          echo "║                                                                      ║"
-          echo "║                      J U P I T E R    O S                            ║"
-          echo "║                 RobCo Industries Unified System                      ║"
-          echo "║                 COPYRIGHT 2075-2077 ROBCO INDUSTRIES                 ║"
-          echo "║                 CORE VERSION 4.02.08.00                              ║"
-          echo "║                                                                      ║"
-          echo "╚══════════════════════════════════════════════════════════════════════╝"
-          echo -e "\e[0;32m"
-        '';
-      };
-    };
-
-    # 2. Terminal Greeter (Login Screen)
-    # Replaces GDM/SDDM with a retro text-based interface (tuigreet) to launch Niri
-    services.greetd = mkIf config.jupiter.desktop.enable {
+    # =========================================================================
+    # 4. POST-BOOT DISPLAY: LY TEXT-BASED TTY MATRIX DISPLAY MANAGER
+    # =========================================================================
+    services.displayManager.ly = mkIf config.jupiter.desktop.enable {
       enable = true;
-      settings = {
-        default_session = {
-          command = "${pkgs.tuigreet}/bin/tuigreet --time --asterisks --greeting 'ROBCO INDUSTRIES UNIFIED OPERATING SYSTEM - JUPITER OS' --theme 'border=green;text=green;prompt=green;time=green;action=green;button=green;container=black;input=green' --cmd niri-session";
-          user = "greeter";
-        };
-      };
     };
 
-    # 3. Message of the Day (MOTD)
+    # Disable greetd since we are using ly
+    services.greetd.enable = lib.mkForce false;
+
+    # Message of the Day (MOTD)
     users.motd = ''
        ========================================================================
        ||                                                                    ||
