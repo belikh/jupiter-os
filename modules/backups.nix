@@ -7,6 +7,15 @@
       default = [];
       description = "List of absolute paths to include in the backup.";
     };
+
+    jupiter.backups.repository = lib.mkOption {
+      type = lib.types.str;
+      default = "s3:s3.us-west-004.backblazeb2.com/jupiter-os-backups";
+      description = ''
+        Restic repository location. Override per-host if the bucket differs.
+        S3 credentials are supplied via the restic_env sops secret.
+      '';
+    };
   };
 
   config = {
@@ -32,8 +41,8 @@
           "/var/lib/**/cache"
         ];
 
-        # The repository location (e.g., s3:s3.us-west-004.backblazeb2.com/your-bucket)
-        repository = "s3:s3.us-west-004.backblazeb2.com/jupiter-os-backups"; # Placeholder
+        # The repository location (set via jupiter.backups.repository).
+        repository = config.jupiter.backups.repository;
 
         # The password used to encrypt the backup locally before uploading
         passwordFile = config.sops.secrets.restic_password.path;
