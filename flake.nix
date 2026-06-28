@@ -29,6 +29,12 @@
     impermanence = {
       url = "github:nix-community/impermanence";
     };
+
+    # Terranix
+    terranix = {
+      url = "github:terranix/terranix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -40,6 +46,7 @@
       nix-openwrt-imagebuilder,
       disko,
       impermanence,
+      terranix,
       ...
     }:
     let
@@ -86,6 +93,16 @@
               "kmod-8021q"
               "sqm-scripts"
             ];
+          };
+
+          terranix-cloudflare = terranix.lib.terranixConfiguration {
+            system = "x86_64-linux";
+            modules = [ ./terraform/cloudflare/default.nix ];
+          };
+
+          terranix-unifi = terranix.lib.terranixConfiguration {
+            system = "x86_64-linux";
+            modules = [ ./terraform/unifi/default.nix ];
           };
         };
 
