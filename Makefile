@@ -1,4 +1,5 @@
-.PHONY: test-lenovo test-t460s test-nas test-dashboards test-elitedesk update check build-all build-mx4300
+.PHONY: test-lenovo test-t460s test-nas test-dashboards test-elitedesk update check build-all build-mx4300 \
+        fmt fmt-check tf-plan-unifi tf-apply-unifi tf-plan-cloudflare tf-apply-cloudflare
 
 # Build all machines and firmware (useful for verifying everything compiles)
 build-all:
@@ -41,3 +42,48 @@ update:
 # Check flake evaluation
 check:
 	nix flake check
+
+# Format all Nix files with the flake's formatter (nixfmt-rfc-style)
+fmt:
+	nix fmt
+
+# Verify formatting without writing changes (used by CI)
+fmt-check:
+	nix run nixpkgs#nixfmt-rfc-style -- --check .
+
+# ---------------------------------------------------------------------------
+# Terraform / terranix
+#
+# terranix renders the HCL in terraform/<stack>/default.nix to a config.tf.json,
+# which we drop next to it (terraform reads *.tf.json and ignores *.nix). State
+# lives in terraform/<stack>/ (gitignored). Provider credentials are pulled from
+# the encrypted secrets and exported as TF_VAR_* via `sops exec-env`.
+#
+# Required secret keys (secrets/secrets.yaml):
+#   unifi          -> unifi_password
+#   cloudflare     -> cloudflare_api_token   (NOTE: add this; not yet present)
+# ---------------------------------------------------------------------------
+
+# $(1) = stack name (unifi|cloudflare), $(2) = terraform subcommand (plan|apply)
+define tf-run
+	@echo "Rendering terranix config for '$(1)'..."
+	nix build .#terranix-$(1) --no-link --print-out-paths | xargs -I{} install -m600 {} terraform/$(1)/config.tf.json
+	cd terraform/$(1) && terraform init -input=false
+	@echo "Running 'terraform $(2)' for '$(1)' (secrets injected via sops)..."
+	sops exec-env secrets/secrets.yaml 'cd terraform/$(1) && \
+		TF_VAR_unifi_password="$$unifi_password" \
+		TF_VAR_cloudflare_api_token="$$cloudflare_api_token" \
+		terraform $(2)'
+endef
+
+tf-plan-unifi:
+	$(call tf-run,unifi,plan)
+
+tf-apply-unifi:
+	$(call tf-run,unifi,apply)
+
+tf-plan-cloudflare:
+	$(call tf-run,cloudflare,plan)
+
+tf-apply-cloudflare:
+	$(call tf-run,cloudflare,apply)

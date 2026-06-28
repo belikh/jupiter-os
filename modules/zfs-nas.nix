@@ -12,7 +12,10 @@
   #   europa = mirror(10TB + 10TB)  -> FROZEN ARCHIVE (legacy data, read-only).
   #            Set `zfs set readonly=on europa` once during migration; we never
   #            restructure it. Reorganised into tank at the user's leisure later.
-  boot.zfs.extraPools = [ "tank" "europa" ];
+  boot.zfs.extraPools = [
+    "tank"
+    "europa"
+  ];
 
   # Pool maintenance
   services.zfs.autoScrub.enable = true;

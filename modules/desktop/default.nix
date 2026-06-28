@@ -1,4 +1,9 @@
-{ config, pkgs, lib, ... }:
+{
+  config,
+  pkgs,
+  lib,
+  ...
+}:
 
 with lib;
 let
@@ -8,7 +13,11 @@ in
   options.jupiter.desktop = {
     enable = mkEnableOption "Enable desktop environment";
     compositor = mkOption {
-      type = types.enum [ "niri" "gnome" "none" ];
+      type = types.enum [
+        "niri"
+        "gnome"
+        "none"
+      ];
       default = "niri";
       description = "Which Wayland compositor to use.";
     };
@@ -24,40 +33,48 @@ in
     services.desktopManager.gnome.enable = cfg.compositor == "gnome";
 
     # Base Desktop Profile - Installed on ALL Jupiter OS desktops
-    environment.systemPackages = with pkgs; [
-      # Core CLI & Dev
-      git
-      htop
-      ripgrep
-      fd
-      jq
-      fzf
-      bat
-      eza
-      wget
-      curl
-      unzip
+    environment.systemPackages =
+      with pkgs;
+      [
+        # Core CLI & Dev
+        git
+        htop
+        ripgrep
+        fd
+        jq
+        fzf
+        bat
+        eza
+        wget
+        curl
+        unzip
 
-      # AI Coding Prereqs
-      nodejs # Required to install @anthropic-ai/claude-code & @google/antigravity globally
+        # AI Coding Prereqs
+        nodejs # Required to install @anthropic-ai/claude-code & @google/antigravity globally
 
-      # GUI Essentials
-      google-chrome
-      vscode
-      pavucontrol
-      mpv
-    ] ++ (if (cfg.compositor == "niri") then [
-      # Dank Linux / DankMaterialShell (Niri-specific)
-      # Replaces waybar/fuzzel/mako with AGS and Material You tools
-      ags
-      dart-sass
-      awww
-      matugen
-      kitty
-      wl-clipboard
-      xdg-utils
-      brightnessctl
-    ] else []);
+        # GUI Essentials
+        google-chrome
+        vscode
+        pavucontrol
+        mpv
+      ]
+      ++ (
+        if (cfg.compositor == "niri") then
+          [
+            # Dank Linux / DankMaterialShell (Niri-specific)
+            # Replaces waybar/fuzzel/mako with AGS and Material You tools
+            ags
+            dart-sass
+            awww
+            matugen
+            kitty
+            wl-clipboard
+            xdg-utils
+            brightnessctl
+          ]
+        else
+          [ ]
+      );
 
     # Fonts
     fonts.packages = with pkgs; [

@@ -5,35 +5,31 @@ let
   cfg = config.jupiter.nas.iscsi;
 
   # Build one LIO storage object (block backstore) per LUN.
-  storageObjects = imap0 (
-    i: lun: {
-      name = lun.name;
-      plugin = "block";
-      dev = lun.dev;
-      # Stable per-LUN WWN derived from the name (must be constant across rebuilds).
-      wwn = "naa.6001405" + substring 0 9 (builtins.hashString "sha256" lun.name);
-      write_back = true;
-      attributes.emulate_tpu = 1; # honour UNMAP/TRIM from the initiator
-    }
-  ) cfg.luns;
+  storageObjects = imap0 (i: lun: {
+    name = lun.name;
+    plugin = "block";
+    dev = lun.dev;
+    # Stable per-LUN WWN derived from the name (must be constant across rebuilds).
+    wwn = "naa.6001405" + substring 0 9 (builtins.hashString "sha256" lun.name);
+    write_back = true;
+    attributes.emulate_tpu = 1; # honour UNMAP/TRIM from the initiator
+  }) cfg.luns;
 
   luns = imap0 (i: lun: {
     index = i;
     storage_object = "/backstores/block/${lun.name}";
   }) cfg.luns;
 
-  nodeAcls = imap0 (
-    i: lun: {
-      node_wwn = lun.initiatorIqn;
-      mapped_luns = [
-        {
-          index = i;
-          tpg_lun = i;
-          write_protect = false;
-        }
-      ];
-    }
-  ) cfg.luns;
+  nodeAcls = imap0 (i: lun: {
+    node_wwn = lun.initiatorIqn;
+    mapped_luns = [
+      {
+        index = i;
+        tpg_lun = i;
+        write_protect = false;
+      }
+    ];
+  }) cfg.luns;
 in
 {
   options.jupiter.nas.iscsi = {
