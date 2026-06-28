@@ -3,6 +3,7 @@
 {
   imports = [
     ../../modules/common-stateful.nix
+    ./disko.nix # OS disk layout (destructive — confirm device before install)
     ../../modules/home-assistant-vm.nix
     ../../modules/n8n.nix
     ../../modules/cloudflared.nix
@@ -13,6 +14,7 @@
   ];
 
   networking.hostName = "lenovo";
+  networking.hostId = "1e110000"; # Stable per-host 8-char hex, required for ZFS
 
   jupiter.backups.paths = [
     "/var/lib/n8n"
