@@ -51,8 +51,9 @@
     }:
     let
       # A helper function that injects third-party modules cleanly via a lexical closure,
-      # completely avoiding the "specialArgs" anti-pattern.
-      mkHost = hostPath: nixpkgs.lib.nixosSystem {
+      # completely avoiding the "specialArgs" anti-pattern. `extraModules` lets a
+      # host pull in flake-level wiring (e.g. cross-host build products).
+      mkHost = hostPath: extraModules: nixpkgs.lib.nixosSystem {
         system = "x86_64-linux";
         modules = [
           # 1. Inject flake-provided modules natively
@@ -65,16 +66,32 @@
           })
           # 2. Import the actual host configuration
           hostPath
-        ];
+        ] ++ extraModules;
+      };
+
+      # Wire the PXE server (on lenovo) directly to the elitedesk's netboot build
+      # products, so the image Pixiecore serves always matches the flake. The
+      # cmdLine must point the booting kernel at its closure's init.
+      elitedeskConfig = self.nixosConfigurations.elitedesk.config;
+      elitedeskBuild = elitedeskConfig.system.build;
+      pxeModule = { ... }: {
+        jupiter.pxe = {
+          enable = true;
+          kernel = "${elitedeskBuild.kernel}/bzImage";
+          initrd = "${elitedeskBuild.netbootRamdisk}/initrd";
+          # Pull kernelParams from elitedesk itself so the served cmdLine can't
+          # drift from the host's config (it already sets copytoram).
+          cmdLine = "init=${elitedeskBuild.toplevel}/init loglevel=4 ${toString elitedeskConfig.boot.kernelParams}";
+        };
       };
     in
     {
       nixosConfigurations = {
-        elitedesk = mkHost ./hosts/elitedesk/configuration.nix;
-        lenovo = mkHost ./hosts/lenovo/configuration.nix;
-        t460s = mkHost ./hosts/t460s/configuration.nix;
-        nas = mkHost ./hosts/nas/configuration.nix;
-        dashboards = mkHost ./hosts/dashboards/configuration.nix;
+        elitedesk = mkHost ./hosts/elitedesk/configuration.nix [ ];
+        lenovo = mkHost ./hosts/lenovo/configuration.nix [ pxeModule ];
+        t460s = mkHost ./hosts/t460s/configuration.nix [ ];
+        nas = mkHost ./hosts/nas/configuration.nix [ ];
+        dashboards = mkHost ./hosts/dashboards/configuration.nix [ ];
       };
 
       packages.x86_64-linux =

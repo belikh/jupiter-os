@@ -16,7 +16,10 @@
       GENERIC_TIMEZONE = "Australia/Brisbane";
     };
 
-    # Automatically load environment variables for credentials
-    # environmentFile = config.sops.secrets.n8n_env.path;
+    # Optional: load extra environment variables (e.g. SMTP / external API
+    # credentials) for n8n. n8n runs fine without this. To enable, add an
+    # `n8n_env` entry to secrets/secrets.yaml, declare the sops secret, and
+    # uncomment the line below:
+    #   environmentFile = config.sops.secrets.n8n_env.path;
   };
 }
