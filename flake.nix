@@ -53,21 +53,24 @@
       # A helper function that injects third-party modules cleanly via a lexical closure,
       # completely avoiding the "specialArgs" anti-pattern. `extraModules` lets a
       # host pull in flake-level wiring (e.g. cross-host build products).
-      mkHost = hostPath: extraModules: nixpkgs.lib.nixosSystem {
-        system = "x86_64-linux";
-        modules = [
-          # 1. Inject flake-provided modules natively
-          ({ ... }: {
-            imports = [
-              sops-nix.nixosModules.sops
-              impermanence.nixosModules.impermanence
-              disko.nixosModules.disko
-            ];
-          })
-          # 2. Import the actual host configuration
-          hostPath
-        ] ++ extraModules;
-      };
+      mkHost =
+        hostPath: extraModules:
+        nixpkgs.lib.nixosSystem {
+          system = "x86_64-linux";
+          modules = [
+            # 1. Inject flake-provided modules natively
+            ({ ... }: {
+              imports = [
+                sops-nix.nixosModules.sops
+                impermanence.nixosModules.impermanence
+                disko.nixosModules.disko
+              ];
+            })
+            # 2. Import the actual host configuration
+            hostPath
+          ]
+          ++ extraModules;
+        };
 
       # Wire the PXE server (on lenovo) directly to the elitedesk's netboot build
       # products, so the image Pixiecore serves always matches the flake. The
@@ -146,6 +149,13 @@
             path = deploy-rs.lib.x86_64-linux.activate.nixos self.nixosConfigurations.elitedesk;
           };
         };
+        t460s = {
+          hostname = "t460s";
+          profiles.system = {
+            user = "root";
+            path = deploy-rs.lib.x86_64-linux.activate.nixos self.nixosConfigurations.t460s;
+          };
+        };
         dashboards = {
           hostname = "dashboards";
           profiles.system = {
@@ -157,6 +167,9 @@
 
       # Add deploy-rs checks
       checks = builtins.mapAttrs (system: deployLib: deployLib.deployChecks self.deploy) deploy-rs.lib;
+
+      # Repo formatter (`nix fmt` / `make fmt`)
+      formatter.x86_64-linux = nixpkgs.legacyPackages.x86_64-linux.nixfmt-rfc-style;
 
       # Extract devShell to a traditional shell.nix using callPackage
       devShells.x86_64-linux.default = nixpkgs.legacyPackages.x86_64-linux.callPackage ./shell.nix {

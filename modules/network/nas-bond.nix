@@ -13,7 +13,10 @@ in
     '';
     interfaces = mkOption {
       type = types.listOf types.str;
-      default = [ "enp2s0f0" "enp2s0f1" ];
+      default = [
+        "enp2s0f0"
+        "enp2s0f1"
+      ];
       description = "The two physical NICs to aggregate.";
     };
     mtu = mkOption {

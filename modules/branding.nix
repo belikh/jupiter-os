@@ -1,4 +1,9 @@
-{ config, pkgs, lib, ... }:
+{
+  config,
+  pkgs,
+  lib,
+  ...
+}:
 
 with lib;
 let
@@ -28,7 +33,7 @@ in
       device = "nodev"; # Required for GRUB on EFI/VM
       efiSupport = true;
     };
-    
+
     # We must disable systemd-boot if we are explicitly enabling grub for EFI
     boot.loader.systemd-boot.enable = lib.mkForce false;
 
@@ -65,8 +70,22 @@ in
       font = "Lat2-Terminus16";
       # Force the 16 base TTY color slots into strict dark/bright green shades
       colors = [
-        "000000" "00aa00" "00aa00" "00aa00" "00aa00" "00aa00" "00aa00" "aaaaaa"
-        "555555" "55ff55" "55ff55" "55ff55" "55ff55" "55ff55" "55ff55" "ffffff"
+        "000000"
+        "00aa00"
+        "00aa00"
+        "00aa00"
+        "00aa00"
+        "00aa00"
+        "00aa00"
+        "aaaaaa"
+        "555555"
+        "55ff55"
+        "55ff55"
+        "55ff55"
+        "55ff55"
+        "55ff55"
+        "55ff55"
+        "ffffff"
       ];
     };
 
@@ -82,18 +101,18 @@ in
 
     # Message of the Day (MOTD)
     users.motd = ''
-       ========================================================================
-       ||                                                                    ||
-       ||                      J U P I T E R    O S                          ||
-       ||                 RobCo Industries Unified System                    ||
-       ||                                                                    ||
-       ========================================================================
-       
-       Welcome to the Jupiter mainframe.
-       Unauthorized access will be logged and may result in vaporization.
-       
-       Connection established.
-       Waiting for input...
+      ========================================================================
+      ||                                                                    ||
+      ||                      J U P I T E R    O S                          ||
+      ||                 RobCo Industries Unified System                    ||
+      ||                                                                    ||
+      ========================================================================
+
+      Welcome to the Jupiter mainframe.
+      Unauthorized access will be logged and may result in vaporization.
+
+      Connection established.
+      Waiting for input...
     '';
   };
 }
