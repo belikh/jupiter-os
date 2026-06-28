@@ -1,6 +1,7 @@
 {
   config,
   pkgs,
+  lib,
   modulesPath,
   ...
 }:
@@ -13,6 +14,12 @@
   ];
 
   networking.hostName = "elitedesk";
+
+  # Diskless netboot node: no local bootloader. The branding module (enabled
+  # globally in common.nix) forces GRUB on, which conflicts with the netboot
+  # profile's bootloader-less setup. Branding is purely cosmetic here, so drop
+  # it on this headless node.
+  jupiter.branding.enable = lib.mkForce false;
 
   # Ensure the image is fully copied to RAM on boot
   boot.kernelParams = [ "copytoram" ];

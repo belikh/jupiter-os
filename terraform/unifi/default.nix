@@ -34,13 +34,16 @@
       dhcp_dns = ["10.1.1.20"];
       dhcp_enabled = true;
     };
+    # Subnets/VLANs below mirror the live UDM Pro config (verified against the
+    # controller): Cameras = VLAN 2 / 192.168.3.0/24, IOT = VLAN 3 /
+    # 192.168.2.0/24. Keep in sync with lenovo's jupiter.dns.allowedNetworks.
     cameras = {
       name = "Cameras";
       purpose = "corporate";
       vlan_id = 2;
-      subnet = "10.1.2.1/24";
-      dhcp_start = "10.1.2.6";
-      dhcp_stop = "10.1.2.254";
+      subnet = "192.168.3.1/24";
+      dhcp_start = "192.168.3.6";
+      dhcp_stop = "192.168.3.254";
       dhcp_dns = ["10.1.1.20"];
       dhcp_enabled = true;
     };
@@ -48,9 +51,9 @@
       name = "IOT";
       purpose = "corporate";
       vlan_id = 3;
-      subnet = "10.1.3.1/24";
-      dhcp_start = "10.1.3.6";
-      dhcp_stop = "10.1.3.254";
+      subnet = "192.168.2.1/24";
+      dhcp_start = "192.168.2.6";
+      dhcp_stop = "192.168.2.254";
       dhcp_dns = ["10.1.1.20"];
       dhcp_enabled = true;
     };

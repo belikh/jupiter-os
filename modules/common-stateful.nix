@@ -7,7 +7,9 @@
   boot.loader.systemd-boot.enable = true;
   boot.loader.efi.canTouchEfiVariables = true;
 
-  # Dummy root filesystem to allow NixOS evaluation to pass until ZFS layout is implemented
+  # Fallback root filesystem (mkDefault) so a host without its own disko layout
+  # still evaluates. Every real host imports a disko.nix that overrides this at
+  # normal priority (see hosts/<host>/disko.nix).
   fileSystems."/" = {
     device = lib.mkDefault "/dev/disk/by-label/nixos";
     fsType = lib.mkDefault "ext4";

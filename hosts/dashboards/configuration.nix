@@ -3,9 +3,11 @@
 {
   imports = [
     ../../modules/common-stateful.nix
+    ./disko.nix # OS disk layout (destructive — confirm device before install)
   ];
 
   networking.hostName = "jupiter-dashboard";
+  networking.hostId = "da58b0a4"; # Stable per-host 8-char hex, required for ZFS
 
   # Kiosk Mode using Cage (Wayland) + Chromium
   services.xserver.enable = false; # Wayland is lighter and faster for kiosks
