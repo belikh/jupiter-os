@@ -1,4 +1,8 @@
-{ lib, stdenvNoCC, unzip }:
+{
+  lib,
+  stdenvNoCC,
+  unzip,
+}:
 
 stdenvNoCC.mkDerivation rec {
   pname = "share-tech-mono";
