@@ -1,4 +1,10 @@
-{ lib, stdenvNoCC, unzip, otf2bdf, bdf2psf }:
+{
+  lib,
+  stdenvNoCC,
+  unzip,
+  otf2bdf,
+  bdf2psf,
+}:
 
 stdenvNoCC.mkDerivation rec {
   pname = "share-tech-mono-console";
@@ -6,7 +12,11 @@ stdenvNoCC.mkDerivation rec {
 
   src = ./Share_Tech_Mono.zip;
 
-  nativeBuildInputs = [ unzip otf2bdf bdf2psf ];
+  nativeBuildInputs = [
+    unzip
+    otf2bdf
+    bdf2psf
+  ];
 
   unpackPhase = ''
     unzip $src

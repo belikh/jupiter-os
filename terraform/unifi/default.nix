@@ -1,4 +1,9 @@
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 
 {
   terraform = {
@@ -31,7 +36,7 @@
       subnet = "10.1.1.1/24";
       dhcp_start = "10.1.1.6";
       dhcp_stop = "10.1.1.254";
-      dhcp_dns = ["10.1.1.20"];
+      dhcp_dns = [ "10.1.1.20" ];
       dhcp_enabled = true;
     };
     # Subnets/VLANs below mirror the live UDM Pro config (verified against the
@@ -44,7 +49,7 @@
       subnet = "192.168.3.1/24";
       dhcp_start = "192.168.3.6";
       dhcp_stop = "192.168.3.254";
-      dhcp_dns = ["10.1.1.20"];
+      dhcp_dns = [ "10.1.1.20" ];
       dhcp_enabled = true;
     };
     iot = {
@@ -54,7 +59,7 @@
       subnet = "192.168.2.1/24";
       dhcp_start = "192.168.2.6";
       dhcp_stop = "192.168.2.254";
-      dhcp_dns = ["10.1.1.20"];
+      dhcp_dns = [ "10.1.1.20" ];
       dhcp_enabled = true;
     };
   };
@@ -63,12 +68,15 @@
     dns_ports = {
       name = "dns-ports";
       type = "port-group";
-      members = ["53" "853"];
+      members = [
+        "53"
+        "853"
+      ];
     };
     dns_resolvers = {
       name = "dns-resolvers";
       type = "address-group";
-      members = ["10.1.1.20"];
+      members = [ "10.1.1.20" ];
     };
   };
 

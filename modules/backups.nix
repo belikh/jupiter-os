@@ -1,10 +1,15 @@
-{ config, pkgs, lib, ... }:
+{
+  config,
+  pkgs,
+  lib,
+  ...
+}:
 
 {
   options = {
     jupiter.backups.paths = lib.mkOption {
       type = lib.types.listOf lib.types.str;
-      default = [];
+      default = [ ];
       description = "List of absolute paths to include in the backup.";
     };
 
@@ -22,7 +27,7 @@
     sops.secrets.restic_password = {
       sopsFile = ../secrets/secrets.yaml;
     };
-    
+
     sops.secrets.restic_env = {
       sopsFile = ../secrets/secrets.yaml;
     };
