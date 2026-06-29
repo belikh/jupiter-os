@@ -132,6 +132,23 @@ the consuming host's initiator IQN. Firewall: TCP 3260.
 **Enabled by:** `nas`, with two LUNs — `db` (`/dev/zvol/rpool/db`) and `loki`
 (`/dev/zvol/rpool/loki`), both ACL'd to `iqn.2026-06.au.jupiter:elitedesk`.
 
+### `modules/storage/replication.nix`
+```
+jupiter.replication.enable     (bool, default false)
+jupiter.replication.sshKeyPath (path — syncoid's private key, usually a sops secret)
+jupiter.replication.interval   (string, default "hourly")
+jupiter.replication.sources    (attrset of { remote, sourceDataset, targetDataset })
+```
+Pull-based ZFS replication via `services.syncoid`: the puller logs into each
+source over SSH and pulls `sourceDataset` to `targetDataset` on a timer. syncoid
+takes its own pre-send snapshot, so sources need no snapshot policy. The module
+header documents the one-time provisioning (keypair → sops, authorize the public
+key on each source, `zfs allow` send rights).
+
+**Enabled by:** `nas`, pulling `lenovo:rpool/var` → `tank/backups/lenovo`
+hourly. This makes the NAS the fleet's data hub — see
+[06-storage-and-backups.md §7](06-storage-and-backups.md#7-server-state-replication-syncoid--nas).
+
 ## Network
 
 ### `modules/network/nas-bond.nix`
@@ -250,8 +267,9 @@ jupiter.backups.repository   (string, default "s3:s3.us-west-004.backblazeb2.com
 credentials from sops secrets `restic_password`/`restic_env`, retention
 `--keep-daily 7 --keep-weekly 4 --keep-monthly 6`.
 
-**Used by:** `lenovo` (`/var/lib/n8n`, `/var/lib/libvirt/images`) and `nas`
-(`/tank/personal`, `/tank/backups/homeassistant`).
+**Used by:** `nas` only (`/tank/personal`, `/tank/backups/homeassistant`,
+`/tank/backups/lenovo`) — the fleet's single offsite egress. Other hosts'
+state reaches the cloud by first replicating to the NAS (`jupiter.replication`).
 
 ## How to add a new module
 
