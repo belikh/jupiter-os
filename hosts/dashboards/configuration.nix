@@ -50,15 +50,23 @@
   # into its own host (own hostId/deploy node) and set this there. The Intel HD
   # 520 suits light/streamed/emulated play, not AAA, and TLP keeps the CPU in
   # powersave — see modules/services/tcxwave-power-tuning.nix.
+  # Only required once the dual-VT/gaming feature is switched on, so a plain
+  # dashboard deploy doesn't depend on the MQTT secret existing.
+  sops.secrets = lib.mkIf config.jupiter.dashboardGaming.enable {
+    mqtt_dashboard.sopsFile = ../../secrets/secrets.yaml;
+  };
+
   jupiter.dashboardGaming = {
     enable = false;
     # When enabled, Home Assistant auto-discovers a "Display Mode" select
     # (Dashboard/Gaming) and drives the active VT over MQTT, with live state.
-    # Broker runs on lenovo (10.1.1.20); add a sops password + set
-    # username/passwordFile once the broker requires auth.
+    # Broker runs on lenovo (10.1.1.20); authenticates as the "dashboard" user
+    # using the shared sops password (add mqtt_dashboard to secrets.yaml).
     homeAssistant = {
       enable = true;
       broker = "10.1.1.20";
+      username = "dashboard";
+      passwordFile = config.sops.secrets.mqtt_dashboard.path;
     };
   };
 }
