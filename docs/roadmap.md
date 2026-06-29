@@ -97,18 +97,39 @@ log in as if on the home PC.
    future desktop host slots; Syncthing-synced `$HOME` across personal
    machines.
 
-Plus a **docs trim** folded into the relevant PRs (cut the line-level tables).
+All seven stages are implemented on the branch (one commit each). A **docs
+trim** (cut the line-level tables that mirror code) is still outstanding — fold
+it in once CI is validating.
 
-### Already landed
+### Landed (one commit per item)
 
-- Inheritance tidy (commit on this branch): base CLI tooling →
-  `common.nix`; `sops.defaultSopsFile`; branding opt-in; dropped unused
-  `docker` group; headscale → lenovo only.
-- Stage 1 — storage profiles: new `modules/storage/zfs-profiles.nix`
-  (`jupiter.storage.profile` = impermanent/stateful/minimal/none) replacing
-  `zfs-impermanent.nix` and the per-host `disko.nix` on `lenovo`/`dashboards`;
-  `lenovo` → stateful, `dashboards` → impermanent (kiosk persist), `t460s` →
-  impermanent; `nas` stays bespoke; REPLACE-ME assertion. `impermanence.nix`
-  gained `persistAdminHome`/`extraDirectories`/`extraFiles`/`users`.
-</content>
-</invoke>
+- **Inheritance tidy** — base CLI tooling → `common.nix`; `sops.defaultSopsFile`;
+  branding opt-in; dropped unused `docker` group; headscale → lenovo only.
+- **Stage 1 — storage profiles** — `modules/storage/zfs-profiles.nix`
+  (`jupiter.storage.profile`), replacing `zfs-impermanent.nix` + per-host
+  `disko.nix`; lenovo→stateful, dashboards/t460s→impermanent, nas bespoke;
+  REPLACE-ME assertion; `impermanence.nix` gained per-host persist controls.
+- **Stage 2 — module reshuffle** — `modules/` sorted into category subdirs;
+  module-style convention documented in `CLAUDE.md` (existing `with lib;`
+  conversion deferred to run with nix eval).
+- **Stage 3 — network SoT** — `lib/site.nix` shared by `terraform/unifi` and
+  `jupiter.dns`.
+- **Stage 4 — CI boot tests** — `scripts/boot-smoke.sh` + `boot-test` CI job;
+  rollback service guarded for VM builds.
+- **Stage 5 — backup topology** — `modules/storage/replication.nix` (syncoid),
+  NAS pulls `lenovo:rpool/var` hourly; lenovo direct-B2 dropped.
+- **Stage 6 — elitedesk services** — `postgresql.nix` + `loki.nix` on the iSCSI
+  LUNs; static identity (10.1.1.21) for the syslog target.
+- **Stage 7 — home-manager + roaming** — `modules/home/` (`jupiter.home.enable`),
+  home-manager input + injection, niri config for `io`; `desktop`/
+  `parents-desktop` scaffolds (unregistered).
+
+### Validation still required (no nix/KVM in the authoring env)
+
+- `nix flake lock` to lock the new `home-manager` input (CI auto-locks but the
+  committed lock is stale).
+- `nix flake check` + the `build`/`boot-test` CI jobs to shake out eval errors —
+  nothing here was evaluated locally.
+- `with lib;` → explicit conversion of the 11 older modules.
+- Real-hardware provisioning: REPLACE-ME disks + syncoid keypair + the
+  elitedesk NIC name + LUN `mkfs`/labels.

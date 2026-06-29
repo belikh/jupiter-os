@@ -47,14 +47,16 @@ Every `nixosConfigurations.<host>` is built by a local `mkHost` helper:
 mkHost = hostPath: extraModules: nixpkgs.lib.nixosSystem {
   system = "x86_64-linux";
   modules = [
-    ({ ... }: { imports = [ sops-nix.nixosModules.sops impermanence.nixosModules.impermanence disko.nixosModules.disko ]; })
+    ({ ... }: { imports = [ sops-nix.nixosModules.sops impermanence.nixosModules.impermanence disko.nixosModules.disko home-manager.nixosModules.home-manager jovian.nixosModules.default chaotic.nixosModules.default ]; })
     hostPath
   ] ++ extraModules;
 };
 ```
 
-This injects the three flake-provided modules (sops-nix, impermanence, disko)
-into every host **via a lexical closure** rather than `specialArgs`. The
+This injects the flake-provided modules (sops-nix, impermanence, disko,
+home-manager, jovian, chaotic) into every host **via a lexical closure** rather
+than `specialArgs`. They're inert until a host opts in (e.g. home-manager does
+nothing unless `jupiter.home.enable`). The
 project convention (see `CLAUDE.md`) is to keep using this closure-injection
 style for any new flake-level module wiring, rather than reaching for
 `specialArgs`.
