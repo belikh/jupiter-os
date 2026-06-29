@@ -84,8 +84,20 @@ each unit runs an MQTT agent that emits HA discovery — HA auto-creates a
 *Display Mode* `select` (Dashboard/Gaming) — accepts commands, and publishes the
 live active VT (so manual Ctrl+Alt+F switches show up too). The broker is
 Mosquitto on lenovo (`modules/services/mqtt.nix`, `jupiter.services.mqtt`,
-`10.1.1.20:1883`): anonymous on the trusted LAN out of the box, and it switches
-to authenticated automatically once you define `users` with sops password files.
+`10.1.1.20:1883`), running **authenticated** — defining `users` disables
+anonymous access automatically. The `homeassistant` and `dashboard` users share
+plaintext passwords stored as sops secrets, so add them before deploying:
+```bash
+sops secrets/secrets.yaml      # add: mqtt_homeassistant, mqtt_dashboard
+```
+Then set the same `mqtt_homeassistant` password in Home Assistant's MQTT
+integration (the HAOS VM connects to `10.1.1.20`). Plaintext over `1883` is fine
+on the trusted LAN/headscale mesh; add a TLS listener if you want transport
+encryption too.
+
+> Because the broker on lenovo is authenticated and always-on, the
+> `mqtt_homeassistant`/`mqtt_dashboard` secrets must exist in `secrets.yaml`
+> before the next `deploy .#lenovo` (sops reads them at activation).
 
 ### Network / DNS (Terraform via terranix)
 The UniFi and Cloudflare configs are authored in Nix under `terraform/` and

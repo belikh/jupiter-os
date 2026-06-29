@@ -23,9 +23,19 @@
   ];
 
   # MQTT broker for Home Assistant + the dashboards' display-mode control.
-  # Anonymous on the trusted LAN for now; add users (sops password files) and
-  # anonymous auth turns off automatically — see modules/services/mqtt.nix.
-  jupiter.services.mqtt.enable = true;
+  # Authenticated: defining `users` turns anonymous access off automatically.
+  # The password files hold the plaintext passwords (shared with each client);
+  # add the matching entries to secrets/secrets.yaml before deploying.
+  sops.secrets.mqtt_homeassistant.sopsFile = ../../secrets/secrets.yaml;
+  sops.secrets.mqtt_dashboard.sopsFile = ../../secrets/secrets.yaml;
+
+  jupiter.services.mqtt = {
+    enable = true;
+    users = {
+      homeassistant.passwordFile = config.sops.secrets.mqtt_homeassistant.path;
+      dashboard.passwordFile = config.sops.secrets.mqtt_dashboard.path;
+    };
+  };
 
   # ---- Network-wide DNS resolver (this host) -------------------------------
   jupiter.dns = {
