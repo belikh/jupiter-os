@@ -72,6 +72,17 @@ log in as if on the home PC.
   (`modules/desktop/dashboard-gaming.nix`); a personal/desktop "mode" fits the
   same pattern.
 
+## Future direction: consolidate servers onto elitedesk
+
+The longer-term intent is to **move all server roles onto `elitedesk` and
+retire `lenovo`** (repurposed elsewhere). The Postgres-on-elitedesk +
+HA/n8n-as-LAN-consumers wiring is a step in that direction, but it currently
+creates a cross-host dependency (lenovo's n8n needs elitedesk's Postgres, which
+needs the NAS iSCSI). When the migration happens, n8n / HA / DNS / headscale /
+cloudflared / the HA VM move to elitedesk and these become local connections.
+Not started — it's a large move that needs its own plan (and elitedesk is
+diskless/netboot today, so its role/boot story changes).
+
 ## Out of scope / deferred
 
 - **Containers** — none wanted for now (libvirt VMs + n8n cover it).
@@ -123,6 +134,11 @@ it in once CI is validating.
 - **Stage 7 — home-manager + roaming** — `modules/home/` (`jupiter.home.enable`),
   home-manager input + injection, niri config for `io`; `desktop`/
   `parents-desktop` scaffolds (unregistered).
+- **Postgres consumers** — `jupiter.services.postgresql.databases` (networked
+  roles + sops passwords + scram-sha-256); elitedesk serves `homeassistant`
+  (HA VM) and `n8n` (lenovo). n8n migrated off SQLite. HA recorder `db_url` is
+  set inside the HAOS VM (not NixOS-managed). Needs `pg_homeassistant_password`
+  / `pg_n8n_password` in secrets.yaml + one-time n8n SQLite→PG data migration.
 
 ### Validation still required (no nix/KVM in the authoring env)
 

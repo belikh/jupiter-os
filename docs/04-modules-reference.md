@@ -250,25 +250,39 @@ CLI tools. Network bridging is left to the host (`hosts/lenovo` declares
 **Imported by:** `lenovo` only.
 
 ### `modules/services/n8n.nix`
-No option — unconditional `services.n8n`. `allowUnfree` is turned on (n8n's
-license is "sustainable use", which Nixpkgs treats as unfree). Listens on
+```
+jupiter.services.n8n.database.enable       (bool, default false)
+jupiter.services.n8n.database.host         (string)
+jupiter.services.n8n.database.{port,name,user}
+jupiter.services.n8n.database.passwordFile (path — sops secret)
+```
+`services.n8n` (always on for the importing host). `allowUnfree` is turned on
+(n8n's license is "sustainable use", which Nixpkgs treats as unfree). Listens on
 `127.0.0.1:5678` behind the Cloudflare Tunnel; `WEBHOOK_URL =
-"https://n8n.jupiter.au"`.
+"https://n8n.jupiter.au"`. With `database.enable`, n8n is pointed at PostgreSQL
+(`DB_TYPE=postgresdb`, password via `DB_POSTGRESDB_PASSWORD_FILE`) instead of
+the bundled SQLite.
 
-**Imported by:** `lenovo` only.
+**Imported by:** `lenovo`, which enables the Postgres backend against
+`elitedesk`.
 
 ### `modules/services/postgresql.nix`
 ```
-jupiter.services.postgresql.enable   (bool, default false)
-jupiter.services.postgresql.dataDir  (path, default "/var/lib/postgresql")
-jupiter.services.postgresql.package  (package, default pkgs.postgresql_16)
+jupiter.services.postgresql.enable    (bool, default false)
+jupiter.services.postgresql.dataDir   (path, default "/var/lib/postgresql")
+jupiter.services.postgresql.package   (package, default pkgs.postgresql_16)
+jupiter.services.postgresql.databases (attrset of { passwordFile, allowedClients })
 ```
 `services.postgresql` with its data directory under `dataDir` (on `elitedesk`
-the iSCSI `db` LUN) and `RequiresMountsFor` so it waits for that mount. No
-databases/roles are declared here — consumer apps add their own via
-`ensureDatabases`/`ensureUsers`. Local socket only (`enableTCPIP = false`).
+the iSCSI `db` LUN) and `RequiresMountsFor` so it waits for that mount. Each
+entry in `databases` provisions a login role + owned database of that name,
+sets the role password from `passwordFile` (a sops secret, applied by the
+`postgresql-jupiter-roles` oneshot), and opens scram-sha-256 access from each
+CIDR in `allowedClients` (firewall + `enableTCPIP` follow automatically). Local
+peer auth still works for admin.
 
-**Enabled by:** `elitedesk`.
+**Enabled by:** `elitedesk`, with `homeassistant` (reachable from the HA VM) and
+`n8n` (reachable from lenovo) databases.
 
 ### `modules/services/loki.nix`
 ```

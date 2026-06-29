@@ -41,6 +41,17 @@ in
     "ssh-ed25519 REPLACE-ME-nas-syncoid-pubkey nas-syncoid"
   ];
 
+  # n8n backed by the shared PostgreSQL on elitedesk (over the LAN) rather than
+  # local SQLite. Same pg_n8n_password sops secret as elitedesk's role (sops
+  # encrypts to both host keys); readable by the n8n service user here.
+  # NOTE: existing SQLite data needs a one-time manual migration into Postgres.
+  sops.secrets.pg_n8n_password.owner = "n8n";
+  jupiter.services.n8n.database = {
+    enable = true;
+    host = "elitedesk.home.jupiter.au";
+    passwordFile = config.sops.secrets.pg_n8n_password.path;
+  };
+
   # MQTT broker for Home Assistant + the dashboards' display-mode control.
   # Authenticated: defining `users` turns anonymous access off automatically.
   # The password files hold the plaintext passwords (shared with each client);

@@ -47,7 +47,7 @@ get:
 |---|---|---|
 | libvirtd + QEMU/KVM (+ swtpm) | `modules/services/home-assistant-vm.nix` | Runs Home Assistant OS as a VM |
 | `virt-manager`, `libvirt`, `qemu_kvm` (CLI tools) | `modules/services/home-assistant-vm.nix` | VM management |
-| n8n | `modules/services/n8n.nix` | Workflow automation, `https://n8n.jupiter.au`, listens on `127.0.0.1:5678` |
+| n8n | `modules/services/n8n.nix` | Workflow automation, `https://n8n.jupiter.au`, listens on `127.0.0.1:5678`; DB backend is PostgreSQL on `elitedesk` |
 | cloudflared | `modules/network/cloudflared.nix` | One tunnel exposing `headscale.jupiter.au`, `n8n.jupiter.au`, `ha.jupiter.au` |
 | headscale | `modules/network/headscale.nix` | Tailscale-compatible mesh control plane, port 8080, `https://headscale.jupiter.au` |
 | Pixiecore | `modules/network/pxe-server.nix` (`jupiter.pxe`) | Serves `elitedesk`'s netboot image |
@@ -92,7 +92,7 @@ disabled.
 |---|---|---|
 | NixOS netboot-minimal profile | `(modulesPath + "/installer/netboot/netboot-minimal.nix")` | Diskless boot image, copied fully to RAM (`copytoram`) |
 | `open-iscsi` initiator | `hosts/elitedesk/configuration.nix` | Auto-login to the NAS's iSCSI target at boot |
-| PostgreSQL | `modules/services/postgresql.nix` (`jupiter.services.postgresql`) | DB on the iSCSI `db` LUN (`/var/lib/postgresql`); no databases declared yet |
+| PostgreSQL | `modules/services/postgresql.nix` (`jupiter.services.postgresql`) | DB on the iSCSI `db` LUN (`/var/lib/postgresql`); serves `homeassistant` (HA VM) + `n8n` (lenovo) over the LAN, scram-sha-256 |
 | Loki | `modules/services/loki.nix` (`jupiter.services.loki`) | Log store on the iSCSI `loki` LUN (`/var/lib/loki`), HTTP `:3100` |
 | promtail | `modules/services/loki.nix` | Syslog receiver on `:514`, ingests Wyze cam logs into Loki |
 
