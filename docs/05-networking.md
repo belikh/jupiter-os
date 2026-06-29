@@ -31,7 +31,7 @@ hosts):
 other host's `networking.nameservers` defaults to `10.1.1.20`
 (`modules/common.nix`); `lenovo` points at itself (`127.0.0.1`).
 
-Two layered services, both declared in `modules/services/dns.nix`:
+Two layered services, both declared in `modules/network/dns.nix`:
 
 ```
                 LAN / VLANs / headscale mesh
@@ -82,7 +82,7 @@ internal resolver even if misconfigured.
 
 ## 3. Mesh VPN (headscale)
 
-`modules/headscale.nix` runs a self-hosted, Tailscale-protocol-compatible
+`modules/network/headscale.nix` runs a self-hosted, Tailscale-protocol-compatible
 control plane (`services.headscale`) on `lenovo`, exposed publicly at
 `https://headscale.jupiter.au` via the Cloudflare Tunnel (not directly
 port-forwarded). MagicDNS is on, base domain `jupiter.mesh`; mesh clients are
@@ -94,7 +94,7 @@ for the fleet.
 
 ## 4. Public ingress (Cloudflare Tunnel)
 
-`modules/cloudflared.nix` runs a single `cloudflared` tunnel on `lenovo`
+`modules/network/cloudflared.nix` runs a single `cloudflared` tunnel on `lenovo`
 (credentials: sops secret `cloudflare_cert`), the *only* path from the public
 internet into the fleet — no inbound ports are forwarded at the edge.
 

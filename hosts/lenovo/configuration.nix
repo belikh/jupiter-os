@@ -3,14 +3,14 @@
 {
   imports = [
     ../../modules/common-stateful.nix
-    ../../modules/home-assistant-vm.nix
-    ../../modules/n8n.nix
+    ../../modules/services/home-assistant-vm.nix
+    ../../modules/services/n8n.nix
     ../../modules/services/mqtt.nix
-    ../../modules/cloudflared.nix
-    ../../modules/headscale.nix
-    ../../modules/backups.nix
-    ../../modules/pxe-server.nix
-    ../../modules/services/dns.nix
+    ../../modules/network/cloudflared.nix
+    ../../modules/network/headscale.nix
+    ../../modules/services/backups.nix
+    ../../modules/network/pxe-server.nix
+    ../../modules/network/dns.nix
   ];
 
   networking.hostName = "lenovo";

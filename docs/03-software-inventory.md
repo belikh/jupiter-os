@@ -37,7 +37,7 @@ get:
 
 | Software | Source |
 |---|---|
-| `systemd-boot` (EFI), overridden to GRUB on hosts that enable `jupiter.branding` | `modules/common-stateful.nix` / `modules/branding.nix` |
+| `systemd-boot` (EFI), overridden to GRUB on hosts that enable `jupiter.branding` | `modules/common-stateful.nix` / `modules/core/branding.nix` |
 
 ## 3. Per-host inventory
 
@@ -45,27 +45,27 @@ get:
 
 | Software | Source | Purpose |
 |---|---|---|
-| libvirtd + QEMU/KVM (+ swtpm) | `modules/home-assistant-vm.nix` | Runs Home Assistant OS as a VM |
-| `virt-manager`, `libvirt`, `qemu_kvm` (CLI tools) | `modules/home-assistant-vm.nix` | VM management |
-| n8n | `modules/n8n.nix` | Workflow automation, `https://n8n.jupiter.au`, listens on `127.0.0.1:5678` |
-| cloudflared | `modules/cloudflared.nix` | One tunnel exposing `headscale.jupiter.au`, `n8n.jupiter.au`, `ha.jupiter.au` |
-| headscale | `modules/headscale.nix` | Tailscale-compatible mesh control plane, port 8080, `https://headscale.jupiter.au` |
-| restic | `modules/backups.nix` | Offsite backup of `/var/lib/n8n`, `/var/lib/libvirt/images` |
-| Pixiecore | `modules/pxe-server.nix` (`jupiter.pxe`) | Serves `elitedesk`'s netboot image |
-| unbound | `modules/services/dns.nix` (`jupiter.dns`) | Authoritative resolver for `home.jupiter.au`, LAN-wide DNS |
-| dnscrypt-proxy | `modules/services/dns.nix` | Anonymized/encrypted upstream DNS for unbound |
+| libvirtd + QEMU/KVM (+ swtpm) | `modules/services/home-assistant-vm.nix` | Runs Home Assistant OS as a VM |
+| `virt-manager`, `libvirt`, `qemu_kvm` (CLI tools) | `modules/services/home-assistant-vm.nix` | VM management |
+| n8n | `modules/services/n8n.nix` | Workflow automation, `https://n8n.jupiter.au`, listens on `127.0.0.1:5678` |
+| cloudflared | `modules/network/cloudflared.nix` | One tunnel exposing `headscale.jupiter.au`, `n8n.jupiter.au`, `ha.jupiter.au` |
+| headscale | `modules/network/headscale.nix` | Tailscale-compatible mesh control plane, port 8080, `https://headscale.jupiter.au` |
+| restic | `modules/services/backups.nix` | Offsite backup of `/var/lib/n8n`, `/var/lib/libvirt/images` |
+| Pixiecore | `modules/network/pxe-server.nix` (`jupiter.pxe`) | Serves `elitedesk`'s netboot image |
+| unbound | `modules/network/dns.nix` (`jupiter.dns`) | Authoritative resolver for `home.jupiter.au`, LAN-wide DNS |
+| dnscrypt-proxy | `modules/network/dns.nix` | Anonymized/encrypted upstream DNS for unbound |
 
 ### `nas`
 
 | Software | Source | Purpose |
 |---|---|---|
-| ZFS (`zfs` CLI) | `hosts/nas/configuration.nix` (`environment.systemPackages`) + `modules/zfs-nas.nix` | Pool/dataset management |
-| Samba (`samba` CLI + `services.samba`) | `hosts/nas/configuration.nix`, `modules/zfs-nas.nix` | SMB shares: `media`, `personal`, `archive` (read-only) |
-| `samba-wsdd` | `modules/zfs-nas.nix` | Windows network discovery |
+| ZFS (`zfs` CLI) | `hosts/nas/configuration.nix` (`environment.systemPackages`) + `modules/storage/zfs-nas.nix` | Pool/dataset management |
+| Samba (`samba` CLI + `services.samba`) | `hosts/nas/configuration.nix`, `modules/storage/zfs-nas.nix` | SMB shares: `media`, `personal`, `archive` (read-only) |
+| `samba-wsdd` | `modules/storage/zfs-nas.nix` | Windows network discovery |
 | sanoid (+ `syncoid`) | `hosts/nas/configuration.nix`, `modules/storage/sanoid.nix` | ZFS snapshot policy on `tank` |
 | NFS server | `modules/storage/nas-nfs.nix` | Exports `/tank/media` (ro), `/srv/netboot` (ro) |
 | LIO iSCSI target (`services.target`) | `modules/storage/iscsi.nix` (`jupiter.nas.iscsi`) | Exports `db`/`loki` zvols to `elitedesk` |
-| restic | `modules/backups.nix` | Offsite backup of `/tank/personal`, `/tank/backups/homeassistant` |
+| restic | `modules/services/backups.nix` | Offsite backup of `/tank/personal`, `/tank/backups/homeassistant` |
 | Syncthing | `modules/services/syncthing.nix` (`jupiter.services.syncthing.enable = true`) | File sync for user `io` |
 | LACP bonding driver config | `modules/network/nas-bond.nix` (`jupiter.nas.bond`, currently disabled) | 802.3ad across both 1GbE ports, not yet enabled |
 

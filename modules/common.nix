@@ -12,7 +12,7 @@
     ./gaming/bazzite.nix
     ./storage/zfs-profiles.nix
     ./services/syncthing.nix
-    ./branding.nix
+    ./core/branding.nix
   ];
 
   # Common configuration applied to all hosts.
