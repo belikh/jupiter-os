@@ -15,7 +15,7 @@ For module option details see [04-modules-reference.md](04-modules-reference.md)
 - **Base layer:** `modules/common-stateful.nix`
 - **`networking.hostId`:** `1e110000`
 - **Network identity:** static `10.1.1.20/24` on bridge `br0` (`enp1s0` member), gateway `10.1.1.1`, `networking.useDHCP = false`. Points its own resolver at itself (`127.0.0.1`), overriding the fleet default.
-- **Boot:** GRUB (Fallout theme) — branding stays on for this host.
+- **Boot:** GRUB (Fallout theme) — `jupiter.branding.enable = true` on this host.
 - **Storage:** single OS ZFS pool (`rpool`) on one disk — `root`, `nix`, and `var` datasets (`var` holds n8n state + libvirt VM images). ⚠️ `disko.nix`'s `device` is a placeholder (`REPLACE-ME-lenovo-os-disk`) — must be set to the real by-id path before install.
 - **Modules imported:** `common-stateful`, `home-assistant-vm`, `n8n`, `cloudflared`, `headscale`, `backups`, `pxe-server`, `services/dns`.
 - **Distinguishing responsibilities:**
@@ -59,7 +59,7 @@ For module option details see [04-modules-reference.md](04-modules-reference.md)
 - **Config:** `hosts/dashboards/configuration.nix`, `hosts/dashboards/disko.nix`
 - **Base layer:** `modules/common-stateful.nix`
 - **`networking.hostId`:** `da58b0a4`
-- **Boot:** branding explicitly forced off (`jupiter.branding.enable = lib.mkForce false`) — falls back to the plain `systemd-boot` menu for fastest boot, since these are wall-mounted appliances nobody watches POST.
+- **Boot:** branding left off (`jupiter.branding` is opt-in and not enabled here) — uses the plain `systemd-boot` menu for fastest boot, since these are wall-mounted appliances nobody watches POST.
 - **Hardware:** Intel Core i5-6500U (Skylake-U, 2c/4t, 15W TDP) + integrated HD Graphics 520 (Gen9), built-in 15" touchscreen panel.
 - **Storage:** single small OS ZFS pool (`root` + `nix` only — no bulk data). ⚠️ `disko.nix`'s `device` is a placeholder (`REPLACE-ME-dashboard-os-disk`).
 - **Modules imported:** `common-stateful`, `services/tcxwave-power-tuning`.
@@ -75,13 +75,12 @@ For module option details see [04-modules-reference.md](04-modules-reference.md)
 - **Config:** `hosts/elitedesk/configuration.nix`
 - **Base layer:** `modules/common.nix` directly (no `common-stateful` — there's no local disk to give it a root filesystem/bootloader).
 - **`networking.hostId`:** none (not needed — no local ZFS root).
-- **Boot:** `(modulesPath + "/installer/netboot/netboot-minimal.nix")`, with `boot.kernelParams = [ "copytoram" ]` so the served image is fully copied into RAM at boot. Branding is forced off (conflicts with the bootloader-less netboot profile).
+- **Boot:** `(modulesPath + "/installer/netboot/netboot-minimal.nix")`, with `boot.kernelParams = [ "copytoram" ]` so the served image is fully copied into RAM at boot. Branding is left off (opt-in, and GRUB would conflict with the bootloader-less netboot profile anyway).
 - **Network identity:** no static config in this repo beyond a static `/etc/hosts` entry for `nas.home.jupiter.au` → `10.1.1.2`, added so the boot-time iSCSI login doesn't race DNS coming up.
 - **Storage:** none locally. Persists state to the NAS over iSCSI: logs into `nas.home.jupiter.au:3260` automatically (`services.openiscsi`, initiator IQN `iqn.2026-06.au.jupiter:elitedesk`) and attaches the `db` and `loki` LUNs the NAS exports for it (see [06-storage-and-backups.md](06-storage-and-backups.md)). **Note:** the LUNs are provisioned and the initiator is wired up, but as of this repo's current state no `services.loki`/database NixOS module is declared on this host yet — the comments describing "DB + Loki persistence" describe the intended consumer, not an already-running service.
-- **Modules imported:** `common`, `headscale`.
+- **Modules imported:** `common`.
 - **Distinguishing responsibilities:**
   - Its evaluated build output (`kernel`, `netbootRamdisk`, `toplevel`) is consumed directly by `flake.nix`'s `pxeModule`, which feeds `lenovo`'s `jupiter.pxe` — see [01-architecture.md](01-architecture.md#3-the-mkhost-pattern-flakenix).
-  - Also imports `modules/headscale.nix`, so (per the module's current unconditional `services.headscale.enable = true`) a second headscale instance runs here in addition to the one on `lenovo`. Only `lenovo`'s instance is reachable from outside the LAN (it's the one wired into the Cloudflare Tunnel); `elitedesk`'s is not exposed.
   - The Wyze camera fleet forwards syslog to `elitedesk.home.jupiter.au:514` (see [08-edge-devices.md](08-edge-devices.md)), implying a log receiver is expected here too — also not yet declared as a NixOS service in this repo.
 
 ---

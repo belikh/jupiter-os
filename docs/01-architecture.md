@@ -93,12 +93,14 @@ catalogued in [04-modules-reference.md](04-modules-reference.md).
 Every host config imports one of two foundation modules:
 
 - **`modules/common.nix`** — the true baseline. Pulls in (but does not
-  enable) impermanence, the desktop profile, the impermanent-ZFS-root layer,
-  and Syncthing; turns branding **on** by default; sets timezone, Nix
-  flakes/GC, `allowUnfree`, the default DNS resolver (`10.1.1.20`), OpenSSH,
-  the `io` admin user (sops-encrypted password, SSH key auth), and a
-  `virtualisation.vmVariant` so `make test-<host>` works. Imported directly
-  by `elitedesk` (diskless — no local root filesystem to declare).
+  enable) branding, impermanence, the desktop profile, the impermanent-ZFS-root
+  layer, and Syncthing — each opt-in per host via its `jupiter.*` toggle; sets
+  timezone, Nix flakes/GC, `allowUnfree`, a base admin CLI toolset
+  (`git`/`ripgrep`/`jq`/…) installed on every host, the default DNS resolver
+  (`10.1.1.20`), OpenSSH, `sops.defaultSopsFile`, the `io` admin user
+  (sops-encrypted password, SSH key auth), and a `virtualisation.vmVariant` so
+  `make test-<host>` works. Imported directly by `elitedesk` (diskless — no
+  local root filesystem to declare).
 - **`modules/common-stateful.nix`** — `common.nix` plus a bootloader
   (`systemd-boot`) and a fallback `fileSystems."/"`. Imported by every host
   that owns local disks: `lenovo`, `nas`, `dashboards`, `t460s`. Each of
@@ -110,15 +112,16 @@ into RAM instead (`boot.kernelParams = [ "copytoram" ]`).
 
 ## 6. Bootloader/branding interaction
 
-`jupiter.branding` (RobCo/Fallout-themed GRUB, green console, MOTD) is turned
-on fleet-wide by `common.nix`, then explicitly forced off
-(`lib.mkForce false`) on hosts where it doesn't make sense:
+`jupiter.branding` (RobCo/Fallout-themed GRUB, green console, MOTD) is opt-in:
+it defaults off and each host that wants it sets `jupiter.branding.enable =
+true`. `lenovo`, `nas`, and `t460s` enable it and boot through GRUB with the
+Fallout theme. The two hosts that don't want it simply leave it off:
 
-- `dashboards` — boot speed matters on a wall-mounted kiosk nobody watches POST on; falls back to the plain `systemd-boot` menu set by `common-stateful.nix`.
+- `dashboards` — boot speed matters on a wall-mounted kiosk nobody watches POST on; uses the plain `systemd-boot` menu set by `common-stateful.nix`.
 - `elitedesk` — headless netboot image; GRUB would conflict with the bootloader-less netboot profile anyway.
 
-`lenovo`, `nas`, and `t460s` keep branding on and boot through GRUB with the
-Fallout theme.
+Keeping branding opt-in (rather than on-by-default and force-disabled) means
+no host has to `mkForce` it back off.
 
 ## 7. Network-wide design choices
 

@@ -89,9 +89,8 @@ port-forwarded). MagicDNS is on, base domain `jupiter.mesh`; mesh clients are
 told to use `10.1.1.20` for DNS too, so their queries get anonymized through
 home and they can resolve internal `home.jupiter.au` names while roaming.
 
-`elitedesk` also imports this module — see the duplication caveat in
-[02-hosts.md](02-hosts.md#elitedesk-hp-elitedesk-800-g4) and
-[04-modules-reference.md](04-modules-reference.md#modulesheadscalenix).
+`lenovo` is the only host running headscale — it's the single control plane
+for the fleet.
 
 ## 4. Public ingress (Cloudflare Tunnel)
 
@@ -124,4 +123,4 @@ and firewall ports.
 | `lenovo` | TCP/UDP 53 (dns.nix), TCP 8080 (headscale.nix) | Resolver + mesh control plane |
 | `nas` | TCP 2049 (nas-nfs.nix), TCP 3260 (iscsi.nix), Samba ports (zfs-nas.nix, `openFirewall`), TCP 8384/22000 + UDP 22000/21027 (syncthing.nix) | NFS, iSCSI, SMB, Syncthing |
 | `t460s` | TCP 8384/22000, UDP 22000/21027 (syncthing.nix) | Syncthing |
-| `elitedesk` | TCP 8080 (headscale.nix — second instance, see [§3](#3-mesh-vpn-headscale)) | Mesh control plane (unused/unexposed) |
+| `elitedesk` | none opened in-repo | Diskless netboot node |

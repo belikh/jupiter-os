@@ -17,6 +17,9 @@
   networking.hostName = "lenovo";
   networking.hostId = "1e110000"; # Stable per-host 8-char hex, required for ZFS
 
+  # RobCo/Fallout boot branding (GRUB theme, MOTD) on this always-on box.
+  jupiter.branding.enable = true;
+
   jupiter.backups.paths = [
     "/var/lib/n8n"
     "/var/lib/libvirt/images"
@@ -26,8 +29,8 @@
   # Authenticated: defining `users` turns anonymous access off automatically.
   # The password files hold the plaintext passwords (shared with each client);
   # add the matching entries to secrets/secrets.yaml before deploying.
-  sops.secrets.mqtt_homeassistant.sopsFile = ../../secrets/secrets.yaml;
-  sops.secrets.mqtt_dashboard.sopsFile = ../../secrets/secrets.yaml;
+  sops.secrets.mqtt_homeassistant = { };
+  sops.secrets.mqtt_dashboard = { };
 
   jupiter.services.mqtt = {
     enable = true;

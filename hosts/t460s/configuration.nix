@@ -10,6 +10,7 @@
 
   # Dendritic Feature Toggles
   jupiter = {
+    branding.enable = true; # RobCo/Fallout boot branding (GRUB theme, MOTD)
     core.impermanence.enable = true;
     desktop = {
       enable = true;

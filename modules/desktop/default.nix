@@ -36,18 +36,8 @@ in
     environment.systemPackages =
       with pkgs;
       [
-        # Core CLI & Dev
-        git
-        htop
-        ripgrep
-        fd
-        jq
-        fzf
-        bat
-        eza
-        wget
-        curl
-        unzip
+        # Core CLI tooling (git, ripgrep, jq, …) is in modules/common.nix, so it
+        # lands on headless hosts too. Only desktop-specific extras live here.
 
         # AI Coding Prereqs
         nodejs # Required to install @anthropic-ai/claude-code & @google/antigravity globally

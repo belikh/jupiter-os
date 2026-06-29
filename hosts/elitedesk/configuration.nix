@@ -10,16 +10,13 @@
   imports = [
     (modulesPath + "/installer/netboot/netboot-minimal.nix")
     ../../modules/common.nix
-    ../../modules/headscale.nix
   ];
 
   networking.hostName = "elitedesk";
 
-  # Diskless netboot node: no local bootloader. The branding module (enabled
-  # globally in common.nix) forces GRUB on, which conflicts with the netboot
-  # profile's bootloader-less setup. Branding is purely cosmetic here, so drop
-  # it on this headless node.
-  jupiter.branding.enable = lib.mkForce false;
+  # Branding (GRUB) is opt-in and left off here: it would conflict with the
+  # netboot profile's bootloader-less setup, and it's purely cosmetic on a
+  # headless node anyway.
 
   # Ensure the image is fully copied to RAM on boot
   boot.kernelParams = [ "copytoram" ];

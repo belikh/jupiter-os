@@ -16,6 +16,9 @@
   networking.hostName = "nas";
   networking.hostId = "deadbeef"; # Stable per-host 8-char hex, required for ZFS
 
+  # RobCo/Fallout boot branding (GRUB theme, MOTD).
+  jupiter.branding.enable = true;
+
   # Static identity below the DHCP pool (.6-.254) so iSCSI/NFS clients have a
   # stable target. DNS (nas.home.jupiter.au) points here. Uses OUR resolver via
   # common.nix default (10.1.1.20). When the LACP bond is enabled, move this

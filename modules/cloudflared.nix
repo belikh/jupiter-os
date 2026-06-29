@@ -1,9 +1,8 @@
 { config, ... }:
 
 {
-  sops.secrets.cloudflare_cert = {
-    sopsFile = ../secrets/secrets.yaml;
-  };
+  # sopsFile defaults to sops.defaultSopsFile (set in modules/common.nix).
+  sops.secrets.cloudflare_cert = { };
 
   services.cloudflared = {
     enable = true;

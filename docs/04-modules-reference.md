@@ -33,7 +33,7 @@ machine-id, and the SSH host key — plus, for user `io`: `Downloads`, `Music`,
 
 ### `modules/branding.nix`
 ```
-jupiter.branding.enable   (bool, default false — but set true fleet-wide in common.nix)
+jupiter.branding.enable   (bool, default false)
 ```
 RobCo Industries / Fallout-themed boot experience: GRUB (with the
 `fallout-grub-theme` fetched from GitHub), green-phosphor console palette,
@@ -41,8 +41,8 @@ verbose `preDeviceCommands` boot banner, RobCo-styled MOTD, and (when
 `jupiter.desktop.enable` is also true) the `ly` TTY display manager in place
 of `greetd`.
 
-**On by default** for every host (set in `common.nix`). **Forced off** on
-`dashboards` and `elitedesk`.
+**Enabled by:** `lenovo`, `nas`, `t460s`. Off elsewhere (`dashboards` keeps a
+fast plain `systemd-boot` menu; `elitedesk` is a bootloader-less netboot node).
 
 ## Desktop
 
@@ -160,8 +160,8 @@ No option — unconditional `services.headscale`. Port 8080, `magic_dns`
 enabled, base domain `jupiter.mesh`, mesh clients told to use `10.1.1.20` for
 DNS, `ip_prefixes` `100.64.0.0/10` + `fd7a:115c:a1e0::/48`. Firewall: TCP 8080.
 
-**Imported by:** `lenovo` and `elitedesk` (see the duplication note in
-[02-hosts.md](02-hosts.md#elitedesk-hp-elitedesk-800-g4)).
+**Imported by:** `lenovo` only — the single mesh control plane, exposed
+publicly via the Cloudflare Tunnel (`headscale.jupiter.au`).
 
 ### `modules/cloudflared.nix`
 No option — unconditional. One named tunnel

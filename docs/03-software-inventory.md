@@ -18,20 +18,17 @@ Applied by `modules/common.nix`, which every host imports — either directly
 | Software | Source | Notes |
 |---|---|---|
 | OpenSSH server | `services.openssh.enable` | |
-| sops-nix | `sops.age.sshKeyPaths` | Decrypts using the host's own SSH ed25519 host key |
+| sops-nix | `sops.age.sshKeyPaths`, `sops.defaultSopsFile` | Decrypts using the host's own SSH ed25519 host key; secrets default to `secrets/secrets.yaml` |
 | Nix (flakes + nix-command) | `nix.settings.experimental-features` | |
 | Automatic Nix GC | `nix.gc` | Weekly, `--delete-older-than 14d` |
-| User `io` | `users.users.io` | groups: `wheel`, `networkmanager`, `docker`; password from sops secret `io_password`; SSH key auth |
-| `jupiter.branding` (RobCo/Fallout GRUB theme, green console, MOTD) | `modules/branding.nix` | **On** by default fleet-wide; forced off on `dashboards` and `elitedesk` |
-
-Note: the `docker` group is granted to `io` on every host, but no host in
-this repo currently sets `virtualisation.docker.enable` — the Docker daemon
-itself isn't declared anywhere yet.
+| Base admin CLI | `environment.systemPackages` | `git`, `htop`, `ripgrep`, `fd`, `jq`, `fzf`, `bat`, `eza`, `wget`, `curl`, `unzip` — on every host, headless or not |
+| User `io` | `users.users.io` | groups: `wheel`, `networkmanager`; password from sops secret `io_password`; SSH key auth |
 
 Also wired in transitively but **disabled by default**, opted into per-host
 via `jupiter.*` toggles (see [04-modules-reference.md](04-modules-reference.md)):
-`jupiter.core.impermanence`, `jupiter.desktop`, `jupiter.storage.zfs`,
-`jupiter.services.syncthing`.
+`jupiter.branding`, `jupiter.core.impermanence`, `jupiter.desktop`,
+`jupiter.storage.zfs`, `jupiter.services.syncthing`. Branding is enabled on
+`lenovo`, `nas`, and `t460s`.
 
 ## 2. Hosts with local disks (`common-stateful.nix`)
 
@@ -40,7 +37,7 @@ get:
 
 | Software | Source |
 |---|---|
-| `systemd-boot` (EFI), overridden to GRUB when branding is on | `modules/common-stateful.nix` / `modules/branding.nix` |
+| `systemd-boot` (EFI), overridden to GRUB on hosts that enable `jupiter.branding` | `modules/common-stateful.nix` / `modules/branding.nix` |
 
 ## 3. Per-host inventory
 
@@ -95,7 +92,6 @@ disabled.
 |---|---|---|
 | NixOS netboot-minimal profile | `(modulesPath + "/installer/netboot/netboot-minimal.nix")` | Diskless boot image, copied fully to RAM (`copytoram`) |
 | `open-iscsi` initiator | `hosts/elitedesk/configuration.nix` | Auto-login to the NAS's iSCSI target at boot |
-| headscale | `modules/headscale.nix` | Second instance, not externally exposed (see [02-hosts.md](02-hosts.md#elitedesk-hp-elitedesk-800-g4)) |
 
 No GUI, no branding, no local storage. Intended to also run a database and
 Loki (per comments in `hosts/nas/configuration.nix`/`disko.nix` and the Wyze
@@ -118,11 +114,12 @@ plus:
 Enabled via `jupiter.desktop.enable = true` (`modules/desktop/default.nix`).
 Applies to any host that opts in, regardless of which compositor it picks.
 
-**Always installed when the desktop profile is enabled:**
+**Always installed when the desktop profile is enabled** (the base admin CLI —
+`git`, `ripgrep`, `jq`, … — comes from the fleet-wide baseline in
+[§1](#1-fleet-wide-baseline-every-nixos-host), not from here):
 
 | Category | Packages |
 |---|---|
-| Core CLI/dev | `git`, `htop`, `ripgrep`, `fd`, `jq`, `fzf`, `bat`, `eza`, `wget`, `curl`, `unzip` |
 | AI coding prereqs | `nodejs` (for installing `@anthropic-ai/claude-code`, `@google/antigravity` globally) |
 | GUI essentials | `google-chrome`, `vscode`, `pavucontrol`, `mpv` |
 | Fonts | `inter`, `jetbrains-mono`, `material-symbols`, `share-tech-mono` (custom package, `packages/share-tech-mono`) |
