@@ -31,15 +31,19 @@ the key *names* are visible without the Age private key:
 | Key | Consumed by | Purpose |
 |---|---|---|
 | `io_password` | `modules/common.nix` (every host) | Hashed login password for user `io` |
-| `restic_password` | `modules/services/backups.nix` (`lenovo`, `nas`) | Local encryption key for restic backups |
-| `restic_env` | `modules/services/backups.nix` (`lenovo`, `nas`) | S3 credentials (`AWS_ACCESS_KEY_ID` etc.) for the Backblaze B2 repository |
+| `restic_password` | `modules/services/backups.nix` (`nas`) | Local encryption key for restic backups |
+| `restic_env` | `modules/services/backups.nix` (`nas`) | S3 credentials (`AWS_ACCESS_KEY_ID` etc.) for the Backblaze B2 repository |
 | `cloudflare_cert` | `modules/network/cloudflared.nix` (`lenovo`) | Tunnel credentials file |
+| `mqtt_homeassistant`, `mqtt_dashboard` | `modules/services/mqtt.nix` (`lenovo`), dashboards | MQTT broker passwords |
 
-Referenced by the Makefile/edge-device templates but **not yet present** in
+Referenced by config/Makefile/edge-device templates but **not yet present** in
 `secrets/secrets.yaml` (see `CLAUDE.md` gotchas and `Makefile` comments):
 
 | Key | Needed for |
 |---|---|
+| `syncoid_ssh_key` | `nas` syncoid replication private key (`jupiter.replication`) — plus the matching public key authorized on `lenovo` |
+| `pg_homeassistant_password` | `elitedesk` Postgres `homeassistant` role; also set as HA's `db_url` password (decrypt on `elitedesk`) |
+| `pg_n8n_password` | `elitedesk` Postgres `n8n` role **and** lenovo's n8n `DB_POSTGRESDB_PASSWORD_FILE` (decrypt on both hosts) |
 | `cloudflare_api_token` | `make tf-apply-cloudflare` (terranix Cloudflare stack) |
 | `unifi_password` | `make tf-apply-unifi` / `tf-plan-unifi` (terranix UniFi stack) — referenced by the Makefile's `tf-run` macro |
 | `PARENTS_MESH_SECRET`, `PARENTS_WIFI_SECRET` | MX4300 firmware template (`99-mesh-setup.sh.tmpl`) |

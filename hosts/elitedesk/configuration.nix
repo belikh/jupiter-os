@@ -61,7 +61,29 @@ in
   };
 
   # The database (on the db LUN) and Loki + syslog receiver (on the loki LUN).
-  jupiter.services.postgresql.enable = true;
+  # Postgres serves two consumers that currently run on lenovo over the LAN:
+  #   - homeassistant: the HA VM's recorder. HA is a HAOS VM (not NixOS), so we
+  #     only provision the db/role here; set `recorder: db_url:` inside HA to
+  #     postgresql://homeassistant:<pw>@elitedesk.home.jupiter.au/homeassistant
+  #   - n8n: lenovo's n8n, migrated off SQLite (see hosts/lenovo).
+  # Add pg_homeassistant_password and pg_n8n_password to secrets.yaml first.
+  sops.secrets.pg_homeassistant_password.owner = "postgres";
+  sops.secrets.pg_n8n_password.owner = "postgres";
+
+  jupiter.services.postgresql = {
+    enable = true;
+    databases = {
+      homeassistant = {
+        passwordFile = config.sops.secrets.pg_homeassistant_password.path;
+        allowedClients = [ "${site.records."ha.home.jupiter.au"}/32" ]; # the HA VM
+      };
+      n8n = {
+        passwordFile = config.sops.secrets.pg_n8n_password.path;
+        allowedClients = [ "${site.resolver}/32" ]; # lenovo (where n8n runs)
+      };
+    };
+  };
+
   jupiter.services.loki.enable = true; # also ingests Wyze cam syslog on :514
 
   # Static identity so the cams' syslog target (elitedesk.home.jupiter.au) and
