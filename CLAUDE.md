@@ -57,6 +57,13 @@ monorepo for the Jupiter home/lab infrastructure.
   and the terranix UniFi stack (`terraform/unifi`) `import` it, so CIDRs are
   never re-stated in two places.
 
+- **Service-to-service passwords are generated, never hand-set.** Any credential
+  two machines/services use to talk to each other is a random, impossible value
+  produced by `make gen-secrets` (`scripts/gen-secrets.sh`) straight into sops —
+  add the key name to that script's list, never ask a human to choose it. Only
+  human logins (`io_password`) and external-account creds (B2, Cloudflare, UniFi,
+  edge devices) are set by hand.
+
 ## Common commands
 
 ```bash
