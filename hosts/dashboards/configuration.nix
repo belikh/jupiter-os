@@ -1,4 +1,4 @@
-{ config, pkgs, ... }:
+{ config, pkgs, lib, ... }:
 
 {
   imports = [
@@ -6,6 +6,12 @@
     ./disko.nix # OS disk layout (destructive — confirm device before install)
     ../../modules/services/tcxwave-power-tuning.nix # kernel/GPU/storage/power tuning for the i5-6500U + HD 520 hardware
   ];
+
+  # GRUB + the custom Fallout theme + the verbose preDeviceCommands banner
+  # (modules/branding.nix) are the single biggest boot-time cost on these
+  # units. These boxes are wall-mounted dashboards nobody watches POST on —
+  # drop the theme for a plain, fast GRUB menu instead.
+  jupiter.branding.enable = lib.mkForce false;
 
   networking.hostName = "jupiter-dashboard";
   networking.hostId = "da58b0a4"; # Stable per-host 8-char hex, required for ZFS
