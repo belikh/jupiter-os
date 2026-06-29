@@ -83,6 +83,81 @@ let
   '';
 
   defaultVt = if cfg.defaultMode == "gaming" then cfg.gaming.vt else cfg.kiosk.vt;
+
+  # --- Home Assistant MQTT control surface ---------------------------------
+  ha = cfg.homeAssistant;
+  node = if ha.nodeId != "" then ha.nodeId else config.networking.hostName;
+  baseTopic = "${ha.topicPrefix}/${node}";
+  cmdTopic = "${baseTopic}/set";
+  stateTopic = "${baseTopic}/state";
+  availTopic = "${baseTopic}/availability";
+  uniqueId = "${node}_display_mode";
+  discoTopic = "${ha.discoveryPrefix}/select/${uniqueId}/config";
+
+  # MQTT discovery payload: HA auto-creates a Dashboard/Gaming select entity.
+  discoveryFile = pkgs.writeText "jupiter-display-discovery.json" (builtins.toJSON {
+    name = "Display Mode";
+    unique_id = uniqueId;
+    command_topic = cmdTopic;
+    state_topic = stateTopic;
+    availability_topic = availTopic;
+    payload_available = "online";
+    payload_not_available = "offline";
+    options = [
+      "Dashboard"
+      "Gaming"
+    ];
+    icon = "mdi:monitor-dashboard";
+    device = {
+      identifiers = [ node ];
+      name = "${config.networking.hostName} display";
+      manufacturer = "Jupiter OS";
+    };
+  });
+
+  passFile = optionalString (ha.passwordFile != null) (toString ha.passwordFile);
+
+  mqttAgent = pkgs.writeShellScript "jupiter-display-mqtt" ''
+    set -o pipefail
+    pub="${pkgs.mosquitto}/bin/mosquitto_pub"
+    sub="${pkgs.mosquitto}/bin/mosquitto_sub"
+    host=${ha.broker}
+    port=${toString ha.port}
+    kiosk_vt=${toString cfg.kiosk.vt}
+    game_vt=${toString cfg.gaming.vt}
+
+    auth=()
+    ${optionalString (ha.username != "") ''auth+=(-u "${ha.username}")''}
+    ${optionalString (passFile != "") ''[ -r "${passFile}" ] && auth+=(-P "$(cat "${passFile}")")''}
+
+    publish_state() {
+      cur=$(${pkgs.kbd}/bin/fgconsole 2>/dev/null || echo "")
+      if [ "$cur" = "$game_vt" ]; then mode=Gaming
+      elif [ "$cur" = "$kiosk_vt" ]; then mode=Dashboard
+      else return 0; fi
+      "$pub" "''${auth[@]}" -h "$host" -p "$port" -r -t "${stateTopic}" -m "$mode" || true
+    }
+
+    # Announce the entity (retained) and mark ourselves online.
+    "$pub" "''${auth[@]}" -h "$host" -p "$port" -r -t "${discoTopic}" -f "${discoveryFile}" || true
+    "$pub" "''${auth[@]}" -h "$host" -p "$port" -r -t "${availTopic}" -m online || true
+
+    # Poll the active VT so manual Ctrl+Alt+F switches are reflected in HA too.
+    ( while true; do publish_state; sleep ${toString ha.stateInterval}; done ) &
+    poller=$!
+    trap 'kill "$poller" 2>/dev/null' EXIT
+
+    # Command loop. LWT marks us offline if the connection drops.
+    "$sub" "''${auth[@]}" -h "$host" -p "$port" \
+      --will-topic "${availTopic}" --will-payload offline --will-retain \
+      -t "${cmdTopic}" | while read -r msg; do
+      case "$msg" in
+        Dashboard) ${modeTool}/bin/jupiter-mode dashboard ;;
+        Gaming) ${modeTool}/bin/jupiter-mode gaming ;;
+      esac
+      publish_state
+    done
+  '';
 in
 {
   options.jupiter.dashboardGaming = {
@@ -128,6 +203,59 @@ in
       default = "dashboard";
       description = "Which session is foreground at boot.";
     };
+
+    homeAssistant = {
+      enable = mkEnableOption "Home Assistant control via MQTT (auto-discovered Dashboard/Gaming select with live state)";
+
+      broker = mkOption {
+        type = types.str;
+        example = "10.1.1.20";
+        description = "MQTT broker host (typically the Mosquitto add-on on the HAOS VM).";
+      };
+
+      port = mkOption {
+        type = types.port;
+        default = 1883;
+        description = "MQTT broker port.";
+      };
+
+      username = mkOption {
+        type = types.str;
+        default = "";
+        description = "MQTT username (empty for anonymous).";
+      };
+
+      passwordFile = mkOption {
+        type = types.nullOr types.path;
+        default = null;
+        example = literalExpression "config.sops.secrets.mqtt_password.path";
+        description = "File containing the MQTT password (e.g. a sops secret). Null for anonymous.";
+      };
+
+      topicPrefix = mkOption {
+        type = types.str;
+        default = "jupiter/display";
+        description = "Base MQTT topic prefix; the node id is appended.";
+      };
+
+      nodeId = mkOption {
+        type = types.str;
+        default = "";
+        description = "Node id in topics / HA unique_id. Defaults to the hostname.";
+      };
+
+      discoveryPrefix = mkOption {
+        type = types.str;
+        default = "homeassistant";
+        description = "Home Assistant MQTT discovery prefix.";
+      };
+
+      stateInterval = mkOption {
+        type = types.ints.positive;
+        default = 5;
+        description = "Seconds between active-VT state polls published to HA.";
+      };
+    };
   };
 
   config = mkIf cfg.enable {
@@ -135,6 +263,10 @@ in
       {
         assertion = cfg.kiosk.vt != cfg.gaming.vt;
         message = "jupiter.dashboardGaming: kiosk.vt and gaming.vt must differ.";
+      }
+      {
+        assertion = !ha.enable || ha.broker != "";
+        message = "jupiter.dashboardGaming.homeAssistant: set `broker` when enabling MQTT control.";
       }
     ];
 
@@ -208,5 +340,23 @@ in
     };
 
     environment.systemPackages = [ modeTool ];
+
+    # Home Assistant MQTT agent: discovery + command + live state.
+    systemd.services.jupiter-display-mqtt = mkIf ha.enable {
+      description = "Home Assistant MQTT control for the dashboard/gaming VT";
+      after = [
+        "network-online.target"
+        "jupiter-kiosk.service"
+        "jupiter-gaming.service"
+      ];
+      wants = [ "network-online.target" ];
+      wantedBy = [ "multi-user.target" ];
+      serviceConfig = {
+        ExecStart = "${mqttAgent}";
+        Restart = "always";
+        RestartSec = 5;
+        DynamicUser = false;
+      };
+    };
   };
 }

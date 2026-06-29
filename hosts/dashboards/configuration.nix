@@ -50,5 +50,15 @@
   # into its own host (own hostId/deploy node) and set this there. The Intel HD
   # 520 suits light/streamed/emulated play, not AAA, and TLP keeps the CPU in
   # powersave — see modules/services/tcxwave-power-tuning.nix.
-  jupiter.dashboardGaming.enable = false;
+  jupiter.dashboardGaming = {
+    enable = false;
+    # When enabled, Home Assistant auto-discovers a "Display Mode" select
+    # (Dashboard/Gaming) and drives the active VT over MQTT, with live state.
+    # Broker runs on lenovo (10.1.1.20); add a sops password + set
+    # username/passwordFile once the broker requires auth.
+    homeAssistant = {
+      enable = true;
+      broker = "10.1.1.20";
+    };
+  };
 }

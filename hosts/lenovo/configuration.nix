@@ -6,6 +6,7 @@
     ./disko.nix # OS disk layout (destructive — confirm device before install)
     ../../modules/home-assistant-vm.nix
     ../../modules/n8n.nix
+    ../../modules/services/mqtt.nix
     ../../modules/cloudflared.nix
     ../../modules/headscale.nix
     ../../modules/backups.nix
@@ -20,6 +21,11 @@
     "/var/lib/n8n"
     "/var/lib/libvirt/images"
   ];
+
+  # MQTT broker for Home Assistant + the dashboards' display-mode control.
+  # Anonymous on the trusted LAN for now; add users (sops password files) and
+  # anonymous auth turns off automatically — see modules/services/mqtt.nix.
+  jupiter.services.mqtt.enable = true;
 
   # ---- Network-wide DNS resolver (this host) -------------------------------
   jupiter.dns = {
