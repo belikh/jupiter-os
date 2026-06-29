@@ -37,9 +37,10 @@ monorepo for the Jupiter home/lab infrastructure.
   lexical closure — avoid `specialArgs`.
 - The PXE server on `lenovo` is wired directly to `elitedesk`'s netboot build
   products in `flake.nix`; keep that closure linkage intact.
-- Network facts (VLANs/subnets) live once in `modules/network/site.nix` as
-  `jupiter.site`; both `modules/network/dns.nix` and `terraform/unifi` should
-  consume that single source rather than re-stating CIDRs.
+- Network facts (VLANs/subnets/resolver/DNS records) live once in `lib/site.nix`
+  as plain data; both the NixOS resolver config (`hosts/lenovo` → `jupiter.dns`)
+  and the terranix UniFi stack (`terraform/unifi`) `import` it, so CIDRs are
+  never re-stated in two places.
 
 ## Common commands
 

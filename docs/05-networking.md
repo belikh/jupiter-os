@@ -2,10 +2,10 @@
 
 ## 1. Subnets / VLANs
 
-Defined declaratively in `terraform/unifi/default.nix` (applied to the UDM
-Pro) and must be kept in sync with `jupiter.dns.allowedNetworks` in
-`hosts/lenovo/configuration.nix` — see the cross-reference comments in both
-files (and in `CLAUDE.md`).
+Defined once as plain data in `lib/site.nix` and imported by both
+`terraform/unifi/default.nix` (applied to the UDM Pro) and the resolver config
+in `hosts/lenovo/configuration.nix` (`jupiter.dns`), so the VLAN/subnet facts
+below can't drift between UniFi and DNS.
 
 | Network | VLAN | Subnet | DHCP range | DNS server |
 |---|---|---|---|---|
