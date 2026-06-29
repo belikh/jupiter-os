@@ -3,10 +3,31 @@
 {
   imports = [
     ../../modules/common-stateful.nix
-    ./disko.nix # OS disk layout (destructive — confirm device before install)
     ../../modules/services/tcxwave-power-tuning.nix # kernel/GPU/storage/power tuning for the i5-6500U + HD 520 hardware
     ../../modules/desktop/dashboard-gaming.nix # optional dual-VT kiosk + gaming session (off by default)
   ];
+
+  # Stateless kiosk appliance: erase-your-darlings root so the box always boots
+  # to a known-pristine state and can't accumulate drift. Only a minimal set
+  # plus the kiosk Chromium profile survives (below).
+  # ⚠️ disk is a REPLACE-ME placeholder — set the real by-id path before install.
+  jupiter.storage = {
+    profile = "impermanent";
+    disk = "/dev/disk/by-id/REPLACE-ME-dashboard-os-disk";
+  };
+
+  jupiter.core.impermanence = {
+    enable = true;
+    persistAdminHome = false; # no personal session on a kiosk
+    # Keep the Chromium profile so the HA dashboard's session/cache survive
+    # reboots (faster warm-up, stays logged in).
+    users.kiosk = {
+      directories = [
+        ".config/chromium"
+        ".cache/chromium"
+      ];
+    };
+  };
 
   # Branding (GRUB + Fallout theme + verbose preDeviceCommands banner) is left
   # off here — it's the single biggest boot-time cost on these units, and

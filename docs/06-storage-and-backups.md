@@ -16,8 +16,8 @@ disposable, and snapshotting churny data is wasted space.
 
 ### `lenovo` — single pool, no redundancy
 
-`rpool` (one disk, ⚠️ placeholder device path in `disko.nix` — must be
-replaced before install):
+`rpool` (`jupiter.storage.profile = "stateful"`; one disk, ⚠️ placeholder
+device path — must be replaced before install):
 
 | Dataset | Mountpoint | Notes |
 |---|---|---|
@@ -31,8 +31,7 @@ restic.
 
 ### `t460s` — single pool, impermanent
 
-`rpool` (`/dev/nvme0n1`, declared by `modules/storage/zfs-impermanent.nix`,
-not a per-host `disko.nix`):
+`rpool` (`jupiter.storage.profile = "impermanent"`, `disk = "/dev/nvme0n1"`):
 
 | Dataset | Mountpoint | Notes |
 |---|---|---|
@@ -40,16 +39,19 @@ not a per-host `disko.nix`):
 | `local/nix` | `/nix` | Survives reboots |
 | `safe/persist` | `/persist` | Survives reboots; holds everything `jupiter.core.impermanence` whitelists |
 
-### `dashboards` — single pool, minimal
+### `dashboards` — single pool, impermanent
 
-`rpool` (one disk, ⚠️ placeholder device path in `disko.nix`):
+`rpool` (`jupiter.storage.profile = "impermanent"`; one disk, ⚠️ placeholder
+device path):
 
-| Dataset | Mountpoint |
-|---|---|
-| `root` | `/` |
-| `nix` | `/nix` |
+| Dataset | Mountpoint | Notes |
+|---|---|---|
+| `local/root` | `/` | Rolled back to `@blank` every boot |
+| `local/nix` | `/nix` | Survives reboots |
+| `safe/persist` | `/persist` | Survives reboots; holds only the minimal system set + the `kiosk` Chromium profile |
 
-No bulk data — these are stateless kiosk appliances.
+Stateless kiosk appliances — nothing irreplaceable lives here, so the box
+always boots pristine and can't accumulate drift.
 
 ### `nas` — three pools
 

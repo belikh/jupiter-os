@@ -3,7 +3,6 @@
 {
   imports = [
     ../../modules/common-stateful.nix
-    ./disko.nix # OS disk layout (destructive — confirm device before install)
     ../../modules/home-assistant-vm.nix
     ../../modules/n8n.nix
     ../../modules/services/mqtt.nix
@@ -19,6 +18,15 @@
 
   # RobCo/Fallout boot branding (GRUB theme, MOTD) on this always-on box.
   jupiter.branding.enable = true;
+
+  # Always-on services box: persistent root (no erase-your-darlings rollback) so
+  # n8n flows + libvirt images under /var are never wiped. The OS itself is still
+  # reproducible from the flake; /var is replicated to the NAS (see backups).
+  # ⚠️ disk is a REPLACE-ME placeholder — set the real by-id path before install.
+  jupiter.storage = {
+    profile = "stateful";
+    disk = "/dev/disk/by-id/REPLACE-ME-lenovo-os-disk";
+  };
 
   jupiter.backups.paths = [
     "/var/lib/n8n"

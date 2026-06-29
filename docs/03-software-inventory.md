@@ -27,8 +27,8 @@ Applied by `modules/common.nix`, which every host imports — either directly
 Also wired in transitively but **disabled by default**, opted into per-host
 via `jupiter.*` toggles (see [04-modules-reference.md](04-modules-reference.md)):
 `jupiter.branding`, `jupiter.core.impermanence`, `jupiter.desktop`,
-`jupiter.storage.zfs`, `jupiter.services.syncthing`. Branding is enabled on
-`lenovo`, `nas`, and `t460s`.
+`jupiter.storage` (profile), `jupiter.services.syncthing`. Branding is enabled
+on `lenovo`, `nas`, and `t460s`.
 
 ## 2. Hosts with local disks (`common-stateful.nix`)
 
@@ -107,7 +107,7 @@ plus:
 | Software | Source | Purpose |
 |---|---|---|
 | Syncthing | `modules/services/syncthing.nix` | File sync for user `io`, GUI on `:8384` |
-| ZFS impermanence rollback service | `modules/storage/zfs-impermanent.nix` | Rolls `rpool/local/root` back to `@blank` every boot |
+| ZFS impermanence rollback service | `modules/storage/zfs-profiles.nix` (`profile = "impermanent"`) | Rolls `rpool/local/root` back to `@blank` every boot |
 
 ## 4. Desktop class (currently `t460s`)
 
