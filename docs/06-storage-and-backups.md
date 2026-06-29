@@ -67,7 +67,7 @@ always boots pristine and can't accumulate drift.
 | `netboot` | fs | `/srv/netboot` | Diskless/netboot roots; served read-only over NFS |
 | `scratch` | fs | `/srv/scratch` | Expendable local scratch (e.g. restic cache) |
 
-**`tank`** — 18TB mirror, hand-created during migration (not disko-managed), imported via `boot.zfs.extraPools` in `modules/zfs-nas.nix`. The new primary data pool:
+**`tank`** — 18TB mirror, hand-created during migration (not disko-managed), imported via `boot.zfs.extraPools` in `modules/storage/zfs-nas.nix`. The new primary data pool:
 
 | Dataset | sanoid policy | Backed up offsite? | Served via |
 |---|---|---|---|
@@ -118,7 +118,7 @@ Firewall: TCP 2049.
 
 ## 4. SMB shares (`nas`)
 
-`modules/zfs-nas.nix`, NetBIOS name `jupiter-nas`, security mode `user`:
+`modules/storage/zfs-nas.nix`, NetBIOS name `jupiter-nas`, security mode `user`:
 
 | Share | Path | Access |
 |---|---|---|
@@ -149,7 +149,7 @@ today — if a second backup pool is added later, it should replicate
 
 ## 6. Offsite backups (restic)
 
-`modules/backups.nix`:
+`modules/services/backups.nix`:
 
 - **Repository:** `s3:s3.us-west-004.backblazeb2.com/jupiter-os-backups` (default; overridable per host via `jupiter.backups.repository`)
 - **Credentials:** sops secrets `restic_password` (local encryption key) and `restic_env` (S3 access key/secret as env vars)

@@ -4,13 +4,13 @@
   imports = [
     ../../modules/common-stateful.nix
     ./disko.nix # OS SSD layout (destructive, OS disk only)
-    ../../modules/zfs-nas.nix # imports tank (new) + europa (archive) + samba
+    ../../modules/storage/zfs-nas.nix # imports tank (new) + europa (archive) + samba
     ../../modules/storage/sanoid.nix # snapshots on tank
     ../../modules/storage/zfs-tuning.nix # ARC/kernel/samba perf for this hardware
     ../../modules/storage/nas-nfs.nix # NFS exports to the network
     ../../modules/storage/iscsi.nix # iSCSI block export of zvols to elitedesk
     ../../modules/network/nas-bond.nix # optional 2×1GbE LACP (opt-in below)
-    ../../modules/backups.nix # restic offsite (jupiter.backups.paths below)
+    ../../modules/services/backups.nix # restic offsite (jupiter.backups.paths below)
   ];
 
   networking.hostName = "nas";

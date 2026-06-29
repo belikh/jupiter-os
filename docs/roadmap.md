@@ -87,7 +87,7 @@ log in as if on the home PC.
    standardize one module idiom (explicit `lib.*`, consistent arg order);
    document the convention in `CLAUDE.md`.
 3. **Network single source of truth** — shared VLAN/subnet attrset consumed by
-   both `terraform/unifi` and `modules/services/dns.nix` (pending a check that
+   both `terraform/unifi` and `modules/network/dns.nix` (pending a check that
    terranix can import it cleanly).
 4. **CI VM smoke tests** — boot each host in QEMU and assert multi-user.
 5. **Backup topology** — syncoid replication to the NAS; drop direct-B2.

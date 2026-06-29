@@ -31,9 +31,9 @@ the key *names* are visible without the Age private key:
 | Key | Consumed by | Purpose |
 |---|---|---|
 | `io_password` | `modules/common.nix` (every host) | Hashed login password for user `io` |
-| `restic_password` | `modules/backups.nix` (`lenovo`, `nas`) | Local encryption key for restic backups |
-| `restic_env` | `modules/backups.nix` (`lenovo`, `nas`) | S3 credentials (`AWS_ACCESS_KEY_ID` etc.) for the Backblaze B2 repository |
-| `cloudflare_cert` | `modules/cloudflared.nix` (`lenovo`) | Tunnel credentials file |
+| `restic_password` | `modules/services/backups.nix` (`lenovo`, `nas`) | Local encryption key for restic backups |
+| `restic_env` | `modules/services/backups.nix` (`lenovo`, `nas`) | S3 credentials (`AWS_ACCESS_KEY_ID` etc.) for the Backblaze B2 repository |
+| `cloudflare_cert` | `modules/network/cloudflared.nix` (`lenovo`) | Tunnel credentials file |
 
 Referenced by the Makefile/edge-device templates but **not yet present** in
 `secrets/secrets.yaml` (see `CLAUDE.md` gotchas and `Makefile` comments):

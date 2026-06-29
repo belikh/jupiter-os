@@ -36,7 +36,7 @@ flake input): always persists `/var/log`, `/var/lib/nixos`,
 
 **Enabled by:** `t460s` (admin home) and `dashboards` (kiosk profile only).
 
-### `modules/branding.nix`
+### `modules/core/branding.nix`
 ```
 jupiter.branding.enable   (bool, default false)
 ```
@@ -86,7 +86,7 @@ the build while `disk` is still the `REPLACE-ME` placeholder.
 **Enabled by:** `t460s` + `dashboards` (`impermanent`), `lenovo` (`stateful`).
 `nas` keeps its bespoke `disko.nix` and leaves `profile = "none"`.
 
-### `modules/zfs-nas.nix`
+### `modules/storage/zfs-nas.nix`
 No option — unconditional. Sets `boot.supportedFilesystems = [ "zfs" ]`,
 imports the hand-created `tank`/`europa` pools via `boot.zfs.extraPools`,
 enables `services.zfs.autoScrub`/`trim`, and declares the three Samba shares
@@ -147,7 +147,7 @@ connectivity when this is enabled.
 
 **Set by:** `nas`, currently `enable = false` (not yet turned on).
 
-### `modules/services/dns.nix`
+### `modules/network/dns.nix`
 ```
 jupiter.dns.enable           (bool, default false)
 jupiter.dns.domain           (string, default "home.jupiter.au")
@@ -171,7 +171,7 @@ Firewall: TCP+UDP 53.
 covering the default LAN, IoT VLAN, Cameras VLAN, and the headscale mesh
 range — see [02-hosts.md](02-hosts.md#lenovo) for the exact CIDR list.
 
-### `modules/headscale.nix`
+### `modules/network/headscale.nix`
 No option — unconditional `services.headscale`. Port 8080, `magic_dns`
 enabled, base domain `jupiter.mesh`, mesh clients told to use `10.1.1.20` for
 DNS, `ip_prefixes` `100.64.0.0/10` + `fd7a:115c:a1e0::/48`. Firewall: TCP 8080.
@@ -179,7 +179,7 @@ DNS, `ip_prefixes` `100.64.0.0/10` + `fd7a:115c:a1e0::/48`. Firewall: TCP 8080.
 **Imported by:** `lenovo` only — the single mesh control plane, exposed
 publicly via the Cloudflare Tunnel (`headscale.jupiter.au`).
 
-### `modules/cloudflared.nix`
+### `modules/network/cloudflared.nix`
 No option — unconditional. One named tunnel
 (`aa1088b8-a0e1-4073-8567-6a9bf5fb4bd7`), credentials from sops secret
 `cloudflare_cert`, ingress rules for `headscale.jupiter.au`, `n8n.jupiter.au`,
@@ -187,7 +187,7 @@ No option — unconditional. One named tunnel
 
 **Imported by:** `lenovo` only.
 
-### `modules/pxe-server.nix`
+### `modules/network/pxe-server.nix`
 ```
 jupiter.pxe.enable    (bool, default false)
 jupiter.pxe.kernel     (string, path/URL to bzImage)
@@ -224,7 +224,7 @@ and [02-hosts.md](02-hosts.md#dashboards-jupiter-dashboard).
 
 **Imported by:** `dashboards` only.
 
-### `modules/home-assistant-vm.nix`
+### `modules/services/home-assistant-vm.nix`
 No option — unconditional. `virtualisation.libvirtd` with
 `qemu_kvm`/`runAsRoot`/`swtpm`; ships `virt-manager`, `libvirt`, `qemu_kvm`
 CLI tools. Network bridging is left to the host (`hosts/lenovo` declares
@@ -232,7 +232,7 @@ CLI tools. Network bridging is left to the host (`hosts/lenovo` declares
 
 **Imported by:** `lenovo` only.
 
-### `modules/n8n.nix`
+### `modules/services/n8n.nix`
 No option — unconditional `services.n8n`. `allowUnfree` is turned on (n8n's
 license is "sustainable use", which Nixpkgs treats as unfree). Listens on
 `127.0.0.1:5678` behind the Cloudflare Tunnel; `WEBHOOK_URL =
@@ -240,7 +240,7 @@ license is "sustainable use", which Nixpkgs treats as unfree). Listens on
 
 **Imported by:** `lenovo` only.
 
-### `modules/backups.nix`
+### `modules/services/backups.nix`
 ```
 jupiter.backups.paths        (list of string, default [])
 jupiter.backups.repository   (string, default "s3:s3.us-west-004.backblazeb2.com/jupiter-os-backups")
