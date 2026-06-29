@@ -16,8 +16,8 @@
       enable = true;
       compositor = "niri";
     };
-    storage.zfs = {
-      enable = true;
+    storage = {
+      profile = "impermanent"; # erase-your-darlings root; /persist survives
       disk = "/dev/nvme0n1";
     };
     services.syncthing.enable = true;

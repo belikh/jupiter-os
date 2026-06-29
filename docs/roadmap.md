@@ -80,9 +80,9 @@ log in as if on the home PC.
 
 ## Staged PRs
 
-1. **Storage/disko** — parameterized `jupiter.storage` module (profiles),
+1. ~~**Storage/disko** — parameterized `jupiter.storage` module (profiles),
    full toggle adoption on lenovo/dashboards (nas stays bespoke), kiosk
-   impermanence, friendly device-path assertion.
+   impermanence, friendly device-path assertion.~~ **Done** (see below).
 2. **Module reshuffle + style** — normalize `modules/` into category subdirs;
    standardize one module idiom (explicit `lib.*`, consistent arg order);
    document the convention in `CLAUDE.md`.
@@ -104,5 +104,11 @@ Plus a **docs trim** folded into the relevant PRs (cut the line-level tables).
 - Inheritance tidy (commit on this branch): base CLI tooling →
   `common.nix`; `sops.defaultSopsFile`; branding opt-in; dropped unused
   `docker` group; headscale → lenovo only.
+- Stage 1 — storage profiles: new `modules/storage/zfs-profiles.nix`
+  (`jupiter.storage.profile` = impermanent/stateful/minimal/none) replacing
+  `zfs-impermanent.nix` and the per-host `disko.nix` on `lenovo`/`dashboards`;
+  `lenovo` → stateful, `dashboards` → impermanent (kiosk persist), `t460s` →
+  impermanent; `nas` stays bespoke; REPLACE-ME assertion. `impermanence.nix`
+  gained `persistAdminHome`/`extraDirectories`/`extraFiles`/`users`.
 </content>
 </invoke>

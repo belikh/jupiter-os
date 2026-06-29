@@ -18,18 +18,23 @@ No option — `common.nix` + bootloader + fallback root filesystem for hosts wit
 
 ### `modules/core/impermanence.nix`
 ```
-jupiter.core.impermanence.enable     (bool, default false)
-jupiter.core.impermanence.persistPath (string, default "/persist")
+jupiter.core.impermanence.enable           (bool, default false)
+jupiter.core.impermanence.persistPath      (string, default "/persist")
+jupiter.core.impermanence.persistAdminHome (bool, default true)
+jupiter.core.impermanence.extraDirectories (list of string, default [])
+jupiter.core.impermanence.extraFiles       (list of string, default [])
+jupiter.core.impermanence.users            (attrset of { directories, files })
 ```
 Wraps `environment.persistence."${persistPath}"` (from the `impermanence`
-flake input): persists `/var/log`, `/var/lib/nixos`, `/var/lib/systemd/coredump`,
-`/var/lib/libvirt`, NetworkManager connections, `/var/lib/sops-nix`, the
-machine-id, and the SSH host key — plus, for user `io`: `Downloads`, `Music`,
-`Pictures`, `Documents`, `Videos`, `Projects`, `.config`, `.ssh`,
-`.local/share/keyrings`, `.local/share/direnv`, `.gemini`, `.claude`, and
-`.bash_history`.
+flake input): always persists `/var/log`, `/var/lib/nixos`,
+`/var/lib/systemd/coredump`, `/var/lib/libvirt`, NetworkManager connections,
+`/var/lib/sops-nix`, the machine-id, and the SSH host key. When
+`persistAdminHome` is on (default) it also keeps user `io`'s home dirs
+(`Documents`, `.config`, `.ssh`, `.gemini`, `.claude`, …). `extraDirectories`/
+`extraFiles`/`users` add host-specific paths — e.g. the kiosks turn
+`persistAdminHome` off and persist only the `kiosk` account's Chromium profile.
 
-**Enabled by:** `t460s` only.
+**Enabled by:** `t460s` (admin home) and `dashboards` (kiosk profile only).
 
 ### `modules/branding.nix`
 ```
@@ -57,18 +62,29 @@ See [03-software-inventory.md §4](03-software-inventory.md#4-desktop-class-curr
 
 ## Storage
 
-### `modules/storage/zfs-impermanent.nix`
+### `modules/storage/zfs-profiles.nix`
 ```
-jupiter.storage.zfs.enable  (bool, default false)
-jupiter.storage.zfs.disk    (string, default "/dev/nvme0n1")
+jupiter.storage.profile  (enum ["none" "impermanent" "stateful" "minimal"], default "none")
+jupiter.storage.disk     (string, default "/dev/disk/by-id/REPLACE-ME")
+jupiter.storage.espSize  (string, default "1G")
 ```
-Declares a disko ZFS layout (`rpool`: `local/root`, `local/nix`,
-`safe/persist`) and an initrd-stage systemd service that runs
-`zfs rollback -r rpool/local/root@blank` before `sysroot.mount` on every
-boot — the "erase your darlings" pattern. Pairs with
-`jupiter.core.impermanence` to decide what survives the rollback.
+One shared ZFS-on-root disko layout, selected per host by `profile`, replacing
+the old per-host `disko.nix` boilerplate on the simple single-OS-disk hosts:
 
-**Enabled by:** `t460s` (`disk = "/dev/nvme0n1"`).
+| Profile | Datasets | Root behaviour |
+|---|---|---|
+| `impermanent` | `local/root` (+`@blank`), `local/nix`, `safe/persist` | rolled back to `@blank` each boot (erase-your-darlings) |
+| `stateful` | `root`, `nix`, `var` | persistent, no rollback |
+| `minimal` | `root`, `nix` | persistent, no rollback |
+| `none` | — | host declares its own layout / is diskless |
+
+The `impermanent` profile also installs the initrd-stage rollback service
+(`zfs rollback -r rpool/local/root@blank` before `sysroot.mount`) and pairs
+with `jupiter.core.impermanence` to decide what survives. An assertion blocks
+the build while `disk` is still the `REPLACE-ME` placeholder.
+
+**Enabled by:** `t460s` + `dashboards` (`impermanent`), `lenovo` (`stateful`).
+`nas` keeps its bespoke `disko.nix` and leaves `profile = "none"`.
 
 ### `modules/zfs-nas.nix`
 No option — unconditional. Sets `boot.supportedFilesystems = [ "zfs" ]`,

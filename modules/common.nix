@@ -10,7 +10,7 @@
     ./core/impermanence.nix
     ./desktop/default.nix
     ./gaming/bazzite.nix
-    ./storage/zfs-impermanent.nix
+    ./storage/zfs-profiles.nix
     ./services/syncthing.nix
     ./branding.nix
   ];

@@ -11,12 +11,12 @@ For module option details see [04-modules-reference.md](04-modules-reference.md)
 
 **Role:** always-on bare-metal compute node — the fleet's "core services" box.
 
-- **Config:** `hosts/lenovo/configuration.nix`, `hosts/lenovo/disko.nix`
+- **Config:** `hosts/lenovo/configuration.nix`
 - **Base layer:** `modules/common-stateful.nix`
 - **`networking.hostId`:** `1e110000`
 - **Network identity:** static `10.1.1.20/24` on bridge `br0` (`enp1s0` member), gateway `10.1.1.1`, `networking.useDHCP = false`. Points its own resolver at itself (`127.0.0.1`), overriding the fleet default.
 - **Boot:** GRUB (Fallout theme) — `jupiter.branding.enable = true` on this host.
-- **Storage:** single OS ZFS pool (`rpool`) on one disk — `root`, `nix`, and `var` datasets (`var` holds n8n state + libvirt VM images). ⚠️ `disko.nix`'s `device` is a placeholder (`REPLACE-ME-lenovo-os-disk`) — must be set to the real by-id path before install.
+- **Storage:** `jupiter.storage.profile = "stateful"` — single OS ZFS pool (`rpool`) with `root`, `nix`, and `var` datasets (`var` holds n8n state + libvirt VM images); persistent root, no rollback. ⚠️ `jupiter.storage.disk` is a placeholder (`REPLACE-ME-lenovo-os-disk`) — must be set to the real by-id path before install.
 - **Modules imported:** `common-stateful`, `home-assistant-vm`, `n8n`, `cloudflared`, `headscale`, `backups`, `pxe-server`, `services/dns`.
 - **Distinguishing responsibilities:**
   - Runs the fleet's only DNS resolver (`jupiter.dns`, domain `home.jupiter.au`), serving the LAN, IoT/Camera VLANs, and the headscale mesh.
@@ -56,12 +56,12 @@ For module option details see [04-modules-reference.md](04-modules-reference.md)
 
 **Role:** 4x Toshiba TCx Wave touchscreen kiosk terminals, all sharing one NixOS image.
 
-- **Config:** `hosts/dashboards/configuration.nix`, `hosts/dashboards/disko.nix`
+- **Config:** `hosts/dashboards/configuration.nix`
 - **Base layer:** `modules/common-stateful.nix`
 - **`networking.hostId`:** `da58b0a4`
 - **Boot:** branding left off (`jupiter.branding` is opt-in and not enabled here) — uses the plain `systemd-boot` menu for fastest boot, since these are wall-mounted appliances nobody watches POST.
 - **Hardware:** Intel Core i5-6500U (Skylake-U, 2c/4t, 15W TDP) + integrated HD Graphics 520 (Gen9), built-in 15" touchscreen panel.
-- **Storage:** single small OS ZFS pool (`root` + `nix` only — no bulk data). ⚠️ `disko.nix`'s `device` is a placeholder (`REPLACE-ME-dashboard-os-disk`).
+- **Storage:** `jupiter.storage.profile = "impermanent"` — single OS ZFS pool, root rolled back to `@blank` every boot. Only the minimal system set plus the `kiosk` Chromium profile persists (`/persist`). ⚠️ `jupiter.storage.disk` is a placeholder (`REPLACE-ME-dashboard-os-disk`).
 - **Modules imported:** `common-stateful`, `services/tcxwave-power-tuning`.
 - **Display/UI:** Wayland-only kiosk via `services.cage` running Chromium in `--kiosk` mode, loading the Home Assistant `jupiter-ops` dashboard (`https://ha.jupiter.au/jupiter-ops`). `services.xserver` is explicitly disabled. VA-API hardware video decode is enabled for the HD 520 iGPU. A dedicated `kiosk` user (in `video`+`render` groups) runs the session.
 - **Power/boot tuning** (`services/tcxwave-power-tuning.nix`): latest kernel for newest `i915`/`intel_pstate` support, i915 RC6/FBC/PSR/fastboot, no `mitigations=off` (renders arbitrary remote content), zero-timeout bootloader, systemd-stage-1 initrd with a trimmed module set, zram swap, TLP for runtime PM, thermald, and volatile (RAM-only) journald logging.
@@ -93,14 +93,15 @@ For module option details see [04-modules-reference.md](04-modules-reference.md)
 - **Base layer:** `modules/common-stateful.nix`
 - **`networking.hostId`:** `c0ffee00`
 - **Boot:** GRUB (Fallout theme).
-- **Storage:** **impermanent** ZFS root, disko layout supplied dynamically by `modules/storage/zfs-impermanent.nix` (gated by `jupiter.storage.zfs.enable`) rather than a per-host `disko.nix` file — disk is `/dev/nvme0n1`. Root (`rpool/local/root`) is rolled back to a blank snapshot on every boot (erase-your-darlings); `/nix` and `/persist` survive. `jupiter.core.impermanence` (persistPath `/persist`) declares which directories/files in `/etc`, `/var`, and the `io` user's home survive the rollback.
-- **Modules imported:** `common-stateful` (transitively: `core/impermanence`, `desktop`, `storage/zfs-impermanent`, `services/syncthing`, `branding`).
+- **Storage:** `jupiter.storage.profile = "impermanent"` (`modules/storage/zfs-profiles.nix`), `disk = "/dev/nvme0n1"` — no per-host `disko.nix` file. Root (`rpool/local/root`) is rolled back to a blank snapshot on every boot (erase-your-darlings); `/nix` and `/persist` survive. `jupiter.core.impermanence` (persistPath `/persist`, `persistAdminHome` on) declares which directories/files in `/etc`, `/var`, and the `io` user's home survive the rollback.
+- **Modules imported:** `common-stateful` (transitively: `core/impermanence`, `desktop`, `storage/zfs-profiles`, `services/syncthing`, `branding`).
 - **Feature toggles set:**
   ```nix
   jupiter = {
+    branding.enable = true;
     core.impermanence.enable = true;
     desktop = { enable = true; compositor = "niri"; };
-    storage.zfs = { enable = true; disk = "/dev/nvme0n1"; };
+    storage = { profile = "impermanent"; disk = "/dev/nvme0n1"; };
     services.syncthing.enable = true;
   };
   ```

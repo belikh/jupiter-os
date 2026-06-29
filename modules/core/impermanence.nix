@@ -18,6 +18,47 @@ in
       default = "/persist";
       description = "The path where persistent state is kept.";
     };
+    persistAdminHome = mkOption {
+      type = types.bool;
+      default = true;
+      description = ''
+        Persist the primary admin account (io)'s home directories. Turn off on
+        appliance hosts (e.g. kiosks) that have no personal session and only
+        need to persist a service account's state via `users` below.
+      '';
+    };
+    extraDirectories = mkOption {
+      type = types.listOf types.str;
+      default = [ ];
+      description = "Host-specific system directories to persist.";
+    };
+    extraFiles = mkOption {
+      type = types.listOf types.str;
+      default = [ ];
+      description = "Host-specific system files to persist.";
+    };
+    users = mkOption {
+      type = types.attrsOf (
+        types.submodule {
+          options = {
+            directories = mkOption {
+              type = types.listOf types.str;
+              default = [ ];
+            };
+            files = mkOption {
+              type = types.listOf types.str;
+              default = [ ];
+            };
+          };
+        }
+      );
+      default = { };
+      description = ''
+        Extra per-user home paths to persist (relative to the user's home),
+        e.g. a kiosk account's browser profile. Merged with the admin account
+        when persistAdminHome is on.
+      '';
+    };
   };
 
   config = mkIf cfg.enable {
@@ -31,32 +72,39 @@ in
         "/var/lib/libvirt"
         "/etc/NetworkManager/system-connections"
         "/var/lib/sops-nix" # Essential for secret decryption after reboot
-      ];
+      ]
+      ++ cfg.extraDirectories;
       files = [
         "/etc/machine-id"
         "/etc/ssh/ssh_host_ed25519_key"
         "/etc/ssh/ssh_host_ed25519_key.pub"
-      ];
-      # Persist user files for the primary admin account
-      users.io = {
-        directories = [
-          "Downloads"
-          "Music"
-          "Pictures"
-          "Documents"
-          "Videos"
-          "Projects"
-          ".config"
-          ".ssh"
-          ".local/share/keyrings"
-          ".local/share/direnv"
-          ".gemini"
-          ".claude"
-        ];
-        files = [
-          ".bash_history"
-        ];
-      };
+      ]
+      ++ cfg.extraFiles;
+      # Persist the primary admin account's home (unless this is an appliance),
+      # merged with any host-specific service accounts in `users`.
+      users =
+        (optionalAttrs cfg.persistAdminHome {
+          io = {
+            directories = [
+              "Downloads"
+              "Music"
+              "Pictures"
+              "Documents"
+              "Videos"
+              "Projects"
+              ".config"
+              ".ssh"
+              ".local/share/keyrings"
+              ".local/share/direnv"
+              ".gemini"
+              ".claude"
+            ];
+            files = [
+              ".bash_history"
+            ];
+          };
+        })
+        // cfg.users;
     };
   };
 }
