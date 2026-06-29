@@ -6,6 +6,7 @@
     ./disko.nix # OS disk layout (destructive — confirm device before install)
     ../../modules/home-assistant-vm.nix
     ../../modules/n8n.nix
+    ../../modules/services/mqtt.nix
     ../../modules/cloudflared.nix
     ../../modules/headscale.nix
     ../../modules/backups.nix
@@ -20,6 +21,21 @@
     "/var/lib/n8n"
     "/var/lib/libvirt/images"
   ];
+
+  # MQTT broker for Home Assistant + the dashboards' display-mode control.
+  # Authenticated: defining `users` turns anonymous access off automatically.
+  # The password files hold the plaintext passwords (shared with each client);
+  # add the matching entries to secrets/secrets.yaml before deploying.
+  sops.secrets.mqtt_homeassistant.sopsFile = ../../secrets/secrets.yaml;
+  sops.secrets.mqtt_dashboard.sopsFile = ../../secrets/secrets.yaml;
+
+  jupiter.services.mqtt = {
+    enable = true;
+    users = {
+      homeassistant.passwordFile = config.sops.secrets.mqtt_homeassistant.path;
+      dashboard.passwordFile = config.sops.secrets.mqtt_dashboard.path;
+    };
+  };
 
   # ---- Network-wide DNS resolver (this host) -------------------------------
   jupiter.dns = {
