@@ -37,6 +37,68 @@ deploy .#lenovo
    `nixos-anywhere --flake .#<host> root@<ip>`. `elitedesk` is diskless and
    netboots from the PXE server on `lenovo`.
 
+### Gaming profile (Bazzite-on-Nix)
+
+`modules/gaming/bazzite.nix` brings a modern Bazzite-style gaming experience to
+any host, built on [Jovian-NixOS](https://github.com/Jovian-Experiments/Jovian-NixOS)
+(the SteamOS gamescope "gaming mode") and [chaotic-nyx](https://github.com/chaotic-cx/nyx)
+(CachyOS kernel, `mesa-git`, sched-ext/`scx`, `gamescope_git`). Both inputs are
+injected into every host in `flake.nix`, so the options resolve everywhere and
+nothing activates until a host opts in.
+
+Attach it to a machine by toggling it in that host's `configuration.nix`:
+```nix
+jupiter.gaming.bazzite = {
+  enable = true;
+  gpu = "amd";            # "amd" | "intel" | "nvidia"
+  user = "io";            # owns Steam, autologs into gaming mode
+  gamingMode.enable = true; # boot-to-Steam console/handheld session (optional)
+  # decky.enable = true;    # Decky Loader
+  # steamdeck.enable = true; # Steam Deck / handheld hardware quirks
+};
+```
+With `gamingMode.enable = false` you still get the full gaming software stack
+(Steam, Proton-GE, gamescope, MangoHud, Lutris, Heroic, OBS VkCapture, …) on a
+normal desktop; with it `true` the host boots into the SteamOS-like session.
+
+> The chaotic module adds the `cache.chaotic.cx` substituter to every host (its
+> recommended setup) so CachyOS kernel/Mesa builds are fetched, not rebuilt.
+
+#### Dual-session dashboards (kiosk + gaming on separate VTs)
+
+`modules/desktop/dashboard-gaming.nix` (`jupiter.dashboardGaming`, off by
+default, wired into `hosts/dashboards`) turns a dashboard unit into a
+dual-session box: the Cage/Chromium kiosk on VT 6 and a gamescope/Steam
+session on VT 7, both live at once. systemd-logind hands DRM master between
+them on VT switch, so flipping is just:
+```bash
+ssh root@<unit> jupiter-mode gaming      # or: dashboard | toggle
+```
+(Ctrl+Alt+F6 / Ctrl+Alt+F7 also work with a keyboard attached.) It reuses the
+host's `services.cage` kiosk command and pulls in the Bazzite stack with stock
+kernel/Mesa and `gpu = "intel"`. All four dashboards share one config/hostId,
+so split a unit into its own host before enabling it on just one.
+
+**Home Assistant control:** with `jupiter.dashboardGaming.homeAssistant.enable`,
+each unit runs an MQTT agent that emits HA discovery — HA auto-creates a
+*Display Mode* `select` (Dashboard/Gaming) — accepts commands, and publishes the
+live active VT (so manual Ctrl+Alt+F switches show up too). The broker is
+Mosquitto on lenovo (`modules/services/mqtt.nix`, `jupiter.services.mqtt`,
+`10.1.1.20:1883`), running **authenticated** — defining `users` disables
+anonymous access automatically. The `homeassistant` and `dashboard` users share
+plaintext passwords stored as sops secrets, so add them before deploying:
+```bash
+sops secrets/secrets.yaml      # add: mqtt_homeassistant, mqtt_dashboard
+```
+Then set the same `mqtt_homeassistant` password in Home Assistant's MQTT
+integration (the HAOS VM connects to `10.1.1.20`). Plaintext over `1883` is fine
+on the trusted LAN/headscale mesh; add a TLS listener if you want transport
+encryption too.
+
+> Because the broker on lenovo is authenticated and always-on, the
+> `mqtt_homeassistant`/`mqtt_dashboard` secrets must exist in `secrets.yaml`
+> before the next `deploy .#lenovo` (sops reads them at activation).
+
 ### Network / DNS (Terraform via terranix)
 The UniFi and Cloudflare configs are authored in Nix under `terraform/` and
 applied through the Makefile (secrets injected from `secrets.yaml` as `TF_VAR_*`):

@@ -35,6 +35,16 @@
       url = "github:terranix/terranix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # SteamOS "gaming mode" gamescope session, Steam Deck quirks, Decky Loader.
+    jovian = {
+      url = "github:Jovian-Experiments/Jovian-NixOS";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    # CachyOS kernel, mesa-git, sched-ext (scx), gamescope_git. Deliberately
+    # NOT following nixpkgs so its substituter (cache.chaotic.cx) stays useful.
+    chaotic.url = "github:chaotic-cx/nyx/nyxpkgs-unstable";
   };
 
   outputs =
@@ -47,6 +57,8 @@
       disko,
       impermanence,
       terranix,
+      jovian,
+      chaotic,
       ...
     }:
     let
@@ -64,6 +76,11 @@
                 sops-nix.nixosModules.sops
                 impermanence.nixosModules.impermanence
                 disko.nixosModules.disko
+                # Bazzite-on-Nix building blocks. Inert unless a host opts into
+                # jupiter.gaming.bazzite, but injected everywhere so any machine
+                # can attach the gaming profile (see modules/gaming/bazzite.nix).
+                jovian.nixosModules.default
+                chaotic.nixosModules.default
               ];
             })
             # 2. Import the actual host configuration

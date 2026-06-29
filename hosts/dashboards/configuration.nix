@@ -5,6 +5,7 @@
     ../../modules/common-stateful.nix
     ./disko.nix # OS disk layout (destructive — confirm device before install)
     ../../modules/services/tcxwave-power-tuning.nix # kernel/GPU/storage/power tuning for the i5-6500U + HD 520 hardware
+    ../../modules/desktop/dashboard-gaming.nix # optional dual-VT kiosk + gaming session (off by default)
   ];
 
   # GRUB + the custom Fallout theme + the verbose preDeviceCommands banner
@@ -37,5 +38,35 @@
       "video"
       "render"
     ];
+  };
+
+  # Optional: turn one of these units into a dual-session box — the dashboard
+  # kiosk on VT 6 and a Bazzite-style gamescope/Steam session on VT 7, flipped
+  # at runtime with `jupiter-mode {dashboard|gaming|toggle}` (run as root over
+  # SSH; chvt needs CAP_SYS_TTY_CONFIG). Reuses the Cage program/user above.
+  #
+  # NOTE: all four dashboards share this single config + hostId, so enabling
+  # here turns the whole fleet into gaming boxes. To do just one unit, split it
+  # into its own host (own hostId/deploy node) and set this there. The Intel HD
+  # 520 suits light/streamed/emulated play, not AAA, and TLP keeps the CPU in
+  # powersave — see modules/services/tcxwave-power-tuning.nix.
+  # Only required once the dual-VT/gaming feature is switched on, so a plain
+  # dashboard deploy doesn't depend on the MQTT secret existing.
+  sops.secrets = lib.mkIf config.jupiter.dashboardGaming.enable {
+    mqtt_dashboard.sopsFile = ../../secrets/secrets.yaml;
+  };
+
+  jupiter.dashboardGaming = {
+    enable = false;
+    # When enabled, Home Assistant auto-discovers a "Display Mode" select
+    # (Dashboard/Gaming) and drives the active VT over MQTT, with live state.
+    # Broker runs on lenovo (10.1.1.20); authenticates as the "dashboard" user
+    # using the shared sops password (add mqtt_dashboard to secrets.yaml).
+    homeAssistant = {
+      enable = true;
+      broker = "10.1.1.20";
+      username = "dashboard";
+      passwordFile = config.sops.secrets.mqtt_dashboard.path;
+    };
   };
 }
