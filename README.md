@@ -2,6 +2,11 @@
 
 A declarative, ZFS-backed NixOS monorepo for the Jupiter infrastructure.
 
+> **Full documentation:** see [`docs/`](docs/README.md) for architecture,
+> a per-host reference, the complete software inventory for every machine,
+> networking/storage/secrets details, and operational runbooks. This README
+> stays focused on the quick-start commands.
+
 ## Topology
 - **Lenovo Compute Node**: Bare-metal NixOS host running the Home Assistant VM (HAOS) and `n8n`.
 - **Jupiter NAS**: ZFS storage array. The central backup and replication target for the fleet.
