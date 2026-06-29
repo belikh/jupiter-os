@@ -56,6 +56,7 @@
     "gateway.home.jupiter.au" = "10.1.1.1";
     "nas.home.jupiter.au" = "10.1.1.2";
     "lenovo.home.jupiter.au" = "10.1.1.20";
+    "elitedesk.home.jupiter.au" = "10.1.1.21"; # diskless compute; syslog/Loki sink
     "ha.home.jupiter.au" = "10.1.1.72";
     "smokeping.home.jupiter.au" = "10.1.1.221";
   };

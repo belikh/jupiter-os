@@ -22,6 +22,7 @@ hosts):
 | Gateway (UDM Pro) | `10.1.1.1` | — |
 | `nas` | `10.1.1.2` | `enp2s0f0` (bond0 once LACP is enabled) |
 | `lenovo` | `10.1.1.20` | `br0` (member: `enp1s0`) |
+| `elitedesk` | `10.1.1.21` | `enp0s31f6` (diskless; Loki/syslog sink) |
 | Home Assistant VM | `10.1.1.72` | (libvirt bridge, on `lenovo`) |
 | smokeping | `10.1.1.221` | (referenced in DNS records; no corresponding host in this repo) |
 
@@ -68,6 +69,7 @@ the client IP.
 | `gateway.home.jupiter.au` | `10.1.1.1` |
 | `nas.home.jupiter.au` | `10.1.1.2` |
 | `lenovo.home.jupiter.au` | `10.1.1.20` |
+| `elitedesk.home.jupiter.au` | `10.1.1.21` |
 | `ha.home.jupiter.au` | `10.1.1.72` |
 | `smokeping.home.jupiter.au` | `10.1.1.221` |
 
@@ -123,4 +125,4 @@ and firewall ports.
 | `lenovo` | TCP/UDP 53 (dns.nix), TCP 8080 (headscale.nix) | Resolver + mesh control plane |
 | `nas` | TCP 2049 (nas-nfs.nix), TCP 3260 (iscsi.nix), Samba ports (zfs-nas.nix, `openFirewall`), TCP 8384/22000 + UDP 22000/21027 (syncthing.nix) | NFS, iSCSI, SMB, Syncthing |
 | `t460s` | TCP 8384/22000, UDP 22000/21027 (syncthing.nix) | Syncthing |
-| `elitedesk` | none opened in-repo | Diskless netboot node |
+| `elitedesk` | TCP 3100 + 514 (loki.nix) | Loki HTTP + syslog receiver |

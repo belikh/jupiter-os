@@ -6,10 +6,17 @@
   ...
 }:
 
+let
+  # Shared network facts — elitedesk has a static identity so the Wyze cams can
+  # forward syslog to a stable elitedesk.home.jupiter.au.
+  site = import ../../lib/site.nix;
+in
 {
   imports = [
     (modulesPath + "/installer/netboot/netboot-minimal.nix")
     ../../modules/common.nix
+    ../../modules/services/postgresql.nix
+    ../../modules/services/loki.nix
   ];
 
   networking.hostName = "elitedesk";
@@ -23,14 +30,51 @@
 
   # Diskless compute node: persists DB + Loki to the NAS over iSCSI.
   # Auto-discovers and logs into the NAS target at boot, attaching the LUNs as
-  # local block devices. First-time only: mkfs each LUN, then mount where the
-  # DB/Loki services expect their data.
+  # local block devices.
   services.openiscsi = {
     enable = true;
     name = "iqn.2026-06.au.jupiter:elitedesk"; # matches the NAS ACL
     enableAutoLoginOut = true;
     discoverPortal = "nas.home.jupiter.au:3260";
   };
+
+  # Mount the iSCSI LUNs where the services expect their state. First-time only:
+  # label each LUN once it's attached, e.g.
+  #   mkfs.ext4 -L db   /dev/disk/by-path/...-lun-0
+  #   mkfs.ext4 -L loki /dev/disk/by-path/...-lun-1
+  # `nofail` + `_netdev` keep boot from hanging if the NAS is briefly absent.
+  fileSystems."/var/lib/postgresql" = {
+    device = "/dev/disk/by-label/db";
+    fsType = "ext4";
+    options = [
+      "_netdev"
+      "nofail"
+    ];
+  };
+  fileSystems."/var/lib/loki" = {
+    device = "/dev/disk/by-label/loki";
+    fsType = "ext4";
+    options = [
+      "_netdev"
+      "nofail"
+    ];
+  };
+
+  # The database (on the db LUN) and Loki + syslog receiver (on the loki LUN).
+  jupiter.services.postgresql.enable = true;
+  jupiter.services.loki.enable = true; # also ingests Wyze cam syslog on :514
+
+  # Static identity so the cams' syslog target (elitedesk.home.jupiter.au) and
+  # iSCSI clients resolve to a stable address.
+  networking.useDHCP = false;
+  networking.interfaces.enp0s31f6.ipv4.addresses = [
+    {
+      address = site.records."elitedesk.home.jupiter.au";
+      prefixLength = 24;
+    }
+  ];
+  networking.defaultGateway = site.gateway;
+  networking.nameservers = [ site.resolver ];
 
   # Static hosts entry so the boot-time iSCSI attach doesn't race the resolver
   # coming up (the NAS target must resolve before openiscsi logs in).
