@@ -1,5 +1,9 @@
-{ config, pkgs, ... }:
+{ config, pkgs, lib, ... }:
 
+let
+  # Shared network facts (VLANs/subnets/records/resolver) — see lib/site.nix.
+  site = import ../../lib/site.nix;
+in
 {
   imports = [
     ../../modules/common-stateful.nix
@@ -49,37 +53,31 @@
   };
 
   # ---- Network-wide DNS resolver (this host) -------------------------------
+  # Domain, allow-list, and records all come from lib/site.nix so they stay in
+  # lock-step with the UniFi VLAN/subnet config in terraform/unifi.
   jupiter.dns = {
     enable = true;
-    domain = "home.jupiter.au"; # site 1 internal split-horizon zone
+    domain = site.domain;
     allowedNetworks = [
       "127.0.0.0/8"
       "::1/128"
-      "10.1.1.0/24" # Default LAN
-      "192.168.2.0/24" # IOT VLAN
-      "192.168.3.0/24" # Cameras VLAN
-      "100.64.0.0/10" # headscale mesh
-    ];
-    records = {
-      "gateway.home.jupiter.au" = "10.1.1.1";
-      "nas.home.jupiter.au" = "10.1.1.2";
-      "lenovo.home.jupiter.au" = "10.1.1.20";
-      "ha.home.jupiter.au" = "10.1.1.72";
-      "smokeping.home.jupiter.au" = "10.1.1.221";
-    };
+    ]
+    ++ (lib.mapAttrsToList (_: net: net.networkCidr) site.networks)
+    ++ site.meshCidrs;
+    records = site.records;
   };
 
-  # The resolver host points at itself (overrides common's 10.1.1.20 default).
+  # The resolver host points at itself (overrides common's resolver default).
   networking.nameservers = [ "127.0.0.1" ];
 
-  # Static LAN identity on the HA bridge: 10.1.1.20 (existing reservation).
+  # Static LAN identity on the HA bridge (existing reservation).
   networking.useDHCP = false;
   networking.bridges.br0.interfaces = [ "enp1s0" ]; # Declarative bridge configured per-host
   networking.interfaces.br0.ipv4.addresses = [
     {
-      address = "10.1.1.20";
+      address = site.resolver;
       prefixLength = 24;
     }
   ];
-  networking.defaultGateway = "10.1.1.1";
+  networking.defaultGateway = site.gateway;
 }
