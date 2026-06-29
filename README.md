@@ -37,6 +37,33 @@ deploy .#lenovo
    `nixos-anywhere --flake .#<host> root@<ip>`. `elitedesk` is diskless and
    netboots from the PXE server on `lenovo`.
 
+### Gaming profile (Bazzite-on-Nix)
+
+`modules/gaming/bazzite.nix` brings a modern Bazzite-style gaming experience to
+any host, built on [Jovian-NixOS](https://github.com/Jovian-Experiments/Jovian-NixOS)
+(the SteamOS gamescope "gaming mode") and [chaotic-nyx](https://github.com/chaotic-cx/nyx)
+(CachyOS kernel, `mesa-git`, sched-ext/`scx`, `gamescope_git`). Both inputs are
+injected into every host in `flake.nix`, so the options resolve everywhere and
+nothing activates until a host opts in.
+
+Attach it to a machine by toggling it in that host's `configuration.nix`:
+```nix
+jupiter.gaming.bazzite = {
+  enable = true;
+  gpu = "amd";            # "amd" | "intel" | "nvidia"
+  user = "io";            # owns Steam, autologs into gaming mode
+  gamingMode.enable = true; # boot-to-Steam console/handheld session (optional)
+  # decky.enable = true;    # Decky Loader
+  # steamdeck.enable = true; # Steam Deck / handheld hardware quirks
+};
+```
+With `gamingMode.enable = false` you still get the full gaming software stack
+(Steam, Proton-GE, gamescope, MangoHud, Lutris, Heroic, OBS VkCapture, …) on a
+normal desktop; with it `true` the host boots into the SteamOS-like session.
+
+> The chaotic module adds the `cache.chaotic.cx` substituter to every host (its
+> recommended setup) so CachyOS kernel/Mesa builds are fetched, not rebuilt.
+
 ### Network / DNS (Terraform via terranix)
 The UniFi and Cloudflare configs are authored in Nix under `terraform/` and
 applied through the Makefile (secrets injected from `secrets.yaml` as `TF_VAR_*`):

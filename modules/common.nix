@@ -9,6 +9,7 @@
   imports = [
     ./core/impermanence.nix
     ./desktop/default.nix
+    ./gaming/bazzite.nix
     ./storage/zfs-impermanent.nix
     ./services/syncthing.nix
     ./branding.nix
