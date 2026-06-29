@@ -64,6 +64,21 @@ normal desktop; with it `true` the host boots into the SteamOS-like session.
 > The chaotic module adds the `cache.chaotic.cx` substituter to every host (its
 > recommended setup) so CachyOS kernel/Mesa builds are fetched, not rebuilt.
 
+#### Dual-session dashboards (kiosk + gaming on separate VTs)
+
+`modules/desktop/dashboard-gaming.nix` (`jupiter.dashboardGaming`, off by
+default, wired into `hosts/dashboards`) turns a dashboard unit into a
+dual-session box: the Cage/Chromium kiosk on VT 6 and a gamescope/Steam
+session on VT 7, both live at once. systemd-logind hands DRM master between
+them on VT switch, so flipping is just:
+```bash
+ssh root@<unit> jupiter-mode gaming      # or: dashboard | toggle
+```
+(Ctrl+Alt+F6 / Ctrl+Alt+F7 also work with a keyboard attached.) It reuses the
+host's `services.cage` kiosk command and pulls in the Bazzite stack with stock
+kernel/Mesa and `gpu = "intel"`. All four dashboards share one config/hostId,
+so split a unit into its own host before enabling it on just one.
+
 ### Network / DNS (Terraform via terranix)
 The UniFi and Cloudflare configs are authored in Nix under `terraform/` and
 applied through the Makefile (secrets injected from `secrets.yaml` as `TF_VAR_*`):

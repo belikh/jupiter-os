@@ -172,7 +172,7 @@ in
     # --- Performance tuning (mirrors Bazzite's defaults) ---------------------
     zramSwap = {
       enable = mkDefault true;
-      algorithm = "zstd";
+      algorithm = mkDefault "zstd";
     };
 
     boot.kernel.sysctl = {
