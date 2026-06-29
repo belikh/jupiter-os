@@ -79,6 +79,14 @@ host's `services.cage` kiosk command and pulls in the Bazzite stack with stock
 kernel/Mesa and `gpu = "intel"`. All four dashboards share one config/hostId,
 so split a unit into its own host before enabling it on just one.
 
+**Home Assistant control:** with `jupiter.dashboardGaming.homeAssistant.enable`,
+each unit runs an MQTT agent that emits HA discovery — HA auto-creates a
+*Display Mode* `select` (Dashboard/Gaming) — accepts commands, and publishes the
+live active VT (so manual Ctrl+Alt+F switches show up too). The broker is
+Mosquitto on lenovo (`modules/services/mqtt.nix`, `jupiter.services.mqtt`,
+`10.1.1.20:1883`): anonymous on the trusted LAN out of the box, and it switches
+to authenticated automatically once you define `users` with sops password files.
+
 ### Network / DNS (Terraform via terranix)
 The UniFi and Cloudflare configs are authored in Nix under `terraform/` and
 applied through the Makefile (secrets injected from `secrets.yaml` as `TF_VAR_*`):
