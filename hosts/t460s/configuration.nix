@@ -12,6 +12,7 @@
   jupiter = {
     branding.enable = true; # RobCo/Fallout boot branding (GRUB theme, MOTD)
     core.impermanence.enable = true;
+    home.enable = true; # declarative io env (dotfiles, niri config) — roams
     desktop = {
       enable = true;
       compositor = "niri";

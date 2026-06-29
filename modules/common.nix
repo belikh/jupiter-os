@@ -13,6 +13,7 @@
     ./storage/zfs-profiles.nix
     ./services/syncthing.nix
     ./core/branding.nix
+    ./home
   ];
 
   # Common configuration applied to all hosts.

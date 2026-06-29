@@ -101,12 +101,31 @@ For module option details see [04-modules-reference.md](04-modules-reference.md)
   jupiter = {
     branding.enable = true;
     core.impermanence.enable = true;
+    home.enable = true;
     desktop = { enable = true; compositor = "niri"; };
     storage = { profile = "impermanent"; disk = "/dev/nvme0n1"; };
     services.syncthing.enable = true;
   };
   ```
+- **Roaming:** `jupiter.home.enable` gives `io` a declarative home-manager
+  environment (dotfiles + shared niri config) identical to the other personal
+  machines; Syncthing roams the data dirs via the NAS. See the future
+  `desktop`/`parents-desktop` workstations below.
 - **Distinguishing responsibilities:** the only host running a graphical desktop (Niri, see [03-software-inventory.md](03-software-inventory.md#desktop-class-t460s)); runs Syncthing for user `io`, with a curated `.stignore` that explicitly re-includes `.claude`/`.gemini` (AI assistant state) while excluding most other dotfiles.
+
+---
+
+## Future hosts (scaffolds)
+
+`hosts/desktop/` and `hosts/parents-desktop/` are roaming personal workstations
+that don't exist yet. Each is `impermanent` storage + `jupiter.desktop` (niri) +
+`jupiter.home.enable` + Syncthing — the same portable `io` identity as `t460s`,
+so logging in at any of them feels like the home PC. `parents-desktop` lives at
+the second site and reaches the NAS over the headscale mesh (offline-tolerant
+Syncthing, not NFS). They are **not** registered in `flake.nix` yet: their
+`REPLACE-ME` disks would fail the `jupiter.storage` assertion. Bring one online
+by filling in its disk + `hostId`, uncommenting its `mkHost` line, adding it to
+the CI matrices, and generating its age key.
 
 ---
 

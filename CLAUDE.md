@@ -8,10 +8,13 @@ monorepo for the Jupiter home/lab infrastructure.
 - `flake.nix` — entry point. Defines `nixosConfigurations`, `deploy.nodes`
   (deploy-rs), `packages` (OpenWrt firmware + terranix configs), `checks`,
   `formatter`, and the dev shell (`shell.nix`).
-- `hosts/<name>/` — per-host config (`configuration.nix`, `disko.nix` where the
-  host has local disks). Hosts: `lenovo`, `nas`, `dashboards`, `elitedesk`
-  (diskless/PXE netboot), `t460s` (laptop). `hosts/parents-house/` holds edge
-  device templates (Linksys MX4300 APs, Wyze cams) — not NixOS hosts.
+- `hosts/<name>/` — per-host config (`configuration.nix`; `disko.nix` only for
+  bespoke layouts like `nas` — most hosts use `jupiter.storage.profile`). Active
+  hosts: `lenovo`, `nas`, `dashboards`, `elitedesk` (diskless/PXE netboot),
+  `t460s` (laptop). `hosts/desktop/` and `hosts/parents-desktop/` are scaffolds
+  for future roaming workstations (not yet registered in `flake.nix`).
+  `hosts/parents-house/` holds edge device templates (Linksys MX4300 APs, Wyze
+  cams) — not NixOS hosts.
 - `modules/` — reusable NixOS modules, exposed behind a `jupiter.*` options
   namespace (feature toggles), e.g. `jupiter.core.impermanence.enable`,
   `jupiter.desktop`, `jupiter.storage.profile`, `jupiter.services.*`,
@@ -33,8 +36,11 @@ monorepo for the Jupiter home/lab infrastructure.
   module as `options.jupiter.<…> = { … }` then `config = lib.mkIf cfg.enable { … }`
   with `cfg = config.jupiter.<…>` bound in a `let`. (Some older modules still
   use `with lib;` — convert opportunistically; new modules follow this.)
-- `mkHost` in `flake.nix` injects flake modules (sops, impermanence, disko) via a
-  lexical closure — avoid `specialArgs`.
+- `mkHost` in `flake.nix` injects flake modules (sops, impermanence, disko,
+  home-manager, jovian, chaotic) via a lexical closure — avoid `specialArgs`.
+- The portable user environment for `io` (dotfiles, niri config) lives in
+  `modules/home/` and is opt-in via `jupiter.home.enable`; data dirs roam via
+  Syncthing rather than home-manager.
 - The PXE server on `lenovo` is wired directly to `elitedesk`'s netboot build
   products in `flake.nix`; keep that closure linkage intact.
 - Network facts (VLANs/subnets/resolver/DNS records) live once in `lib/site.nix`

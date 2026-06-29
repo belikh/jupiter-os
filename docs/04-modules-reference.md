@@ -298,6 +298,22 @@ credentials from sops secrets `restic_password`/`restic_env`, retention
 `/tank/backups/lenovo`) — the fleet's single offsite egress. Other hosts'
 state reaches the cloud by first replicating to the NAS (`jupiter.replication`).
 
+## Home
+
+### `modules/home/` (`default.nix` + `io.nix`)
+```
+jupiter.home.enable   (bool, default false)
+```
+Opt-in home-manager environment for user `io` — the portable identity shared
+across personal machines. `default.nix` wires home-manager
+(`useGlobalPkgs`/`useUserPackages`, `users.io = import ./io.nix`); `io.nix`
+holds the machine-agnostic config: user packages, git/bash/direnv, and a shared
+niri config written as a plain `~/.config/niri/config.kdl` (no dependency on a
+compositor HM module). Data directories are deliberately *not* managed here —
+they roam via Syncthing with the NAS as hub.
+
+**Enabled by:** `t460s` (and the `desktop`/`parents-desktop` scaffolds).
+
 ## How to add a new module
 
 Per `CLAUDE.md`: put new cross-host functionality in `modules/` behind a
