@@ -5,6 +5,7 @@
     ../../modules/common-stateful.nix
     ./disko.nix # OS disk layout (destructive — confirm device before install)
     ../../modules/services/tcxwave-power-tuning.nix # kernel/GPU/storage/power tuning for the i5-6500U + HD 520 hardware
+    ../../modules/desktop/dashboard-gaming.nix # optional dual-VT kiosk + gaming session (off by default)
   ];
 
   # GRUB + the custom Fallout theme + the verbose preDeviceCommands banner
@@ -38,4 +39,16 @@
       "render"
     ];
   };
+
+  # Optional: turn one of these units into a dual-session box — the dashboard
+  # kiosk on VT 6 and a Bazzite-style gamescope/Steam session on VT 7, flipped
+  # at runtime with `jupiter-mode {dashboard|gaming|toggle}` (run as root over
+  # SSH; chvt needs CAP_SYS_TTY_CONFIG). Reuses the Cage program/user above.
+  #
+  # NOTE: all four dashboards share this single config + hostId, so enabling
+  # here turns the whole fleet into gaming boxes. To do just one unit, split it
+  # into its own host (own hostId/deploy node) and set this there. The Intel HD
+  # 520 suits light/streamed/emulated play, not AAA, and TLP keeps the CPU in
+  # powersave — see modules/services/tcxwave-power-tuning.nix.
+  jupiter.dashboardGaming.enable = false;
 }
