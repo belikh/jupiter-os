@@ -35,11 +35,46 @@
     "i915.enable_psr=1"
     "i915.fastboot=1"
     "nmi_watchdog=0" # one less periodic timer interrupt; no hardlockup detection needed on an appliance
+    "quiet" # branding.nix's verbose banner is off for this host (see hosts/dashboards) — no console spam to suppress
   ];
 
   boot.kernel.sysctl = {
     "vm.swappiness" = 1; # prefer zram below; only spill to disk if truly desperate
   };
+
+  # Boot speed: this fleet is fixed, known hardware (same 4 retail-POS units,
+  # same SSD, same internal panel) booting from local disk, not a generic
+  # NixOS ISO that has to cope with anything. No bootloader menu to wait on,
+  # no broad hardware-compat module set to probe through, and a quiet,
+  # parallel initrd instead of a serial one.
+  boot.loader.timeout = 0;
+
+  # Stage-1 init as systemd: udev/module loading runs in parallel instead of
+  # the legacy serial shell script. branding.nix forces this off fleet-wide
+  # (its preDeviceCommands banner needs the legacy script); off for this host
+  # since branding is disabled above.
+  boot.initrd.systemd.enable = true;
+
+  # Skip NixOS's broad default initrd module set (covers arbitrary unknown
+  # hardware) and list only what this specific, known machine needs to find
+  # its root device and basic input. SATA vs NVMe on the 128GB SSD is
+  # unconfirmed (`lsblk` on a real unit would tell us) so both are kept in;
+  # trim further once that's verified. Deliberately NOT touching Wi-Fi/
+  # Bluetooth modules — those aren't initrd-critical and guessing wrong there
+  # silently breaks hardware instead of just costing a few boot-seconds.
+  boot.initrd.includeDefaultModules = false;
+  boot.initrd.availableKernelModules = [
+    "ahci"
+    "nvme"
+    "usb_storage"
+    "usbhid"
+  ];
+
+  # No beep hardware worth a kernel module on a touchscreen kiosk appliance.
+  boot.blacklistedKernelModules = [ "pcspkr" ];
+
+  # Quieter console = fewer synchronous framebuffer writes during boot.
+  boot.consoleLogLevel = 3;
 
   # The ZFS root pool here is tiny (root + nix only, no bulk data — see
   # disko.nix), so a default-sized ARC just steals RAM Chromium could use.
