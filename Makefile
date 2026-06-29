@@ -1,5 +1,6 @@
 .PHONY: test-lenovo test-t460s test-nas test-dashboards test-elitedesk update check build-all build-mx4300 \
-        fmt fmt-check tf-plan-unifi tf-apply-unifi tf-plan-cloudflare tf-apply-cloudflare
+        fmt fmt-check tf-plan-unifi tf-apply-unifi tf-plan-cloudflare tf-apply-cloudflare \
+        boot-smoke-lenovo boot-smoke-t460s boot-smoke-nas boot-smoke-dashboards
 
 # Build all machines and firmware (useful for verifying everything compiles)
 build-all:
@@ -34,6 +35,12 @@ test-%:
 	nixos-rebuild build-vm --flake .#$*
 	@echo "Starting VM... (Press Ctrl+A then X to exit the QEMU console)"
 	./result/bin/run-$*-vm -m 2048 -smp 2
+
+# Headless boot smoke test: build the host VM and assert it reaches multi-user,
+# then shut it down (no interactive console). Used by CI; needs /dev/kvm.
+# Usage: make boot-smoke-t460s
+boot-smoke-%:
+	./scripts/boot-smoke.sh $* 300
 
 # Update flake locks
 update:

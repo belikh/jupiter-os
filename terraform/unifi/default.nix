@@ -1,10 +1,23 @@
-{
-  config,
-  lib,
-  pkgs,
-  ...
-}:
+{ lib, ... }:
 
+let
+  # Single source of truth for VLANs/subnets/resolver — shared with the NixOS
+  # DNS config so the two never drift. See lib/site.nix.
+  site = import ../../lib/site.nix;
+
+  mkNetwork =
+    _: net:
+    {
+      name = net.name;
+      purpose = "corporate";
+      subnet = net.gatewayCidr;
+      dhcp_start = net.dhcpStart;
+      dhcp_stop = net.dhcpStop;
+      dhcp_dns = [ site.resolver ];
+      dhcp_enabled = true;
+    }
+    // lib.optionalAttrs (net.vlan != null) { vlan_id = net.vlan; };
+in
 {
   terraform = {
     required_providers = {
@@ -25,44 +38,12 @@
   provider.unifi = {
     username = "admin";
     password = "\${var.unifi_password}";
-    api_url = "https://10.1.1.1"; # UDM Pro IP
+    api_url = "https://${site.gateway}"; # UDM Pro
     allow_insecure = true;
   };
 
-  resource.unifi_network = {
-    default = {
-      name = "Default";
-      purpose = "corporate";
-      subnet = "10.1.1.1/24";
-      dhcp_start = "10.1.1.6";
-      dhcp_stop = "10.1.1.254";
-      dhcp_dns = [ "10.1.1.20" ];
-      dhcp_enabled = true;
-    };
-    # Subnets/VLANs below mirror the live UDM Pro config (verified against the
-    # controller): Cameras = VLAN 2 / 192.168.3.0/24, IOT = VLAN 3 /
-    # 192.168.2.0/24. Keep in sync with lenovo's jupiter.dns.allowedNetworks.
-    cameras = {
-      name = "Cameras";
-      purpose = "corporate";
-      vlan_id = 2;
-      subnet = "192.168.3.1/24";
-      dhcp_start = "192.168.3.6";
-      dhcp_stop = "192.168.3.254";
-      dhcp_dns = [ "10.1.1.20" ];
-      dhcp_enabled = true;
-    };
-    iot = {
-      name = "IOT";
-      purpose = "corporate";
-      vlan_id = 3;
-      subnet = "192.168.2.1/24";
-      dhcp_start = "192.168.2.6";
-      dhcp_stop = "192.168.2.254";
-      dhcp_dns = [ "10.1.1.20" ];
-      dhcp_enabled = true;
-    };
-  };
+  # Networks generated from lib/site.nix (keys: default, cameras, iot).
+  resource.unifi_network = lib.mapAttrs mkNetwork site.networks;
 
   resource.unifi_firewall_group = {
     dns_ports = {
@@ -76,7 +57,7 @@
     dns_resolvers = {
       name = "dns-resolvers";
       type = "address-group";
-      members = [ "10.1.1.20" ];
+      members = [ site.resolver ];
     };
   };
 

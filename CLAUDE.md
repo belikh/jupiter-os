@@ -8,13 +8,19 @@ monorepo for the Jupiter home/lab infrastructure.
 - `flake.nix` — entry point. Defines `nixosConfigurations`, `deploy.nodes`
   (deploy-rs), `packages` (OpenWrt firmware + terranix configs), `checks`,
   `formatter`, and the dev shell (`shell.nix`).
-- `hosts/<name>/` — per-host config (`configuration.nix`, `disko.nix` where the
-  host has local disks). Hosts: `lenovo`, `nas`, `dashboards`, `elitedesk`
-  (diskless/PXE netboot), `t460s` (laptop). `hosts/parents-house/` holds edge
-  device templates (Linksys MX4300 APs, Wyze cams) — not NixOS hosts.
+- `hosts/<name>/` — per-host config (`configuration.nix`; `disko.nix` only for
+  bespoke layouts like `nas` — most hosts use `jupiter.storage.profile`). Active
+  hosts: `lenovo`, `nas`, `dashboards`, `elitedesk` (diskless/PXE netboot),
+  `t460s` (laptop). `hosts/desktop/` and `hosts/parents-desktop/` are scaffolds
+  for future roaming workstations (not yet registered in `flake.nix`).
+  `hosts/parents-house/` holds edge device templates (Linksys MX4300 APs, Wyze
+  cams) — not NixOS hosts.
 - `modules/` — reusable NixOS modules, exposed behind a `jupiter.*` options
   namespace (feature toggles), e.g. `jupiter.core.impermanence.enable`,
-  `jupiter.desktop`, `jupiter.storage.zfs`, `jupiter.services.*`, `jupiter.pxe`.
+  `jupiter.desktop`, `jupiter.storage.profile`, `jupiter.services.*`,
+  `jupiter.pxe`. Organized into category subdirs: `core/`, `desktop/`,
+  `gaming/`, `storage/`, `network/`, `services/`. `common.nix` /
+  `common-stateful.nix` are the base layers at the `modules/` root.
 - `terraform/<stack>/default.nix` — terranix (Nix-authored HCL) for `unifi` and
   `cloudflare`. Rendered to `config.tf.json` and applied via the Makefile.
 - `secrets/secrets.yaml` — sops-nix + age. Recipients (one age key per host plus
@@ -23,14 +29,24 @@ monorepo for the Jupiter home/lab infrastructure.
 
 ## Conventions
 
-- New cross-host functionality goes in a `modules/` file gated by a
+- New cross-host functionality goes in a `modules/<category>/` file gated by a
   `jupiter.*` option; hosts opt in via toggles rather than inlining config.
-- `mkHost` in `flake.nix` injects flake modules (sops, impermanence, disko) via a
-  lexical closure — avoid `specialArgs`.
+- **Module style:** prefer explicit `lib.mkOption` / `lib.mkIf` / `lib.types`
+  over `with lib;`; argument order `{ config, lib, pkgs, ... }`; structure each
+  module as `options.jupiter.<…> = { … }` then `config = lib.mkIf cfg.enable { … }`
+  with `cfg = config.jupiter.<…>` bound in a `let`. (Some older modules still
+  use `with lib;` — convert opportunistically; new modules follow this.)
+- `mkHost` in `flake.nix` injects flake modules (sops, impermanence, disko,
+  home-manager, jovian, chaotic) via a lexical closure — avoid `specialArgs`.
+- The portable user environment for `io` (dotfiles, niri config) lives in
+  `modules/home/` and is opt-in via `jupiter.home.enable`; data dirs roam via
+  Syncthing rather than home-manager.
 - The PXE server on `lenovo` is wired directly to `elitedesk`'s netboot build
   products in `flake.nix`; keep that closure linkage intact.
-- Network facts duplicated between `terraform/unifi` and `modules/services/dns.nix`
-  (VLANs/subnets) must be kept in sync — see comments in those files.
+- Network facts (VLANs/subnets/resolver/DNS records) live once in `lib/site.nix`
+  as plain data; both the NixOS resolver config (`hosts/lenovo` → `jupiter.dns`)
+  and the terranix UniFi stack (`terraform/unifi`) `import` it, so CIDRs are
+  never re-stated in two places.
 
 ## Common commands
 

@@ -18,20 +18,17 @@ Applied by `modules/common.nix`, which every host imports — either directly
 | Software | Source | Notes |
 |---|---|---|
 | OpenSSH server | `services.openssh.enable` | |
-| sops-nix | `sops.age.sshKeyPaths` | Decrypts using the host's own SSH ed25519 host key |
+| sops-nix | `sops.age.sshKeyPaths`, `sops.defaultSopsFile` | Decrypts using the host's own SSH ed25519 host key; secrets default to `secrets/secrets.yaml` |
 | Nix (flakes + nix-command) | `nix.settings.experimental-features` | |
 | Automatic Nix GC | `nix.gc` | Weekly, `--delete-older-than 14d` |
-| User `io` | `users.users.io` | groups: `wheel`, `networkmanager`, `docker`; password from sops secret `io_password`; SSH key auth |
-| `jupiter.branding` (RobCo/Fallout GRUB theme, green console, MOTD) | `modules/branding.nix` | **On** by default fleet-wide; forced off on `dashboards` and `elitedesk` |
-
-Note: the `docker` group is granted to `io` on every host, but no host in
-this repo currently sets `virtualisation.docker.enable` — the Docker daemon
-itself isn't declared anywhere yet.
+| Base admin CLI | `environment.systemPackages` | `git`, `htop`, `ripgrep`, `fd`, `jq`, `fzf`, `bat`, `eza`, `wget`, `curl`, `unzip` — on every host, headless or not |
+| User `io` | `users.users.io` | groups: `wheel`, `networkmanager`; password from sops secret `io_password`; SSH key auth |
 
 Also wired in transitively but **disabled by default**, opted into per-host
 via `jupiter.*` toggles (see [04-modules-reference.md](04-modules-reference.md)):
-`jupiter.core.impermanence`, `jupiter.desktop`, `jupiter.storage.zfs`,
-`jupiter.services.syncthing`.
+`jupiter.branding`, `jupiter.core.impermanence`, `jupiter.desktop`,
+`jupiter.storage` (profile), `jupiter.services.syncthing`. Branding is enabled
+on `lenovo`, `nas`, and `t460s`.
 
 ## 2. Hosts with local disks (`common-stateful.nix`)
 
@@ -40,7 +37,7 @@ get:
 
 | Software | Source |
 |---|---|
-| `systemd-boot` (EFI), overridden to GRUB when branding is on | `modules/common-stateful.nix` / `modules/branding.nix` |
+| `systemd-boot` (EFI), overridden to GRUB on hosts that enable `jupiter.branding` | `modules/common-stateful.nix` / `modules/core/branding.nix` |
 
 ## 3. Per-host inventory
 
@@ -48,27 +45,27 @@ get:
 
 | Software | Source | Purpose |
 |---|---|---|
-| libvirtd + QEMU/KVM (+ swtpm) | `modules/home-assistant-vm.nix` | Runs Home Assistant OS as a VM |
-| `virt-manager`, `libvirt`, `qemu_kvm` (CLI tools) | `modules/home-assistant-vm.nix` | VM management |
-| n8n | `modules/n8n.nix` | Workflow automation, `https://n8n.jupiter.au`, listens on `127.0.0.1:5678` |
-| cloudflared | `modules/cloudflared.nix` | One tunnel exposing `headscale.jupiter.au`, `n8n.jupiter.au`, `ha.jupiter.au` |
-| headscale | `modules/headscale.nix` | Tailscale-compatible mesh control plane, port 8080, `https://headscale.jupiter.au` |
-| restic | `modules/backups.nix` | Offsite backup of `/var/lib/n8n`, `/var/lib/libvirt/images` |
-| Pixiecore | `modules/pxe-server.nix` (`jupiter.pxe`) | Serves `elitedesk`'s netboot image |
-| unbound | `modules/services/dns.nix` (`jupiter.dns`) | Authoritative resolver for `home.jupiter.au`, LAN-wide DNS |
-| dnscrypt-proxy | `modules/services/dns.nix` | Anonymized/encrypted upstream DNS for unbound |
+| libvirtd + QEMU/KVM (+ swtpm) | `modules/services/home-assistant-vm.nix` | Runs Home Assistant OS as a VM |
+| `virt-manager`, `libvirt`, `qemu_kvm` (CLI tools) | `modules/services/home-assistant-vm.nix` | VM management |
+| n8n | `modules/services/n8n.nix` | Workflow automation, `https://n8n.jupiter.au`, listens on `127.0.0.1:5678` |
+| cloudflared | `modules/network/cloudflared.nix` | One tunnel exposing `headscale.jupiter.au`, `n8n.jupiter.au`, `ha.jupiter.au` |
+| headscale | `modules/network/headscale.nix` | Tailscale-compatible mesh control plane, port 8080, `https://headscale.jupiter.au` |
+| Pixiecore | `modules/network/pxe-server.nix` (`jupiter.pxe`) | Serves `elitedesk`'s netboot image |
+| unbound | `modules/network/dns.nix` (`jupiter.dns`) | Authoritative resolver for `home.jupiter.au`, LAN-wide DNS |
+| dnscrypt-proxy | `modules/network/dns.nix` | Anonymized/encrypted upstream DNS for unbound |
 
 ### `nas`
 
 | Software | Source | Purpose |
 |---|---|---|
-| ZFS (`zfs` CLI) | `hosts/nas/configuration.nix` (`environment.systemPackages`) + `modules/zfs-nas.nix` | Pool/dataset management |
-| Samba (`samba` CLI + `services.samba`) | `hosts/nas/configuration.nix`, `modules/zfs-nas.nix` | SMB shares: `media`, `personal`, `archive` (read-only) |
-| `samba-wsdd` | `modules/zfs-nas.nix` | Windows network discovery |
+| ZFS (`zfs` CLI) | `hosts/nas/configuration.nix` (`environment.systemPackages`) + `modules/storage/zfs-nas.nix` | Pool/dataset management |
+| Samba (`samba` CLI + `services.samba`) | `hosts/nas/configuration.nix`, `modules/storage/zfs-nas.nix` | SMB shares: `media`, `personal`, `archive` (read-only) |
+| `samba-wsdd` | `modules/storage/zfs-nas.nix` | Windows network discovery |
 | sanoid (+ `syncoid`) | `hosts/nas/configuration.nix`, `modules/storage/sanoid.nix` | ZFS snapshot policy on `tank` |
 | NFS server | `modules/storage/nas-nfs.nix` | Exports `/tank/media` (ro), `/srv/netboot` (ro) |
 | LIO iSCSI target (`services.target`) | `modules/storage/iscsi.nix` (`jupiter.nas.iscsi`) | Exports `db`/`loki` zvols to `elitedesk` |
-| restic | `modules/backups.nix` | Offsite backup of `/tank/personal`, `/tank/backups/homeassistant` |
+| restic | `modules/services/backups.nix` | Offsite backup of `/tank/personal`, `/tank/backups/homeassistant`, `/tank/backups/lenovo` — the fleet's only offsite egress |
+| syncoid | `modules/storage/replication.nix` (`jupiter.replication`) | Hourly pull of `lenovo:rpool/var` → `tank/backups/lenovo` |
 | Syncthing | `modules/services/syncthing.nix` (`jupiter.services.syncthing.enable = true`) | File sync for user `io` |
 | LACP bonding driver config | `modules/network/nas-bond.nix` (`jupiter.nas.bond`, currently disabled) | 802.3ad across both 1GbE ports, not yet enabled |
 
@@ -95,13 +92,12 @@ disabled.
 |---|---|---|
 | NixOS netboot-minimal profile | `(modulesPath + "/installer/netboot/netboot-minimal.nix")` | Diskless boot image, copied fully to RAM (`copytoram`) |
 | `open-iscsi` initiator | `hosts/elitedesk/configuration.nix` | Auto-login to the NAS's iSCSI target at boot |
-| headscale | `modules/headscale.nix` | Second instance, not externally exposed (see [02-hosts.md](02-hosts.md#elitedesk-hp-elitedesk-800-g4)) |
+| PostgreSQL | `modules/services/postgresql.nix` (`jupiter.services.postgresql`) | DB on the iSCSI `db` LUN (`/var/lib/postgresql`); no databases declared yet |
+| Loki | `modules/services/loki.nix` (`jupiter.services.loki`) | Log store on the iSCSI `loki` LUN (`/var/lib/loki`), HTTP `:3100` |
+| promtail | `modules/services/loki.nix` | Syslog receiver on `:514`, ingests Wyze cam logs into Loki |
 
-No GUI, no branding, no local storage. Intended to also run a database and
-Loki (per comments in `hosts/nas/configuration.nix`/`disko.nix` and the Wyze
-cam syslog target in `hosts/parents-house/wyze-cams/wz_mini.conf.tmpl`), but
-those service modules are not yet present in this repo — see
-[02-hosts.md](02-hosts.md#elitedesk-hp-elitedesk-800-g4) for the caveat.
+No GUI, no branding, no local storage — but it does run the persistent DB +
+Loki stack on the NAS-backed iSCSI LUNs (above).
 
 ### `t460s`
 
@@ -111,18 +107,19 @@ plus:
 | Software | Source | Purpose |
 |---|---|---|
 | Syncthing | `modules/services/syncthing.nix` | File sync for user `io`, GUI on `:8384` |
-| ZFS impermanence rollback service | `modules/storage/zfs-impermanent.nix` | Rolls `rpool/local/root` back to `@blank` every boot |
+| ZFS impermanence rollback service | `modules/storage/zfs-profiles.nix` (`profile = "impermanent"`) | Rolls `rpool/local/root` back to `@blank` every boot |
 
 ## 4. Desktop class (currently `t460s`)
 
 Enabled via `jupiter.desktop.enable = true` (`modules/desktop/default.nix`).
 Applies to any host that opts in, regardless of which compositor it picks.
 
-**Always installed when the desktop profile is enabled:**
+**Always installed when the desktop profile is enabled** (the base admin CLI —
+`git`, `ripgrep`, `jq`, … — comes from the fleet-wide baseline in
+[§1](#1-fleet-wide-baseline-every-nixos-host), not from here):
 
 | Category | Packages |
 |---|---|
-| Core CLI/dev | `git`, `htop`, `ripgrep`, `fd`, `jq`, `fzf`, `bat`, `eza`, `wget`, `curl`, `unzip` |
 | AI coding prereqs | `nodejs` (for installing `@anthropic-ai/claude-code`, `@google/antigravity` globally) |
 | GUI essentials | `google-chrome`, `vscode`, `pavucontrol`, `mpv` |
 | Fonts | `inter`, `jetbrains-mono`, `material-symbols`, `share-tech-mono` (custom package, `packages/share-tech-mono`) |

@@ -30,6 +30,13 @@
       url = "github:nix-community/impermanence";
     };
 
+    # Declarative user environment (dotfiles, per-user packages, niri config),
+    # shared across the personal machines so a login looks the same everywhere.
+    home-manager = {
+      url = "github:nix-community/home-manager";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     # Terranix
     terranix = {
       url = "github:terranix/terranix";
@@ -56,6 +63,7 @@
       nix-openwrt-imagebuilder,
       disko,
       impermanence,
+      home-manager,
       terranix,
       jovian,
       chaotic,
@@ -81,6 +89,9 @@
                 # can attach the gaming profile (see modules/gaming/bazzite.nix).
                 jovian.nixosModules.default
                 chaotic.nixosModules.default
+                # Declarative per-user environment. Inert unless a host sets
+                # jupiter.home.enable (see modules/home).
+                home-manager.nixosModules.home-manager
               ];
             })
             # 2. Import the actual host configuration
@@ -112,6 +123,14 @@
         t460s = mkHost ./hosts/t460s/configuration.nix [ ];
         nas = mkHost ./hosts/nas/configuration.nix [ ];
         dashboards = mkHost ./hosts/dashboards/configuration.nix [ ];
+
+        # Future personal workstations (roaming desktop — same niri + synced
+        # $HOME as the laptop). Scaffolded in hosts/ but not registered until the
+        # hardware exists, because their REPLACE-ME disks would (intentionally)
+        # fail the jupiter.storage assertion at build time. To bring one online:
+        # fill in its disk/hostId, uncomment, and add it to the CI build matrix.
+        # desktop        = mkHost ./hosts/desktop/configuration.nix [ ];
+        # parents-desktop = mkHost ./hosts/parents-desktop/configuration.nix [ ];
       };
 
       packages.x86_64-linux =

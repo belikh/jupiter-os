@@ -47,14 +47,16 @@ Every `nixosConfigurations.<host>` is built by a local `mkHost` helper:
 mkHost = hostPath: extraModules: nixpkgs.lib.nixosSystem {
   system = "x86_64-linux";
   modules = [
-    ({ ... }: { imports = [ sops-nix.nixosModules.sops impermanence.nixosModules.impermanence disko.nixosModules.disko ]; })
+    ({ ... }: { imports = [ sops-nix.nixosModules.sops impermanence.nixosModules.impermanence disko.nixosModules.disko home-manager.nixosModules.home-manager jovian.nixosModules.default chaotic.nixosModules.default ]; })
     hostPath
   ] ++ extraModules;
 };
 ```
 
-This injects the three flake-provided modules (sops-nix, impermanence, disko)
-into every host **via a lexical closure** rather than `specialArgs`. The
+This injects the flake-provided modules (sops-nix, impermanence, disko,
+home-manager, jovian, chaotic) into every host **via a lexical closure** rather
+than `specialArgs`. They're inert until a host opts in (e.g. home-manager does
+nothing unless `jupiter.home.enable`). The
 project convention (see `CLAUDE.md`) is to keep using this closure-injection
 style for any new flake-level module wiring, rather than reaching for
 `specialArgs`.
@@ -93,12 +95,14 @@ catalogued in [04-modules-reference.md](04-modules-reference.md).
 Every host config imports one of two foundation modules:
 
 - **`modules/common.nix`** — the true baseline. Pulls in (but does not
-  enable) impermanence, the desktop profile, the impermanent-ZFS-root layer,
-  and Syncthing; turns branding **on** by default; sets timezone, Nix
-  flakes/GC, `allowUnfree`, the default DNS resolver (`10.1.1.20`), OpenSSH,
-  the `io` admin user (sops-encrypted password, SSH key auth), and a
-  `virtualisation.vmVariant` so `make test-<host>` works. Imported directly
-  by `elitedesk` (diskless — no local root filesystem to declare).
+  enable) branding, impermanence, the desktop profile, the impermanent-ZFS-root
+  layer, and Syncthing — each opt-in per host via its `jupiter.*` toggle; sets
+  timezone, Nix flakes/GC, `allowUnfree`, a base admin CLI toolset
+  (`git`/`ripgrep`/`jq`/…) installed on every host, the default DNS resolver
+  (`10.1.1.20`), OpenSSH, `sops.defaultSopsFile`, the `io` admin user
+  (sops-encrypted password, SSH key auth), and a `virtualisation.vmVariant` so
+  `make test-<host>` works. Imported directly by `elitedesk` (diskless — no
+  local root filesystem to declare).
 - **`modules/common-stateful.nix`** — `common.nix` plus a bootloader
   (`systemd-boot`) and a fallback `fileSystems."/"`. Imported by every host
   that owns local disks: `lenovo`, `nas`, `dashboards`, `t460s`. Each of
@@ -110,22 +114,23 @@ into RAM instead (`boot.kernelParams = [ "copytoram" ]`).
 
 ## 6. Bootloader/branding interaction
 
-`jupiter.branding` (RobCo/Fallout-themed GRUB, green console, MOTD) is turned
-on fleet-wide by `common.nix`, then explicitly forced off
-(`lib.mkForce false`) on hosts where it doesn't make sense:
+`jupiter.branding` (RobCo/Fallout-themed GRUB, green console, MOTD) is opt-in:
+it defaults off and each host that wants it sets `jupiter.branding.enable =
+true`. `lenovo`, `nas`, and `t460s` enable it and boot through GRUB with the
+Fallout theme. The two hosts that don't want it simply leave it off:
 
-- `dashboards` — boot speed matters on a wall-mounted kiosk nobody watches POST on; falls back to the plain `systemd-boot` menu set by `common-stateful.nix`.
+- `dashboards` — boot speed matters on a wall-mounted kiosk nobody watches POST on; uses the plain `systemd-boot` menu set by `common-stateful.nix`.
 - `elitedesk` — headless netboot image; GRUB would conflict with the bootloader-less netboot profile anyway.
 
-`lenovo`, `nas`, and `t460s` keep branding on and boot through GRUB with the
-Fallout theme.
+Keeping branding opt-in (rather than on-by-default and force-disabled) means
+no host has to `mkForce` it back off.
 
 ## 7. Network-wide design choices
 
 - **Single internal resolver.** `lenovo` runs `jupiter.dns` (unbound, authoritative for the internal `home.jupiter.au` split-horizon zone, forwarding everything else to a local `dnscrypt-proxy`). Every other host's default nameserver is `10.1.1.20` (set in `common.nix`); `lenovo` itself points at `127.0.0.1`. See [05-networking.md](05-networking.md).
 - **Mesh access via headscale**, exposed publicly only through a Cloudflare Tunnel on `lenovo` (`headscale.jupiter.au`).
 - **Diskless compute offloaded to the NAS.** `elitedesk` has no disk; the NAS exports two zvols over iSCSI for its stateful services.
-- **Backups are restic→S3 (Backblaze B2)** for the irreplaceable subset of data only; bulk/reproducible data relies on local ZFS redundancy (mirrors) instead.
+- **The NAS is the data hub.** Servers' state datasets are pulled to the NAS hourly via syncoid (`jupiter.replication`), and the NAS is the *only* host with offsite egress — restic→S3 (Backblaze B2) for the irreplaceable subset only. Bulk/reproducible data relies on local ZFS redundancy (mirrors) instead.
 
 ## 8. CI and formatting
 
@@ -133,5 +138,6 @@ Fallout theme.
 
 1. **`check`** — `nixfmt-rfc-style --check .`, then `nix flake check --no-build` (evaluates every host plus deploy-rs checks).
 2. **`build`** — a matrix job that builds `system.build.toplevel` for each of `lenovo`, `t460s`, `nas`, `dashboards`, `elitedesk`. sops secrets are read at activation time, not build time, so CI needs no decryption key.
+3. **`boot-test`** — a matrix job that boots each *disk* host (`lenovo`, `t460s`, `nas`, `dashboards`) in a headless QEMU VM (KVM) via `scripts/boot-smoke.sh` and asserts it reaches multi-user, catching bootloader/disko/impermanence/unit-ordering regressions a pure build can't. `elitedesk` is a diskless netboot image, so it's covered by `build` only.
 
 See [09-operations.md](09-operations.md) for the full command reference.
