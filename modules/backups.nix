@@ -24,13 +24,9 @@
   };
 
   config = {
-    sops.secrets.restic_password = {
-      sopsFile = ../secrets/secrets.yaml;
-    };
-
-    sops.secrets.restic_env = {
-      sopsFile = ../secrets/secrets.yaml;
-    };
+    # sopsFile defaults to sops.defaultSopsFile (set in modules/common.nix).
+    sops.secrets.restic_password = { };
+    sops.secrets.restic_env = { };
 
     # Ensure the restic package is installed for manual recovery and snapshot commands
     environment.systemPackages = [ pkgs.restic ];

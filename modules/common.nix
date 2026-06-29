@@ -15,10 +15,28 @@
     ./branding.nix
   ];
 
-  # Common configuration applied to all hosts
-  jupiter.branding.enable = true;
+  # Common configuration applied to all hosts.
+  # Branding (GRUB Fallout theme, MOTD) is opt-in per host — see the hosts that
+  # set jupiter.branding.enable. It is intentionally NOT enabled fleet-wide so
+  # headless/netboot hosts don't have to force it back off.
 
   nixpkgs.config.allowUnfree = true;
+
+  # Baseline admin tooling, present on every host (headless or not). Desktop and
+  # per-host modules layer their own packages on top of this.
+  environment.systemPackages = with pkgs; [
+    git
+    htop
+    ripgrep
+    fd
+    jq
+    fzf
+    bat
+    eza
+    wget
+    curl
+    unzip
+  ];
 
   system.stateVersion = "24.05";
   time.timeZone = "Australia/Brisbane";
@@ -35,8 +53,11 @@
 
   sops.age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ];
 
+  # All secrets live in the one repo-level sops file; set it once here so
+  # individual secret declarations don't have to repeat sopsFile.
+  sops.defaultSopsFile = ../secrets/secrets.yaml;
+
   sops.secrets.io_password = {
-    sopsFile = ../secrets/secrets.yaml;
     neededForUsers = true;
   };
 
@@ -45,7 +66,6 @@
     extraGroups = [
       "wheel"
       "networkmanager"
-      "docker"
     ];
     hashedPasswordFile = config.sops.secrets.io_password.path;
     openssh.authorizedKeys.keys = [

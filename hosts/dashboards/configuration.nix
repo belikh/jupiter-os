@@ -8,11 +8,10 @@
     ../../modules/desktop/dashboard-gaming.nix # optional dual-VT kiosk + gaming session (off by default)
   ];
 
-  # GRUB + the custom Fallout theme + the verbose preDeviceCommands banner
-  # (modules/branding.nix) are the single biggest boot-time cost on these
-  # units. These boxes are wall-mounted dashboards nobody watches POST on —
-  # drop the theme for a plain, fast GRUB menu instead.
-  jupiter.branding.enable = lib.mkForce false;
+  # Branding (GRUB + Fallout theme + verbose preDeviceCommands banner) is left
+  # off here — it's the single biggest boot-time cost on these units, and
+  # they're wall-mounted dashboards nobody watches POST on. Plain, fast
+  # systemd-boot instead. (Branding is opt-in fleet-wide; see common.nix.)
 
   networking.hostName = "jupiter-dashboard";
   networking.hostId = "da58b0a4"; # Stable per-host 8-char hex, required for ZFS
@@ -53,7 +52,7 @@
   # Only required once the dual-VT/gaming feature is switched on, so a plain
   # dashboard deploy doesn't depend on the MQTT secret existing.
   sops.secrets = lib.mkIf config.jupiter.dashboardGaming.enable {
-    mqtt_dashboard.sopsFile = ../../secrets/secrets.yaml;
+    mqtt_dashboard = { };
   };
 
   jupiter.dashboardGaming = {
