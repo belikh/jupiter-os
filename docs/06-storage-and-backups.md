@@ -99,11 +99,11 @@ auto-discovering and logging into the target at boot. A static
 `networking.hosts` entry for `nas.home.jupiter.au` avoids a race between the
 boot-time iSCSI login and the DNS resolver coming up.
 
-First-time setup per LUN (not automated): `mkfs` each LUN once, then mount
-where the consuming service expects its data. As noted in
-[02-hosts.md](02-hosts.md#elitedesk-hp-elitedesk-800-g4), the actual DB/Loki
-service modules that would consume these LUNs aren't declared in this repo
-yet.
+The LUNs are consumed on `elitedesk` by `jupiter.services.postgresql` (the `db`
+LUN at `/var/lib/postgresql`) and `jupiter.services.loki` (the `loki` LUN at
+`/var/lib/loki`), mounted by label with `_netdev,nofail`. First-time setup
+(not automated): `mkfs.ext4 -L db` / `-L loki` each attached LUN once, then the
+declarative mounts pick them up on every boot.
 
 ## 3. NFS exports (`nas`)
 

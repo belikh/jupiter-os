@@ -257,6 +257,33 @@ license is "sustainable use", which Nixpkgs treats as unfree). Listens on
 
 **Imported by:** `lenovo` only.
 
+### `modules/services/postgresql.nix`
+```
+jupiter.services.postgresql.enable   (bool, default false)
+jupiter.services.postgresql.dataDir  (path, default "/var/lib/postgresql")
+jupiter.services.postgresql.package  (package, default pkgs.postgresql_16)
+```
+`services.postgresql` with its data directory under `dataDir` (on `elitedesk`
+the iSCSI `db` LUN) and `RequiresMountsFor` so it waits for that mount. No
+databases/roles are declared here — consumer apps add their own via
+`ensureDatabases`/`ensureUsers`. Local socket only (`enableTCPIP = false`).
+
+**Enabled by:** `elitedesk`.
+
+### `modules/services/loki.nix`
+```
+jupiter.services.loki.enable     (bool, default false)
+jupiter.services.loki.dataDir    (path, default "/var/lib/loki")
+jupiter.services.loki.httpPort   (port, default 3100)
+jupiter.services.loki.syslogPort (port, default 514)
+```
+`services.loki` (single-node, filesystem storage under `dataDir` — on
+`elitedesk` the iSCSI `loki` LUN) plus a `services.promtail` syslog receiver
+that ingests the Wyze cams' forwarded logs (RFC5424/TCP on `syslogPort`) and
+pushes them to Loki. Firewall: TCP `httpPort` + `syslogPort`.
+
+**Enabled by:** `elitedesk`.
+
 ### `modules/services/backups.nix`
 ```
 jupiter.backups.paths        (list of string, default [])

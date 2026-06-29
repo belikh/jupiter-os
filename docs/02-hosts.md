@@ -77,11 +77,12 @@ For module option details see [04-modules-reference.md](04-modules-reference.md)
 - **`networking.hostId`:** none (not needed — no local ZFS root).
 - **Boot:** `(modulesPath + "/installer/netboot/netboot-minimal.nix")`, with `boot.kernelParams = [ "copytoram" ]` so the served image is fully copied into RAM at boot. Branding is left off (opt-in, and GRUB would conflict with the bootloader-less netboot profile anyway).
 - **Network identity:** no static config in this repo beyond a static `/etc/hosts` entry for `nas.home.jupiter.au` → `10.1.1.2`, added so the boot-time iSCSI login doesn't race DNS coming up.
-- **Storage:** none locally. Persists state to the NAS over iSCSI: logs into `nas.home.jupiter.au:3260` automatically (`services.openiscsi`, initiator IQN `iqn.2026-06.au.jupiter:elitedesk`) and attaches the `db` and `loki` LUNs the NAS exports for it (see [06-storage-and-backups.md](06-storage-and-backups.md)). **Note:** the LUNs are provisioned and the initiator is wired up, but as of this repo's current state no `services.loki`/database NixOS module is declared on this host yet — the comments describing "DB + Loki persistence" describe the intended consumer, not an already-running service.
-- **Modules imported:** `common`.
+- **Storage:** none locally. Persists state to the NAS over iSCSI: logs into `nas.home.jupiter.au:3260` automatically (`services.openiscsi`, initiator IQN `iqn.2026-06.au.jupiter:elitedesk`) and attaches the `db` and `loki` LUNs the NAS exports for it (see [06-storage-and-backups.md](06-storage-and-backups.md)). Those LUNs are mounted by label at `/var/lib/postgresql` and `/var/lib/loki` (`_netdev,nofail`); **first-time setup** is to `mkfs.ext4 -L db` / `-L loki` the attached LUNs once.
+- **Network identity:** static `10.1.1.21/24` (`jupiter` site record) so the cams' syslog target and iSCSI resolve to a stable address. ⚠️ the wired NIC name (`enp0s31f6`) is the expected HP EliteDesk 800 G4 onboard interface — verify on real hardware.
+- **Modules imported:** `common`, `services/postgresql`, `services/loki`.
 - **Distinguishing responsibilities:**
   - Its evaluated build output (`kernel`, `netbootRamdisk`, `toplevel`) is consumed directly by `flake.nix`'s `pxeModule`, which feeds `lenovo`'s `jupiter.pxe` — see [01-architecture.md](01-architecture.md#3-the-mkhost-pattern-flakenix).
-  - The Wyze camera fleet forwards syslog to `elitedesk.home.jupiter.au:514` (see [08-edge-devices.md](08-edge-devices.md)), implying a log receiver is expected here too — also not yet declared as a NixOS service in this repo.
+  - Runs **PostgreSQL** (`jupiter.services.postgresql`, data on the `db` LUN) and **Loki + a promtail syslog receiver** (`jupiter.services.loki`, data on the `loki` LUN). The Wyze camera fleet forwards syslog to `elitedesk.home.jupiter.au:514` (see [08-edge-devices.md](08-edge-devices.md)), which the receiver ingests into Loki. Postgres has no databases declared yet — those come with whatever consumer app (e.g. a Grafana) lands.
 
 ---
 

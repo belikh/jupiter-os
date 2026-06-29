@@ -92,12 +92,12 @@ disabled.
 |---|---|---|
 | NixOS netboot-minimal profile | `(modulesPath + "/installer/netboot/netboot-minimal.nix")` | Diskless boot image, copied fully to RAM (`copytoram`) |
 | `open-iscsi` initiator | `hosts/elitedesk/configuration.nix` | Auto-login to the NAS's iSCSI target at boot |
+| PostgreSQL | `modules/services/postgresql.nix` (`jupiter.services.postgresql`) | DB on the iSCSI `db` LUN (`/var/lib/postgresql`); no databases declared yet |
+| Loki | `modules/services/loki.nix` (`jupiter.services.loki`) | Log store on the iSCSI `loki` LUN (`/var/lib/loki`), HTTP `:3100` |
+| promtail | `modules/services/loki.nix` | Syslog receiver on `:514`, ingests Wyze cam logs into Loki |
 
-No GUI, no branding, no local storage. Intended to also run a database and
-Loki (per comments in `hosts/nas/configuration.nix`/`disko.nix` and the Wyze
-cam syslog target in `hosts/parents-house/wyze-cams/wz_mini.conf.tmpl`), but
-those service modules are not yet present in this repo — see
-[02-hosts.md](02-hosts.md#elitedesk-hp-elitedesk-800-g4) for the caveat.
+No GUI, no branding, no local storage — but it does run the persistent DB +
+Loki stack on the NAS-backed iSCSI LUNs (above).
 
 ### `t460s`
 
