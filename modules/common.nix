@@ -11,6 +11,7 @@
     ./desktop/default.nix
     ./gaming/bazzite.nix
     ./storage/zfs-profiles.nix
+    ./storage/backup.nix
     ./services/syncthing.nix
     ./core/branding.nix
     ./home

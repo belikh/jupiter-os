@@ -139,6 +139,21 @@ it in once CI is validating.
   (HA VM) and `n8n` (lenovo). n8n migrated off SQLite. HA recorder `db_url` is
   set inside the HAOS VM (not NixOS-managed). Needs `pg_homeassistant_password`
   / `pg_n8n_password` in secrets.yaml + one-time n8n SQLite→PG data migration.
+- **Auto-wired central backup** — `jupiter.backup` (`modules/storage/backup.nix`),
+  defaulted on by the `stateful` storage profile; `flake.nix`'s `backupHubModule`
+  derives the NAS's syncoid sources from the fleet, and the NAS backs up
+  `tank/backups` wholesale. New state-holding hosts replicate offsite with no NAS
+  edit. Source-side pull key auto-authorized from `site.backupHub`.
+
+## Known gap: elitedesk DB/Loki data offsite
+
+elitedesk's Postgres + Loki live on NAS iSCSI zvols (`rpool/db`, `rpool/loki`),
+so they're already on the central store — but those zvols are on the NAS's
+`rpool`, NOT under `tank/backups`, so they are **not** in the offsite restic
+path, and restic can't file-walk a raw zvol anyway. The HA recorder + n8n DB are
+valuable, so this needs handling: e.g. sanoid-snapshot the zvols and `zfs send`
+them to `tank/backups/elitedesk-db` (then they ride the existing offsite), or
+run a logical `pg_dump` to a replicated dataset. Not yet done.
 
 ### Validation still required (no nix/KVM in the authoring env)
 

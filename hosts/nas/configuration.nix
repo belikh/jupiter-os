@@ -56,30 +56,24 @@
     ];
   };
 
-  # The NAS is the fleet's data hub: it pulls servers' state datasets here
-  # hourly via syncoid, landing them under tank/backups/<host> (already covered
-  # by the sanoid 'important' policy and the restic offsite path below). This is
-  # the only host with offsite egress. See modules/storage/replication.nix for
-  # the one-time SSH-key/zfs-allow provisioning steps.
+  # The NAS is the fleet's data hub. It pulls every replicate-enabled host's
+  # state here hourly via syncoid — the SOURCES are derived automatically from
+  # each host's jupiter.backup in flake.nix (backupHubModule), so no host is
+  # enumerated here. Just provide the pull key + enable the puller.
+  # See modules/storage/replication.nix for the one-time SSH-key provisioning.
   sops.secrets.syncoid_ssh_key = { }; # add to secrets.yaml before deploying
   jupiter.replication = {
     enable = true;
     sshKeyPath = config.sops.secrets.syncoid_ssh_key.path;
-    sources.lenovo = {
-      remote = "root@lenovo.home.jupiter.au";
-      sourceDataset = "rpool/var"; # n8n flows + libvirt images
-      targetDataset = "tank/backups/lenovo";
-    };
   };
 
-  # Offsite (restic -> cloud): only the irreplaceable, reasonably-sized data on
-  # the NEW pool, plus the server state replicated in above. Media/surveillance/
-  # downloads/archive stay on tank's mirror. The frozen europa archive is the
-  # user's separate long-term project.
+  # Offsite (restic -> cloud): tank/personal plus ALL replicated host state under
+  # tank/backups (so any future host the hub pulls is covered without edits
+  # here). Media/surveillance/downloads/archive stay on tank's mirror; the frozen
+  # europa archive is the user's separate long-term project.
   jupiter.backups.paths = [
     "/tank/personal"
-    "/tank/backups/homeassistant"
-    "/tank/backups/lenovo"
+    "/tank/backups"
   ];
 
   environment.systemPackages = with pkgs; [

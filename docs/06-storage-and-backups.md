@@ -168,19 +168,32 @@ irreplaceable state reaches the cloud by first landing on the NAS (see §7),
 not by backing up directly. `lenovo`, `dashboards`, `elitedesk`, and `t460s`
 set no `jupiter.backups.paths`.
 
-## 7. Server-state replication (syncoid → NAS)
+## 7. Server-state replication (syncoid → NAS) — auto-wired
 
-`modules/storage/replication.nix` (`jupiter.replication`, enabled on `nas`)
-pulls servers' state datasets onto the NAS on a timer, so the NAS becomes the
-single hub that the offsite backup then covers:
+The NAS is the central data store: any host with local persistent state
+replicates to it hourly, and the NAS is the only host with offsite egress.
+**This wiring is automatic — you never edit the NAS to add a host:**
+
+- Each host declares `jupiter.backup` (`modules/storage/backup.nix`). The
+  `stateful` storage profile defaults it on with `datasets = [ "rpool/var" ]`;
+  appliances/laptops (impermanent) leave it off (they roam via Syncthing), and
+  diskless hosts whose data already lives on NAS iSCSI don't need it.
+- `modules/storage/backup.nix` auto-authorizes the NAS's syncoid pull key
+  (`site.backupHub`, restricted to the NAS address) for root on each enabled
+  host.
+- `flake.nix`'s `backupHubModule` reads every host's `jupiter.backup` and
+  generates the NAS's `jupiter.replication.sources` — one syncoid command per
+  declared dataset, landing at `tank/backups/<host>-<leaf>`.
+
+So the live mapping is derived, not listed. Today that's:
 
 | Source | Source dataset | Lands at | Interval |
 |---|---|---|---|
-| `lenovo` | `rpool/var` (n8n flows + libvirt images) | `tank/backups/lenovo` | hourly |
+| `lenovo` | `rpool/var` (n8n flows + libvirt images) | `tank/backups/lenovo-var` | hourly |
 
-syncoid (running on the NAS, pull mode) takes its own pre-send snapshot, so the
-source needs no snapshot policy of its own. One-time provisioning (SSH keypair
-→ `syncoid_ssh_key` sops secret on the NAS, public key authorized for `root` on
-each source, `zfs allow` send rights) is described in the module header. The
-landing datasets sit under `tank/backups`, so they inherit the `important`
-sanoid policy and the restic offsite path above.
+syncoid (pull mode on the NAS) takes its own pre-send snapshot, so sources need
+no snapshot policy. The landing datasets sit under `tank/backups`, which is
+recursive in the `important` sanoid policy and is backed up wholesale to the
+offsite repo (§6) — so a new replicated host is snapshotted + offsite with no
+further config. One-time provisioning: the `syncoid_ssh_key` sops secret on the
+NAS and its public key in `site.backupHub.syncoidPublicKey`.
