@@ -136,5 +136,6 @@ no host has to `mkForce` it back off.
 
 1. **`check`** — `nixfmt-rfc-style --check .`, then `nix flake check --no-build` (evaluates every host plus deploy-rs checks).
 2. **`build`** — a matrix job that builds `system.build.toplevel` for each of `lenovo`, `t460s`, `nas`, `dashboards`, `elitedesk`. sops secrets are read at activation time, not build time, so CI needs no decryption key.
+3. **`boot-test`** — a matrix job that boots each *disk* host (`lenovo`, `t460s`, `nas`, `dashboards`) in a headless QEMU VM (KVM) via `scripts/boot-smoke.sh` and asserts it reaches multi-user, catching bootloader/disko/impermanence/unit-ordering regressions a pure build can't. `elitedesk` is a diskless netboot image, so it's covered by `build` only.
 
 See [09-operations.md](09-operations.md) for the full command reference.
