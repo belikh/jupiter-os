@@ -11,12 +11,12 @@ For module option details see [04-modules-reference.md](04-modules-reference.md)
 
 **Role:** always-on bare-metal compute node — the fleet's "core services" box.
 
-- **Config:** `hosts/lenovo/configuration.nix`, `hosts/lenovo/disko.nix`
+- **Config:** `hosts/lenovo/configuration.nix`
 - **Base layer:** `modules/common-stateful.nix`
 - **`networking.hostId`:** `1e110000`
 - **Network identity:** static `10.1.1.20/24` on bridge `br0` (`enp1s0` member), gateway `10.1.1.1`, `networking.useDHCP = false`. Points its own resolver at itself (`127.0.0.1`), overriding the fleet default.
-- **Boot:** GRUB (Fallout theme) — branding stays on for this host.
-- **Storage:** single OS ZFS pool (`rpool`) on one disk — `root`, `nix`, and `var` datasets (`var` holds n8n state + libvirt VM images). ⚠️ `disko.nix`'s `device` is a placeholder (`REPLACE-ME-lenovo-os-disk`) — must be set to the real by-id path before install.
+- **Boot:** GRUB (Fallout theme) — `jupiter.branding.enable = true` on this host.
+- **Storage:** `jupiter.storage.profile = "stateful"` — single OS ZFS pool (`rpool`) with `root`, `nix`, and `var` datasets (`var` holds n8n state + libvirt VM images); persistent root, no rollback. ⚠️ `jupiter.storage.disk` is a placeholder (`REPLACE-ME-lenovo-os-disk`) — must be set to the real by-id path before install.
 - **Modules imported:** `common-stateful`, `home-assistant-vm`, `n8n`, `cloudflared`, `headscale`, `backups`, `pxe-server`, `services/dns`.
 - **Distinguishing responsibilities:**
   - Runs the fleet's only DNS resolver (`jupiter.dns`, domain `home.jupiter.au`), serving the LAN, IoT/Camera VLANs, and the headscale mesh.
@@ -56,12 +56,12 @@ For module option details see [04-modules-reference.md](04-modules-reference.md)
 
 **Role:** 4x Toshiba TCx Wave touchscreen kiosk terminals, all sharing one NixOS image.
 
-- **Config:** `hosts/dashboards/configuration.nix`, `hosts/dashboards/disko.nix`
+- **Config:** `hosts/dashboards/configuration.nix`
 - **Base layer:** `modules/common-stateful.nix`
 - **`networking.hostId`:** `da58b0a4`
-- **Boot:** branding explicitly forced off (`jupiter.branding.enable = lib.mkForce false`) — falls back to the plain `systemd-boot` menu for fastest boot, since these are wall-mounted appliances nobody watches POST.
+- **Boot:** branding left off (`jupiter.branding` is opt-in and not enabled here) — uses the plain `systemd-boot` menu for fastest boot, since these are wall-mounted appliances nobody watches POST.
 - **Hardware:** Intel Core i5-6500U (Skylake-U, 2c/4t, 15W TDP) + integrated HD Graphics 520 (Gen9), built-in 15" touchscreen panel.
-- **Storage:** single small OS ZFS pool (`root` + `nix` only — no bulk data). ⚠️ `disko.nix`'s `device` is a placeholder (`REPLACE-ME-dashboard-os-disk`).
+- **Storage:** `jupiter.storage.profile = "impermanent"` — single OS ZFS pool, root rolled back to `@blank` every boot. Only the minimal system set plus the `kiosk` Chromium profile persists (`/persist`). ⚠️ `jupiter.storage.disk` is a placeholder (`REPLACE-ME-dashboard-os-disk`).
 - **Modules imported:** `common-stateful`, `services/tcxwave-power-tuning`.
 - **Display/UI:** Wayland-only kiosk via `services.cage` running Chromium in `--kiosk` mode, loading the Home Assistant `jupiter-ops` dashboard (`https://ha.jupiter.au/jupiter-ops`). `services.xserver` is explicitly disabled. VA-API hardware video decode is enabled for the HD 520 iGPU. A dedicated `kiosk` user (in `video`+`render` groups) runs the session.
 - **Power/boot tuning** (`services/tcxwave-power-tuning.nix`): latest kernel for newest `i915`/`intel_pstate` support, i915 RC6/FBC/PSR/fastboot, no `mitigations=off` (renders arbitrary remote content), zero-timeout bootloader, systemd-stage-1 initrd with a trimmed module set, zram swap, TLP for runtime PM, thermald, and volatile (RAM-only) journald logging.
@@ -75,14 +75,14 @@ For module option details see [04-modules-reference.md](04-modules-reference.md)
 - **Config:** `hosts/elitedesk/configuration.nix`
 - **Base layer:** `modules/common.nix` directly (no `common-stateful` — there's no local disk to give it a root filesystem/bootloader).
 - **`networking.hostId`:** none (not needed — no local ZFS root).
-- **Boot:** `(modulesPath + "/installer/netboot/netboot-minimal.nix")`, with `boot.kernelParams = [ "copytoram" ]` so the served image is fully copied into RAM at boot. Branding is forced off (conflicts with the bootloader-less netboot profile).
+- **Boot:** `(modulesPath + "/installer/netboot/netboot-minimal.nix")`, with `boot.kernelParams = [ "copytoram" ]` so the served image is fully copied into RAM at boot. Branding is left off (opt-in, and GRUB would conflict with the bootloader-less netboot profile anyway).
 - **Network identity:** no static config in this repo beyond a static `/etc/hosts` entry for `nas.home.jupiter.au` → `10.1.1.2`, added so the boot-time iSCSI login doesn't race DNS coming up.
-- **Storage:** none locally. Persists state to the NAS over iSCSI: logs into `nas.home.jupiter.au:3260` automatically (`services.openiscsi`, initiator IQN `iqn.2026-06.au.jupiter:elitedesk`) and attaches the `db` and `loki` LUNs the NAS exports for it (see [06-storage-and-backups.md](06-storage-and-backups.md)). **Note:** the LUNs are provisioned and the initiator is wired up, but as of this repo's current state no `services.loki`/database NixOS module is declared on this host yet — the comments describing "DB + Loki persistence" describe the intended consumer, not an already-running service.
-- **Modules imported:** `common`, `headscale`.
+- **Storage:** none locally. Persists state to the NAS over iSCSI: logs into `nas.home.jupiter.au:3260` automatically (`services.openiscsi`, initiator IQN `iqn.2026-06.au.jupiter:elitedesk`) and attaches the `db` and `loki` LUNs the NAS exports for it (see [06-storage-and-backups.md](06-storage-and-backups.md)). Those LUNs are mounted by label at `/var/lib/postgresql` and `/var/lib/loki` (`_netdev,nofail`); **first-time setup** is to `mkfs.ext4 -L db` / `-L loki` the attached LUNs once.
+- **Network identity:** static `10.1.1.21/24` (`jupiter` site record) so the cams' syslog target and iSCSI resolve to a stable address. ⚠️ the wired NIC name (`enp0s31f6`) is the expected HP EliteDesk 800 G4 onboard interface — verify on real hardware.
+- **Modules imported:** `common`, `services/postgresql`, `services/loki`.
 - **Distinguishing responsibilities:**
   - Its evaluated build output (`kernel`, `netbootRamdisk`, `toplevel`) is consumed directly by `flake.nix`'s `pxeModule`, which feeds `lenovo`'s `jupiter.pxe` — see [01-architecture.md](01-architecture.md#3-the-mkhost-pattern-flakenix).
-  - Also imports `modules/headscale.nix`, so (per the module's current unconditional `services.headscale.enable = true`) a second headscale instance runs here in addition to the one on `lenovo`. Only `lenovo`'s instance is reachable from outside the LAN (it's the one wired into the Cloudflare Tunnel); `elitedesk`'s is not exposed.
-  - The Wyze camera fleet forwards syslog to `elitedesk.home.jupiter.au:514` (see [08-edge-devices.md](08-edge-devices.md)), implying a log receiver is expected here too — also not yet declared as a NixOS service in this repo.
+  - Runs **PostgreSQL** (`jupiter.services.postgresql`, data on the `db` LUN) and **Loki + a promtail syslog receiver** (`jupiter.services.loki`, data on the `loki` LUN). The Wyze camera fleet forwards syslog to `elitedesk.home.jupiter.au:514` (see [08-edge-devices.md](08-edge-devices.md)), which the receiver ingests into Loki. Postgres has no databases declared yet — those come with whatever consumer app (e.g. a Grafana) lands.
 
 ---
 
@@ -94,18 +94,38 @@ For module option details see [04-modules-reference.md](04-modules-reference.md)
 - **Base layer:** `modules/common-stateful.nix`
 - **`networking.hostId`:** `c0ffee00`
 - **Boot:** GRUB (Fallout theme).
-- **Storage:** **impermanent** ZFS root, disko layout supplied dynamically by `modules/storage/zfs-impermanent.nix` (gated by `jupiter.storage.zfs.enable`) rather than a per-host `disko.nix` file — disk is `/dev/nvme0n1`. Root (`rpool/local/root`) is rolled back to a blank snapshot on every boot (erase-your-darlings); `/nix` and `/persist` survive. `jupiter.core.impermanence` (persistPath `/persist`) declares which directories/files in `/etc`, `/var`, and the `io` user's home survive the rollback.
-- **Modules imported:** `common-stateful` (transitively: `core/impermanence`, `desktop`, `storage/zfs-impermanent`, `services/syncthing`, `branding`).
+- **Storage:** `jupiter.storage.profile = "impermanent"` (`modules/storage/zfs-profiles.nix`), `disk = "/dev/nvme0n1"` — no per-host `disko.nix` file. Root (`rpool/local/root`) is rolled back to a blank snapshot on every boot (erase-your-darlings); `/nix` and `/persist` survive. `jupiter.core.impermanence` (persistPath `/persist`, `persistAdminHome` on) declares which directories/files in `/etc`, `/var`, and the `io` user's home survive the rollback.
+- **Modules imported:** `common-stateful` (transitively: `core/impermanence`, `desktop`, `storage/zfs-profiles`, `services/syncthing`, `branding`).
 - **Feature toggles set:**
   ```nix
   jupiter = {
+    branding.enable = true;
     core.impermanence.enable = true;
+    home.enable = true;
     desktop = { enable = true; compositor = "niri"; };
-    storage.zfs = { enable = true; disk = "/dev/nvme0n1"; };
+    storage = { profile = "impermanent"; disk = "/dev/nvme0n1"; };
     services.syncthing.enable = true;
   };
   ```
+- **Roaming:** `jupiter.home.enable` gives `io` a declarative home-manager
+  environment (dotfiles + shared niri config) identical to the other personal
+  machines; Syncthing roams the data dirs via the NAS. See the future
+  `desktop`/`parents-desktop` workstations below.
 - **Distinguishing responsibilities:** the only host running a graphical desktop (Niri, see [03-software-inventory.md](03-software-inventory.md#desktop-class-t460s)); runs Syncthing for user `io`, with a curated `.stignore` that explicitly re-includes `.claude`/`.gemini` (AI assistant state) while excluding most other dotfiles.
+
+---
+
+## Future hosts (scaffolds)
+
+`hosts/desktop/` and `hosts/parents-desktop/` are roaming personal workstations
+that don't exist yet. Each is `impermanent` storage + `jupiter.desktop` (niri) +
+`jupiter.home.enable` + Syncthing — the same portable `io` identity as `t460s`,
+so logging in at any of them feels like the home PC. `parents-desktop` lives at
+the second site and reaches the NAS over the headscale mesh (offline-tolerant
+Syncthing, not NFS). They are **not** registered in `flake.nix` yet: their
+`REPLACE-ME` disks would fail the `jupiter.storage` assertion. Bring one online
+by filling in its disk + `hostId`, uncommenting its `mkHost` line, adding it to
+the CI matrices, and generating its age key.
 
 ---
 

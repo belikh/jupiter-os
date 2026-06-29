@@ -44,11 +44,12 @@ well-formed.
 
 1. Generate the host's Age key, add it to `.sops.yaml`, then
    `sops updatekeys secrets/secrets.yaml`.
-2. Add `hosts/<name>/configuration.nix` (and `disko.nix` if it has local
-   disks), then register it in both `nixosConfigurations` and `deploy.nodes`
-   in `flake.nix`.
+2. Add `hosts/<name>/configuration.nix` — for a local-disk host, set
+   `jupiter.storage.profile` + `jupiter.storage.disk` (or write a bespoke
+   `disko.nix` like `nas` if the layout is unusual) — then register it in both
+   `nixosConfigurations` and `deploy.nodes` in `flake.nix`.
 3. Partition + install:
-   - Hosts with local disks: `nixos-anywhere --flake .#<host> root@<ip>` (disko handles partitioning — **confirm the real disk's by-id path first**; every `disko.nix` in this repo either has a placeholder device or a comment telling you to verify it).
+   - Hosts with local disks: `nixos-anywhere --flake .#<host> root@<ip>` (disko handles partitioning — **confirm the real disk's by-id path first**; `jupiter.storage.disk` defaults to a `REPLACE-ME` placeholder that fails an assertion until you set it).
    - Diskless hosts: wire them into the PXE server instead, the way `elitedesk` is wired into `lenovo`'s `jupiter.pxe` in `flake.nix` (see [01-architecture.md §3](01-architecture.md#3-the-mkhost-pattern-flakenix)).
 
 ## 4. Testing changes before deploying
@@ -91,10 +92,11 @@ build/eval time, so `nix flake check` and `nix build` succeed without one.
 
 ## 6. Things to double check before relying on a fresh checkout
 
-- `hosts/lenovo/disko.nix` and `hosts/dashboards/disko.nix` both ship a
-  deliberately-invalid placeholder disk device (`REPLACE-ME-...`) so a stray
-  `disko` run fails loudly instead of wiping a real disk. Replace with the
-  real by-id path before installing.
+- `lenovo` and `dashboards` set `jupiter.storage.disk` to a placeholder
+  (`REPLACE-ME-...`), and `nas`'s bespoke `disko.nix` does the same. The
+  storage module asserts against the placeholder so a stray `disko` run fails
+  loudly instead of wiping a real disk. Replace with the real by-id path before
+  installing.
 - `jupiter.nas.bond.enable` is `false` — the matching LACP config must exist
   on the UniFi switch before flipping it on, or the NAS drops off the
   network (see [04-modules-reference.md](04-modules-reference.md#modulesnetworknas-bondnix)).

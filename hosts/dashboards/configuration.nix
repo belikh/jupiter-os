@@ -3,16 +3,36 @@
 {
   imports = [
     ../../modules/common-stateful.nix
-    ./disko.nix # OS disk layout (destructive — confirm device before install)
     ../../modules/services/tcxwave-power-tuning.nix # kernel/GPU/storage/power tuning for the i5-6500U + HD 520 hardware
     ../../modules/desktop/dashboard-gaming.nix # optional dual-VT kiosk + gaming session (off by default)
   ];
 
-  # GRUB + the custom Fallout theme + the verbose preDeviceCommands banner
-  # (modules/branding.nix) are the single biggest boot-time cost on these
-  # units. These boxes are wall-mounted dashboards nobody watches POST on —
-  # drop the theme for a plain, fast GRUB menu instead.
-  jupiter.branding.enable = lib.mkForce false;
+  # Stateless kiosk appliance: erase-your-darlings root so the box always boots
+  # to a known-pristine state and can't accumulate drift. Only a minimal set
+  # plus the kiosk Chromium profile survives (below).
+  # ⚠️ disk is a REPLACE-ME placeholder — set the real by-id path before install.
+  jupiter.storage = {
+    profile = "impermanent";
+    disk = "/dev/disk/by-id/REPLACE-ME-dashboard-os-disk";
+  };
+
+  jupiter.core.impermanence = {
+    enable = true;
+    persistAdminHome = false; # no personal session on a kiosk
+    # Keep the Chromium profile so the HA dashboard's session/cache survive
+    # reboots (faster warm-up, stays logged in).
+    users.kiosk = {
+      directories = [
+        ".config/chromium"
+        ".cache/chromium"
+      ];
+    };
+  };
+
+  # Branding (GRUB + Fallout theme + verbose preDeviceCommands banner) is left
+  # off here — it's the single biggest boot-time cost on these units, and
+  # they're wall-mounted dashboards nobody watches POST on. Plain, fast
+  # systemd-boot instead. (Branding is opt-in fleet-wide; see common.nix.)
 
   networking.hostName = "jupiter-dashboard";
   networking.hostId = "da58b0a4"; # Stable per-host 8-char hex, required for ZFS
@@ -53,7 +73,7 @@
   # Only required once the dual-VT/gaming feature is switched on, so a plain
   # dashboard deploy doesn't depend on the MQTT secret existing.
   sops.secrets = lib.mkIf config.jupiter.dashboardGaming.enable {
-    mqtt_dashboard.sopsFile = ../../secrets/secrets.yaml;
+    mqtt_dashboard = { };
   };
 
   jupiter.dashboardGaming = {

@@ -18,22 +18,27 @@ No option — `common.nix` + bootloader + fallback root filesystem for hosts wit
 
 ### `modules/core/impermanence.nix`
 ```
-jupiter.core.impermanence.enable     (bool, default false)
-jupiter.core.impermanence.persistPath (string, default "/persist")
+jupiter.core.impermanence.enable           (bool, default false)
+jupiter.core.impermanence.persistPath      (string, default "/persist")
+jupiter.core.impermanence.persistAdminHome (bool, default true)
+jupiter.core.impermanence.extraDirectories (list of string, default [])
+jupiter.core.impermanence.extraFiles       (list of string, default [])
+jupiter.core.impermanence.users            (attrset of { directories, files })
 ```
 Wraps `environment.persistence."${persistPath}"` (from the `impermanence`
-flake input): persists `/var/log`, `/var/lib/nixos`, `/var/lib/systemd/coredump`,
-`/var/lib/libvirt`, NetworkManager connections, `/var/lib/sops-nix`, the
-machine-id, and the SSH host key — plus, for user `io`: `Downloads`, `Music`,
-`Pictures`, `Documents`, `Videos`, `Projects`, `.config`, `.ssh`,
-`.local/share/keyrings`, `.local/share/direnv`, `.gemini`, `.claude`, and
-`.bash_history`.
+flake input): always persists `/var/log`, `/var/lib/nixos`,
+`/var/lib/systemd/coredump`, `/var/lib/libvirt`, NetworkManager connections,
+`/var/lib/sops-nix`, the machine-id, and the SSH host key. When
+`persistAdminHome` is on (default) it also keeps user `io`'s home dirs
+(`Documents`, `.config`, `.ssh`, `.gemini`, `.claude`, …). `extraDirectories`/
+`extraFiles`/`users` add host-specific paths — e.g. the kiosks turn
+`persistAdminHome` off and persist only the `kiosk` account's Chromium profile.
 
-**Enabled by:** `t460s` only.
+**Enabled by:** `t460s` (admin home) and `dashboards` (kiosk profile only).
 
-### `modules/branding.nix`
+### `modules/core/branding.nix`
 ```
-jupiter.branding.enable   (bool, default false — but set true fleet-wide in common.nix)
+jupiter.branding.enable   (bool, default false)
 ```
 RobCo Industries / Fallout-themed boot experience: GRUB (with the
 `fallout-grub-theme` fetched from GitHub), green-phosphor console palette,
@@ -41,8 +46,8 @@ verbose `preDeviceCommands` boot banner, RobCo-styled MOTD, and (when
 `jupiter.desktop.enable` is also true) the `ly` TTY display manager in place
 of `greetd`.
 
-**On by default** for every host (set in `common.nix`). **Forced off** on
-`dashboards` and `elitedesk`.
+**Enabled by:** `lenovo`, `nas`, `t460s`. Off elsewhere (`dashboards` keeps a
+fast plain `systemd-boot` menu; `elitedesk` is a bootloader-less netboot node).
 
 ## Desktop
 
@@ -57,20 +62,31 @@ See [03-software-inventory.md §4](03-software-inventory.md#4-desktop-class-curr
 
 ## Storage
 
-### `modules/storage/zfs-impermanent.nix`
+### `modules/storage/zfs-profiles.nix`
 ```
-jupiter.storage.zfs.enable  (bool, default false)
-jupiter.storage.zfs.disk    (string, default "/dev/nvme0n1")
+jupiter.storage.profile  (enum ["none" "impermanent" "stateful" "minimal"], default "none")
+jupiter.storage.disk     (string, default "/dev/disk/by-id/REPLACE-ME")
+jupiter.storage.espSize  (string, default "1G")
 ```
-Declares a disko ZFS layout (`rpool`: `local/root`, `local/nix`,
-`safe/persist`) and an initrd-stage systemd service that runs
-`zfs rollback -r rpool/local/root@blank` before `sysroot.mount` on every
-boot — the "erase your darlings" pattern. Pairs with
-`jupiter.core.impermanence` to decide what survives the rollback.
+One shared ZFS-on-root disko layout, selected per host by `profile`, replacing
+the old per-host `disko.nix` boilerplate on the simple single-OS-disk hosts:
 
-**Enabled by:** `t460s` (`disk = "/dev/nvme0n1"`).
+| Profile | Datasets | Root behaviour |
+|---|---|---|
+| `impermanent` | `local/root` (+`@blank`), `local/nix`, `safe/persist` | rolled back to `@blank` each boot (erase-your-darlings) |
+| `stateful` | `root`, `nix`, `var` | persistent, no rollback |
+| `minimal` | `root`, `nix` | persistent, no rollback |
+| `none` | — | host declares its own layout / is diskless |
 
-### `modules/zfs-nas.nix`
+The `impermanent` profile also installs the initrd-stage rollback service
+(`zfs rollback -r rpool/local/root@blank` before `sysroot.mount`) and pairs
+with `jupiter.core.impermanence` to decide what survives. An assertion blocks
+the build while `disk` is still the `REPLACE-ME` placeholder.
+
+**Enabled by:** `t460s` + `dashboards` (`impermanent`), `lenovo` (`stateful`).
+`nas` keeps its bespoke `disko.nix` and leaves `profile = "none"`.
+
+### `modules/storage/zfs-nas.nix`
 No option — unconditional. Sets `boot.supportedFilesystems = [ "zfs" ]`,
 imports the hand-created `tank`/`europa` pools via `boot.zfs.extraPools`,
 enables `services.zfs.autoScrub`/`trim`, and declares the three Samba shares
@@ -116,6 +132,23 @@ the consuming host's initiator IQN. Firewall: TCP 3260.
 **Enabled by:** `nas`, with two LUNs — `db` (`/dev/zvol/rpool/db`) and `loki`
 (`/dev/zvol/rpool/loki`), both ACL'd to `iqn.2026-06.au.jupiter:elitedesk`.
 
+### `modules/storage/replication.nix`
+```
+jupiter.replication.enable     (bool, default false)
+jupiter.replication.sshKeyPath (path — syncoid's private key, usually a sops secret)
+jupiter.replication.interval   (string, default "hourly")
+jupiter.replication.sources    (attrset of { remote, sourceDataset, targetDataset })
+```
+Pull-based ZFS replication via `services.syncoid`: the puller logs into each
+source over SSH and pulls `sourceDataset` to `targetDataset` on a timer. syncoid
+takes its own pre-send snapshot, so sources need no snapshot policy. The module
+header documents the one-time provisioning (keypair → sops, authorize the public
+key on each source, `zfs allow` send rights).
+
+**Enabled by:** `nas`, pulling `lenovo:rpool/var` → `tank/backups/lenovo`
+hourly. This makes the NAS the fleet's data hub — see
+[06-storage-and-backups.md §7](06-storage-and-backups.md#7-server-state-replication-syncoid--nas).
+
 ## Network
 
 ### `modules/network/nas-bond.nix`
@@ -131,7 +164,7 @@ connectivity when this is enabled.
 
 **Set by:** `nas`, currently `enable = false` (not yet turned on).
 
-### `modules/services/dns.nix`
+### `modules/network/dns.nix`
 ```
 jupiter.dns.enable           (bool, default false)
 jupiter.dns.domain           (string, default "home.jupiter.au")
@@ -155,15 +188,15 @@ Firewall: TCP+UDP 53.
 covering the default LAN, IoT VLAN, Cameras VLAN, and the headscale mesh
 range — see [02-hosts.md](02-hosts.md#lenovo) for the exact CIDR list.
 
-### `modules/headscale.nix`
+### `modules/network/headscale.nix`
 No option — unconditional `services.headscale`. Port 8080, `magic_dns`
 enabled, base domain `jupiter.mesh`, mesh clients told to use `10.1.1.20` for
 DNS, `ip_prefixes` `100.64.0.0/10` + `fd7a:115c:a1e0::/48`. Firewall: TCP 8080.
 
-**Imported by:** `lenovo` and `elitedesk` (see the duplication note in
-[02-hosts.md](02-hosts.md#elitedesk-hp-elitedesk-800-g4)).
+**Imported by:** `lenovo` only — the single mesh control plane, exposed
+publicly via the Cloudflare Tunnel (`headscale.jupiter.au`).
 
-### `modules/cloudflared.nix`
+### `modules/network/cloudflared.nix`
 No option — unconditional. One named tunnel
 (`aa1088b8-a0e1-4073-8567-6a9bf5fb4bd7`), credentials from sops secret
 `cloudflare_cert`, ingress rules for `headscale.jupiter.au`, `n8n.jupiter.au`,
@@ -171,7 +204,7 @@ No option — unconditional. One named tunnel
 
 **Imported by:** `lenovo` only.
 
-### `modules/pxe-server.nix`
+### `modules/network/pxe-server.nix`
 ```
 jupiter.pxe.enable    (bool, default false)
 jupiter.pxe.kernel     (string, path/URL to bzImage)
@@ -208,7 +241,7 @@ and [02-hosts.md](02-hosts.md#dashboards-jupiter-dashboard).
 
 **Imported by:** `dashboards` only.
 
-### `modules/home-assistant-vm.nix`
+### `modules/services/home-assistant-vm.nix`
 No option — unconditional. `virtualisation.libvirtd` with
 `qemu_kvm`/`runAsRoot`/`swtpm`; ships `virt-manager`, `libvirt`, `qemu_kvm`
 CLI tools. Network bridging is left to the host (`hosts/lenovo` declares
@@ -216,7 +249,7 @@ CLI tools. Network bridging is left to the host (`hosts/lenovo` declares
 
 **Imported by:** `lenovo` only.
 
-### `modules/n8n.nix`
+### `modules/services/n8n.nix`
 No option — unconditional `services.n8n`. `allowUnfree` is turned on (n8n's
 license is "sustainable use", which Nixpkgs treats as unfree). Listens on
 `127.0.0.1:5678` behind the Cloudflare Tunnel; `WEBHOOK_URL =
@@ -224,7 +257,34 @@ license is "sustainable use", which Nixpkgs treats as unfree). Listens on
 
 **Imported by:** `lenovo` only.
 
-### `modules/backups.nix`
+### `modules/services/postgresql.nix`
+```
+jupiter.services.postgresql.enable   (bool, default false)
+jupiter.services.postgresql.dataDir  (path, default "/var/lib/postgresql")
+jupiter.services.postgresql.package  (package, default pkgs.postgresql_16)
+```
+`services.postgresql` with its data directory under `dataDir` (on `elitedesk`
+the iSCSI `db` LUN) and `RequiresMountsFor` so it waits for that mount. No
+databases/roles are declared here — consumer apps add their own via
+`ensureDatabases`/`ensureUsers`. Local socket only (`enableTCPIP = false`).
+
+**Enabled by:** `elitedesk`.
+
+### `modules/services/loki.nix`
+```
+jupiter.services.loki.enable     (bool, default false)
+jupiter.services.loki.dataDir    (path, default "/var/lib/loki")
+jupiter.services.loki.httpPort   (port, default 3100)
+jupiter.services.loki.syslogPort (port, default 514)
+```
+`services.loki` (single-node, filesystem storage under `dataDir` — on
+`elitedesk` the iSCSI `loki` LUN) plus a `services.promtail` syslog receiver
+that ingests the Wyze cams' forwarded logs (RFC5424/TCP on `syslogPort`) and
+pushes them to Loki. Firewall: TCP `httpPort` + `syslogPort`.
+
+**Enabled by:** `elitedesk`.
+
+### `modules/services/backups.nix`
 ```
 jupiter.backups.paths        (list of string, default [])
 jupiter.backups.repository   (string, default "s3:s3.us-west-004.backblazeb2.com/jupiter-os-backups")
@@ -234,8 +294,25 @@ jupiter.backups.repository   (string, default "s3:s3.us-west-004.backblazeb2.com
 credentials from sops secrets `restic_password`/`restic_env`, retention
 `--keep-daily 7 --keep-weekly 4 --keep-monthly 6`.
 
-**Used by:** `lenovo` (`/var/lib/n8n`, `/var/lib/libvirt/images`) and `nas`
-(`/tank/personal`, `/tank/backups/homeassistant`).
+**Used by:** `nas` only (`/tank/personal`, `/tank/backups/homeassistant`,
+`/tank/backups/lenovo`) — the fleet's single offsite egress. Other hosts'
+state reaches the cloud by first replicating to the NAS (`jupiter.replication`).
+
+## Home
+
+### `modules/home/` (`default.nix` + `io.nix`)
+```
+jupiter.home.enable   (bool, default false)
+```
+Opt-in home-manager environment for user `io` — the portable identity shared
+across personal machines. `default.nix` wires home-manager
+(`useGlobalPkgs`/`useUserPackages`, `users.io = import ./io.nix`); `io.nix`
+holds the machine-agnostic config: user packages, git/bash/direnv, and a shared
+niri config written as a plain `~/.config/niri/config.kdl` (no dependency on a
+compositor HM module). Data directories are deliberately *not* managed here —
+they roam via Syncthing with the NAS as hub.
+
+**Enabled by:** `t460s` (and the `desktop`/`parents-desktop` scaffolds).
 
 ## How to add a new module
 

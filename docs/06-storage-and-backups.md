@@ -16,8 +16,8 @@ disposable, and snapshotting churny data is wasted space.
 
 ### `lenovo` — single pool, no redundancy
 
-`rpool` (one disk, ⚠️ placeholder device path in `disko.nix` — must be
-replaced before install):
+`rpool` (`jupiter.storage.profile = "stateful"`; one disk, ⚠️ placeholder
+device path — must be replaced before install):
 
 | Dataset | Mountpoint | Notes |
 |---|---|---|
@@ -31,8 +31,7 @@ restic.
 
 ### `t460s` — single pool, impermanent
 
-`rpool` (`/dev/nvme0n1`, declared by `modules/storage/zfs-impermanent.nix`,
-not a per-host `disko.nix`):
+`rpool` (`jupiter.storage.profile = "impermanent"`, `disk = "/dev/nvme0n1"`):
 
 | Dataset | Mountpoint | Notes |
 |---|---|---|
@@ -40,16 +39,19 @@ not a per-host `disko.nix`):
 | `local/nix` | `/nix` | Survives reboots |
 | `safe/persist` | `/persist` | Survives reboots; holds everything `jupiter.core.impermanence` whitelists |
 
-### `dashboards` — single pool, minimal
+### `dashboards` — single pool, impermanent
 
-`rpool` (one disk, ⚠️ placeholder device path in `disko.nix`):
+`rpool` (`jupiter.storage.profile = "impermanent"`; one disk, ⚠️ placeholder
+device path):
 
-| Dataset | Mountpoint |
-|---|---|
-| `root` | `/` |
-| `nix` | `/nix` |
+| Dataset | Mountpoint | Notes |
+|---|---|---|
+| `local/root` | `/` | Rolled back to `@blank` every boot |
+| `local/nix` | `/nix` | Survives reboots |
+| `safe/persist` | `/persist` | Survives reboots; holds only the minimal system set + the `kiosk` Chromium profile |
 
-No bulk data — these are stateless kiosk appliances.
+Stateless kiosk appliances — nothing irreplaceable lives here, so the box
+always boots pristine and can't accumulate drift.
 
 ### `nas` — three pools
 
@@ -65,7 +67,7 @@ No bulk data — these are stateless kiosk appliances.
 | `netboot` | fs | `/srv/netboot` | Diskless/netboot roots; served read-only over NFS |
 | `scratch` | fs | `/srv/scratch` | Expendable local scratch (e.g. restic cache) |
 
-**`tank`** — 18TB mirror, hand-created during migration (not disko-managed), imported via `boot.zfs.extraPools` in `modules/zfs-nas.nix`. The new primary data pool:
+**`tank`** — 18TB mirror, hand-created during migration (not disko-managed), imported via `boot.zfs.extraPools` in `modules/storage/zfs-nas.nix`. The new primary data pool:
 
 | Dataset | sanoid policy | Backed up offsite? | Served via |
 |---|---|---|---|
@@ -97,11 +99,11 @@ auto-discovering and logging into the target at boot. A static
 `networking.hosts` entry for `nas.home.jupiter.au` avoids a race between the
 boot-time iSCSI login and the DNS resolver coming up.
 
-First-time setup per LUN (not automated): `mkfs` each LUN once, then mount
-where the consuming service expects its data. As noted in
-[02-hosts.md](02-hosts.md#elitedesk-hp-elitedesk-800-g4), the actual DB/Loki
-service modules that would consume these LUNs aren't declared in this repo
-yet.
+The LUNs are consumed on `elitedesk` by `jupiter.services.postgresql` (the `db`
+LUN at `/var/lib/postgresql`) and `jupiter.services.loki` (the `loki` LUN at
+`/var/lib/loki`), mounted by label with `_netdev,nofail`. First-time setup
+(not automated): `mkfs.ext4 -L db` / `-L loki` each attached LUN once, then the
+declarative mounts pick them up on every boot.
 
 ## 3. NFS exports (`nas`)
 
@@ -116,7 +118,7 @@ Firewall: TCP 2049.
 
 ## 4. SMB shares (`nas`)
 
-`modules/zfs-nas.nix`, NetBIOS name `jupiter-nas`, security mode `user`:
+`modules/storage/zfs-nas.nix`, NetBIOS name `jupiter-nas`, security mode `user`:
 
 | Share | Path | Access |
 |---|---|---|
@@ -141,13 +143,15 @@ Two templates (`modules/storage/sanoid.nix`):
 | `bulk` | 0 | 7 | 1 | 0 |
 
 Applied to `tank/personal`, `tank/backups`, `tank/vm` (important, recursive)
-and `tank/media` (bulk, recursive). No `syncoid` replication target exists
-today — if a second backup pool is added later, it should replicate
-`tank/personal` + `tank/backups` onto it.
+and `tank/media` (bulk, recursive). `tank/backups` is recursive, so the
+server state replicated in under `tank/backups/<host>` (see §7) inherits the
+`important` policy automatically. No *outbound* `syncoid` target to a second
+pool exists today — if one is added later it should replicate `tank/personal`
++ `tank/backups` onto it.
 
 ## 6. Offsite backups (restic)
 
-`modules/backups.nix`:
+`modules/services/backups.nix`:
 
 - **Repository:** `s3:s3.us-west-004.backblazeb2.com/jupiter-os-backups` (default; overridable per host via `jupiter.backups.repository`)
 - **Credentials:** sops secrets `restic_password` (local encryption key) and `restic_env` (S3 access key/secret as env vars)
@@ -157,9 +161,26 @@ today — if a second backup pool is added later, it should replicate
 
 | Host | Paths backed up |
 |---|---|
-| `lenovo` | `/var/lib/n8n`, `/var/lib/libvirt/images` |
-| `nas` | `/tank/personal`, `/tank/backups/homeassistant` |
+| `nas` | `/tank/personal`, `/tank/backups/homeassistant`, `/tank/backups/lenovo` |
 
-`dashboards`, `elitedesk`, and `t460s` set no `jupiter.backups.paths` and so
-have no offsite backup configured (consistent with being stateless/reproducible
-or, for `t460s`, impermanent by design).
+The **NAS is the only host with offsite egress** — every other host's
+irreplaceable state reaches the cloud by first landing on the NAS (see §7),
+not by backing up directly. `lenovo`, `dashboards`, `elitedesk`, and `t460s`
+set no `jupiter.backups.paths`.
+
+## 7. Server-state replication (syncoid → NAS)
+
+`modules/storage/replication.nix` (`jupiter.replication`, enabled on `nas`)
+pulls servers' state datasets onto the NAS on a timer, so the NAS becomes the
+single hub that the offsite backup then covers:
+
+| Source | Source dataset | Lands at | Interval |
+|---|---|---|---|
+| `lenovo` | `rpool/var` (n8n flows + libvirt images) | `tank/backups/lenovo` | hourly |
+
+syncoid (running on the NAS, pull mode) takes its own pre-send snapshot, so the
+source needs no snapshot policy of its own. One-time provisioning (SSH keypair
+→ `syncoid_ssh_key` sops secret on the NAS, public key authorized for `root` on
+each source, `zfs allow` send rights) is described in the module header. The
+landing datasets sit under `tank/backups`, so they inherit the `important`
+sanoid policy and the restic offsite path above.

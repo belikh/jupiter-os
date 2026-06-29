@@ -37,3 +37,27 @@ jobs:
       - uses: DeterminateSystems/magic-nix-cache-action@main
       - name: Build ${{ matrix.host }}
         run: nix build .#nixosConfigurations.${{ matrix.host }}.config.system.build.toplevel
+
+  # Boot each disk host in a headless QEMU VM and assert it reaches multi-user —
+  # catches bootloader / disko / impermanence / unit-ordering regressions that a
+  # pure `nix build` of the toplevel can't. elitedesk is a diskless netboot image
+  # (not VM-bootable this way), so it's covered by `build` above only.
+  boot-test:
+    runs-on: ubuntu-latest
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        host: [lenovo, t460s, nas, dashboards]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: DeterminateSystems/nix-installer-action@main
+      - uses: DeterminateSystems/magic-nix-cache-action@main
+      - name: Boot smoke test ${{ matrix.host }}
+        run: ./scripts/boot-smoke.sh ${{ matrix.host }} 360
