@@ -31,15 +31,10 @@ in
     disk = "/dev/disk/by-id/REPLACE-ME-lenovo-os-disk";
   };
 
-  # No direct offsite backup here: /var (the dataset holding n8n flows + libvirt
-  # images) is pulled to the NAS hourly via syncoid, and the NAS is the single
-  # offsite egress (see jupiter.replication on nas). Authorize the NAS's syncoid
-  # key to pull as root.
-  # ⚠️ REPLACE-ME: paste the NAS syncoid public key (generated at provisioning,
-  # see modules/storage/replication.nix). The placeholder authorizes nothing.
-  users.users.root.openssh.authorizedKeys.keys = [
-    "ssh-ed25519 REPLACE-ME-nas-syncoid-pubkey nas-syncoid"
-  ];
+  # No direct offsite backup here: the stateful storage profile auto-enables
+  # jupiter.backup (replicating rpool/var — n8n flows + libvirt images — to the
+  # NAS, which holds the only offsite egress). The NAS's pull key is authorized
+  # automatically by modules/storage/backup.nix; nothing to wire here.
 
   # n8n backed by the shared PostgreSQL on elitedesk (over the LAN) rather than
   # local SQLite. Same pg_n8n_password sops secret as elitedesk's role (sops

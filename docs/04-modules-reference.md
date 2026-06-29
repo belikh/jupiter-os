@@ -132,6 +132,20 @@ the consuming host's initiator IQN. Firewall: TCP 3260.
 **Enabled by:** `nas`, with two LUNs — `db` (`/dev/zvol/rpool/db`) and `loki`
 (`/dev/zvol/rpool/loki`), both ACL'd to `iqn.2026-06.au.jupiter:elitedesk`.
 
+### `modules/storage/backup.nix`
+```
+jupiter.backup.enable    (bool, default false — defaulted on by the stateful storage profile)
+jupiter.backup.datasets  (list of string, default by profile; stateful → [ "rpool/var" ])
+```
+Per-host declaration that this host's state should reach the central data store
+(NAS) and thence offsite. The source side: when enabled, authorizes the NAS's
+syncoid pull key (`site.backupHub`, restricted to the NAS address) for root, and
+asserts `datasets` is non-empty. The NAS side is *derived* — `flake.nix`'s
+`backupHubModule` reads every host's `jupiter.backup` and generates the
+replication sources, so a new state-holding host needs **no NAS edit**.
+
+**Enabled by:** `lenovo` (auto, via the `stateful` profile). Off elsewhere.
+
 ### `modules/storage/replication.nix`
 ```
 jupiter.replication.enable     (bool, default false)
@@ -145,8 +159,10 @@ takes its own pre-send snapshot, so sources need no snapshot policy. The module
 header documents the one-time provisioning (keypair → sops, authorize the public
 key on each source, `zfs allow` send rights).
 
-**Enabled by:** `nas`, pulling `lenovo:rpool/var` → `tank/backups/lenovo`
-hourly. This makes the NAS the fleet's data hub — see
+**Enabled by:** `nas` (the puller). Its `sources` are not listed by hand — they
+are derived from the fleet's `jupiter.backup` declarations by `flake.nix`'s
+`backupHubModule`. Today that resolves to `lenovo:rpool/var` →
+`tank/backups/lenovo-var` hourly. See
 [06-storage-and-backups.md §7](06-storage-and-backups.md#7-server-state-replication-syncoid--nas).
 
 ## Network

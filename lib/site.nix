@@ -51,6 +51,16 @@
     "fd7a:115c:a1e0::/48"
   ];
 
+  # Central data store (the NAS): the single hub every host's persistent state
+  # replicates to, and the only host with offsite egress. Hosts that opt into
+  # jupiter.backup authorize this key for the NAS to pull as root.
+  # ⚠️ REPLACE-ME: paste the NAS syncoid public key (generated at provisioning).
+  backupHub = {
+    host = "nas";
+    address = "10.1.1.2";
+    syncoidPublicKey = "ssh-ed25519 REPLACE-ME-nas-syncoid-pubkey nas-syncoid";
+  };
+
   # Static internal A/PTR records for the split-horizon zone.
   records = {
     "gateway.home.jupiter.au" = "10.1.1.1";

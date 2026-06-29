@@ -99,6 +99,21 @@ in
   };
 
   config = lib.mkIf (cfg.profile != "none") {
+    # Automatic central-backup wiring: a server's state dataset replicates to the
+    # NAS by default. Appliances/workstations (impermanent) don't — their data
+    # roams via Syncthing or is reproducible. Hosts can override jupiter.backup.
+    jupiter.backup = {
+      enable = lib.mkDefault (cfg.profile == "stateful");
+      datasets = lib.mkDefault (
+        if cfg.profile == "stateful" then
+          [ "rpool/var" ]
+        else if cfg.profile == "impermanent" then
+          [ "rpool/safe/persist" ]
+        else
+          [ ]
+      );
+    };
+
     assertions = [
       {
         assertion = !(lib.hasInfix "REPLACE-ME" cfg.disk);

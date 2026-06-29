@@ -115,13 +115,45 @@
           cmdLine = "init=${elitedeskBuild.toplevel}/init loglevel=4 ${toString elitedeskConfig.boot.kernelParams}";
         };
       };
+
+      # The NAS auto-derives its syncoid replication sources from every OTHER
+      # host's jupiter.backup declaration — so adding a host that holds state
+      # wires up central backup with no edit here. Same cross-host-via-closure
+      # pattern as pxeModule above. (Reading other hosts' config is acyclic: they
+      # never read the NAS's config.)
+      site = import ./lib/site.nix;
+      backupHubModule =
+        { lib, ... }:
+        let
+          otherHosts = lib.filterAttrs (name: _: name != site.backupHub.host) self.nixosConfigurations;
+          replicating = lib.filterAttrs (_: node: node.config.jupiter.backup.enable) otherHosts;
+          sourcesFor =
+            name: node:
+            lib.listToAttrs (
+              map (
+                ds:
+                let
+                  leaf = lib.last (lib.splitString "/" ds);
+                in
+                lib.nameValuePair "${name}-${leaf}" {
+                  remote = "root@${name}.${site.domain}";
+                  sourceDataset = ds;
+                  # Flat target name (no intermediate dataset to pre-create).
+                  targetDataset = "tank/backups/${name}-${leaf}";
+                }
+              ) node.config.jupiter.backup.datasets
+            );
+        in
+        {
+          jupiter.replication.sources = lib.mkMerge (lib.mapAttrsToList sourcesFor replicating);
+        };
     in
     {
       nixosConfigurations = {
         elitedesk = mkHost ./hosts/elitedesk/configuration.nix [ ];
         lenovo = mkHost ./hosts/lenovo/configuration.nix [ pxeModule ];
         t460s = mkHost ./hosts/t460s/configuration.nix [ ];
-        nas = mkHost ./hosts/nas/configuration.nix [ ];
+        nas = mkHost ./hosts/nas/configuration.nix [ backupHubModule ];
         dashboards = mkHost ./hosts/dashboards/configuration.nix [ ];
 
         # Future personal workstations (roaming desktop — same niri + synced
