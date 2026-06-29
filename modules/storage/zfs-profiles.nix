@@ -123,7 +123,14 @@ in
       path = [ pkgs.zfs ];
       unitConfig.DefaultDependencies = "no";
       serviceConfig.Type = "oneshot";
-      script = "zfs rollback -r rpool/local/root@blank";
+      # Guard on the snapshot existing: a no-op if the pool isn't present (e.g.
+      # a synthesized build-vm during CI), and we'd rather skip than wedge boot
+      # if the @blank snapshot is somehow missing on real hardware.
+      script = ''
+        if zfs list -t snapshot rpool/local/root@blank >/dev/null 2>&1; then
+          zfs rollback -r rpool/local/root@blank
+        fi
+      '';
     };
 
     disko.devices = {
