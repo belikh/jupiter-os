@@ -128,7 +128,7 @@ no host has to `mkForce` it back off.
 - **Single internal resolver.** `lenovo` runs `jupiter.dns` (unbound, authoritative for the internal `home.jupiter.au` split-horizon zone, forwarding everything else to a local `dnscrypt-proxy`). Every other host's default nameserver is `10.1.1.20` (set in `common.nix`); `lenovo` itself points at `127.0.0.1`. See [05-networking.md](05-networking.md).
 - **Mesh access via headscale**, exposed publicly only through a Cloudflare Tunnel on `lenovo` (`headscale.jupiter.au`).
 - **Diskless compute offloaded to the NAS.** `elitedesk` has no disk; the NAS exports two zvols over iSCSI for its stateful services.
-- **Backups are restic→S3 (Backblaze B2)** for the irreplaceable subset of data only; bulk/reproducible data relies on local ZFS redundancy (mirrors) instead.
+- **The NAS is the data hub.** Servers' state datasets are pulled to the NAS hourly via syncoid (`jupiter.replication`), and the NAS is the *only* host with offsite egress — restic→S3 (Backblaze B2) for the irreplaceable subset only. Bulk/reproducible data relies on local ZFS redundancy (mirrors) instead.
 
 ## 8. CI and formatting
 

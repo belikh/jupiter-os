@@ -12,7 +12,6 @@ in
     ../../modules/services/mqtt.nix
     ../../modules/network/cloudflared.nix
     ../../modules/network/headscale.nix
-    ../../modules/services/backups.nix
     ../../modules/network/pxe-server.nix
     ../../modules/network/dns.nix
   ];
@@ -32,9 +31,14 @@ in
     disk = "/dev/disk/by-id/REPLACE-ME-lenovo-os-disk";
   };
 
-  jupiter.backups.paths = [
-    "/var/lib/n8n"
-    "/var/lib/libvirt/images"
+  # No direct offsite backup here: /var (the dataset holding n8n flows + libvirt
+  # images) is pulled to the NAS hourly via syncoid, and the NAS is the single
+  # offsite egress (see jupiter.replication on nas). Authorize the NAS's syncoid
+  # key to pull as root.
+  # ⚠️ REPLACE-ME: paste the NAS syncoid public key (generated at provisioning,
+  # see modules/storage/replication.nix). The placeholder authorizes nothing.
+  users.users.root.openssh.authorizedKeys.keys = [
+    "ssh-ed25519 REPLACE-ME-nas-syncoid-pubkey nas-syncoid"
   ];
 
   # MQTT broker for Home Assistant + the dashboards' display-mode control.
