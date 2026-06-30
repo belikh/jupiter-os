@@ -95,25 +95,27 @@ let
   discoTopic = "${ha.discoveryPrefix}/select/${uniqueId}/config";
 
   # MQTT discovery payload: HA auto-creates a Dashboard/Gaming select entity.
-  discoveryFile = pkgs.writeText "jupiter-display-discovery.json" (builtins.toJSON {
-    name = "Display Mode";
-    unique_id = uniqueId;
-    command_topic = cmdTopic;
-    state_topic = stateTopic;
-    availability_topic = availTopic;
-    payload_available = "online";
-    payload_not_available = "offline";
-    options = [
-      "Dashboard"
-      "Gaming"
-    ];
-    icon = "mdi:monitor-dashboard";
-    device = {
-      identifiers = [ node ];
-      name = "${config.networking.hostName} display";
-      manufacturer = "Jupiter OS";
-    };
-  });
+  discoveryFile = pkgs.writeText "jupiter-display-discovery.json" (
+    builtins.toJSON {
+      name = "Display Mode";
+      unique_id = uniqueId;
+      command_topic = cmdTopic;
+      state_topic = stateTopic;
+      availability_topic = availTopic;
+      payload_available = "online";
+      payload_not_available = "offline";
+      options = [
+        "Dashboard"
+        "Gaming"
+      ];
+      icon = "mdi:monitor-dashboard";
+      device = {
+        identifiers = [ node ];
+        name = "${config.networking.hostName} display";
+        manufacturer = "Jupiter OS";
+      };
+    }
+  );
 
   passFile = optionalString (ha.passwordFile != null) (toString ha.passwordFile);
 

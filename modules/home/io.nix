@@ -36,9 +36,9 @@
 
   programs.git = {
     enable = true;
-    userName = "io";
-    userEmail = "io@jupiter.au";
-    extraConfig = {
+    settings = {
+      user.name = "io";
+      user.email = "io@jupiter.au";
       init.defaultBranch = "main";
       pull.rebase = true;
     };

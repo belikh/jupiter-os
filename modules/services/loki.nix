@@ -1,8 +1,14 @@
-{ config, lib, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 
-# Loki log aggregation plus a syslog receiver (promtail) that ingests the Wyze
-# camera fleet's forwarded syslog (they target elitedesk:514, see
-# hosts/parents-house/wyze-cams) and pushes it into Loki.
+# Loki log aggregation plus a syslog receiver (grafana-alloy) that ingests the
+# Wyze camera fleet's forwarded syslog (they target elitedesk:514, see
+# hosts/parents-house/wyze-cams) and pushes it into Loki. promtail (the
+# previous receiver) was removed upstream after reaching end of life.
 #
 # On elitedesk, `dataDir` lives on the iSCSI "loki" LUN exported by the NAS, so
 # the log store survives the diskless node's reboots.
@@ -63,39 +69,40 @@ in
       };
     };
 
-    # Receive syslog and push it into Loki. Note: promtail's syslog target is
+    # Receive syslog and push it into Loki. Note: the syslog listener is
     # RFC5424-over-TCP; Wyze's rsyslog forwarder must be pointed at TCP:514. If a
     # source only speaks RFC3164/UDP, front it with rsyslog/vector instead.
-    services.promtail = {
+    services.alloy = {
       enable = true;
-      configuration = {
-        server = {
-          http_listen_port = 9080;
-          grpc_listen_port = 0;
-        };
-        clients = [
-          { url = "http://127.0.0.1:${toString cfg.httpPort}/loki/api/v1/push"; }
-        ];
-        scrape_configs = [
-          {
-            job_name = "syslog";
-            syslog = {
-              listen_address = "0.0.0.0:${toString cfg.syslogPort}";
-              labels.job = "syslog";
-            };
-            relabel_configs = [
-              {
-                source_labels = [ "__syslog_message_hostname" ];
-                target_label = "host";
-              }
-            ];
+      configPath = pkgs.writeText "alloy-syslog-to-loki.alloy" ''
+        loki.relabel "syslog" {
+          forward_to = [loki.write.local.receiver]
+
+          rule {
+            source_labels = ["__syslog_message_hostname"]
+            target_label  = "host"
           }
-        ];
-      };
+        }
+
+        loki.source.syslog "wyze" {
+          listener {
+            address  = "0.0.0.0:${toString cfg.syslogPort}"
+            protocol = "tcp"
+            labels   = { job = "syslog" }
+          }
+          forward_to = [loki.relabel.syslog.receiver]
+        }
+
+        loki.write "local" {
+          endpoint {
+            url = "http://127.0.0.1:${toString cfg.httpPort}/loki/api/v1/push"
+          }
+        }
+      '';
     };
 
-    # promtail binds the privileged syslog port.
-    systemd.services.promtail.serviceConfig.AmbientCapabilities = [ "CAP_NET_BIND_SERVICE" ];
+    # alloy binds the privileged syslog port.
+    systemd.services.alloy.serviceConfig.AmbientCapabilities = [ "CAP_NET_BIND_SERVICE" ];
 
     networking.firewall.allowedTCPPorts = [
       cfg.httpPort

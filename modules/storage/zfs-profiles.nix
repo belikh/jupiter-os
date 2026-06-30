@@ -183,7 +183,12 @@ in
     };
 
     # /persist must be mounted in stage 1 so secrets/host keys are available
-    # before the rest of the system comes up.
-    fileSystems."/persist".neededForBoot = lib.mkIf isImpermanent true;
+    # before the rest of the system comes up. Guard the whole fileSystems
+    # entry, not just the value — assigning into fileSystems."/persist" at
+    # all (even via mkIf) declares that submodule, and non-impermanent
+    # profiles never set its fsType, which fails eval.
+    fileSystems = lib.mkIf isImpermanent {
+      "/persist".neededForBoot = true;
+    };
   };
 }
