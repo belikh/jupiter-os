@@ -150,7 +150,15 @@ it in once CI is validating.
   straight into sops; no inter-service password is ever hand-set. Public syncoid
   key committed at `secrets/syncoid_ed25519.pub`, read by `lib/site.nix`.
 
-## ~~Known gap: elitedesk DB/Loki data offsite~~ — CLOSED
+## Data-durability gaps — all closed
+
+- **elitedesk DB/Loki** (raw iSCSI zvols restic can't walk) → `jupiter.services.stateBackup`
+  lands an hourly `pg_dumpall` + Loki `rsync` on `nas:/tank/backups/elitedesk`.
+- **Syncthing hub data** (was on the NAS OS disk, unprotected) → the NAS sets
+  `jupiter.services.syncthing.dataDir = "/tank/personal"`, so the canonical
+  roaming copy is mirrored, snapshotted, and offsite.
+
+### Detail: elitedesk DB/Loki
 
 elitedesk's Postgres + Loki live on raw iSCSI zvols that restic can't walk, so
 `modules/services/state-backup.nix` (`jupiter.services.stateBackup`) now runs an

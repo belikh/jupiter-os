@@ -82,5 +82,12 @@
     sanoid # provides syncoid too, for manual runs
   ];
 
-  jupiter.services.syncthing.enable = true;
+  # The NAS is the Syncthing hub: store the canonical synced copy on tank/personal
+  # (mirror + sanoid 'important' + restic offsite) instead of the OS disk, so the
+  # roaming personal data is fully protected. Folders created in the WebUI should
+  # live under this path (now the default).
+  jupiter.services.syncthing = {
+    enable = true;
+    dataDir = "/tank/personal";
+  };
 }
