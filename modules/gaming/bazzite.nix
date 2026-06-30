@@ -12,10 +12,13 @@
 # The jovian + chaotic modules are injected for every host in flake.nix, so the
 # options below resolve everywhere; nothing here activates until `enable` is set.
 #
-# Peripheral support (`jupiter.gaming.bazzite.peripherals`) is borrowed from
-# GLF-OS (the French gaming NixOS distro): controllers, sim-racing wheels,
-# drawing tablets and RGB gear that work from first boot, no manual udev/kernel
-# wiring. Controllers are on by default; the rest are opt-in.
+# Two ideas are borrowed from GLF-OS (the French gaming NixOS distro):
+#   * `apps.<name>` — a data-driven per-application toggle catalogue (see
+#     `appCatalog`). Enabling the profile gives the full software stack; any one
+#     app can be switched off, the "modularity" GLF exposes via its customizer.
+#   * `peripherals` — controllers, sim-racing wheels, drawing tablets and RGB
+#     gear that work from first boot with no manual udev/kernel wiring.
+# Controllers and every app default on; wheels/tablet/RGB are opt-in.
 {
   config,
   pkgs,
@@ -38,6 +41,68 @@ let
       "gnome"
     else
       null;
+
+  # GLF-OS-style feature catalogue: this single attrset is the source of truth
+  # for both the per-app `apps.<name>` toggles and their package wiring. The
+  # core runtime (Steam, gamescope, gamemode, Proton-GE) is always on with the
+  # profile; everything here is optional and individually switchable. Anything
+  # that is more than a package set (Steam, gamescope, peripherals) is wired
+  # explicitly in `config` below rather than living in the catalogue.
+  appCatalog = {
+    lutris = {
+      description = "Lutris — multi-store game manager";
+      packages = with pkgs; [ lutris ];
+    };
+    heroic = {
+      description = "Heroic — Epic / GOG / Amazon launcher";
+      packages = with pkgs; [ heroic ];
+    };
+    minecraft = {
+      description = "Prism Launcher (Minecraft)";
+      packages = with pkgs; [ prismlauncher ];
+    };
+    wine = {
+      description = "Wine/Proton prefix tooling (Bottles, ProtonUp-Qt, protontricks, winetricks)";
+      packages = with pkgs; [
+        bottles
+        protonup-qt
+        protontricks
+        winetricks
+        steam-run
+      ];
+    };
+    overlay = {
+      description = "In-game overlay & post-processing (MangoHud, vkBasalt, GOverlay)";
+      packages = with pkgs; [
+        mangohud
+        vkbasalt
+        goverlay
+      ];
+    };
+    modManager = {
+      description = "r2modman — game mod manager";
+      packages = with pkgs; [ r2modman ];
+    };
+    capture = {
+      description = "OBS Studio + low-overhead Vulkan game capture";
+      packages = with pkgs; [
+        obs-studio
+        obs-studio-plugins.obs-vkcapture
+      ];
+    };
+    diagnostics = {
+      description = "Vulkan / Mesa diagnostic tools";
+      packages = with pkgs; [
+        vulkan-tools
+        mesa-demos
+      ];
+    };
+  };
+
+  # Packages for every app whose toggle is on.
+  enabledAppPackages = concatMap (name: optionals cfg.apps.${name} appCatalog.${name}.packages) (
+    attrNames appCatalog
+  );
 in
 {
   options.jupiter.gaming.bazzite = {
@@ -104,10 +169,21 @@ in
 
     steamdeck.enable = mkEnableOption "Steam Deck / handheld hardware quirks (Jovian devices.steamdeck)";
 
-    # Game peripherals that work from first boot — the feature GLF-OS (the
-    # French gaming NixOS distro) is known for. steam-hardware alone only
-    # covers Steam Controllers/Deck; this widens it to the common pads, wheels,
-    # tablets and RGB gear without the user hand-wiring kernel modules + udev.
+    # Per-application toggles, generated from `appCatalog`. All default on, so
+    # enabling the profile installs the full stack; flip any to false to slim
+    # it down (GLF-OS's à-la-carte modularity, expressed as plain options).
+    apps = mapAttrs (
+      _name: spec:
+      mkOption {
+        type = types.bool;
+        default = true;
+        description = "Install ${spec.description}.";
+      }
+    ) appCatalog;
+
+    # Game peripherals that work from first boot — the feature GLF-OS is known
+    # for. steam-hardware alone only covers Steam Controllers/Deck; this widens
+    # it to common pads, wheels, tablets and RGB gear with no manual wiring.
     peripherals = {
       controllers = mkOption {
         type = types.bool;
@@ -115,8 +191,10 @@ in
         description = ''
           Broaden game-controller support beyond steam-hardware's defaults:
           Xbox One / Series pads over Bluetooth (xpadneo) and the official
-          wireless dongle / wired pads (xone). DualShock / DualSense and
-          Switch Pro pads already work via in-tree kernel drivers + Bluetooth.
+          wireless dongle / wired pads (xone), plus a udev rule that stops the
+          DualSense/DualShock touchpad firing phantom mouse clicks mid-game.
+          DualShock / DualSense and Switch Pro pads already work via in-tree
+          kernel drivers + Bluetooth.
         '';
       };
 
@@ -124,10 +202,12 @@ in
         type = types.bool;
         default = false;
         description = ''
-          Sim-racing wheel support the way GLF-OS ships it: the hid-fanatec
-          driver for Fanatec bases and the force-feedback new-lg4ff driver for
+          Sim-racing wheel support: the force-feedback new-lg4ff driver for
           Logitech wheels, plus Oversteer to tune them, Solaar for Logitech
           device management, and linuxConsoleTools (jstest) for calibration.
+          (Fanatec's hid-fanatec kernel driver is out-of-tree and not vendored
+          here, unlike GLF-OS which ships it — Oversteer still configures any
+          supported wheel the kernel exposes.)
         '';
       };
 
@@ -139,7 +219,7 @@ in
     extraPackages = mkOption {
       type = types.listOf types.package;
       default = [ ];
-      description = "Additional gaming-related packages to install.";
+      description = "Additional gaming-related packages to install (beyond the app catalogue).";
     };
   };
 
@@ -172,7 +252,7 @@ in
       decky-loader.enable = cfg.decky.enable;
     };
 
-    # --- Steam, gamescope, gamemode ------------------------------------------
+    # --- Steam, gamescope, gamemode (the always-on core runtime) -------------
     programs.steam = {
       enable = true;
       gamescopeSession.enable = true;
@@ -245,44 +325,42 @@ in
     hardware.xpadneo.enable = mkIf cfg.peripherals.controllers (mkDefault true);
     hardware.xone.enable = mkIf cfg.peripherals.controllers (mkDefault true);
 
-    # Sim-racing wheels — Fanatec (hid-fanatec) and force-feedback Logitech
-    # (new-lg4ff). The upstream NixOS modules also drop the udev rules and add
-    # users to the `games` group, so devices are usable without manual perms.
-    hardware.fanatec.enable = mkIf cfg.peripherals.racingWheels true;
+    # The PlayStation pad exposes its touchpad as a mouse, which fires phantom
+    # clicks mid-game; mask it the way GLF-OS does. (DualShock 4 + DualSense.)
+    services.udev.extraRules = mkIf cfg.peripherals.controllers ''
+      ATTRS{name}=="Sony Interactive Entertainment Wireless Controller Touchpad", ENV{LIBINPUT_IGNORE_DEVICE}="1"
+      ATTRS{name}=="Sony Interactive Entertainment DualSense Wireless Controller Touchpad", ENV{LIBINPUT_IGNORE_DEVICE}="1"
+      ATTRS{name}=="Wireless Controller Touchpad", ENV{LIBINPUT_IGNORE_DEVICE}="1"
+      ATTRS{name}=="DualSense Wireless Controller Touchpad", ENV{LIBINPUT_IGNORE_DEVICE}="1"
+    '';
+
+    # Sim-racing wheels — force-feedback Logitech (new-lg4ff). Oversteer and
+    # Solaar ship udev rules of their own, so devices are usable without manual
+    # permission setup.
     hardware.new-lg4ff.enable = mkIf cfg.peripherals.racingWheels (mkDefault true);
-
-    # Drawing tablets and RGB lighting control.
-    services.opentabletdriver.enable = mkIf cfg.peripherals.drawingTablet true;
-    services.hardware.openrgb.enable = mkIf cfg.peripherals.openrgb true;
-
-    # --- The Bazzite app stack ----------------------------------------------
-    environment.systemPackages =
+    services.udev.packages = mkIf cfg.peripherals.racingWheels (
       with pkgs;
       [
-        mangohud # in-game performance overlay
-        vkbasalt # post-processing layer (sharpening, etc.)
-        goverlay # MangoHud/vkBasalt GUI config
-        gamescope # session compositor (chaotic overlay -> gamescope_git)
-        gamemode
-        lutris
-        heroic # Epic / GOG / Amazon launcher
-        prismlauncher # Minecraft
-        bottles # Wine prefix manager
-        protonup-qt # manage Proton-GE / compat tools
-        protontricks
-        winetricks
-        steam-run
-        vulkan-tools
-        mesa-demos
-        r2modman # mod manager
-        obs-studio
-        obs-studio-plugins.obs-vkcapture # low-overhead game capture
+        oversteer
+        solaar
       ]
-      ++ optionals cfg.peripherals.racingWheels [
-        oversteer # racing-wheel configuration GUI
-        solaar # Logitech device manager (pairing, firmware, battery)
-        linuxConsoleTools # jstest / ffmvforce for joystick calibration & FFB test
-      ]
+    );
+
+    # Drawing tablets and RGB lighting control.
+    hardware.opentabletdriver.enable = mkIf cfg.peripherals.drawingTablet true;
+    services.hardware.openrgb.enable = mkIf cfg.peripherals.openrgb true;
+
+    # --- The gaming app stack (catalogue toggles + peripheral userland) ------
+    environment.systemPackages =
+      enabledAppPackages
+      ++ optionals cfg.peripherals.racingWheels (
+        with pkgs;
+        [
+          oversteer # racing-wheel configuration GUI
+          solaar # Logitech device manager (pairing, firmware, battery)
+          linuxConsoleTools # jstest / ffmvforce for joystick calibration & FFB test
+        ]
+      )
       ++ cfg.extraPackages;
 
     # 32-bit OpenGL/Vulkan + unfree (Steam) need to be allowed.
