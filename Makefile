@@ -1,6 +1,6 @@
 .PHONY: test-lenovo test-t460s test-nas test-dashboards test-elitedesk update check build-all build-mx4300 \
         fmt fmt-check tf-plan-unifi tf-apply-unifi tf-plan-cloudflare tf-apply-cloudflare \
-        boot-smoke-lenovo boot-smoke-t460s boot-smoke-nas boot-smoke-dashboards
+        boot-smoke-lenovo boot-smoke-t460s boot-smoke-nas boot-smoke-dashboards gen-secrets
 
 # Build all machines and firmware (useful for verifying everything compiles)
 build-all:
@@ -41,6 +41,11 @@ test-%:
 # Usage: make boot-smoke-t460s
 boot-smoke-%:
 	./scripts/boot-smoke.sh $* 300
+
+# Generate random machine-to-machine credentials into sops (idempotent).
+# Service passwords are never chosen by hand — see scripts/gen-secrets.sh.
+gen-secrets:
+	./scripts/gen-secrets.sh
 
 # Update flake locks
 update:

@@ -21,7 +21,7 @@ For module option details see [04-modules-reference.md](04-modules-reference.md)
 - **Distinguishing responsibilities:**
   - Runs the fleet's only DNS resolver (`jupiter.dns`, domain `home.jupiter.au`), serving the LAN, IoT/Camera VLANs, and the headscale mesh.
   - Hosts the Home Assistant OS VM under libvirt/KVM.
-  - Runs n8n (workflow automation) and exposes it, Home Assistant, and headscale to the internet via a single Cloudflare Tunnel.
+  - Runs n8n (workflow automation, backed by PostgreSQL on `elitedesk` over the LAN) and exposes it, Home Assistant, and headscale to the internet via a single Cloudflare Tunnel.
   - Runs the PXE/Pixiecore netboot server that boots `elitedesk` — wired directly to `elitedesk`'s build output in `flake.nix` (see [01-architecture.md](01-architecture.md#3-the-mkhost-pattern-flakenix)).
   - restic backs up `/var/lib/n8n` and `/var/lib/libvirt/images` offsite.
 
@@ -82,7 +82,8 @@ For module option details see [04-modules-reference.md](04-modules-reference.md)
 - **Modules imported:** `common`, `services/postgresql`, `services/loki`.
 - **Distinguishing responsibilities:**
   - Its evaluated build output (`kernel`, `netbootRamdisk`, `toplevel`) is consumed directly by `flake.nix`'s `pxeModule`, which feeds `lenovo`'s `jupiter.pxe` — see [01-architecture.md](01-architecture.md#3-the-mkhost-pattern-flakenix).
-  - Runs **PostgreSQL** (`jupiter.services.postgresql`, data on the `db` LUN) and **Loki + a promtail syslog receiver** (`jupiter.services.loki`, data on the `loki` LUN). The Wyze camera fleet forwards syslog to `elitedesk.home.jupiter.au:514` (see [08-edge-devices.md](08-edge-devices.md)), which the receiver ingests into Loki. Postgres has no databases declared yet — those come with whatever consumer app (e.g. a Grafana) lands.
+  - Runs **PostgreSQL** (`jupiter.services.postgresql`, data on the `db` LUN), serving two LAN consumers on lenovo: the **Home Assistant** VM's recorder and **n8n** (each its own role/db, scram-sha-256). HA is a HAOS VM, so only its db/role is provisioned here — its `recorder: db_url:` is set inside Home Assistant. Also runs **Loki + a promtail syslog receiver** (`jupiter.services.loki`, data on the `loki` LUN); the Wyze camera fleet forwards syslog to `elitedesk.home.jupiter.au:514`, which the receiver ingests into Loki.
+  - Because that state sits on raw iSCSI zvols (which restic can't walk), `jupiter.services.stateBackup` lands an hourly `pg_dumpall` + Loki `rsync` on `nas:/tank/backups/elitedesk` (NFS), where the NAS's sanoid + restic snapshot it and ship it offsite — so the DB + logs are fully covered (see [06-storage-and-backups.md §8](06-storage-and-backups.md#8-diskless-host-state-backup-elitedesk--nas)).
 
 ---
 

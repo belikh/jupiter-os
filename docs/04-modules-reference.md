@@ -114,8 +114,9 @@ bonded interface).
 
 ### `modules/storage/nas-nfs.nix`
 No option — unconditional. `services.nfs.server`, exporting `/tank/media`
-(read-only, LAN + headscale mesh) and `/srv/netboot` (read-only, LAN).
-Firewall: TCP 2049.
+(read-only, LAN + headscale mesh), `/srv/netboot` (read-only, LAN), and
+`/tank/backups/elitedesk` (**read-write**, `elitedesk` only — its backup spool,
+§8 of the storage doc). Firewall: TCP 2049.
 
 **Imported by:** `nas` only.
 
@@ -132,6 +133,20 @@ the consuming host's initiator IQN. Firewall: TCP 3260.
 **Enabled by:** `nas`, with two LUNs — `db` (`/dev/zvol/rpool/db`) and `loki`
 (`/dev/zvol/rpool/loki`), both ACL'd to `iqn.2026-06.au.jupiter:elitedesk`.
 
+### `modules/storage/backup.nix`
+```
+jupiter.backup.enable    (bool, default false — defaulted on by the stateful storage profile)
+jupiter.backup.datasets  (list of string, default by profile; stateful → [ "rpool/var" ])
+```
+Per-host declaration that this host's state should reach the central data store
+(NAS) and thence offsite. The source side: when enabled, authorizes the NAS's
+syncoid pull key (`site.backupHub`, restricted to the NAS address) for root, and
+asserts `datasets` is non-empty. The NAS side is *derived* — `flake.nix`'s
+`backupHubModule` reads every host's `jupiter.backup` and generates the
+replication sources, so a new state-holding host needs **no NAS edit**.
+
+**Enabled by:** `lenovo` (auto, via the `stateful` profile). Off elsewhere.
+
 ### `modules/storage/replication.nix`
 ```
 jupiter.replication.enable     (bool, default false)
@@ -145,8 +160,10 @@ takes its own pre-send snapshot, so sources need no snapshot policy. The module
 header documents the one-time provisioning (keypair → sops, authorize the public
 key on each source, `zfs allow` send rights).
 
-**Enabled by:** `nas`, pulling `lenovo:rpool/var` → `tank/backups/lenovo`
-hourly. This makes the NAS the fleet's data hub — see
+**Enabled by:** `nas` (the puller). Its `sources` are not listed by hand — they
+are derived from the fleet's `jupiter.backup` declarations by `flake.nix`'s
+`backupHubModule`. Today that resolves to `lenovo:rpool/var` →
+`tank/backups/lenovo-var` hourly. See
 [06-storage-and-backups.md §7](06-storage-and-backups.md#7-server-state-replication-syncoid--nas).
 
 ## Network
@@ -223,8 +240,13 @@ sources `kernel`/`initrd`/`cmdLine` directly from
 
 ### `modules/services/syncthing.nix`
 ```
-jupiter.services.syncthing.enable  (bool, default false)
+jupiter.services.syncthing.enable   (bool, default false)
+jupiter.services.syncthing.dataDir  (string, default "/home/io")
 ```
+`dataDir` is the sync root + config/index location. Personal machines keep the
+default (`/home/io`); the **NAS hub sets it to `/tank/personal`** so the
+canonical synced copy lands on mirrored, snapshotted, offsite storage rather
+than the OS disk.
 `services.syncthing` for user `io`, GUI bound to `0.0.0.0:8384` (reachable
 over LAN/headscale), device/folder management left to the WebUI
 (`overrideDevices`/`overrideFolders = false`). Also drops a `.stignore`
@@ -250,25 +272,39 @@ CLI tools. Network bridging is left to the host (`hosts/lenovo` declares
 **Imported by:** `lenovo` only.
 
 ### `modules/services/n8n.nix`
-No option — unconditional `services.n8n`. `allowUnfree` is turned on (n8n's
-license is "sustainable use", which Nixpkgs treats as unfree). Listens on
+```
+jupiter.services.n8n.database.enable       (bool, default false)
+jupiter.services.n8n.database.host         (string)
+jupiter.services.n8n.database.{port,name,user}
+jupiter.services.n8n.database.passwordFile (path — sops secret)
+```
+`services.n8n` (always on for the importing host). `allowUnfree` is turned on
+(n8n's license is "sustainable use", which Nixpkgs treats as unfree). Listens on
 `127.0.0.1:5678` behind the Cloudflare Tunnel; `WEBHOOK_URL =
-"https://n8n.jupiter.au"`.
+"https://n8n.jupiter.au"`. With `database.enable`, n8n is pointed at PostgreSQL
+(`DB_TYPE=postgresdb`, password via `DB_POSTGRESDB_PASSWORD_FILE`) instead of
+the bundled SQLite.
 
-**Imported by:** `lenovo` only.
+**Imported by:** `lenovo`, which enables the Postgres backend against
+`elitedesk`.
 
 ### `modules/services/postgresql.nix`
 ```
-jupiter.services.postgresql.enable   (bool, default false)
-jupiter.services.postgresql.dataDir  (path, default "/var/lib/postgresql")
-jupiter.services.postgresql.package  (package, default pkgs.postgresql_16)
+jupiter.services.postgresql.enable    (bool, default false)
+jupiter.services.postgresql.dataDir   (path, default "/var/lib/postgresql")
+jupiter.services.postgresql.package   (package, default pkgs.postgresql_16)
+jupiter.services.postgresql.databases (attrset of { passwordFile, allowedClients })
 ```
 `services.postgresql` with its data directory under `dataDir` (on `elitedesk`
-the iSCSI `db` LUN) and `RequiresMountsFor` so it waits for that mount. No
-databases/roles are declared here — consumer apps add their own via
-`ensureDatabases`/`ensureUsers`. Local socket only (`enableTCPIP = false`).
+the iSCSI `db` LUN) and `RequiresMountsFor` so it waits for that mount. Each
+entry in `databases` provisions a login role + owned database of that name,
+sets the role password from `passwordFile` (a sops secret, applied by the
+`postgresql-jupiter-roles` oneshot), and opens scram-sha-256 access from each
+CIDR in `allowedClients` (firewall + `enableTCPIP` follow automatically). Local
+peer auth still works for admin.
 
-**Enabled by:** `elitedesk`.
+**Enabled by:** `elitedesk`, with `homeassistant` (reachable from the HA VM) and
+`n8n` (reachable from lenovo) databases.
 
 ### `modules/services/loki.nix`
 ```
@@ -283,6 +319,22 @@ that ingests the Wyze cams' forwarded logs (RFC5424/TCP on `syslogPort`) and
 pushes them to Loki. Firewall: TCP `httpPort` + `syslogPort`.
 
 **Enabled by:** `elitedesk`.
+
+### `modules/services/state-backup.nix`
+```
+jupiter.services.stateBackup.enable     (bool, default false)
+jupiter.services.stateBackup.spoolDir   (path — must be on backed-up storage)
+jupiter.services.stateBackup.interval   (string, default "hourly")
+jupiter.services.stateBackup.keep       (int, default 24 — postgres dumps retained)
+jupiter.services.stateBackup.postgres   (bool, default false — hourly pg_dumpall)
+jupiter.services.stateBackup.rsyncPaths (list of string — dirs mirrored into the spool)
+```
+A timer that lands a restic-friendly *logical* copy of a host's service state
+into `spoolDir` (typically an NFS mount of `tank/backups`), so hosts whose data
+sits on raw iSCSI zvols still get snapshotted + offsite via the NAS. `pg_dumpall`
+for Postgres (transactionally consistent), `rsync --delete` for file dirs.
+
+**Enabled by:** `elitedesk` (postgres + `/var/lib/loki` → `nas:/tank/backups/elitedesk`).
 
 ### `modules/services/backups.nix`
 ```

@@ -113,8 +113,9 @@ declarative mounts pick them up on every boot.
 |---|---|---|
 | `/tank/media` | read-only, sync, no_subtree_check | LAN (`10.1.1.0/24`), headscale mesh (`100.64.0.0/10`) |
 | `/srv/netboot` | read-only, sync, no_subtree_check | LAN only |
+| `/tank/backups/elitedesk` | **read-write**, sync, no_root_squash | `elitedesk` (`10.1.1.21`) only |
 
-Firewall: TCP 2049.
+Firewall: TCP 2049. The read-write export is elitedesk's backup spool (§8).
 
 ## 4. SMB shares (`nas`)
 
@@ -161,26 +162,64 @@ pool exists today — if one is added later it should replicate `tank/personal`
 
 | Host | Paths backed up |
 |---|---|
-| `nas` | `/tank/personal`, `/tank/backups/homeassistant`, `/tank/backups/lenovo` |
+| `nas` | `/tank/personal`, `/tank/backups` (the whole tree — replicated host state + elitedesk's backup spool) |
 
 The **NAS is the only host with offsite egress** — every other host's
-irreplaceable state reaches the cloud by first landing on the NAS (see §7),
+irreplaceable state reaches the cloud by first landing on the NAS (see §7, §8),
 not by backing up directly. `lenovo`, `dashboards`, `elitedesk`, and `t460s`
 set no `jupiter.backups.paths`.
 
-## 7. Server-state replication (syncoid → NAS)
+## 7. Server-state replication (syncoid → NAS) — auto-wired
 
-`modules/storage/replication.nix` (`jupiter.replication`, enabled on `nas`)
-pulls servers' state datasets onto the NAS on a timer, so the NAS becomes the
-single hub that the offsite backup then covers:
+The NAS is the central data store: any host with local persistent state
+replicates to it hourly, and the NAS is the only host with offsite egress.
+**This wiring is automatic — you never edit the NAS to add a host:**
+
+- Each host declares `jupiter.backup` (`modules/storage/backup.nix`). The
+  `stateful` storage profile defaults it on with `datasets = [ "rpool/var" ]`;
+  appliances/laptops (impermanent) leave it off (they roam via Syncthing), and
+  diskless hosts whose data already lives on NAS iSCSI don't need it.
+- `modules/storage/backup.nix` auto-authorizes the NAS's syncoid pull key
+  (`site.backupHub`, restricted to the NAS address) for root on each enabled
+  host.
+- `flake.nix`'s `backupHubModule` reads every host's `jupiter.backup` and
+  generates the NAS's `jupiter.replication.sources` — one syncoid command per
+  declared dataset, landing at `tank/backups/<host>-<leaf>`.
+
+So the live mapping is derived, not listed. Today that's:
 
 | Source | Source dataset | Lands at | Interval |
 |---|---|---|---|
-| `lenovo` | `rpool/var` (n8n flows + libvirt images) | `tank/backups/lenovo` | hourly |
+| `lenovo` | `rpool/var` (n8n flows + libvirt images) | `tank/backups/lenovo-var` | hourly |
 
-syncoid (running on the NAS, pull mode) takes its own pre-send snapshot, so the
-source needs no snapshot policy of its own. One-time provisioning (SSH keypair
-→ `syncoid_ssh_key` sops secret on the NAS, public key authorized for `root` on
-each source, `zfs allow` send rights) is described in the module header. The
-landing datasets sit under `tank/backups`, so they inherit the `important`
-sanoid policy and the restic offsite path above.
+syncoid (pull mode on the NAS) takes its own pre-send snapshot, so sources need
+no snapshot policy. The landing datasets sit under `tank/backups`, which is
+recursive in the `important` sanoid policy and is backed up wholesale to the
+offsite repo (§6) — so a new replicated host is snapshotted + offsite with no
+further config. One-time provisioning: the `syncoid_ssh_key` sops secret on the
+NAS and its public key in `site.backupHub.syncoidPublicKey`.
+
+## 8. Diskless-host state backup (elitedesk → NAS)
+
+Syncoid (§7) replicates ZFS *datasets*, but `elitedesk`'s Postgres and Loki live
+on raw iSCSI **zvols** (block devices) that restic can't walk and syncoid would
+only copy block-for-block. So `elitedesk` instead lands a restic-friendly
+*logical* copy on the NAS, where the existing sanoid + restic pick it up — the
+mechanism the disko comment always intended ("DB durability is the elitedesk's
+job; loki snapshot+restic to tank").
+
+`modules/services/state-backup.nix` (`jupiter.services.stateBackup`) runs hourly
+on `elitedesk` and writes into `/var/backup`, an NFS mount of
+`nas:/tank/backups/elitedesk` (`x-systemd.automount`, so the diskless boot never
+waits on the NAS):
+
+| What | How | Lands at |
+|---|---|---|
+| PostgreSQL (HA recorder + n8n) | `pg_dumpall` \| gzip, keep last 24 | `tank/backups/elitedesk/postgres/` |
+| Loki chunks | `rsync -a --delete /var/lib/loki` | `tank/backups/elitedesk/loki/` |
+
+Because it's under `tank/backups`, it inherits the `important` sanoid policy and
+the wholesale restic offsite path (§6) — **no gap**: the live data is on the SSD
+zvols (fast), and a consistent, restorable copy is snapshotted locally and
+shipped offsite. One-time provisioning: `zfs create tank/backups/elitedesk` on
+the NAS.

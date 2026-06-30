@@ -31,19 +31,37 @@ the key *names* are visible without the Age private key:
 | Key | Consumed by | Purpose |
 |---|---|---|
 | `io_password` | `modules/common.nix` (every host) | Hashed login password for user `io` |
-| `restic_password` | `modules/services/backups.nix` (`lenovo`, `nas`) | Local encryption key for restic backups |
-| `restic_env` | `modules/services/backups.nix` (`lenovo`, `nas`) | S3 credentials (`AWS_ACCESS_KEY_ID` etc.) for the Backblaze B2 repository |
+| `restic_password` | `modules/services/backups.nix` (`nas`) | Local encryption key for restic backups |
+| `restic_env` | `modules/services/backups.nix` (`nas`) | S3 credentials (`AWS_ACCESS_KEY_ID` etc.) for the Backblaze B2 repository |
 | `cloudflare_cert` | `modules/network/cloudflared.nix` (`lenovo`) | Tunnel credentials file |
+| `mqtt_homeassistant`, `mqtt_dashboard` | `modules/services/mqtt.nix` (`lenovo`), dashboards | MQTT broker passwords |
 
-Referenced by the Makefile/edge-device templates but **not yet present** in
-`secrets/secrets.yaml` (see `CLAUDE.md` gotchas and `Makefile` comments):
+### Generated — never hand-set (`make gen-secrets`)
+
+Service-to-service credentials are **random and machine-generated**, not chosen
+by a human. `scripts/gen-secrets.sh` (via `make gen-secrets`) fills in any
+missing key with an impossible value (256-bit hex, or an ed25519 keypair) and
+writes it straight into the sops file — idempotent, so re-running only adds
+what's missing. The syncoid public key is written to
+`secrets/syncoid_ed25519.pub` (committed; not secret) and read by `lib/site.nix`.
+
+| Key | Used by |
+|---|---|
+| `pg_homeassistant_password` | `elitedesk` Postgres `homeassistant` role (also pasted into HA's `db_url`) |
+| `pg_n8n_password` | `elitedesk` Postgres `n8n` role **and** lenovo's n8n (decrypt on both) |
+| `mqtt_homeassistant`, `mqtt_dashboard` | MQTT broker + clients |
+| `restic_password` | restic backup encryption key |
+| `syncoid_ssh_key` | NAS syncoid pull key (private → sops; public → committed `.pub`) |
+
+### External — you provide (from the provider/account)
 
 | Key | Needed for |
 |---|---|
-| `cloudflare_api_token` | `make tf-apply-cloudflare` (terranix Cloudflare stack) |
-| `unifi_password` | `make tf-apply-unifi` / `tf-plan-unifi` (terranix UniFi stack) — referenced by the Makefile's `tf-run` macro |
-| `PARENTS_MESH_SECRET`, `PARENTS_WIFI_SECRET` | MX4300 firmware template (`99-mesh-setup.sh.tmpl`) |
-| `WYZE_PASSWORD` | Wyze cam config template (`wz_mini.conf.tmpl`) |
+| `restic_env` | Backblaze B2 S3 credentials |
+| `cloudflare_cert`, `cloudflare_api_token` | Cloudflare tunnel + API |
+| `unifi_password` | terranix UniFi stack |
+| `io_password` | the human login password for user `io` |
+| `PARENTS_MESH_SECRET`, `PARENTS_WIFI_SECRET`, `WYZE_PASSWORD` | edge device templates |
 
 (`unifi_password` is consumed via `sops exec-env` exporting it as
 `TF_VAR_unifi_password`; check `secrets/secrets.yaml`'s actual key list with
