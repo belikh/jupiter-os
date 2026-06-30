@@ -37,15 +37,12 @@ in
     name = "scx_rustland";
   };
 
-  # Diskless compute node: persists DB + Loki to the NAS over iSCSI.
-  # Auto-discovers and logs into the NAS target at boot, attaching the LUNs as
+  # Diskless compute node: persists DB + Loki to europa (the NAS) over iSCSI.
+  # Auto-discovers and logs into the target at boot, attaching the LUNs as
   # local block devices.
-  # NOTE: the IQN below is a fixed iSCSI protocol identity already bound to an
-  # ACL on europa (the NAS) — left as "elitedesk" deliberately, not renamed to
-  # "callisto", since that's a real cross-host binding, not just a display name.
   services.openiscsi = {
     enable = true;
-    name = "iqn.2026-06.au.jupiter:elitedesk"; # matches the NAS ACL
+    name = "iqn.2026-06.au.jupiter:callisto"; # matches europa's ACL
     enableAutoLoginOut = true;
     discoverPortal = "europa.home.jupiter.au:3260";
   };
@@ -99,14 +96,12 @@ in
   jupiter.services.loki.enable = true; # also ingests Wyze cam syslog on :514
 
   # Close the offsite gap for the iSCSI-backed state (raw zvols can't be
-  # restic'd directly): land logical/file backups on the NAS over NFS, where the
-  # NAS's sanoid + restic already snapshot and ship tank/backups offsite.
-  # Provisioning: `zfs create tank/backups/elitedesk` on the NAS (hand-managed
-  # tank; dataset name kept as "elitedesk" deliberately — it's already
-  # provisioned on real hardware, not just a display name).
-  # x-systemd.automount so the diskless boot never waits on the NAS.
+  # restic'd directly): land logical/file backups on europa over NFS, where
+  # europa's sanoid + restic already snapshot and ship tank/backups offsite.
+  # Provisioning: `zfs create tank/backups/callisto` on europa (hand-managed
+  # tank). x-systemd.automount so the diskless boot never waits on europa.
   fileSystems."/var/backup" = {
-    device = "europa.home.jupiter.au:/tank/backups/elitedesk";
+    device = "europa.home.jupiter.au:/tank/backups/callisto";
     fsType = "nfs";
     options = [
       "_netdev"

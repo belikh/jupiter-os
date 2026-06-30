@@ -153,9 +153,9 @@ it in once CI is validating.
 
 ## Data-durability gaps — all closed
 
-- **callisto (elitedesk) DB/Loki** (raw iSCSI zvols restic can't walk) →
+- **callisto DB/Loki** (raw iSCSI zvols restic can't walk) →
   `jupiter.services.stateBackup` lands an hourly `pg_dumpall` + Loki `rsync`
-  on `europa:/tank/backups/elitedesk`.
+  on `europa:/tank/backups/callisto`.
 - **Syncthing hub data** (was on europa's OS disk, unprotected) → europa sets
   `jupiter.services.syncthing.dataDir = "/tank/personal"`, so the canonical
   roaming copy is mirrored, snapshotted, and offsite.
@@ -165,10 +165,10 @@ it in once CI is validating.
 callisto's Postgres + Loki live on raw iSCSI zvols that restic can't walk, so
 `modules/services/state-backup.nix` (`jupiter.services.stateBackup`) now runs an
 hourly `pg_dumpall` + a Loki `rsync` into an NFS mount of
-`europa:/tank/backups/elitedesk`. That lands under `tank/backups`, so it inherits
+`europa:/tank/backups/callisto`. That lands under `tank/backups`, so it inherits
 the `important` sanoid policy and the wholesale restic offsite path — the live
 data stays on the fast SSD zvols while a consistent, restorable copy is
-snapshotted + shipped offsite. One-time: `zfs create tank/backups/elitedesk`.
+snapshotted + shipped offsite. One-time: `zfs create tank/backups/callisto`.
 
 ### Validation still required (no nix/KVM in the authoring env)
 

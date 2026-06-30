@@ -89,10 +89,10 @@ read-only via Samba's `archive` share at `/europa`.
 namespace, independent of europa's actual hostname) stands up an LIO target
 on `europa`:
 
-- Target IQN: `iqn.2026-06.au.jupiter:nas.target0` (kept as a fixed protocol identity, not renamed alongside the host)
+- Target IQN: `iqn.2026-06.au.jupiter:europa.target0`
 - Portal: `0.0.0.0:3260`
 - LUNs: `db` (`/dev/zvol/rpool/db`), `loki` (`/dev/zvol/rpool/loki`)
-- ACL: both LUNs mapped only to initiator `iqn.2026-06.au.jupiter:elitedesk` (callisto's initiator IQN, likewise kept as-is)
+- ACL: both LUNs mapped only to initiator `iqn.2026-06.au.jupiter:callisto`
 
 `callisto` runs the matching initiator (`services.openiscsi`,
 `enableAutoLoginOut = true`, `discoverPortal = "europa.home.jupiter.au:3260"`),
@@ -114,13 +114,13 @@ declarative mounts pick them up on every boot.
 |---|---|---|
 | `/tank/media` | read-only, sync, no_subtree_check | LAN (`10.1.1.0/24`), headscale mesh (`100.64.0.0/10`) |
 | `/srv/netboot` | read-only, sync, no_subtree_check | LAN only |
-| `/tank/backups/elitedesk` | **read-write**, sync, no_root_squash | `callisto` (`10.1.1.21`) only — dataset name kept as "elitedesk", already provisioned |
+| `/tank/backups/callisto` | **read-write**, sync, no_root_squash | `callisto` (`10.1.1.21`) only |
 
 Firewall: TCP 2049. The read-write export is callisto's backup spool (§8).
 
 ## 4. SMB shares (`europa`)
 
-`modules/storage/zfs-nas.nix`, NetBIOS name `jupiter-nas`, security mode `user`:
+`modules/storage/zfs-nas.nix`, NetBIOS name `jupiter-europa`, security mode `user`:
 
 | Share | Path | Access |
 |---|---|---|
@@ -206,21 +206,21 @@ Syncoid (§7) replicates ZFS *datasets*, but `callisto`'s Postgres and Loki live
 on raw iSCSI **zvols** (block devices) that restic can't walk and syncoid would
 only copy block-for-block. So `callisto` instead lands a restic-friendly
 *logical* copy on europa, where the existing sanoid + restic pick it up — the
-mechanism the disko comment always intended ("DB durability is the elitedesk's
+mechanism the disko comment always intended ("DB durability is callisto's
 job; loki snapshot+restic to tank").
 
 `modules/services/state-backup.nix` (`jupiter.services.stateBackup`) runs hourly
 on `callisto` and writes into `/var/backup`, an NFS mount of
-`europa:/tank/backups/elitedesk` (`x-systemd.automount`, so the diskless boot
+`europa:/tank/backups/callisto` (`x-systemd.automount`, so the diskless boot
 never waits on europa):
 
 | What | How | Lands at |
 |---|---|---|
-| PostgreSQL (HA recorder + n8n) | `pg_dumpall` \| gzip, keep last 24 | `tank/backups/elitedesk/postgres/` |
-| Loki chunks | `rsync -a --delete /var/lib/loki` | `tank/backups/elitedesk/loki/` |
+| PostgreSQL (HA recorder + n8n) | `pg_dumpall` \| gzip, keep last 24 | `tank/backups/callisto/postgres/` |
+| Loki chunks | `rsync -a --delete /var/lib/loki` | `tank/backups/callisto/loki/` |
 
 Because it's under `tank/backups`, it inherits the `important` sanoid policy and
 the wholesale restic offsite path (§6) — **no gap**: the live data is on the SSD
 zvols (fast), and a consistent, restorable copy is snapshotted locally and
-shipped offsite. One-time provisioning: `zfs create tank/backups/elitedesk` on
+shipped offsite. One-time provisioning: `zfs create tank/backups/callisto` on
 europa.
