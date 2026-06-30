@@ -86,3 +86,14 @@ deploy .#<host>         # remote deploy via deploy-rs
   running `tf-apply-cloudflare`.
 - Don't commit `result*`, `*.qcow2`, rendered `config.tf.json`, or decrypted edge
   configs — all are gitignored.
+- chaotic-nyx (`chaotic` flake input) packages are normally served pre-built
+  from `nyx-cache.chaotic.cx`. If a chaotic-sourced package (the fleet-wide
+  CachyOS kernel, `gamescope_git`, `proton-cachyos`, `mesa-git`, the
+  `_git`-suffixed packages, etc.) suddenly starts building from source after a
+  `nix flake update`, it almost always means the local `chaotic` input has
+  drifted ahead of what the cache has built yet, or hit a hash mismatch — check
+  `https://nyx-cache.chaotic.cx/` reachability and compare the pinned `chaotic`
+  rev in `flake.lock` against the latest cached build on the Nyx site before
+  assuming the package itself is broken. Jovian-NixOS is *not* a separate input
+  for this reason — it's consumed via `inherit (chaotic.vendored) jovian;` in
+  `flake.nix` specifically to avoid this class of hash mismatch.
