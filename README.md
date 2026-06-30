@@ -60,9 +60,10 @@ jupiter.gaming.bazzite = {
   gamingMode.enable = true; # boot-to-Steam console/handheld session (optional)
   # decky.enable = true;    # Decky Loader
   # steamdeck.enable = true; # Steam Deck / handheld hardware quirks
+  apps.minecraft = false;   # drop any individual app from the stack (all on by default)
   peripherals = {
     # controllers = true;       # Xbox pads via xpadneo/xone (on by default)
-    racingWheels = true;        # Fanatec + Logitech FFB wheels, Oversteer, Solaar
+    racingWheels = true;        # Logitech FFB wheels (new-lg4ff), Oversteer, Solaar
     # openrgb = true;           # RGB peripheral / LED control
     # drawingTablet = true;     # OpenTabletDriver
   };
@@ -72,11 +73,19 @@ With `gamingMode.enable = false` you still get the full gaming software stack
 (Steam, Proton-GE, gamescope, MangoHud, Lutris, Heroic, OBS VkCapture, …) on a
 normal desktop; with it `true` the host boots into the SteamOS-like session.
 
-Game peripherals are handled by `jupiter.gaming.bazzite.peripherals`, modelled
-on [GLF-OS](https://glfos.org) (the French gaming NixOS distro): Xbox
-controllers (xpadneo/xone) work from first boot, with sim-racing wheels
-(Fanatec `hid-fanatec`, force-feedback Logitech `new-lg4ff` + Oversteer/Solaar),
-drawing tablets (OpenTabletDriver) and RGB control (OpenRGB) one toggle away.
+Two ideas are borrowed from [GLF-OS](https://glfos.org) (the French gaming
+NixOS distro):
+
+- **À-la-carte app toggles** — the optional software stack is a data-driven
+  catalogue (`appCatalog` in the module), surfaced as `apps.<name>` options
+  that all default on. Enabling the profile gives you everything; set any to
+  `false` (e.g. `apps.minecraft = false`) to slim it down. Steam, gamescope,
+  gamemode and Proton-GE are the always-on core.
+- **First-boot peripherals** (`peripherals`) — Xbox controllers (xpadneo/xone)
+  plus a DualSense touchpad fix are on by default; force-feedback Logitech
+  wheels (`new-lg4ff`) with Oversteer/Solaar, drawing tablets (OpenTabletDriver)
+  and RGB control (OpenRGB) are one toggle away. (Fanatec's kernel driver is
+  out-of-tree and not vendored here, unlike GLF-OS.)
 
 > The chaotic module adds the `cache.chaotic.cx` substituter to every host (its
 > recommended setup) so CachyOS kernel/Mesa builds are fetched, not rebuilt.
