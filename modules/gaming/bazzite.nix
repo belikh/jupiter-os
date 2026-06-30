@@ -11,6 +11,11 @@
 # Attach it to ANY host by flipping `jupiter.gaming.bazzite.enable = true;`.
 # The jovian + chaotic modules are injected for every host in flake.nix, so the
 # options below resolve everywhere; nothing here activates until `enable` is set.
+#
+# Peripheral support (`jupiter.gaming.bazzite.peripherals`) is borrowed from
+# GLF-OS (the French gaming NixOS distro): controllers, sim-racing wheels,
+# drawing tablets and RGB gear that work from first boot, no manual udev/kernel
+# wiring. Controllers are on by default; the rest are opt-in.
 {
   config,
   pkgs,
@@ -98,6 +103,38 @@ in
     decky.enable = mkEnableOption "Decky Loader (Steam plugin manager)";
 
     steamdeck.enable = mkEnableOption "Steam Deck / handheld hardware quirks (Jovian devices.steamdeck)";
+
+    # Game peripherals that work from first boot — the feature GLF-OS (the
+    # French gaming NixOS distro) is known for. steam-hardware alone only
+    # covers Steam Controllers/Deck; this widens it to the common pads, wheels,
+    # tablets and RGB gear without the user hand-wiring kernel modules + udev.
+    peripherals = {
+      controllers = mkOption {
+        type = types.bool;
+        default = true;
+        description = ''
+          Broaden game-controller support beyond steam-hardware's defaults:
+          Xbox One / Series pads over Bluetooth (xpadneo) and the official
+          wireless dongle / wired pads (xone). DualShock / DualSense and
+          Switch Pro pads already work via in-tree kernel drivers + Bluetooth.
+        '';
+      };
+
+      racingWheels = mkOption {
+        type = types.bool;
+        default = false;
+        description = ''
+          Sim-racing wheel support the way GLF-OS ships it: the hid-fanatec
+          driver for Fanatec bases and the force-feedback new-lg4ff driver for
+          Logitech wheels, plus Oversteer to tune them, Solaar for Logitech
+          device management, and linuxConsoleTools (jstest) for calibration.
+        '';
+      };
+
+      openrgb = mkEnableOption "OpenRGB daemon + GUI for RGB peripheral / LED control";
+
+      drawingTablet = mkEnableOption "OpenTabletDriver support for drawing tablets";
+    };
 
     extraPackages = mkOption {
       type = types.listOf types.package;
@@ -198,10 +235,25 @@ in
       }
     ];
 
-    # --- Input remapping (gamepad/controller tooling) ------------------------
+    # --- Game peripherals (controllers, wheels, tablets, RGB) ----------------
+    # input-remapper lets pads/keyboards be remapped; Bluetooth covers wireless
+    # controllers. Both are wanted on any gaming host.
     services.input-remapper.enable = true;
+    hardware.bluetooth.enable = mkDefault true;
 
-    hardware.bluetooth.enable = mkDefault true; # wireless controllers
+    # Xbox controllers: xpadneo (Bluetooth) + xone (official dongle / wired).
+    hardware.xpadneo.enable = mkIf cfg.peripherals.controllers (mkDefault true);
+    hardware.xone.enable = mkIf cfg.peripherals.controllers (mkDefault true);
+
+    # Sim-racing wheels — Fanatec (hid-fanatec) and force-feedback Logitech
+    # (new-lg4ff). The upstream NixOS modules also drop the udev rules and add
+    # users to the `games` group, so devices are usable without manual perms.
+    hardware.fanatec.enable = mkIf cfg.peripherals.racingWheels true;
+    hardware.new-lg4ff.enable = mkIf cfg.peripherals.racingWheels (mkDefault true);
+
+    # Drawing tablets and RGB lighting control.
+    services.opentabletdriver.enable = mkIf cfg.peripherals.drawingTablet true;
+    services.hardware.openrgb.enable = mkIf cfg.peripherals.openrgb true;
 
     # --- The Bazzite app stack ----------------------------------------------
     environment.systemPackages =
@@ -225,6 +277,11 @@ in
         r2modman # mod manager
         obs-studio
         obs-studio-plugins.obs-vkcapture # low-overhead game capture
+      ]
+      ++ optionals cfg.peripherals.racingWheels [
+        oversteer # racing-wheel configuration GUI
+        solaar # Logitech device manager (pairing, firmware, battery)
+        linuxConsoleTools # jstest / ffmvforce for joystick calibration & FFB test
       ]
       ++ cfg.extraPackages;
 
