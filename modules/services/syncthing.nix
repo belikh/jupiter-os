@@ -12,14 +12,26 @@ in
 {
   options.jupiter.services.syncthing = {
     enable = mkEnableOption "Enable Syncthing for user io";
+
+    dataDir = mkOption {
+      type = types.str;
+      default = "/home/io";
+      description = ''
+        Base directory for Syncthing's data, config/index, and the default
+        location for new folders. On personal machines this is io's home
+        (/home/io). On the NAS hub set it to a path on protected storage
+        (e.g. /tank/personal) so the canonical synced copy is redundant,
+        snapshotted, and in the offsite path — not stranded on the OS disk.
+      '';
+    };
   };
 
   config = mkIf cfg.enable {
     services.syncthing = {
       enable = true;
       user = "io";
-      dataDir = "/home/io";
-      configDir = "/home/io/.config/syncthing";
+      dataDir = cfg.dataDir;
+      configDir = "${cfg.dataDir}/.config/syncthing";
       overrideDevices = false; # Let the user manage devices via WebUI to avoid hardcoding IDs
       overrideFolders = false; # Let the user manage folders via WebUI
       guiAddress = "0.0.0.0:8384"; # Bind to all interfaces so you can access the UI over Headscale/LAN
@@ -35,11 +47,12 @@ in
       21027
     ];
 
-    # Create a safe .stignore template in the home directory
-    # This enables "Full Homedir Syncing" without blowing up the database with cache/locks
+    # Create a safe .stignore template at the sync root (the home dir on personal
+    # machines, or the protected data path on the hub). Enables "Full Homedir
+    # Syncing" without blowing up the database with cache/locks.
     system.activationScripts.syncthingIgnore = ''
-            if [ ! -f /home/io/.stignore ]; then
-              cat << 'EOF' > /home/io/.stignore
+            if [ ! -f ${cfg.dataDir}/.stignore ]; then
+              cat << 'EOF' > ${cfg.dataDir}/.stignore
       # --- JUPITER OS HOMEDIR SYNC RULES ---
 
       # 1. Explicitly ignore high-churn/stateful directories that break if synced
@@ -67,7 +80,7 @@ in
       # 4. Ignore all other hidden files/folders (prevents dotfile conflicts across machines)
       .*
       EOF
-              chown io:users /home/io/.stignore
+              chown io:users ${cfg.dataDir}/.stignore
             fi
     '';
   };

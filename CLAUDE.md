@@ -41,12 +41,28 @@ monorepo for the Jupiter home/lab infrastructure.
 - The portable user environment for `io` (dotfiles, niri config) lives in
   `modules/home/` and is opt-in via `jupiter.home.enable`; data dirs roam via
   Syncthing rather than home-manager.
+- **Central backup is automatic — don't wire it per host.** A host with local
+  persistent state replicates to the NAS (the data hub) and thence offsite. The
+  `stateful` storage profile defaults `jupiter.backup.enable` on with
+  `datasets = [ "rpool/var" ]`; override `jupiter.backup` for anything unusual.
+  The NAS derives its syncoid sources from every host's `jupiter.backup` in
+  `flake.nix` (`backupHubModule`), and `modules/storage/backup.nix` auto-
+  authorizes the NAS pull key on each source — so **new state-holding hosts are
+  backed up with no edit to the NAS**. (Diskless hosts whose data already lives
+  on NAS iSCSI leave it off; appliances/laptops roam via Syncthing instead.)
 - The PXE server on `lenovo` is wired directly to `elitedesk`'s netboot build
   products in `flake.nix`; keep that closure linkage intact.
 - Network facts (VLANs/subnets/resolver/DNS records) live once in `lib/site.nix`
   as plain data; both the NixOS resolver config (`hosts/lenovo` → `jupiter.dns`)
   and the terranix UniFi stack (`terraform/unifi`) `import` it, so CIDRs are
   never re-stated in two places.
+
+- **Service-to-service passwords are generated, never hand-set.** Any credential
+  two machines/services use to talk to each other is a random, impossible value
+  produced by `make gen-secrets` (`scripts/gen-secrets.sh`) straight into sops —
+  add the key name to that script's list, never ask a human to choose it. Only
+  human logins (`io_password`) and external-account creds (B2, Cloudflare, UniFi,
+  edge devices) are set by hand.
 
 ## Common commands
 

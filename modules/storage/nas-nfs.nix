@@ -19,6 +19,13 @@
     # Diskless/netboot roots on the SSD (read-only; clients overlay a tmpfs/rw
     # layer). Block-style service data (DB, Loki) goes via iSCSI, not here.
     /srv/netboot       10.1.1.0/24(ro,sync,no_subtree_check)
+
+    # Backup spool for the diskless elitedesk: it writes hourly pg_dumpall +
+    # a Loki mirror here. Lands under tank/backups, so the NAS's sanoid +
+    # restic carry it to snapshots + offsite. RW, elitedesk only,
+    # no_root_squash so the root-run backup service can write.
+    # Requires: zfs create tank/backups/elitedesk (hand-managed tank).
+    /tank/backups/elitedesk  10.1.1.21(rw,sync,no_subtree_check,no_root_squash)
   '';
 
   networking.firewall.allowedTCPPorts = [ 2049 ];
