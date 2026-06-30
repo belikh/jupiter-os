@@ -1,4 +1,9 @@
-{ config, pkgs, lib, ... }:
+{
+  config,
+  pkgs,
+  lib,
+  ...
+}:
 
 let
   # Shared network facts (VLANs/subnets/records/resolver) — see lib/site.nix.

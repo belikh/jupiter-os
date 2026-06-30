@@ -57,7 +57,7 @@ check:
 
 # Format all Nix files with the flake's formatter (nixfmt-rfc-style)
 fmt:
-	nix fmt
+	nix fmt .
 
 # Verify formatting without writing changes (used by CI)
 fmt-check:
