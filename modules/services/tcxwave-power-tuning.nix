@@ -80,8 +80,10 @@
 
   # The ZFS root pool here is tiny (root + nix only, no bulk data — see
   # disko.nix), so a default-sized ARC just steals RAM Chromium could use.
-  # Cap it; raise (or drop entirely) if a unit turns out to have RAM to spare
-  # (`free -h`).
+  # These units have 8GB (confirmed at purchase), so the 512MB cap below is
+  # deliberately conservative — there's plenty of headroom, but a read-light
+  # kiosk pool gains little from a bigger cache, so the RAM is better left
+  # free for Chromium than handed to ARC.
   #
   # zfs_txg_timeout batches writes further apart, meaning fewer storage
   # wakeups — at the cost of a wider data-loss window on power loss.
