@@ -43,14 +43,13 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # SteamOS "gaming mode" gamescope session, Steam Deck quirks, Decky Loader.
-    jovian = {
-      url = "github:Jovian-Experiments/Jovian-NixOS";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
     # CachyOS kernel, mesa-git, sched-ext (scx), gamescope_git. Deliberately
     # NOT following nixpkgs so its substituter (cache.chaotic.cx) stays useful.
+    # Jovian-NixOS (SteamOS "gaming mode" gamescope session, Steam Deck quirks,
+    # Decky Loader) is deliberately NOT a separate input here — chaotic-nyx
+    # vendors its own Jovian copy, and Nyx's own docs require following it
+    # through chaotic ("must follow jovian through chaotic to avoid hash
+    # mismatches"). See `inherit (chaotic.vendored) jovian;` below.
     chaotic.url = "github:chaotic-cx/nyx/nyxpkgs-unstable";
   };
 
@@ -65,11 +64,11 @@
       impermanence,
       home-manager,
       terranix,
-      jovian,
       chaotic,
       ...
     }:
     let
+      inherit (chaotic.vendored) jovian;
       # A helper function that injects third-party modules cleanly via a lexical closure,
       # completely avoiding the "specialArgs" anti-pattern. `extraModules` lets a
       # host pull in flake-level wiring (e.g. cross-host build products).

@@ -22,6 +22,13 @@ in
   # RobCo/Fallout boot branding (GRUB theme, MOTD) on this always-on box.
   jupiter.branding.enable = true;
 
+  # Always-on services box (DNS resolver, MQTT, n8n, PXE) — a throughput-
+  # oriented sched-ext scheduler suits it better than the gaming-tuned default.
+  jupiter.core.scheduler = {
+    enable = true;
+    name = "scx_rustland";
+  };
+
   # Always-on services box: persistent root (no erase-your-darlings rollback) so
   # n8n flows + libvirt images under /var are never wiped. The OS itself is still
   # reproducible from the flake; /var is replicated to the NAS (see backups).

@@ -11,6 +11,10 @@
 # Attach it to ANY host by flipping `jupiter.gaming.bazzite.enable = true;`.
 # The jovian + chaotic modules are injected for every host in flake.nix, so the
 # options below resolve everywhere; nothing here activates until `enable` is set.
+# The CachyOS kernel is actually a fleet-wide default (modules/common.nix), and
+# its sched-ext scheduler is a general per-host choice (jupiter.core.scheduler,
+# modules/core/scheduler.nix) — this module just defaults that scheduler to the
+# gaming-tuned scx_lavd when the gaming profile is on.
 #
 # Two ideas are borrowed from GLF-OS (the French gaming NixOS distro):
 #   * `apps.<name>` — a data-driven per-application toggle catalogue (see
@@ -97,6 +101,16 @@ let
         mesa-demos
       ];
     };
+    pcsx2 = {
+      description = "PCSX2 (chaotic-nyx git build) — PS2 emulator";
+      packages = with pkgs; [ pcsx2_git ];
+      default = false;
+    };
+    shadps4 = {
+      description = "shadPS4 (chaotic-nyx git build) — PS4 emulator";
+      packages = with pkgs; [ shadps4_git ];
+      default = false;
+    };
   };
 
   # Packages for every app whose toggle is on.
@@ -169,14 +183,15 @@ in
 
     steamdeck.enable = mkEnableOption "Steam Deck / handheld hardware quirks (Jovian devices.steamdeck)";
 
-    # Per-application toggles, generated from `appCatalog`. All default on, so
-    # enabling the profile installs the full stack; flip any to false to slim
-    # it down (GLF-OS's à-la-carte modularity, expressed as plain options).
+    # Per-application toggles, generated from `appCatalog`. Default on unless
+    # the catalogue entry sets `default = false` (e.g. niche emulators), so
+    # enabling the profile installs the full stack; flip any to slim it down
+    # (GLF-OS's à-la-carte modularity, expressed as plain options).
     apps = mapAttrs (
       _name: spec:
       mkOption {
         type = types.bool;
-        default = true;
+        default = spec.default or true;
         description = "Install ${spec.description}.";
       }
     ) appCatalog;
@@ -227,11 +242,15 @@ in
     # --- Kernel & schedulers (chaotic / CachyOS) -----------------------------
     boot.kernelPackages = mkIf cfg.cachyOsKernel pkgs.linuxPackages_cachyos;
 
-    # sched-ext userspace scheduler. scx_lavd is tuned for low-latency,
-    # interactive/gaming workloads. Needs a sched_ext-capable kernel (CachyOS).
-    services.scx = mkIf cfg.cachyOsKernel {
+    # sched-ext userspace scheduler, via the general jupiter.core.scheduler
+    # module (modules/core/scheduler.nix) rather than setting services.scx
+    # directly, so a host can override the scheduler choice independently of
+    # the gaming profile. scx_lavd is tuned for low-latency, interactive/
+    # gaming workloads — the right default here, but `mkDefault` lets a host
+    # that's already set jupiter.core.scheduler win.
+    jupiter.core.scheduler = mkIf cfg.cachyOsKernel {
       enable = mkDefault true;
-      scheduler = mkDefault "scx_lavd";
+      name = mkDefault "scx_lavd";
     };
 
     # ntsync gives Proton/Wine a fast in-kernel sync primitive (Bazzite default).
@@ -258,12 +277,14 @@ in
       gamescopeSession.enable = true;
       remotePlay.openFirewall = true;
       dedicatedServer.openFirewall = true;
-      # Glorious Eggroll Proton, the de-facto Bazzite default compat tool.
-      extraCompatPackages = [ pkgs.proton-ge-bin ];
+      # CachyOS-patched Proton (chaotic-nyx), pairing with the cachyOsKernel /
+      # scx scheduler choice above for a consistent CachyOS-stack story.
+      extraCompatPackages = [ pkgs.proton-cachyos ];
     };
 
     programs.gamescope = {
       enable = true;
+      package = pkgs.gamescope_git;
       capSysNice = true;
     };
 
@@ -348,7 +369,11 @@ in
 
     # Drawing tablets and RGB lighting control.
     hardware.opentabletdriver.enable = mkIf cfg.peripherals.drawingTablet true;
-    services.hardware.openrgb.enable = mkIf cfg.peripherals.openrgb true;
+    services.hardware.openrgb = mkIf cfg.peripherals.openrgb {
+      enable = true;
+      # chaotic-nyx git build — tracks new device support faster than nixpkgs.
+      package = pkgs.openrgb_git;
+    };
 
     # --- The gaming app stack (catalogue toggles + peripheral userland) ------
     environment.systemPackages =

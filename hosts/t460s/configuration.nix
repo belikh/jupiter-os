@@ -22,5 +22,11 @@
       disk = "/dev/nvme0n1";
     };
     services.syncthing.enable = true;
+    # Interactive desktop/laptop — scx_bpfland is tuned for foreground-app
+    # responsiveness, a better fit than the gaming-tuned fleet default.
+    core.scheduler = {
+      enable = true;
+      name = "scx_bpfland";
+    };
   };
 }

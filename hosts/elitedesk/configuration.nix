@@ -29,6 +29,14 @@ in
   # Ensure the image is fully copied to RAM on boot
   boot.kernelParams = [ "copytoram" ];
 
+  # Mostly a Postgres/Loki server with occasional casual gaming, so default to
+  # the throughput-oriented scheduler; flip jupiter.gaming.bazzite.enable +
+  # this to "scx_lavd" if this box becomes the dedicated gaming box later.
+  jupiter.core.scheduler = {
+    enable = true;
+    name = "scx_rustland";
+  };
+
   # Diskless compute node: persists DB + Loki to the NAS over iSCSI.
   # Auto-discovers and logs into the NAS target at boot, attaching the LUNs as
   # local block devices.
