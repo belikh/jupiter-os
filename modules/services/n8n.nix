@@ -9,7 +9,7 @@ in
 
     host = lib.mkOption {
       type = lib.types.str;
-      example = "elitedesk.home.jupiter.au";
+      example = "callisto.home.jupiter.au";
       description = "PostgreSQL host n8n connects to.";
     };
 

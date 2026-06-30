@@ -29,8 +29,8 @@
     yt-dlp_git
     # Software KVM to share one keyboard/mouse across io's niri machines.
     # A no-op until a second personal desktop is actually registered in
-    # flake.nix (see hosts/desktop, hosts/parents-desktop), but harmless to
-    # have ready on every machine io's env roams to.
+    # flake.nix (see hosts/elara, hosts/carme), but harmless to have ready on
+    # every machine io's env roams to.
     lan-mouse_git
   ];
 

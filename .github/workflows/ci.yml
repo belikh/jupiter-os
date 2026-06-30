@@ -30,7 +30,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        host: [lenovo, t460s, nas, dashboards, elitedesk]
+        host: [ganymede, himalia, europa, metis, adrastea, amalthea, thebe, callisto]
     steps:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@main
@@ -40,7 +40,7 @@ jobs:
 
   # Boot each disk host in a headless QEMU VM and assert it reaches multi-user —
   # catches bootloader / disko / impermanence / unit-ordering regressions that a
-  # pure `nix build` of the toplevel can't. elitedesk is a diskless netboot image
+  # pure `nix build` of the toplevel can't. callisto is a diskless netboot image
   # (not VM-bootable this way), so it's covered by `build` above only.
   boot-test:
     runs-on: ubuntu-latest
@@ -48,7 +48,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        host: [lenovo, t460s, nas, dashboards]
+        host: [ganymede, himalia, europa, metis, adrastea, amalthea, thebe]
     steps:
       - uses: actions/checkout@v4
       - name: Enable KVM

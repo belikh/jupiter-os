@@ -8,11 +8,12 @@ A declarative, ZFS-backed NixOS monorepo for the Jupiter infrastructure.
 > stays focused on the quick-start commands.
 
 ## Topology
-- **Lenovo Compute Node**: Bare-metal NixOS host running the Home Assistant VM (HAOS) and `n8n`.
-- **Jupiter NAS**: ZFS storage array. The central backup and replication target for the fleet.
-- **T460s Laptop**: Personal workstation.
-- **Toshiba Dashboards**: 4x Wayland Kiosk touchscreen nodes.
-- **Elitedesk 800 G4**: Diskless compute node (netboots from PXE).
+Hosts are named after Jupiter's moons.
+- **`ganymede`** (Lenovo compute node): Bare-metal NixOS host running the Home Assistant VM (HAOS) and `n8n`.
+- **`europa`** (NAS): ZFS storage array. The central backup and replication target for the fleet.
+- **`himalia`** (laptop): Personal workstation.
+- **`metis` / `adrastea` / `amalthea` / `thebe`** (Toshiba TCx Wave dashboards): 4x Wayland kiosk touchscreen nodes, one per room (kitchen/office/jupiter-bedroom/robbie-room), each its own host pointing `jupiter.dashboardKiosk.url` at that room's dashboard.
+- **`callisto`** (Elitedesk 800 G4): Diskless compute node (netboots from PXE).
 
 ## Secrets
 Secrets are managed with `sops-nix` and `Age`. The master key is derived from the primary admin SSH key (`id_ed25519`).
@@ -23,14 +24,14 @@ All secrets live encrypted in `secrets/secrets.yaml`.
 Build and test configurations locally using the `Makefile`:
 ```bash
 make build-all          # build every host closure + mx4300 firmware
-make test-lenovo        # build & boot a host in a QEMU VM
+make test-ganymede      # build & boot a host in a QEMU VM
 make check              # nix flake check (evaluates all hosts + deploy checks)
 make fmt                # format Nix sources (nixfmt-rfc-style)
 ```
 
-Deploy remotely using `deploy-rs` (all five hosts are registered as nodes):
+Deploy remotely using `deploy-rs` (all eight hosts are registered as nodes):
 ```bash
-deploy .#lenovo
+deploy .#ganymede
 ```
 
 ### Bootstrapping a new host
@@ -39,8 +40,8 @@ deploy .#lenovo
 2. Add the host to `hosts/`, then to `nixosConfigurations` and `deploy.nodes`
    in `flake.nix`.
 3. Partition + install with disko (for hosts with local disks), e.g. via
-   `nixos-anywhere --flake .#<host> root@<ip>`. `elitedesk` is diskless and
-   netboots from the PXE server on `lenovo`.
+   `nixos-anywhere --flake .#<host> root@<ip>`. `callisto` is diskless and
+   netboots from the PXE server on `ganymede`.
 
 ### Gaming profile (Bazzite-on-Nix)
 
@@ -93,23 +94,25 @@ NixOS distro):
 #### Dual-session dashboards (kiosk + gaming on separate VTs)
 
 `modules/desktop/dashboard-gaming.nix` (`jupiter.dashboardGaming`, off by
-default, wired into `hosts/dashboards`) turns a dashboard unit into a
-dual-session box: the Cage/Chromium kiosk on VT 6 and a gamescope/Steam
-session on VT 7, both live at once. systemd-logind hands DRM master between
-them on VT switch, so flipping is just:
+default, wired into each of `hosts/{metis,adrastea,amalthea,thebe}`) turns a
+dashboard unit into a dual-session box: the Cage/Chromium kiosk on VT 6 and a
+gamescope/Steam session on VT 7, both live at once. systemd-logind hands DRM
+master between them on VT switch, so flipping is just:
 ```bash
 ssh root@<unit> jupiter-mode gaming      # or: dashboard | toggle
 ```
 (Ctrl+Alt+F6 / Ctrl+Alt+F7 also work with a keyboard attached.) It reuses the
-host's `services.cage` kiosk command and pulls in the Bazzite stack with stock
-kernel/Mesa and `gpu = "intel"`. All four dashboards share one config/hostId,
-so split a unit into its own host before enabling it on just one.
+host's `services.cage` kiosk command (set per-host via
+`jupiter.dashboardKiosk.url` in `modules/desktop/dashboard-kiosk.nix`) and
+pulls in the Bazzite stack with stock kernel/Mesa and `gpu = "intel"`. The 4
+dashboard kiosks are already separate hosts (`metis`/`adrastea`/`amalthea`/
+`thebe`, one per room), so enable this on just the unit(s) you want.
 
 **Home Assistant control:** with `jupiter.dashboardGaming.homeAssistant.enable`,
 each unit runs an MQTT agent that emits HA discovery — HA auto-creates a
 *Display Mode* `select` (Dashboard/Gaming) — accepts commands, and publishes the
 live active VT (so manual Ctrl+Alt+F switches show up too). The broker is
-Mosquitto on lenovo (`modules/services/mqtt.nix`, `jupiter.services.mqtt`,
+Mosquitto on ganymede (`modules/services/mqtt.nix`, `jupiter.services.mqtt`,
 `10.1.1.20:1883`), running **authenticated** — defining `users` disables
 anonymous access automatically. The `homeassistant` and `dashboard` users share
 plaintext passwords stored as sops secrets, so add them before deploying:
@@ -121,9 +124,9 @@ integration (the HAOS VM connects to `10.1.1.20`). Plaintext over `1883` is fine
 on the trusted LAN/headscale mesh; add a TLS listener if you want transport
 encryption too.
 
-> Because the broker on lenovo is authenticated and always-on, the
+> Because the broker on ganymede is authenticated and always-on, the
 > `mqtt_homeassistant`/`mqtt_dashboard` secrets must exist in `secrets.yaml`
-> before the next `deploy .#lenovo` (sops reads them at activation).
+> before the next `deploy .#ganymede` (sops reads them at activation).
 
 ### Network / DNS (Terraform via terranix)
 The UniFi and Cloudflare configs are authored in Nix under `terraform/` and

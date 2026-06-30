@@ -32,7 +32,7 @@ in
       type = types.attrsOf types.str;
       default = { };
       example = {
-        "nas.home.jupiter.au" = "10.1.1.2";
+        "europa.home.jupiter.au" = "10.1.1.2";
       };
       description = "Internal FQDN -> IPv4 records (A + PTR) for the split-horizon zone.";
     };

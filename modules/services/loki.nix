@@ -6,11 +6,11 @@
 }:
 
 # Loki log aggregation plus a syslog receiver (grafana-alloy) that ingests the
-# Wyze camera fleet's forwarded syslog (they target elitedesk:514, see
+# Wyze camera fleet's forwarded syslog (they target callisto:514, see
 # hosts/parents-house/wyze-cams) and pushes it into Loki. promtail (the
 # previous receiver) was removed upstream after reaching end of life.
 #
-# On elitedesk, `dataDir` lives on the iSCSI "loki" LUN exported by the NAS, so
+# On callisto, `dataDir` lives on the iSCSI "loki" LUN exported by europa, so
 # the log store survives the diskless node's reboots.
 
 let

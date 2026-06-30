@@ -48,7 +48,7 @@ if have syncoid_ssh_key; then
 else
   tmp="$(mktemp -d)"
   trap 'rm -rf "$tmp"' EXIT
-  ssh-keygen -t ed25519 -N "" -C "nas-syncoid" -f "$tmp/key" >/dev/null
+  ssh-keygen -t ed25519 -N "" -C "europa-syncoid" -f "$tmp/key" >/dev/null
   set_value syncoid_ssh_key "$(jq -Rs . < "$tmp/key")"
   cp "$tmp/key.pub" "$PUBKEY_FILE"
   echo "    syncoid_ssh_key: generated (private -> sops)"

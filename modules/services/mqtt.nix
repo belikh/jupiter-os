@@ -1,6 +1,6 @@
 # Mosquitto MQTT broker — the message bus for Home Assistant and the fleet.
 #
-# Runs on the always-on compute node (lenovo, 10.1.1.20). Home Assistant and
+# Runs on the always-on compute node (ganymede, 10.1.1.20). Home Assistant and
 # the dashboard units publish/subscribe here; see jupiter.dashboardGaming's
 # Home Assistant control surface for one consumer.
 {

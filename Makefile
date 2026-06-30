@@ -1,19 +1,24 @@
-.PHONY: test-lenovo test-t460s test-nas test-dashboards test-elitedesk update check build-all build-mx4300 \
+.PHONY: test-ganymede test-himalia test-europa test-metis test-adrastea test-amalthea test-thebe test-callisto \
+        update check build-all build-mx4300 \
         fmt fmt-check tf-plan-unifi tf-apply-unifi tf-plan-cloudflare tf-apply-cloudflare \
-        boot-smoke-lenovo boot-smoke-t460s boot-smoke-nas boot-smoke-dashboards gen-secrets
+        boot-smoke-ganymede boot-smoke-himalia boot-smoke-europa boot-smoke-metis boot-smoke-adrastea \
+        boot-smoke-amalthea boot-smoke-thebe gen-secrets
 
 # Build all machines and firmware (useful for verifying everything compiles)
 build-all:
-	@echo "Building Lenovo compute node..."
-	nix build .#nixosConfigurations.lenovo.config.system.build.toplevel
-	@echo "Building T460s laptop..."
-	nix build .#nixosConfigurations.t460s.config.system.build.toplevel
-	@echo "Building NAS..."
-	nix build .#nixosConfigurations.nas.config.system.build.toplevel
-	@echo "Building Dashboards..."
-	nix build .#nixosConfigurations.dashboards.config.system.build.toplevel
-	@echo "Building Elitedesk..."
-	nix build .#nixosConfigurations.elitedesk.config.system.build.toplevel
+	@echo "Building ganymede (compute node)..."
+	nix build .#nixosConfigurations.ganymede.config.system.build.toplevel
+	@echo "Building himalia (laptop)..."
+	nix build .#nixosConfigurations.himalia.config.system.build.toplevel
+	@echo "Building europa (NAS)..."
+	nix build .#nixosConfigurations.europa.config.system.build.toplevel
+	@echo "Building dashboard kiosks (metis, adrastea, amalthea, thebe)..."
+	nix build .#nixosConfigurations.metis.config.system.build.toplevel
+	nix build .#nixosConfigurations.adrastea.config.system.build.toplevel
+	nix build .#nixosConfigurations.amalthea.config.system.build.toplevel
+	nix build .#nixosConfigurations.thebe.config.system.build.toplevel
+	@echo "Building callisto (diskless compute)..."
+	nix build .#nixosConfigurations.callisto.config.system.build.toplevel
 	$(MAKE) build-mx4300
 	@echo "All builds completed successfully!"
 
@@ -29,7 +34,7 @@ build-mx4300:
 	rm -f hosts/parents-house/wyze-cams/wz_mini.conf
 
 # Build and run a QEMU virtual machine for a specific host
-# Usage: make test-lenovo
+# Usage: make test-ganymede
 test-%:
 	@echo "Building and launching VM for host: $*..."
 	nixos-rebuild build-vm --flake .#$*
@@ -38,7 +43,7 @@ test-%:
 
 # Headless boot smoke test: build the host VM and assert it reaches multi-user,
 # then shut it down (no interactive console). Used by CI; needs /dev/kvm.
-# Usage: make boot-smoke-t460s
+# Usage: make boot-smoke-himalia
 boot-smoke-%:
 	./scripts/boot-smoke.sh $* 300
 

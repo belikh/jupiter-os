@@ -26,8 +26,8 @@
   nixpkgs.config.allowUnfree = true;
 
   # Fleet-wide kernel default: CachyOS (chaotic-nyx) on every host except the
-  # NAS, which stays on plain linuxPackages to keep the backup hub boring and
-  # well-tested (see hosts/nas/configuration.nix override).
+  # NAS (europa), which stays on plain linuxPackages to keep the backup hub
+  # boring and well-tested (see hosts/europa/configuration.nix override).
   boot.kernelPackages = lib.mkDefault pkgs.linuxPackages_cachyos;
 
   # Baseline admin tooling, present on every host (headless or not). Desktop and
@@ -52,8 +52,8 @@
   # Safer ZFS default (becomes the default in 26.11). NAS overrides explicitly.
   boot.zfs.forceImportRoot = lib.mkDefault false;
 
-  # Everything uses OUR resolver (lenovo, 10.1.1.20). No public fallback, so a
-  # leak can't bypass it. The resolver host overrides this to 127.0.0.1.
+  # Everything uses OUR resolver (ganymede, 10.1.1.20). No public fallback, so
+  # a leak can't bypass it. The resolver host overrides this to 127.0.0.1.
   networking.nameservers = lib.mkDefault [ "10.1.1.20" ];
 
   # SSH & Users

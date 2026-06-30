@@ -1,18 +1,28 @@
 keys:
   - &admin_io age17c04srm4e5p3sgkrkv9emjqesya57qzwexpf4mdu5gzqv6t9asfskrwyqa
-  - &lenovo age1p8c8ylcp27yd4a69akgs4wxh4t70zyun9e7t3h344jp6ug227epq6x3cg8
-  - &nas age1glcaw46rwfkwnkpdz60zhk5hfzaqr93aw440remjtyawn5m8xvrs89ll99
-  - &t460s age1mz3axkge52zt06vmetwhdf805kk458k0a7ysqk3wjtwvncuf9g4s2ywp0f
-  - &dashboards age1t0wgluafdfu46ldm9rfhtl9e6hz2kq9w6q8twg0wld6vrx34a47sg2gtww
-  - &elitedesk age1ywucpcl3mvk249vu663knxgm06nl749j95mu2kupdawpa4v5l46sw7jexf
+  - &ganymede age1p8c8ylcp27yd4a69akgs4wxh4t70zyun9e7t3h344jp6ug227epq6x3cg8
+  - &europa age1glcaw46rwfkwnkpdz60zhk5hfzaqr93aw440remjtyawn5m8xvrs89ll99
+  - &himalia age1mz3axkge52zt06vmetwhdf805kk458k0a7ysqk3wjtwvncuf9g4s2ywp0f
+  - &callisto age1ywucpcl3mvk249vu663knxgm06nl749j95mu2kupdawpa4v5l46sw7jexf
+  # Dashboard kiosks (metis/adrastea/amalthea/thebe) aren't installed yet —
+  # these are throwaway placeholder keys, not derived from any real SSH host
+  # key. Replace each with the unit's real SSH-derived age key at install
+  # time (see docs/07-secrets-management.md §4), then `sops updatekeys`.
+  - &metis age1s28zyd8mp332wshqdev65at3np4yx6yaf4x6r9jnnlvlyq90hensurt5uk
+  - &adrastea age1jwmtfvu74fhk7trvr0mpmzzlg4u8074l7pqt29a6r5yghewjy32sg4afq5
+  - &amalthea age1zdduqkwq2xd6dva3enukzztgy2ykf0je8jevcfx0xp3s5z3qgu7srwmnhs
+  - &thebe age18l2k6deuks7v3e6xydsmmzfuyccw0a2ldcyzvw6nvg42ytjxr46slgfu3l
 
 creation_rules:
   - path_regex: secrets/secrets.yaml$
     key_groups:
       - age:
           - *admin_io
-          - *lenovo
-          - *nas
-          - *t460s
-          - *dashboards
-          - *elitedesk
+          - *ganymede
+          - *europa
+          - *himalia
+          - *callisto
+          - *metis
+          - *adrastea
+          - *amalthea
+          - *thebe

@@ -9,7 +9,7 @@ agents working in this repo, see [`CLAUDE.md`](../CLAUDE.md).
 ## Contents
 
 1. **[Architecture](01-architecture.md)** — repo layout, the `mkHost` pattern, the `jupiter.*` module namespace, base-layer design (`common.nix` vs `common-stateful.nix`), CI overview.
-2. **[Hosts](02-hosts.md)** — per-host reference: role, network identity, storage, boot path, imported modules, for `lenovo`, `nas`, `dashboards`, `elitedesk`, `t460s`.
+2. **[Hosts](02-hosts.md)** — per-host reference: role, network identity, storage, boot path, imported modules, for `ganymede`, `europa`, `metis`/`adrastea`/`amalthea`/`thebe`, `callisto`, `himalia`.
 3. **[Software Inventory](03-software-inventory.md)** — every package and service, organized by fleet-wide baseline, machine class, and individual host.
 4. **[Modules Reference](04-modules-reference.md)** — every `modules/*.nix` file: its `jupiter.*` options, defaults, and which hosts enable it.
 5. **[Networking & DNS](05-networking.md)** — VLANs/subnets, the unbound + dnscrypt-proxy resolver chain, headscale mesh, Cloudflare Tunnel ingress, firewall ports.
@@ -31,7 +31,7 @@ agents working in this repo, see [`CLAUDE.md`](../CLAUDE.md).
 - File paths are relative to the repo root unless stated otherwise.
 - Tables list **what is actually declared in this repo today** — where a
   comment in the source describes intent that isn't backed by a config yet
-  (e.g. the Loki/DB stack referenced from `elitedesk`'s iSCSI LUNs), that's
+  (e.g. the Loki/DB stack referenced from `callisto`'s iSCSI LUNs), that's
   called out explicitly rather than presented as already running.
 - "Enabled by" / "imported by" call out which host(s) currently opt into a
   given module or option — most `jupiter.*` toggles default to `false` and

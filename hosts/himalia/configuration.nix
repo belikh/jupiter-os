@@ -5,7 +5,7 @@
     ../../modules/common-stateful.nix
   ];
 
-  networking.hostName = "t460s";
+  networking.hostName = "himalia";
   networking.hostId = "c0ffee00"; # Randomly generated 8-char hex for ZFS
 
   # Dendritic Feature Toggles

@@ -43,7 +43,7 @@ in
           options = {
             remote = lib.mkOption {
               type = lib.types.str;
-              example = "root@lenovo.home.jupiter.au";
+              example = "root@ganymede.home.jupiter.au";
               description = "user@host of the source machine.";
             };
             sourceDataset = lib.mkOption {
@@ -52,7 +52,7 @@ in
             };
             targetDataset = lib.mkOption {
               type = lib.types.str;
-              example = "tank/backups/lenovo";
+              example = "tank/backups/ganymede";
             };
           };
         }

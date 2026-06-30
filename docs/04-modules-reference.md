@@ -34,7 +34,7 @@ flake input): always persists `/var/log`, `/var/lib/nixos`,
 `extraFiles`/`users` add host-specific paths — e.g. the kiosks turn
 `persistAdminHome` off and persist only the `kiosk` account's Chromium profile.
 
-**Enabled by:** `t460s` (admin home) and `dashboards` (kiosk profile only).
+**Enabled by:** `himalia` (admin home) and the dashboard kiosks (`metis`/`adrastea`/`amalthea`/`thebe`, kiosk profile only).
 
 ### `modules/core/branding.nix`
 ```
@@ -46,8 +46,9 @@ verbose `preDeviceCommands` boot banner, RobCo-styled MOTD, and (when
 `jupiter.desktop.enable` is also true) the `ly` TTY display manager in place
 of `greetd`.
 
-**Enabled by:** `lenovo`, `nas`, `t460s`. Off elsewhere (`dashboards` keeps a
-fast plain `systemd-boot` menu; `elitedesk` is a bootloader-less netboot node).
+**Enabled by:** `ganymede`, `europa`, `himalia`. Off elsewhere (the dashboard
+kiosks keep a fast plain `systemd-boot` menu; `callisto` is a bootloader-less
+netboot node).
 
 ## Desktop
 
@@ -56,9 +57,9 @@ fast plain `systemd-boot` menu; `elitedesk` is a bootloader-less netboot node).
 jupiter.desktop.enable      (bool, default false)
 jupiter.desktop.compositor  (enum ["niri" "gnome" "none"], default "niri")
 ```
-See [03-software-inventory.md §4](03-software-inventory.md#4-desktop-class-currently-t460s) for the full package list per compositor choice.
+See [03-software-inventory.md §4](03-software-inventory.md#4-desktop-class-currently-himalia) for the full package list per compositor choice.
 
-**Enabled by:** `t460s` (`compositor = "niri"`).
+**Enabled by:** `himalia` (`compositor = "niri"`).
 
 ## Storage
 
@@ -83,8 +84,8 @@ The `impermanent` profile also installs the initrd-stage rollback service
 with `jupiter.core.impermanence` to decide what survives. An assertion blocks
 the build while `disk` is still the `REPLACE-ME` placeholder.
 
-**Enabled by:** `t460s` + `dashboards` (`impermanent`), `lenovo` (`stateful`).
-`nas` keeps its bespoke `disko.nix` and leaves `profile = "none"`.
+**Enabled by:** `himalia` + the dashboard kiosks (`impermanent`), `ganymede`
+(`stateful`). `europa` keeps its bespoke `disko.nix` and leaves `profile = "none"`.
 
 ### `modules/storage/zfs-nas.nix`
 No option — unconditional. Sets `boot.supportedFilesystems = [ "zfs" ]`,
@@ -92,7 +93,7 @@ imports the hand-created `tank`/`europa` pools via `boot.zfs.extraPools`,
 enables `services.zfs.autoScrub`/`trim`, and declares the three Samba shares
 (`media`, `personal`, `archive`) plus `samba-wsdd`.
 
-**Imported by:** `nas` only.
+**Imported by:** `europa` only.
 
 ### `modules/storage/sanoid.nix`
 No option — unconditional. Snapshot templates `important`
@@ -101,7 +102,7 @@ No option — unconditional. Snapshot templates `important`
 (daily 7 / monthly 1) applied to `tank/media`. No `syncoid` replication
 target is configured (`europa` is a frozen archive, not a backup pool).
 
-**Imported by:** `nas` only.
+**Imported by:** `europa` only.
 
 ### `modules/storage/zfs-tuning.nix`
 No option — unconditional. Caps ZFS ARC at ~11GiB
@@ -110,15 +111,16 @@ buffers for 1GbE throughput, and tunes Samba (`sendfile`, async I/O,
 `TCP_NODELAY`, min protocol SMB2, multichannel off since the link is a single
 bonded interface).
 
-**Imported by:** `nas` only.
+**Imported by:** `europa` only.
 
 ### `modules/storage/nas-nfs.nix`
 No option — unconditional. `services.nfs.server`, exporting `/tank/media`
 (read-only, LAN + headscale mesh), `/srv/netboot` (read-only, LAN), and
-`/tank/backups/elitedesk` (**read-write**, `elitedesk` only — its backup spool,
-§8 of the storage doc). Firewall: TCP 2049.
+`/tank/backups/elitedesk` (**read-write**, `callisto` only — its backup spool,
+name kept as "elitedesk" since the dataset is already provisioned, §8 of the
+storage doc). Firewall: TCP 2049.
 
-**Imported by:** `nas` only.
+**Imported by:** `europa` only.
 
 ### `modules/storage/iscsi.nix`
 ```
@@ -128,10 +130,13 @@ jupiter.nas.iscsi.luns        (list of { name, dev, initiatorIqn })
 ```
 Generates an LIO `services.target` config: one block backstore per LUN (WWN
 derived from a SHA-256 hash of the LUN name), one ACL per LUN mapping it to
-the consuming host's initiator IQN. Firewall: TCP 3260.
+the consuming host's initiator IQN. Firewall: TCP 3260. (`jupiter.nas.*` is a
+role-based option namespace — "the NAS" — independent of the host's actual
+name, `europa`.)
 
-**Enabled by:** `nas`, with two LUNs — `db` (`/dev/zvol/rpool/db`) and `loki`
-(`/dev/zvol/rpool/loki`), both ACL'd to `iqn.2026-06.au.jupiter:elitedesk`.
+**Enabled by:** `europa`, with two LUNs — `db` (`/dev/zvol/rpool/db`) and `loki`
+(`/dev/zvol/rpool/loki`), both ACL'd to `iqn.2026-06.au.jupiter:elitedesk`
+(callisto's initiator IQN, kept as a fixed protocol identity).
 
 ### `modules/storage/backup.nix`
 ```
@@ -139,13 +144,14 @@ jupiter.backup.enable    (bool, default false — defaulted on by the stateful s
 jupiter.backup.datasets  (list of string, default by profile; stateful → [ "rpool/var" ])
 ```
 Per-host declaration that this host's state should reach the central data store
-(NAS) and thence offsite. The source side: when enabled, authorizes the NAS's
-syncoid pull key (`site.backupHub`, restricted to the NAS address) for root, and
-asserts `datasets` is non-empty. The NAS side is *derived* — `flake.nix`'s
-`backupHubModule` reads every host's `jupiter.backup` and generates the
-replication sources, so a new state-holding host needs **no NAS edit**.
+(europa) and thence offsite. The source side: when enabled, authorizes
+europa's syncoid pull key (`site.backupHub`, restricted to europa's address)
+for root, and asserts `datasets` is non-empty. Europa's side is *derived* —
+`flake.nix`'s `backupHubModule` reads every host's `jupiter.backup` and
+generates the replication sources, so a new state-holding host needs **no
+edit on europa**.
 
-**Enabled by:** `lenovo` (auto, via the `stateful` profile). Off elsewhere.
+**Enabled by:** `ganymede` (auto, via the `stateful` profile). Off elsewhere.
 
 ### `modules/storage/replication.nix`
 ```
@@ -160,11 +166,11 @@ takes its own pre-send snapshot, so sources need no snapshot policy. The module
 header documents the one-time provisioning (keypair → sops, authorize the public
 key on each source, `zfs allow` send rights).
 
-**Enabled by:** `nas` (the puller). Its `sources` are not listed by hand — they
-are derived from the fleet's `jupiter.backup` declarations by `flake.nix`'s
-`backupHubModule`. Today that resolves to `lenovo:rpool/var` →
-`tank/backups/lenovo-var` hourly. See
-[06-storage-and-backups.md §7](06-storage-and-backups.md#7-server-state-replication-syncoid--nas).
+**Enabled by:** `europa` (the puller). Its `sources` are not listed by hand —
+they are derived from the fleet's `jupiter.backup` declarations by
+`flake.nix`'s `backupHubModule`. Today that resolves to `ganymede:rpool/var`
+→ `tank/backups/ganymede-var` hourly. See
+[06-storage-and-backups.md §7](06-storage-and-backups.md#7-server-state-replication-syncoid--europa--auto-wired).
 
 ## Network
 
@@ -176,10 +182,10 @@ jupiter.nas.bond.mtu         (int, default 1500)
 ```
 802.3ad (LACP) bonding across the NAS's two 1GbE ports
 (`xmit_hash_policy = "layer3+4"`, `lacp_rate = "fast"`). The matching
-UniFi-switch-side LACP config must exist first, or the NAS loses network
+UniFi-switch-side LACP config must exist first, or europa loses network
 connectivity when this is enabled.
 
-**Set by:** `nas`, currently `enable = false` (not yet turned on).
+**Set by:** `europa`, currently `enable = false` (not yet turned on).
 
 ### `modules/network/dns.nix`
 ```
@@ -201,16 +207,16 @@ Two cooperating services:
 
 Firewall: TCP+UDP 53.
 
-**Enabled by:** `lenovo`, with `home.jupiter.au` and `allowedNetworks`
+**Enabled by:** `ganymede`, with `home.jupiter.au` and `allowedNetworks`
 covering the default LAN, IoT VLAN, Cameras VLAN, and the headscale mesh
-range — see [02-hosts.md](02-hosts.md#lenovo) for the exact CIDR list.
+range — see [02-hosts.md](02-hosts.md#ganymede) for the exact CIDR list.
 
 ### `modules/network/headscale.nix`
 No option — unconditional `services.headscale`. Port 8080, `magic_dns`
 enabled, base domain `jupiter.mesh`, mesh clients told to use `10.1.1.20` for
 DNS, `ip_prefixes` `100.64.0.0/10` + `fd7a:115c:a1e0::/48`. Firewall: TCP 8080.
 
-**Imported by:** `lenovo` only — the single mesh control plane, exposed
+**Imported by:** `ganymede` only — the single mesh control plane, exposed
 publicly via the Cloudflare Tunnel (`headscale.jupiter.au`).
 
 ### `modules/network/cloudflared.nix`
@@ -219,7 +225,7 @@ No option — unconditional. One named tunnel
 `cloudflare_cert`, ingress rules for `headscale.jupiter.au`, `n8n.jupiter.au`,
 `ha.jupiter.au` (all `http_status:404` default catch-all).
 
-**Imported by:** `lenovo` only.
+**Imported by:** `ganymede` only.
 
 ### `modules/network/pxe-server.nix`
 ```
@@ -231,9 +237,9 @@ jupiter.pxe.cmdLine    (string, default "loglevel=4")
 Wraps `services.pixiecore` in `"boot"` mode (acts as DHCP proxy + serves the
 kernel/initrd itself — no separate webroot needed).
 
-**Enabled by:** `lenovo`, via the `pxeModule` defined in `flake.nix`, which
+**Enabled by:** `ganymede`, via the `pxeModule` defined in `flake.nix`, which
 sources `kernel`/`initrd`/`cmdLine` directly from
-`self.nixosConfigurations.elitedesk.config.system.build` — see
+`self.nixosConfigurations.callisto.config.system.build` — see
 [01-architecture.md §3](01-architecture.md#3-the-mkhost-pattern-flakenix).
 
 ## Services
@@ -244,9 +250,9 @@ jupiter.services.syncthing.enable   (bool, default false)
 jupiter.services.syncthing.dataDir  (string, default "/home/io")
 ```
 `dataDir` is the sync root + config/index location. Personal machines keep the
-default (`/home/io`); the **NAS hub sets it to `/tank/personal`** so the
-canonical synced copy lands on mirrored, snapshotted, offsite storage rather
-than the OS disk.
+default (`/home/io`); **europa (the NAS hub) sets it to `/tank/personal`** so
+the canonical synced copy lands on mirrored, snapshotted, offsite storage
+rather than the OS disk.
 `services.syncthing` for user `io`, GUI bound to `0.0.0.0:8384` (reachable
 over LAN/headscale), device/folder management left to the WebUI
 (`overrideDevices`/`overrideFolders = false`). Also drops a `.stignore`
@@ -254,22 +260,23 @@ template into `/home/io` on first activation that excludes most dotfiles/caches
 but explicitly re-includes `.claude` and `.gemini`. Firewall: TCP 8384/22000,
 UDP 22000/21027.
 
-**Enabled by:** `nas`, `t460s`.
+**Enabled by:** `europa`, `himalia`.
 
 ### `modules/services/tcxwave-power-tuning.nix`
-No option — unconditional. See the full breakdown in
-[03-software-inventory.md §3](03-software-inventory.md#dashboards-tcx-wave-kiosks-4)
-and [02-hosts.md](02-hosts.md#dashboards-jupiter-dashboard).
+No option — unconditional. Shared by all 4 dashboard kiosks. See the full
+breakdown in
+[03-software-inventory.md §3](03-software-inventory.md#dashboard-kiosks-metis-adrastea-amalthea-thebe-tcx-wave-4)
+and [02-hosts.md](02-hosts.md#dashboard-kiosks-metis-adrastea-amalthea-thebe).
 
-**Imported by:** `dashboards` only.
+**Imported by:** `metis`, `adrastea`, `amalthea`, `thebe`.
 
 ### `modules/services/home-assistant-vm.nix`
 No option — unconditional. `virtualisation.libvirtd` with
 `qemu_kvm`/`runAsRoot`/`swtpm`; ships `virt-manager`, `libvirt`, `qemu_kvm`
-CLI tools. Network bridging is left to the host (`hosts/lenovo` declares
+CLI tools. Network bridging is left to the host (`hosts/ganymede` declares
 `br0` itself) to avoid NIC-name mismatches.
 
-**Imported by:** `lenovo` only.
+**Imported by:** `ganymede` only.
 
 ### `modules/services/n8n.nix`
 ```
@@ -285,8 +292,8 @@ jupiter.services.n8n.database.passwordFile (path — sops secret)
 (`DB_TYPE=postgresdb`, password via `DB_POSTGRESDB_PASSWORD_FILE`) instead of
 the bundled SQLite.
 
-**Imported by:** `lenovo`, which enables the Postgres backend against
-`elitedesk`.
+**Imported by:** `ganymede`, which enables the Postgres backend against
+`callisto`.
 
 ### `modules/services/postgresql.nix`
 ```
@@ -295,7 +302,7 @@ jupiter.services.postgresql.dataDir   (path, default "/var/lib/postgresql")
 jupiter.services.postgresql.package   (package, default pkgs.postgresql_16)
 jupiter.services.postgresql.databases (attrset of { passwordFile, allowedClients })
 ```
-`services.postgresql` with its data directory under `dataDir` (on `elitedesk`
+`services.postgresql` with its data directory under `dataDir` (on `callisto`
 the iSCSI `db` LUN) and `RequiresMountsFor` so it waits for that mount. Each
 entry in `databases` provisions a login role + owned database of that name,
 sets the role password from `passwordFile` (a sops secret, applied by the
@@ -303,8 +310,8 @@ sets the role password from `passwordFile` (a sops secret, applied by the
 CIDR in `allowedClients` (firewall + `enableTCPIP` follow automatically). Local
 peer auth still works for admin.
 
-**Enabled by:** `elitedesk`, with `homeassistant` (reachable from the HA VM) and
-`n8n` (reachable from lenovo) databases.
+**Enabled by:** `callisto`, with `homeassistant` (reachable from the HA VM) and
+`n8n` (reachable from ganymede) databases.
 
 ### `modules/services/loki.nix`
 ```
@@ -314,11 +321,11 @@ jupiter.services.loki.httpPort   (port, default 3100)
 jupiter.services.loki.syslogPort (port, default 514)
 ```
 `services.loki` (single-node, filesystem storage under `dataDir` — on
-`elitedesk` the iSCSI `loki` LUN) plus a `services.promtail` syslog receiver
-that ingests the Wyze cams' forwarded logs (RFC5424/TCP on `syslogPort`) and
-pushes them to Loki. Firewall: TCP `httpPort` + `syslogPort`.
+`callisto` the iSCSI `loki` LUN) plus a `services.alloy` (grafana-alloy)
+syslog receiver that ingests the Wyze cams' forwarded logs (RFC5424/TCP on
+`syslogPort`) and pushes them to Loki. Firewall: TCP `httpPort` + `syslogPort`.
 
-**Enabled by:** `elitedesk`.
+**Enabled by:** `callisto`.
 
 ### `modules/services/state-backup.nix`
 ```
@@ -331,10 +338,10 @@ jupiter.services.stateBackup.rsyncPaths (list of string — dirs mirrored into t
 ```
 A timer that lands a restic-friendly *logical* copy of a host's service state
 into `spoolDir` (typically an NFS mount of `tank/backups`), so hosts whose data
-sits on raw iSCSI zvols still get snapshotted + offsite via the NAS. `pg_dumpall`
+sits on raw iSCSI zvols still get snapshotted + offsite via europa. `pg_dumpall`
 for Postgres (transactionally consistent), `rsync --delete` for file dirs.
 
-**Enabled by:** `elitedesk` (postgres + `/var/lib/loki` → `nas:/tank/backups/elitedesk`).
+**Enabled by:** `callisto` (postgres + `/var/lib/loki` → `europa:/tank/backups/elitedesk`).
 
 ### `modules/services/backups.nix`
 ```
@@ -346,9 +353,9 @@ jupiter.backups.repository   (string, default "s3:s3.us-west-004.backblazeb2.com
 credentials from sops secrets `restic_password`/`restic_env`, retention
 `--keep-daily 7 --keep-weekly 4 --keep-monthly 6`.
 
-**Used by:** `nas` only (`/tank/personal`, `/tank/backups/homeassistant`,
-`/tank/backups/lenovo`) — the fleet's single offsite egress. Other hosts'
-state reaches the cloud by first replicating to the NAS (`jupiter.replication`).
+**Used by:** `europa` only (`/tank/personal`, `/tank/backups/homeassistant`,
+`/tank/backups/ganymede`) — the fleet's single offsite egress. Other hosts'
+state reaches the cloud by first replicating to europa (`jupiter.replication`).
 
 ## Home
 
@@ -362,9 +369,9 @@ across personal machines. `default.nix` wires home-manager
 holds the machine-agnostic config: user packages, git/bash/direnv, and a shared
 niri config written as a plain `~/.config/niri/config.kdl` (no dependency on a
 compositor HM module). Data directories are deliberately *not* managed here —
-they roam via Syncthing with the NAS as hub.
+they roam via Syncthing with europa as hub.
 
-**Enabled by:** `t460s` (and the `desktop`/`parents-desktop` scaffolds).
+**Enabled by:** `himalia` (and the `elara`/`carme` scaffolds).
 
 ## How to add a new module
 

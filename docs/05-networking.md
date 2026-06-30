@@ -4,7 +4,7 @@
 
 Defined once as plain data in `lib/site.nix` and imported by both
 `terraform/unifi/default.nix` (applied to the UDM Pro) and the resolver config
-in `hosts/lenovo/configuration.nix` (`jupiter.dns`), so the VLAN/subnet facts
+in `hosts/ganymede/configuration.nix` (`jupiter.dns`), so the VLAN/subnet facts
 below can't drift between UniFi and DNS.
 
 | Network | VLAN | Subnet | DHCP range | DNS server |
@@ -20,17 +20,17 @@ hosts):
 | Host | Address | Interface |
 |---|---|---|
 | Gateway (UDM Pro) | `10.1.1.1` | — |
-| `nas` | `10.1.1.2` | `enp2s0f0` (bond0 once LACP is enabled) |
-| `lenovo` | `10.1.1.20` | `br0` (member: `enp1s0`) |
-| `elitedesk` | `10.1.1.21` | `enp0s31f6` (diskless; Loki/syslog sink) |
-| Home Assistant VM | `10.1.1.72` | (libvirt bridge, on `lenovo`) |
+| `europa` | `10.1.1.2` | `enp2s0f0` (bond0 once LACP is enabled) |
+| `ganymede` | `10.1.1.20` | `br0` (member: `enp1s0`) |
+| `callisto` | `10.1.1.21` | `enp0s31f6` (diskless; Loki/syslog sink) |
+| Home Assistant VM | `10.1.1.72` | (libvirt bridge, on `ganymede`) |
 | smokeping | `10.1.1.221` | (referenced in DNS records; no corresponding host in this repo) |
 
-## 2. Internal DNS resolver (`lenovo`, `jupiter.dns`)
+## 2. Internal DNS resolver (`ganymede`, `jupiter.dns`)
 
-`lenovo` is the only authoritative/recursive resolver for the fleet. Every
+`ganymede` is the only authoritative/recursive resolver for the fleet. Every
 other host's `networking.nameservers` defaults to `10.1.1.20`
-(`modules/common.nix`); `lenovo` points at itself (`127.0.0.1`).
+(`modules/common.nix`); `ganymede` points at itself (`127.0.0.1`).
 
 Two layered services, both declared in `modules/network/dns.nix`:
 
@@ -67,9 +67,9 @@ the client IP.
 | FQDN | IP |
 |---|---|
 | `gateway.home.jupiter.au` | `10.1.1.1` |
-| `nas.home.jupiter.au` | `10.1.1.2` |
-| `lenovo.home.jupiter.au` | `10.1.1.20` |
-| `elitedesk.home.jupiter.au` | `10.1.1.21` |
+| `europa.home.jupiter.au` | `10.1.1.2` |
+| `ganymede.home.jupiter.au` | `10.1.1.20` |
+| `callisto.home.jupiter.au` | `10.1.1.21` |
 | `ha.home.jupiter.au` | `10.1.1.72` |
 | `smokeping.home.jupiter.au` | `10.1.1.221` |
 
@@ -85,18 +85,18 @@ internal resolver even if misconfigured.
 ## 3. Mesh VPN (headscale)
 
 `modules/network/headscale.nix` runs a self-hosted, Tailscale-protocol-compatible
-control plane (`services.headscale`) on `lenovo`, exposed publicly at
+control plane (`services.headscale`) on `ganymede`, exposed publicly at
 `https://headscale.jupiter.au` via the Cloudflare Tunnel (not directly
 port-forwarded). MagicDNS is on, base domain `jupiter.mesh`; mesh clients are
 told to use `10.1.1.20` for DNS too, so their queries get anonymized through
 home and they can resolve internal `home.jupiter.au` names while roaming.
 
-`lenovo` is the only host running headscale — it's the single control plane
+`ganymede` is the only host running headscale — it's the single control plane
 for the fleet.
 
 ## 4. Public ingress (Cloudflare Tunnel)
 
-`modules/network/cloudflared.nix` runs a single `cloudflared` tunnel on `lenovo`
+`modules/network/cloudflared.nix` runs a single `cloudflared` tunnel on `ganymede`
 (credentials: sops secret `cloudflare_cert`), the *only* path from the public
 internet into the fleet — no inbound ports are forwarded at the edge.
 
@@ -112,7 +112,7 @@ see [10-terraform.md](10-terraform.md).
 
 ## 5. iSCSI / NFS / SMB data-plane traffic
 
-Storage protocols (iSCSI to `elitedesk`, NFS to LAN/mesh clients, SMB to LAN
+Storage protocols (iSCSI to `callisto`, NFS to LAN/mesh clients, SMB to LAN
 clients) run over the same `10.1.1.0/24` network as everything else — no
 dedicated storage VLAN exists today. See
 [06-storage-and-backups.md](06-storage-and-backups.md) for exports/shares
@@ -122,7 +122,7 @@ and firewall ports.
 
 | Host | Ports | Why |
 |---|---|---|
-| `lenovo` | TCP/UDP 53 (dns.nix), TCP 8080 (headscale.nix) | Resolver + mesh control plane |
-| `nas` | TCP 2049 (nas-nfs.nix), TCP 3260 (iscsi.nix), Samba ports (zfs-nas.nix, `openFirewall`), TCP 8384/22000 + UDP 22000/21027 (syncthing.nix) | NFS, iSCSI, SMB, Syncthing |
-| `t460s` | TCP 8384/22000, UDP 22000/21027 (syncthing.nix) | Syncthing |
-| `elitedesk` | TCP 3100 + 514 (loki.nix) | Loki HTTP + syslog receiver |
+| `ganymede` | TCP/UDP 53 (dns.nix), TCP 8080 (headscale.nix) | Resolver + mesh control plane |
+| `europa` | TCP 2049 (nas-nfs.nix), TCP 3260 (iscsi.nix), Samba ports (zfs-nas.nix, `openFirewall`), TCP 8384/22000 + UDP 22000/21027 (syncthing.nix) | NFS, iSCSI, SMB, Syncthing |
+| `himalia` | TCP 8384/22000, UDP 22000/21027 (syncthing.nix) | Syncthing |
+| `callisto` | TCP 3100 + 514 (loki.nix) | Loki HTTP + syslog receiver |
