@@ -29,7 +29,7 @@
       global = {
         "workgroup" = "WORKGROUP";
         "server string" = "Jupiter OS NAS";
-        "netbios name" = "jupiter-nas";
+        "netbios name" = "jupiter-europa";
         "security" = "user";
         "map to guest" = "bad user";
       };

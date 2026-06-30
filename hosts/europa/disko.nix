@@ -68,11 +68,11 @@
 
         # ---- SSD "fast" tier: hot random-I/O workloads -----------------------
         # Not redundant (single SSD) by design — nothing irreplaceable lives
-        # here. DB durability is the elitedesk's job; loki/scratch are
+        # here. DB durability is callisto's job; loki/scratch are
         # expendable/reproducible and snapshot+restic to tank.
 
-        # Block devices exported to the diskless elitedesk over iSCSI.
-        # The elitedesk runs the actual services (DB, Loki) from RAM and
+        # Block devices exported to the diskless callisto over iSCSI.
+        # Callisto runs the actual services (DB, Loki) from RAM and
         # persists to these zvols. Block semantics + single consumer = iSCSI.
         "db" = {
           type = "zfs_volume";

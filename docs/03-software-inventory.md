@@ -98,7 +98,7 @@ disabled.
 | PostgreSQL | `modules/services/postgresql.nix` (`jupiter.services.postgresql`) | DB on the iSCSI `db` LUN (`/var/lib/postgresql`); serves `homeassistant` (HA VM) + `n8n` (ganymede) over the LAN, scram-sha-256 |
 | Loki | `modules/services/loki.nix` (`jupiter.services.loki`) | Log store on the iSCSI `loki` LUN (`/var/lib/loki`), HTTP `:3100` |
 | grafana-alloy | `modules/services/loki.nix` | Syslog receiver on `:514`, ingests Wyze cam logs into Loki |
-| state-backup timer | `modules/services/state-backup.nix` (`jupiter.services.stateBackup`) | Hourly `pg_dumpall` + Loki `rsync` to `europa:/tank/backups/elitedesk` (NFS) → sanoid + offsite |
+| state-backup timer | `modules/services/state-backup.nix` (`jupiter.services.stateBackup`) | Hourly `pg_dumpall` + Loki `rsync` to `europa:/tank/backups/callisto` (NFS) → sanoid + offsite |
 
 No GUI, no branding, no local storage — but it does run the persistent DB +
 Loki stack on europa-backed iSCSI LUNs (above), with their state backed up to

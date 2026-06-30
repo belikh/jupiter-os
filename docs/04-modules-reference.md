@@ -116,16 +116,15 @@ bonded interface).
 ### `modules/storage/nas-nfs.nix`
 No option — unconditional. `services.nfs.server`, exporting `/tank/media`
 (read-only, LAN + headscale mesh), `/srv/netboot` (read-only, LAN), and
-`/tank/backups/elitedesk` (**read-write**, `callisto` only — its backup spool,
-name kept as "elitedesk" since the dataset is already provisioned, §8 of the
-storage doc). Firewall: TCP 2049.
+`/tank/backups/callisto` (**read-write**, `callisto` only — its backup spool,
+§8 of the storage doc). Firewall: TCP 2049.
 
 **Imported by:** `europa` only.
 
 ### `modules/storage/iscsi.nix`
 ```
 jupiter.nas.iscsi.enable      (bool, default false)
-jupiter.nas.iscsi.targetIqn   (string, default "iqn.2026-06.au.jupiter:nas.target0")
+jupiter.nas.iscsi.targetIqn   (string, default "iqn.2026-06.au.jupiter:europa.target0")
 jupiter.nas.iscsi.luns        (list of { name, dev, initiatorIqn })
 ```
 Generates an LIO `services.target` config: one block backstore per LUN (WWN
@@ -135,8 +134,8 @@ role-based option namespace — "the NAS" — independent of the host's actual
 name, `europa`.)
 
 **Enabled by:** `europa`, with two LUNs — `db` (`/dev/zvol/rpool/db`) and `loki`
-(`/dev/zvol/rpool/loki`), both ACL'd to `iqn.2026-06.au.jupiter:elitedesk`
-(callisto's initiator IQN, kept as a fixed protocol identity).
+(`/dev/zvol/rpool/loki`), both ACL'd to `iqn.2026-06.au.jupiter:callisto`
+(callisto's initiator IQN).
 
 ### `modules/storage/backup.nix`
 ```
@@ -341,7 +340,7 @@ into `spoolDir` (typically an NFS mount of `tank/backups`), so hosts whose data
 sits on raw iSCSI zvols still get snapshotted + offsite via europa. `pg_dumpall`
 for Postgres (transactionally consistent), `rsync --delete` for file dirs.
 
-**Enabled by:** `callisto` (postgres + `/var/lib/loki` → `europa:/tank/backups/elitedesk`).
+**Enabled by:** `callisto` (postgres + `/var/lib/loki` → `europa:/tank/backups/callisto`).
 
 ### `modules/services/backups.nix`
 ```

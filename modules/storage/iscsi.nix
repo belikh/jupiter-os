@@ -37,7 +37,7 @@ in
 
     targetIqn = mkOption {
       type = types.str;
-      default = "iqn.2026-06.au.jupiter:nas.target0";
+      default = "iqn.2026-06.au.jupiter:europa.target0";
       description = "The NAS's iSCSI target IQN.";
     };
 

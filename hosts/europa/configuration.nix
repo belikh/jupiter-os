@@ -4,11 +4,11 @@
   imports = [
     ../../modules/common-stateful.nix
     ./disko.nix # OS SSD layout (destructive, OS disk only)
-    ../../modules/storage/zfs-nas.nix # imports tank (new) + europa (archive) + samba
+    ../../modules/storage/zfs-nas.nix # imports tank (new) + the "europa" archive zpool + samba — pool name predates and inspired this host's name
     ../../modules/storage/sanoid.nix # snapshots on tank
     ../../modules/storage/zfs-tuning.nix # ARC/kernel/samba perf for this hardware
     ../../modules/storage/nas-nfs.nix # NFS exports to the network
-    ../../modules/storage/iscsi.nix # iSCSI block export of zvols to elitedesk
+    ../../modules/storage/iscsi.nix # iSCSI block export of zvols to callisto
     ../../modules/storage/replication.nix # pulls server state datasets here (syncoid)
     ../../modules/network/nas-bond.nix # optional 2×1GbE LACP (opt-in below)
     ../../modules/services/backups.nix # restic offsite (jupiter.backups.paths below)
@@ -48,22 +48,20 @@
   jupiter.nas.bond.enable = false;
 
   # iSCSI block exports for the diskless callisto (DB + Loki persistence).
-  # Network IQN scheme: iqn.2026-06.au.jupiter:<host>. The initiator IQN below
-  # is kept as "elitedesk" deliberately — it's a fixed protocol identity
-  # already bound here, matching callisto's services.openiscsi.name, not just
-  # a display name (see hosts/callisto/configuration.nix).
+  # Network IQN scheme: iqn.2026-06.au.jupiter:<host>. Must match callisto's
+  # services.openiscsi.name (see hosts/callisto/configuration.nix).
   jupiter.nas.iscsi = {
     enable = true;
     luns = [
       {
         name = "db";
         dev = "/dev/zvol/rpool/db";
-        initiatorIqn = "iqn.2026-06.au.jupiter:elitedesk";
+        initiatorIqn = "iqn.2026-06.au.jupiter:callisto";
       }
       {
         name = "loki";
         dev = "/dev/zvol/rpool/loki";
-        initiatorIqn = "iqn.2026-06.au.jupiter:elitedesk";
+        initiatorIqn = "iqn.2026-06.au.jupiter:callisto";
       }
     ];
   };
