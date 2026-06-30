@@ -6,7 +6,7 @@
 # REPLACE-ME disk would fail the jupiter.storage assertion). To bring online:
 #   1. set jupiter.storage.disk to the real /dev/disk/by-id path
 #   2. set a unique networking.hostId (8 hex chars)
-#   3. uncomment the `desktop` entry in flake.nix nixosConfigurations + add it
+#   3. uncomment the `elara` entry in flake.nix nixosConfigurations + add it
 #      to the CI build/boot-test matrices
 #   4. generate its age key and add it to .sops.yaml
 
@@ -15,7 +15,7 @@
     ../../modules/common-stateful.nix
   ];
 
-  networking.hostName = "desktop";
+  networking.hostName = "elara";
   networking.hostId = "REPLACE-ME"; # 8 hex chars, required for ZFS
 
   jupiter = {
@@ -26,7 +26,7 @@
     core.impermanence.enable = true;
     storage = {
       profile = "impermanent";
-      disk = "/dev/disk/by-id/REPLACE-ME-desktop-os-disk";
+      disk = "/dev/disk/by-id/REPLACE-ME-elara-os-disk";
     };
     desktop = {
       enable = true;

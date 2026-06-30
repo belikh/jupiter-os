@@ -14,7 +14,7 @@
     ../../modules/services/backups.nix # restic offsite (jupiter.backups.paths below)
   ];
 
-  networking.hostName = "nas";
+  networking.hostName = "europa";
   networking.hostId = "deadbeef"; # Stable per-host 8-char hex, required for ZFS
 
   # RobCo/Fallout boot branding (GRUB theme, MOTD).
@@ -31,9 +31,9 @@
   chaotic.nyx.registry.enable = false;
 
   # Static identity below the DHCP pool (.6-.254) so iSCSI/NFS clients have a
-  # stable target. DNS (nas.home.jupiter.au) points here. Uses OUR resolver via
-  # common.nix default (10.1.1.20). When the LACP bond is enabled, move this
-  # address onto bond0.
+  # stable target. DNS (europa.home.jupiter.au) points here. Uses OUR resolver
+  # via common.nix default (10.1.1.20). When the LACP bond is enabled, move
+  # this address onto bond0.
   networking.useDHCP = false;
   networking.interfaces.enp2s0f0.ipv4.addresses = [
     {
@@ -47,9 +47,11 @@
   # Leave disabled until then (default DHCP on a single port keeps it reachable).
   jupiter.nas.bond.enable = false;
 
-  # iSCSI block exports for the diskless elitedesk (DB + Loki persistence).
+  # iSCSI block exports for the diskless callisto (DB + Loki persistence).
   # Network IQN scheme: iqn.2026-06.au.jupiter:<host>. The initiator IQN below
-  # is declared to match the elitedesk's services.openiscsi.name.
+  # is kept as "elitedesk" deliberately — it's a fixed protocol identity
+  # already bound here, matching callisto's services.openiscsi.name, not just
+  # a display name (see hosts/callisto/configuration.nix).
   jupiter.nas.iscsi = {
     enable = true;
     luns = [

@@ -99,27 +99,27 @@
           ++ extraModules;
         };
 
-      # Wire the PXE server (on lenovo) directly to the elitedesk's netboot build
+      # Wire the PXE server (on ganymede) directly to callisto's netboot build
       # products, so the image Pixiecore serves always matches the flake. The
       # cmdLine must point the booting kernel at its closure's init.
-      elitedeskConfig = self.nixosConfigurations.elitedesk.config;
-      elitedeskBuild = elitedeskConfig.system.build;
+      callistoConfig = self.nixosConfigurations.callisto.config;
+      callistoBuild = callistoConfig.system.build;
       pxeModule = { ... }: {
         jupiter.pxe = {
           enable = true;
-          kernel = "${elitedeskBuild.kernel}/bzImage";
-          initrd = "${elitedeskBuild.netbootRamdisk}/initrd";
-          # Pull kernelParams from elitedesk itself so the served cmdLine can't
+          kernel = "${callistoBuild.kernel}/bzImage";
+          initrd = "${callistoBuild.netbootRamdisk}/initrd";
+          # Pull kernelParams from callisto itself so the served cmdLine can't
           # drift from the host's config (it already sets copytoram).
-          cmdLine = "init=${elitedeskBuild.toplevel}/init loglevel=4 ${toString elitedeskConfig.boot.kernelParams}";
+          cmdLine = "init=${callistoBuild.toplevel}/init loglevel=4 ${toString callistoConfig.boot.kernelParams}";
         };
       };
 
-      # The NAS auto-derives its syncoid replication sources from every OTHER
-      # host's jupiter.backup declaration — so adding a host that holds state
-      # wires up central backup with no edit here. Same cross-host-via-closure
-      # pattern as pxeModule above. (Reading other hosts' config is acyclic: they
-      # never read the NAS's config.)
+      # The NAS (europa) auto-derives its syncoid replication sources from
+      # every OTHER host's jupiter.backup declaration — so adding a host that
+      # holds state wires up central backup with no edit here. Same
+      # cross-host-via-closure pattern as pxeModule above. (Reading other
+      # hosts' config is acyclic: they never read europa's config.)
       site = import ./lib/site.nix;
       backupHubModule =
         { lib, ... }:
@@ -149,19 +149,28 @@
     in
     {
       nixosConfigurations = {
-        elitedesk = mkHost ./hosts/elitedesk/configuration.nix [ ];
-        lenovo = mkHost ./hosts/lenovo/configuration.nix [ pxeModule ];
-        t460s = mkHost ./hosts/t460s/configuration.nix [ ];
-        nas = mkHost ./hosts/nas/configuration.nix [ backupHubModule ];
-        dashboards = mkHost ./hosts/dashboards/configuration.nix [ ];
+        callisto = mkHost ./hosts/callisto/configuration.nix [ ];
+        ganymede = mkHost ./hosts/ganymede/configuration.nix [ pxeModule ];
+        himalia = mkHost ./hosts/himalia/configuration.nix [ ];
+        europa = mkHost ./hosts/europa/configuration.nix [ backupHubModule ];
+
+        # TCx Wave dashboard kiosks — 4 identical units, one per room. Each is
+        # its own host (own hostName/hostId/dashboard URL via
+        # jupiter.dashboardKiosk.url) since they can't share an identity; the
+        # shared hardware tuning lives in modules/services/tcxwave-power-tuning.nix
+        # and the shared kiosk session in modules/desktop/dashboard-kiosk.nix.
+        metis = mkHost ./hosts/metis/configuration.nix [ ]; # kitchen
+        adrastea = mkHost ./hosts/adrastea/configuration.nix [ ]; # office
+        amalthea = mkHost ./hosts/amalthea/configuration.nix [ ]; # jupiter-bedroom
+        thebe = mkHost ./hosts/thebe/configuration.nix [ ]; # robbie-room
 
         # Future personal workstations (roaming desktop — same niri + synced
         # $HOME as the laptop). Scaffolded in hosts/ but not registered until the
         # hardware exists, because their REPLACE-ME disks would (intentionally)
         # fail the jupiter.storage assertion at build time. To bring one online:
         # fill in its disk/hostId, uncomment, and add it to the CI build matrix.
-        # desktop        = mkHost ./hosts/desktop/configuration.nix [ ];
-        # parents-desktop = mkHost ./hosts/parents-desktop/configuration.nix [ ];
+        # elara = mkHost ./hosts/elara/configuration.nix [ ];
+        # carme = mkHost ./hosts/carme/configuration.nix [ ];
       };
 
       packages.x86_64-linux =
@@ -195,39 +204,60 @@
 
       # Deployment configuration for deploy-rs
       deploy.nodes = {
-        lenovo = {
-          hostname = "lenovo";
+        ganymede = {
+          hostname = "ganymede";
           profiles.system = {
             user = "root";
-            path = deploy-rs.lib.x86_64-linux.activate.nixos self.nixosConfigurations.lenovo;
+            path = deploy-rs.lib.x86_64-linux.activate.nixos self.nixosConfigurations.ganymede;
           };
         };
-        nas = {
-          hostname = "nas";
+        europa = {
+          hostname = "europa";
           profiles.system = {
             user = "root";
-            path = deploy-rs.lib.x86_64-linux.activate.nixos self.nixosConfigurations.nas;
+            path = deploy-rs.lib.x86_64-linux.activate.nixos self.nixosConfigurations.europa;
           };
         };
-        elitedesk = {
-          hostname = "elitedesk";
+        callisto = {
+          hostname = "callisto";
           profiles.system = {
             user = "root";
-            path = deploy-rs.lib.x86_64-linux.activate.nixos self.nixosConfigurations.elitedesk;
+            path = deploy-rs.lib.x86_64-linux.activate.nixos self.nixosConfigurations.callisto;
           };
         };
-        t460s = {
-          hostname = "t460s";
+        himalia = {
+          hostname = "himalia";
           profiles.system = {
             user = "root";
-            path = deploy-rs.lib.x86_64-linux.activate.nixos self.nixosConfigurations.t460s;
+            path = deploy-rs.lib.x86_64-linux.activate.nixos self.nixosConfigurations.himalia;
           };
         };
-        dashboards = {
-          hostname = "dashboards";
+        metis = {
+          hostname = "metis";
           profiles.system = {
             user = "root";
-            path = deploy-rs.lib.x86_64-linux.activate.nixos self.nixosConfigurations.dashboards;
+            path = deploy-rs.lib.x86_64-linux.activate.nixos self.nixosConfigurations.metis;
+          };
+        };
+        adrastea = {
+          hostname = "adrastea";
+          profiles.system = {
+            user = "root";
+            path = deploy-rs.lib.x86_64-linux.activate.nixos self.nixosConfigurations.adrastea;
+          };
+        };
+        amalthea = {
+          hostname = "amalthea";
+          profiles.system = {
+            user = "root";
+            path = deploy-rs.lib.x86_64-linux.activate.nixos self.nixosConfigurations.amalthea;
+          };
+        };
+        thebe = {
+          hostname = "thebe";
+          profiles.system = {
+            user = "root";
+            path = deploy-rs.lib.x86_64-linux.activate.nixos self.nixosConfigurations.thebe;
           };
         };
       };

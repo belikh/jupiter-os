@@ -5,13 +5,13 @@
   ...
 }:
 
-# PostgreSQL server. On elitedesk its data directory lives on the iSCSI "db" LUN
-# exported by the NAS, so it survives the diskless node's reboots.
+# PostgreSQL server. On callisto its data directory lives on the iSCSI "db" LUN
+# exported by europa, so it survives the diskless node's reboots.
 #
 # `databases` provisions one role + owned database each, sets the role's password
 # from a sops secret, and (via per-database `allowedClients`) opens scram-sha-256
 # network access from specific CIDRs — so consumers on other hosts (e.g. n8n and
-# the Home Assistant VM on lenovo) can connect. Local peer auth still works for
+# the Home Assistant VM on ganymede) can connect. Local peer auth still works for
 # admin.
 
 let

@@ -9,12 +9,16 @@ monorepo for the Jupiter home/lab infrastructure.
   (deploy-rs), `packages` (OpenWrt firmware + terranix configs), `checks`,
   `formatter`, and the dev shell (`shell.nix`).
 - `hosts/<name>/` — per-host config (`configuration.nix`; `disko.nix` only for
-  bespoke layouts like `nas` — most hosts use `jupiter.storage.profile`). Active
-  hosts: `lenovo`, `nas`, `dashboards`, `elitedesk` (diskless/PXE netboot),
-  `t460s` (laptop). `hosts/desktop/` and `hosts/parents-desktop/` are scaffolds
-  for future roaming workstations (not yet registered in `flake.nix`).
-  `hosts/parents-house/` holds edge device templates (Linksys MX4300 APs, Wyze
-  cams) — not NixOS hosts.
+  bespoke layouts like `europa` — most hosts use `jupiter.storage.profile`).
+  Hosts are named after Jupiter's moons. Active hosts: `ganymede` (always-on
+  services), `europa` (NAS), `callisto` (diskless/PXE netboot compute),
+  `himalia` (laptop), and the 4 identical TCx Wave dashboard kiosks `metis`,
+  `adrastea`, `amalthea`, `thebe` (one per room, each its own host since each
+  points `jupiter.dashboardKiosk.url` at a different room's dashboard).
+  `hosts/elara/` and `hosts/carme/` are scaffolds for future roaming
+  workstations (not yet registered in `flake.nix`). `hosts/parents-house/`
+  holds edge device templates (Linksys MX4300 APs, Wyze cams) — not NixOS
+  hosts.
 - `modules/` — reusable NixOS modules, exposed behind a `jupiter.*` options
   namespace (feature toggles), e.g. `jupiter.core.impermanence.enable`,
   `jupiter.desktop`, `jupiter.storage.profile`, `jupiter.services.*`,
@@ -42,20 +46,21 @@ monorepo for the Jupiter home/lab infrastructure.
   `modules/home/` and is opt-in via `jupiter.home.enable`; data dirs roam via
   Syncthing rather than home-manager.
 - **Central backup is automatic — don't wire it per host.** A host with local
-  persistent state replicates to the NAS (the data hub) and thence offsite. The
-  `stateful` storage profile defaults `jupiter.backup.enable` on with
-  `datasets = [ "rpool/var" ]`; override `jupiter.backup` for anything unusual.
-  The NAS derives its syncoid sources from every host's `jupiter.backup` in
-  `flake.nix` (`backupHubModule`), and `modules/storage/backup.nix` auto-
-  authorizes the NAS pull key on each source — so **new state-holding hosts are
-  backed up with no edit to the NAS**. (Diskless hosts whose data already lives
-  on NAS iSCSI leave it off; appliances/laptops roam via Syncthing instead.)
-- The PXE server on `lenovo` is wired directly to `elitedesk`'s netboot build
+  persistent state replicates to the NAS (`europa`, the data hub) and thence
+  offsite. The `stateful` storage profile defaults `jupiter.backup.enable` on
+  with `datasets = [ "rpool/var" ]`; override `jupiter.backup` for anything
+  unusual. Europa derives its syncoid sources from every host's
+  `jupiter.backup` in `flake.nix` (`backupHubModule`), and
+  `modules/storage/backup.nix` auto-authorizes europa's pull key on each
+  source — so **new state-holding hosts are backed up with no edit to
+  europa**. (Diskless hosts whose data already lives on europa's iSCSI leave
+  it off; appliances/laptops roam via Syncthing instead.)
+- The PXE server on `ganymede` is wired directly to `callisto`'s netboot build
   products in `flake.nix`; keep that closure linkage intact.
 - Network facts (VLANs/subnets/resolver/DNS records) live once in `lib/site.nix`
-  as plain data; both the NixOS resolver config (`hosts/lenovo` → `jupiter.dns`)
-  and the terranix UniFi stack (`terraform/unifi`) `import` it, so CIDRs are
-  never re-stated in two places.
+  as plain data; both the NixOS resolver config (`hosts/ganymede` →
+  `jupiter.dns`) and the terranix UniFi stack (`terraform/unifi`) `import` it,
+  so CIDRs are never re-stated in two places.
 
 - **Service-to-service passwords are generated, never hand-set.** Any credential
   two machines/services use to talk to each other is a random, impossible value

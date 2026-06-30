@@ -15,7 +15,7 @@ in
   # DHCP server. In "boot" mode it serves the kernel/initrd itself, so no
   # separate web server is needed.
   #
-  # The kernel/initrd/cmdLine below are wired directly to the elitedesk's
+  # The kernel/initrd/cmdLine below are wired directly to callisto's
   # netboot build products in flake.nix (the only host that lives in this repo
   # and needs them), so the served image always matches the flake — there is no
   # manual "copy the artifacts into a webroot" step.

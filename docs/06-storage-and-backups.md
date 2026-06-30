@@ -14,7 +14,7 @@ disposable, and snapshotting churny data is wasted space.
 
 ## 1. ZFS layout by host
 
-### `lenovo` — single pool, no redundancy
+### `ganymede` — single pool, no redundancy
 
 `rpool` (`jupiter.storage.profile = "stateful"`; one disk, ⚠️ placeholder
 device path — must be replaced before install):
@@ -29,7 +29,7 @@ No redundancy here is intentional — the OS is fully reproducible from the
 flake; only `/var`'s contents are irreplaceable, and that's covered by
 restic.
 
-### `t460s` — single pool, impermanent
+### `himalia` — single pool, impermanent
 
 `rpool` (`jupiter.storage.profile = "impermanent"`, `disk = "/dev/nvme0n1"`):
 
@@ -39,10 +39,10 @@ restic.
 | `local/nix` | `/nix` | Survives reboots |
 | `safe/persist` | `/persist` | Survives reboots; holds everything `jupiter.core.impermanence` whitelists |
 
-### `dashboards` — single pool, impermanent
+### Dashboard kiosks (`metis`, `adrastea`, `amalthea`, `thebe`) — single pool each, impermanent
 
-`rpool` (`jupiter.storage.profile = "impermanent"`; one disk, ⚠️ placeholder
-device path):
+Each kiosk has its own `rpool` (`jupiter.storage.profile = "impermanent"`;
+one disk per unit, ⚠️ placeholder device path per host):
 
 | Dataset | Mountpoint | Notes |
 |---|---|---|
@@ -50,10 +50,10 @@ device path):
 | `local/nix` | `/nix` | Survives reboots |
 | `safe/persist` | `/persist` | Survives reboots; holds only the minimal system set + the `kiosk` Chromium profile |
 
-Stateless kiosk appliances — nothing irreplaceable lives here, so the box
+Stateless kiosk appliances — nothing irreplaceable lives here, so each box
 always boots pristine and can't accumulate drift.
 
-### `nas` — three pools
+### `europa` — three pools
 
 **`rpool`** — OS SSD (Crucial MX500 500GB, `ata-CT500MX500SSD1_1921E206022D`), disko-managed, single disk (no redundancy — reproducible OS + non-irreplaceable fast-tier data):
 
@@ -62,8 +62,8 @@ always boots pristine and can't accumulate drift.
 | `root` | fs | `/` | |
 | `nix` | fs | `/nix` | |
 | `var` | fs | `/var` | |
-| `db` | zvol, 64G | — | `volblocksize=16k`; exported to `elitedesk` over iSCSI |
-| `loki` | zvol, 100G | — | `volblocksize=16k`; exported to `elitedesk` over iSCSI |
+| `db` | zvol, 64G | — | `volblocksize=16k`; exported to `callisto` over iSCSI |
+| `loki` | zvol, 100G | — | `volblocksize=16k`; exported to `callisto` over iSCSI |
 | `netboot` | fs | `/srv/netboot` | Diskless/netboot roots; served read-only over NFS |
 | `scratch` | fs | `/srv/scratch` | Expendable local scratch (e.g. restic cache) |
 
@@ -83,29 +83,30 @@ always boots pristine and can't accumulate drift.
 legacy archive, set read-only during migration, never restructured. Exposed
 read-only via Samba's `archive` share at `/europa`.
 
-## 2. iSCSI (`nas` → `elitedesk`)
+## 2. iSCSI (`europa` → `callisto`)
 
-`modules/storage/iscsi.nix` (`jupiter.nas.iscsi`) stands up an LIO target on
-`nas`:
+`modules/storage/iscsi.nix` (`jupiter.nas.iscsi` — a role-based option
+namespace, independent of europa's actual hostname) stands up an LIO target
+on `europa`:
 
-- Target IQN: `iqn.2026-06.au.jupiter:nas.target0`
+- Target IQN: `iqn.2026-06.au.jupiter:nas.target0` (kept as a fixed protocol identity, not renamed alongside the host)
 - Portal: `0.0.0.0:3260`
 - LUNs: `db` (`/dev/zvol/rpool/db`), `loki` (`/dev/zvol/rpool/loki`)
-- ACL: both LUNs mapped only to initiator `iqn.2026-06.au.jupiter:elitedesk`
+- ACL: both LUNs mapped only to initiator `iqn.2026-06.au.jupiter:elitedesk` (callisto's initiator IQN, likewise kept as-is)
 
-`elitedesk` runs the matching initiator (`services.openiscsi`,
-`enableAutoLoginOut = true`, `discoverPortal = "nas.home.jupiter.au:3260"`),
+`callisto` runs the matching initiator (`services.openiscsi`,
+`enableAutoLoginOut = true`, `discoverPortal = "europa.home.jupiter.au:3260"`),
 auto-discovering and logging into the target at boot. A static
-`networking.hosts` entry for `nas.home.jupiter.au` avoids a race between the
+`networking.hosts` entry for `europa.home.jupiter.au` avoids a race between the
 boot-time iSCSI login and the DNS resolver coming up.
 
-The LUNs are consumed on `elitedesk` by `jupiter.services.postgresql` (the `db`
+The LUNs are consumed on `callisto` by `jupiter.services.postgresql` (the `db`
 LUN at `/var/lib/postgresql`) and `jupiter.services.loki` (the `loki` LUN at
 `/var/lib/loki`), mounted by label with `_netdev,nofail`. First-time setup
 (not automated): `mkfs.ext4 -L db` / `-L loki` each attached LUN once, then the
 declarative mounts pick them up on every boot.
 
-## 3. NFS exports (`nas`)
+## 3. NFS exports (`europa`)
 
 `modules/storage/nas-nfs.nix`:
 
@@ -113,11 +114,11 @@ declarative mounts pick them up on every boot.
 |---|---|---|
 | `/tank/media` | read-only, sync, no_subtree_check | LAN (`10.1.1.0/24`), headscale mesh (`100.64.0.0/10`) |
 | `/srv/netboot` | read-only, sync, no_subtree_check | LAN only |
-| `/tank/backups/elitedesk` | **read-write**, sync, no_root_squash | `elitedesk` (`10.1.1.21`) only |
+| `/tank/backups/elitedesk` | **read-write**, sync, no_root_squash | `callisto` (`10.1.1.21`) only — dataset name kept as "elitedesk", already provisioned |
 
-Firewall: TCP 2049. The read-write export is elitedesk's backup spool (§8).
+Firewall: TCP 2049. The read-write export is callisto's backup spool (§8).
 
-## 4. SMB shares (`nas`)
+## 4. SMB shares (`europa`)
 
 `modules/storage/zfs-nas.nix`, NetBIOS name `jupiter-nas`, security mode `user`:
 
@@ -127,14 +128,14 @@ Firewall: TCP 2049. The read-write export is elitedesk's backup spool (§8).
 | `personal` | `/tank/personal` | read-write, user `io` only |
 | `archive` | `/europa` | **read-only**, user `io` only |
 
-`samba-wsdd` is enabled so the NAS shows up in Windows network discovery.
+`samba-wsdd` is enabled so europa shows up in Windows network discovery.
 Samba is additionally tuned in `modules/storage/zfs-tuning.nix` for the weak
 NAS CPU (sendfile, async I/O, `TCP_NODELAY`, SMB2 minimum, multichannel
 disabled since the link is logically single — see
 [01-architecture.md](01-architecture.md) and
 [04-modules-reference.md](04-modules-reference.md#modulesstoragezfs-tuningnix)).
 
-## 5. Snapshots (sanoid, `nas` only)
+## 5. Snapshots (sanoid, `europa` only)
 
 Two templates (`modules/storage/sanoid.nix`):
 
@@ -162,56 +163,56 @@ pool exists today — if one is added later it should replicate `tank/personal`
 
 | Host | Paths backed up |
 |---|---|
-| `nas` | `/tank/personal`, `/tank/backups` (the whole tree — replicated host state + elitedesk's backup spool) |
+| `europa` | `/tank/personal`, `/tank/backups` (the whole tree — replicated host state + callisto's backup spool) |
 
-The **NAS is the only host with offsite egress** — every other host's
-irreplaceable state reaches the cloud by first landing on the NAS (see §7, §8),
-not by backing up directly. `lenovo`, `dashboards`, `elitedesk`, and `t460s`
-set no `jupiter.backups.paths`.
+**Europa is the only host with offsite egress** — every other host's
+irreplaceable state reaches the cloud by first landing on europa (see §7, §8),
+not by backing up directly. `ganymede`, the dashboard kiosks, `callisto`, and
+`himalia` set no `jupiter.backups.paths`.
 
-## 7. Server-state replication (syncoid → NAS) — auto-wired
+## 7. Server-state replication (syncoid → europa) — auto-wired
 
-The NAS is the central data store: any host with local persistent state
-replicates to it hourly, and the NAS is the only host with offsite egress.
-**This wiring is automatic — you never edit the NAS to add a host:**
+Europa is the central data store: any host with local persistent state
+replicates to it hourly, and europa is the only host with offsite egress.
+**This wiring is automatic — you never edit europa to add a host:**
 
 - Each host declares `jupiter.backup` (`modules/storage/backup.nix`). The
   `stateful` storage profile defaults it on with `datasets = [ "rpool/var" ]`;
   appliances/laptops (impermanent) leave it off (they roam via Syncthing), and
-  diskless hosts whose data already lives on NAS iSCSI don't need it.
-- `modules/storage/backup.nix` auto-authorizes the NAS's syncoid pull key
-  (`site.backupHub`, restricted to the NAS address) for root on each enabled
+  diskless hosts whose data already lives on europa's iSCSI don't need it.
+- `modules/storage/backup.nix` auto-authorizes europa's syncoid pull key
+  (`site.backupHub`, restricted to europa's address) for root on each enabled
   host.
 - `flake.nix`'s `backupHubModule` reads every host's `jupiter.backup` and
-  generates the NAS's `jupiter.replication.sources` — one syncoid command per
+  generates europa's `jupiter.replication.sources` — one syncoid command per
   declared dataset, landing at `tank/backups/<host>-<leaf>`.
 
 So the live mapping is derived, not listed. Today that's:
 
 | Source | Source dataset | Lands at | Interval |
 |---|---|---|---|
-| `lenovo` | `rpool/var` (n8n flows + libvirt images) | `tank/backups/lenovo-var` | hourly |
+| `ganymede` | `rpool/var` (n8n flows + libvirt images) | `tank/backups/ganymede-var` | hourly |
 
-syncoid (pull mode on the NAS) takes its own pre-send snapshot, so sources need
+syncoid (pull mode on europa) takes its own pre-send snapshot, so sources need
 no snapshot policy. The landing datasets sit under `tank/backups`, which is
 recursive in the `important` sanoid policy and is backed up wholesale to the
 offsite repo (§6) — so a new replicated host is snapshotted + offsite with no
-further config. One-time provisioning: the `syncoid_ssh_key` sops secret on the
-NAS and its public key in `site.backupHub.syncoidPublicKey`.
+further config. One-time provisioning: the `syncoid_ssh_key` sops secret on
+europa and its public key in `site.backupHub.syncoidPublicKey`.
 
-## 8. Diskless-host state backup (elitedesk → NAS)
+## 8. Diskless-host state backup (callisto → europa)
 
-Syncoid (§7) replicates ZFS *datasets*, but `elitedesk`'s Postgres and Loki live
+Syncoid (§7) replicates ZFS *datasets*, but `callisto`'s Postgres and Loki live
 on raw iSCSI **zvols** (block devices) that restic can't walk and syncoid would
-only copy block-for-block. So `elitedesk` instead lands a restic-friendly
-*logical* copy on the NAS, where the existing sanoid + restic pick it up — the
+only copy block-for-block. So `callisto` instead lands a restic-friendly
+*logical* copy on europa, where the existing sanoid + restic pick it up — the
 mechanism the disko comment always intended ("DB durability is the elitedesk's
 job; loki snapshot+restic to tank").
 
 `modules/services/state-backup.nix` (`jupiter.services.stateBackup`) runs hourly
-on `elitedesk` and writes into `/var/backup`, an NFS mount of
-`nas:/tank/backups/elitedesk` (`x-systemd.automount`, so the diskless boot never
-waits on the NAS):
+on `callisto` and writes into `/var/backup`, an NFS mount of
+`europa:/tank/backups/elitedesk` (`x-systemd.automount`, so the diskless boot
+never waits on europa):
 
 | What | How | Lands at |
 |---|---|---|
@@ -222,4 +223,4 @@ Because it's under `tank/backups`, it inherits the `important` sanoid policy and
 the wholesale restic offsite path (§6) — **no gap**: the live data is on the SSD
 zvols (fast), and a consistent, restorable copy is snapshotted locally and
 shipped offsite. One-time provisioning: `zfs create tank/backups/elitedesk` on
-the NAS.
+europa.

@@ -9,7 +9,7 @@
 {
   # ---- ZFS ARC (read cache = serving speed) --------------------------------
   # 16GB box, STORAGE-ONLY (all compute — Loki/Grafana/DB — runs on the diskless
-  # elitedesk and persists here via iSCSI/NFS). Reserve ~5GB for OS + the storage
+  # callisto and persists here via iSCSI/NFS). Reserve ~5GB for OS + the storage
   # daemons (smbd/nfsd/LIO target) + buffers; give ~11GB to ARC.
   boot.extraModprobeConfig = ''
     options zfs zfs_arc_max=11811160064

@@ -7,7 +7,7 @@
 #
 # This exercises more than `nix build` of the toplevel: the bootloader, the
 # disko/impermanence filesystem story, and unit ordering all have to actually
-# come up. Diskless hosts (elitedesk) are netboot images and are not VM-bootable
+# come up. Diskless hosts (callisto) are netboot images and are not VM-bootable
 # this way — they're covered by the build job instead.
 #
 # Usage: scripts/boot-smoke.sh <host> [timeout-seconds]

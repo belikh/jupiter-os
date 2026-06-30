@@ -1,6 +1,6 @@
 { pkgs, ... }:
 
-# Power/kernel tuning for the Toshiba TCx Wave units behind hosts/dashboards
+# Power/kernel tuning for the Toshiba TCx Wave units behind hosts/{metis,adrastea,amalthea,thebe}
 # (4x retail-POS terminals, model 6140-E45: Intel Core i5-6300U — Skylake-U,
 # dual-core/4-thread, 15W TDP, 2.4GHz base / Turbo to 3.0GHz, full HWP/EPP
 # support — with integrated HD Graphics 520 (Gen9) driving a built-in 15"
@@ -37,7 +37,7 @@
     "i915.enable_psr=1"
     "i915.fastboot=1"
     "nmi_watchdog=0" # one less periodic timer interrupt; no hardlockup detection needed on an appliance
-    "quiet" # branding.nix's verbose banner is off for this host (see hosts/dashboards) — no console spam to suppress
+    "quiet" # branding.nix's verbose banner is off for this host (see modules/desktop/dashboard-kiosk.nix) — no console spam to suppress
   ];
 
   boot.kernel.sysctl = {
@@ -104,7 +104,7 @@
   };
 
   # GPU userspace stack for VA-API hardware video decode (see the chromium
-  # flags in hosts/dashboards/configuration.nix) — offloads video decode from
+  # flags in modules/desktop/dashboard-kiosk.nix) — offloads video decode from
   # the CPU to the iGPU's fixed-function decoder. intel-media-driver (iHD) is
   # the actively maintained driver for Gen9 Skylake graphics (the legacy i965
   # driver targets Gen4-8 and isn't the right pick here).

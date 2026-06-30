@@ -39,7 +39,7 @@ immediately after the firmware build.
 
 What it configures, end to end:
 
-1. **System:** hostname `parents-ap`, remote syslog to `elitedesk.home.jupiter.au`.
+1. **System:** hostname `parents-ap`, remote syslog to `callisto.home.jupiter.au`.
 2. **DNS:** LAN clients point at `10.1.1.20` — the same anonymized resolver the main site uses (see [05-networking.md](05-networking.md)).
 3. **Radios:** radio0 (2.4GHz) and radio1 (5GHz-low) for client APs; radio2 (5GHz-high) reserved as a dedicated mesh backhaul.
 4. **Mesh:** Batman-adv (`BATMAN_IV` routing algorithm) over an 802.11s mesh (`mesh_id = jupiter-parents-mesh`, SAE encryption) on radio2's `bat0` interface, bridged into the LAN.
@@ -65,11 +65,11 @@ rendered `wz_mini.conf` is gitignored.
 |---|---|
 | RTSP server | enabled, port 8554, user `admin`, password from `WYZE_PASSWORD` — primarily so the cameras can be pulled into Home Assistant |
 | Dropbear SSH | enabled, password from `WYZE_PASSWORD` |
-| Syslog | enabled, forwarded to `elitedesk.home.jupiter.au:514` |
+| Syslog | enabled, forwarded to `callisto.home.jupiter.au:514` |
 
-As noted in [02-hosts.md](02-hosts.md#elitedesk-hp-elitedesk-800-g4) and
-[03-software-inventory.md](03-software-inventory.md#elitedesk), nothing in
-this repo currently declares a syslog *receiver* on `elitedesk` — the cameras
+As noted in [02-hosts.md](02-hosts.md#callisto-hp-elitedesk-800-g4) and
+[03-software-inventory.md](03-software-inventory.md#callisto), nothing in
+this repo currently declares a syslog *receiver* on `callisto` — the cameras
 (and the MX4300 APs) are both configured to ship logs there, but the
 service that would ingest them isn't part of the flake yet.
 

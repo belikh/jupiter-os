@@ -12,11 +12,11 @@ encrypts `secrets/secrets.yaml` to all of them:
 | Recipient | Key (truncated) | Role |
 |---|---|---|
 | `admin_io` | `age17c04srm4e...` | Derived from the primary admin's SSH key (`id_ed25519`); lets a human decrypt/edit secrets from a workstation |
-| `lenovo` | `age1p8c8ylcp...` | Host key |
-| `nas` | `age1glcaw46r...` | Host key |
-| `t460s` | `age1mz3axkge...` | Host key |
-| `dashboards` | `age1t0wgluaf...` | Host key |
-| `elitedesk` | `age1ywucpcl3...` | Host key |
+| `ganymede` | `age1p8c8ylcp...` | Host key |
+| `europa` | `age1glcaw46r...` | Host key |
+| `himalia` | `age1mz3axkge...` | Host key |
+| `callisto` | `age1ywucpcl3...` | Host key |
+| `metis`, `adrastea`, `amalthea`, `thebe` | (placeholder keys) | Dashboard kiosk host keys — not yet installed, so these are throwaway placeholders, not derived from any real SSH host key; replace each at install time (§4) |
 
 Each NixOS host derives its Age decryption key from its own SSH host key
 (`sops.age.sshKeyPaths = [ "/etc/ssh/ssh_host_ed25519_key" ]`, set in
@@ -31,10 +31,10 @@ the key *names* are visible without the Age private key:
 | Key | Consumed by | Purpose |
 |---|---|---|
 | `io_password` | `modules/common.nix` (every host) | Hashed login password for user `io` |
-| `restic_password` | `modules/services/backups.nix` (`nas`) | Local encryption key for restic backups |
-| `restic_env` | `modules/services/backups.nix` (`nas`) | S3 credentials (`AWS_ACCESS_KEY_ID` etc.) for the Backblaze B2 repository |
-| `cloudflare_cert` | `modules/network/cloudflared.nix` (`lenovo`) | Tunnel credentials file |
-| `mqtt_homeassistant`, `mqtt_dashboard` | `modules/services/mqtt.nix` (`lenovo`), dashboards | MQTT broker passwords |
+| `restic_password` | `modules/services/backups.nix` (`europa`) | Local encryption key for restic backups |
+| `restic_env` | `modules/services/backups.nix` (`europa`) | S3 credentials (`AWS_ACCESS_KEY_ID` etc.) for the Backblaze B2 repository |
+| `cloudflare_cert` | `modules/network/cloudflared.nix` (`ganymede`) | Tunnel credentials file |
+| `mqtt_homeassistant`, `mqtt_dashboard` | `modules/services/mqtt.nix` (`ganymede`), dashboard kiosks | MQTT broker passwords |
 
 ### Generated — never hand-set (`make gen-secrets`)
 
@@ -47,11 +47,11 @@ what's missing. The syncoid public key is written to
 
 | Key | Used by |
 |---|---|
-| `pg_homeassistant_password` | `elitedesk` Postgres `homeassistant` role (also pasted into HA's `db_url`) |
-| `pg_n8n_password` | `elitedesk` Postgres `n8n` role **and** lenovo's n8n (decrypt on both) |
+| `pg_homeassistant_password` | `callisto` Postgres `homeassistant` role (also pasted into HA's `db_url`) |
+| `pg_n8n_password` | `callisto` Postgres `n8n` role **and** ganymede's n8n (decrypt on both) |
 | `mqtt_homeassistant`, `mqtt_dashboard` | MQTT broker + clients |
 | `restic_password` | restic backup encryption key |
-| `syncoid_ssh_key` | NAS syncoid pull key (private → sops; public → committed `.pub`) |
+| `syncoid_ssh_key` | europa's syncoid pull key (private → sops; public → committed `.pub`) |
 
 ### External — you provide (from the provider/account)
 
@@ -86,7 +86,7 @@ This requires one of the Age private keys above to be available locally
    sops updatekeys secrets/secrets.yaml
    ```
 3. Add the host under `hosts/`, then register it in `nixosConfigurations` and `deploy.nodes` in `flake.nix`.
-4. Partition + install with disko (for hosts with local disks), e.g. via `nixos-anywhere --flake .#<host> root@<ip>`. (`elitedesk` is the exception — diskless, netboots from `lenovo`'s PXE server instead.)
+4. Partition + install with disko (for hosts with local disks), e.g. via `nixos-anywhere --flake .#<host> root@<ip>`. (`callisto` is the exception — diskless, netboots from `ganymede`'s PXE server instead.)
 
 ## 5. Where secrets surface outside NixOS activation
 

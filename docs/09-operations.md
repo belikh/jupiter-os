@@ -5,7 +5,7 @@
 | Command | What it does |
 |---|---|
 | `make build-all` | Builds every host's `system.build.toplevel` plus the MX4300 firmware, in sequence. Good smoke test that the whole flake still evaluates and builds. |
-| `make test-<host>` | `nixos-rebuild build-vm --flake .#<host>`, then launches it: `./result/bin/run-<host>-vm -m 2048 -smp 2`. Works for any host (`test-lenovo`, `test-nas`, `test-dashboards`, `test-elitedesk`, `test-t460s`) via the `test-%` pattern rule. Each host's `virtualisation.vmVariant` (set in `modules/common.nix`) swaps in a BIOS/MBR GRUB config and a passwordless `io`/`root` login for the VM only. |
+| `make test-<host>` | `nixos-rebuild build-vm --flake .#<host>`, then launches it: `./result/bin/run-<host>-vm -m 2048 -smp 2`. Works for any host (`test-ganymede`, `test-europa`, `test-metis`, `test-adrastea`, `test-amalthea`, `test-thebe`, `test-callisto`, `test-himalia`) via the `test-%` pattern rule. Each host's `virtualisation.vmVariant` (set in `modules/common.nix`) swaps in a BIOS/MBR GRUB config and a passwordless `io`/`root` login for the VM only. |
 | `make check` | `nix flake check` — evaluates every host plus deploy-rs checks. |
 | `make fmt` | `nix fmt` (`nixfmt-rfc-style`) — formats all Nix sources in place. |
 | `make fmt-check` | Same formatter, `--check` mode, no writes — what CI runs. |
@@ -16,17 +16,20 @@
 
 ## 2. Remote deployment (`deploy-rs`)
 
-All five NixOS hosts are registered as `deploy.nodes` in `flake.nix`, each
+All eight NixOS hosts are registered as `deploy.nodes` in `flake.nix`, each
 deploying as `root` to a profile built from
 `deploy-rs.lib.x86_64-linux.activate.nixos self.nixosConfigurations.<host>`:
 
 ```bash
 nix develop                  # picks up deploy-rs from shell.nix
-deploy .#lenovo
-deploy .#nas
-deploy .#elitedesk
-deploy .#t460s
-deploy .#dashboards
+deploy .#ganymede
+deploy .#europa
+deploy .#callisto
+deploy .#himalia
+deploy .#metis
+deploy .#adrastea
+deploy .#amalthea
+deploy .#thebe
 ```
 
 `deploy-rs` connects over SSH to the hostname matching the host's
@@ -46,11 +49,11 @@ well-formed.
    `sops updatekeys secrets/secrets.yaml`.
 2. Add `hosts/<name>/configuration.nix` — for a local-disk host, set
    `jupiter.storage.profile` + `jupiter.storage.disk` (or write a bespoke
-   `disko.nix` like `nas` if the layout is unusual) — then register it in both
+   `disko.nix` like `europa` if the layout is unusual) — then register it in both
    `nixosConfigurations` and `deploy.nodes` in `flake.nix`.
 3. Partition + install:
    - Hosts with local disks: `nixos-anywhere --flake .#<host> root@<ip>` (disko handles partitioning — **confirm the real disk's by-id path first**; `jupiter.storage.disk` defaults to a `REPLACE-ME` placeholder that fails an assertion until you set it).
-   - Diskless hosts: wire them into the PXE server instead, the way `elitedesk` is wired into `lenovo`'s `jupiter.pxe` in `flake.nix` (see [01-architecture.md §3](01-architecture.md#3-the-mkhost-pattern-flakenix)).
+   - Diskless hosts: wire them into the PXE server instead, the way `callisto` is wired into `ganymede`'s `jupiter.pxe` in `flake.nix` (see [01-architecture.md §3](01-architecture.md#3-the-mkhost-pattern-flakenix)).
 
 ## 4. Testing changes before deploying
 
@@ -81,7 +84,7 @@ pushes cancel stale runs.
 | Job | Steps |
 |---|---|
 | `check` | `nixfmt-rfc-style --check .`, then `nix flake check --no-build` |
-| `build` (matrix: `lenovo`, `t460s`, `nas`, `dashboards`, `elitedesk`) | `nix build .#nixosConfigurations.<host>.config.system.build.toplevel` |
+| `build` (matrix: `ganymede`, `himalia`, `europa`, `metis`, `adrastea`, `amalthea`, `thebe`, `callisto`) | `nix build .#nixosConfigurations.<host>.config.system.build.toplevel` |
 
 Both jobs use `DeterminateSystems/nix-installer-action` and
 `magic-nix-cache-action`. Crucially, **no Age/sops decryption key is needed
@@ -92,12 +95,12 @@ build/eval time, so `nix flake check` and `nix build` succeed without one.
 
 ## 6. Things to double check before relying on a fresh checkout
 
-- `lenovo` and `dashboards` set `jupiter.storage.disk` to a placeholder
-  (`REPLACE-ME-...`), and `nas`'s bespoke `disko.nix` does the same. The
-  storage module asserts against the placeholder so a stray `disko` run fails
-  loudly instead of wiping a real disk. Replace with the real by-id path before
-  installing.
+- `ganymede` and the 4 dashboard kiosks (`metis`/`adrastea`/`amalthea`/`thebe`)
+  set `jupiter.storage.disk` to a placeholder (`REPLACE-ME-...`), and
+  `europa`'s bespoke `disko.nix` does the same. The storage module asserts
+  against the placeholder so a stray `disko` run fails loudly instead of
+  wiping a real disk. Replace with the real by-id path before installing.
 - `jupiter.nas.bond.enable` is `false` — the matching LACP config must exist
-  on the UniFi switch before flipping it on, or the NAS drops off the
+  on the UniFi switch before flipping it on, or europa drops off the
   network (see [04-modules-reference.md](04-modules-reference.md#modulesnetworknas-bondnix)).
 - `cloudflare_api_token` is not yet in `secrets/secrets.yaml` — `tf-apply-cloudflare` will fail until it's added.
