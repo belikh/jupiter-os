@@ -150,15 +150,15 @@ it in once CI is validating.
   straight into sops; no inter-service password is ever hand-set. Public syncoid
   key committed at `secrets/syncoid_ed25519.pub`, read by `lib/site.nix`.
 
-## Known gap: elitedesk DB/Loki data offsite
+## ~~Known gap: elitedesk DB/Loki data offsite~~ — CLOSED
 
-elitedesk's Postgres + Loki live on NAS iSCSI zvols (`rpool/db`, `rpool/loki`),
-so they're already on the central store — but those zvols are on the NAS's
-`rpool`, NOT under `tank/backups`, so they are **not** in the offsite restic
-path, and restic can't file-walk a raw zvol anyway. The HA recorder + n8n DB are
-valuable, so this needs handling: e.g. sanoid-snapshot the zvols and `zfs send`
-them to `tank/backups/elitedesk-db` (then they ride the existing offsite), or
-run a logical `pg_dump` to a replicated dataset. Not yet done.
+elitedesk's Postgres + Loki live on raw iSCSI zvols that restic can't walk, so
+`modules/services/state-backup.nix` (`jupiter.services.stateBackup`) now runs an
+hourly `pg_dumpall` + a Loki `rsync` into an NFS mount of
+`nas:/tank/backups/elitedesk`. That lands under `tank/backups`, so it inherits
+the `important` sanoid policy and the wholesale restic offsite path — the live
+data stays on the fast SSD zvols while a consistent, restorable copy is
+snapshotted + shipped offsite. One-time: `zfs create tank/backups/elitedesk`.
 
 ### Validation still required (no nix/KVM in the authoring env)
 

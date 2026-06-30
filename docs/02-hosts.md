@@ -83,6 +83,7 @@ For module option details see [04-modules-reference.md](04-modules-reference.md)
 - **Distinguishing responsibilities:**
   - Its evaluated build output (`kernel`, `netbootRamdisk`, `toplevel`) is consumed directly by `flake.nix`'s `pxeModule`, which feeds `lenovo`'s `jupiter.pxe` — see [01-architecture.md](01-architecture.md#3-the-mkhost-pattern-flakenix).
   - Runs **PostgreSQL** (`jupiter.services.postgresql`, data on the `db` LUN), serving two LAN consumers on lenovo: the **Home Assistant** VM's recorder and **n8n** (each its own role/db, scram-sha-256). HA is a HAOS VM, so only its db/role is provisioned here — its `recorder: db_url:` is set inside Home Assistant. Also runs **Loki + a promtail syslog receiver** (`jupiter.services.loki`, data on the `loki` LUN); the Wyze camera fleet forwards syslog to `elitedesk.home.jupiter.au:514`, which the receiver ingests into Loki.
+  - Because that state sits on raw iSCSI zvols (which restic can't walk), `jupiter.services.stateBackup` lands an hourly `pg_dumpall` + Loki `rsync` on `nas:/tank/backups/elitedesk` (NFS), where the NAS's sanoid + restic snapshot it and ship it offsite — so the DB + logs are fully covered (see [06-storage-and-backups.md §8](06-storage-and-backups.md#8-diskless-host-state-backup-elitedesk--nas)).
 
 ---
 

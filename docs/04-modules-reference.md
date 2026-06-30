@@ -114,8 +114,9 @@ bonded interface).
 
 ### `modules/storage/nas-nfs.nix`
 No option — unconditional. `services.nfs.server`, exporting `/tank/media`
-(read-only, LAN + headscale mesh) and `/srv/netboot` (read-only, LAN).
-Firewall: TCP 2049.
+(read-only, LAN + headscale mesh), `/srv/netboot` (read-only, LAN), and
+`/tank/backups/elitedesk` (**read-write**, `elitedesk` only — its backup spool,
+§8 of the storage doc). Firewall: TCP 2049.
 
 **Imported by:** `nas` only.
 
@@ -313,6 +314,22 @@ that ingests the Wyze cams' forwarded logs (RFC5424/TCP on `syslogPort`) and
 pushes them to Loki. Firewall: TCP `httpPort` + `syslogPort`.
 
 **Enabled by:** `elitedesk`.
+
+### `modules/services/state-backup.nix`
+```
+jupiter.services.stateBackup.enable     (bool, default false)
+jupiter.services.stateBackup.spoolDir   (path — must be on backed-up storage)
+jupiter.services.stateBackup.interval   (string, default "hourly")
+jupiter.services.stateBackup.keep       (int, default 24 — postgres dumps retained)
+jupiter.services.stateBackup.postgres   (bool, default false — hourly pg_dumpall)
+jupiter.services.stateBackup.rsyncPaths (list of string — dirs mirrored into the spool)
+```
+A timer that lands a restic-friendly *logical* copy of a host's service state
+into `spoolDir` (typically an NFS mount of `tank/backups`), so hosts whose data
+sits on raw iSCSI zvols still get snapshotted + offsite via the NAS. `pg_dumpall`
+for Postgres (transactionally consistent), `rsync --delete` for file dirs.
+
+**Enabled by:** `elitedesk` (postgres + `/var/lib/loki` → `nas:/tank/backups/elitedesk`).
 
 ### `modules/services/backups.nix`
 ```

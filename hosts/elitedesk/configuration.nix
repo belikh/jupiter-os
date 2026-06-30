@@ -17,6 +17,7 @@ in
     ../../modules/common.nix
     ../../modules/services/postgresql.nix
     ../../modules/services/loki.nix
+    ../../modules/services/state-backup.nix
   ];
 
   networking.hostName = "elitedesk";
@@ -85,6 +86,29 @@ in
   };
 
   jupiter.services.loki.enable = true; # also ingests Wyze cam syslog on :514
+
+  # Close the offsite gap for the iSCSI-backed state (raw zvols can't be
+  # restic'd directly): land logical/file backups on the NAS over NFS, where the
+  # NAS's sanoid + restic already snapshot and ship tank/backups offsite.
+  # Provisioning: `zfs create tank/backups/elitedesk` on the NAS (hand-managed
+  # tank). x-systemd.automount so the diskless boot never waits on the NAS.
+  fileSystems."/var/backup" = {
+    device = "nas.home.jupiter.au:/tank/backups/elitedesk";
+    fsType = "nfs";
+    options = [
+      "_netdev"
+      "nofail"
+      "noatime"
+      "x-systemd.automount"
+    ];
+  };
+
+  jupiter.services.stateBackup = {
+    enable = true;
+    spoolDir = "/var/backup";
+    postgres = true; # hourly pg_dumpall (HA recorder + n8n)
+    rsyncPaths = [ "/var/lib/loki" ]; # mirror Loki's chunks to tank
+  };
 
   # Static identity so the cams' syslog target (elitedesk.home.jupiter.au) and
   # iSCSI clients resolve to a stable address.
