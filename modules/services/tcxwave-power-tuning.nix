@@ -1,14 +1,16 @@
 { pkgs, ... }:
 
 # Power/kernel tuning for the Toshiba TCx Wave units behind hosts/dashboards
-# (4x retail-POS terminals: Intel Core i5-6500U — Skylake-U, dual-core/4-thread,
-# 15W TDP, Turbo to 3.1GHz, full HWP/EPP support — with integrated HD Graphics
-# 520 (Gen9) driving a built-in 15" touchscreen panel). These run a Chromium
-# dashboard 24/7 at near-idle CPU load, so the win is almost entirely in idle
-# power: deep C-states, a GPU that can power down its display link between
-# repaints, and runtime PM everywhere else, not raw compute tuning. Verify
-# `lscpu` (Skylake) and `lspci -k | grep -A3 VGA` ("i915" bound) on the actual
-# unit before fully trusting the assumptions below.
+# (4x retail-POS terminals, model 6140-E45: Intel Core i5-6300U — Skylake-U,
+# dual-core/4-thread, 15W TDP, 2.4GHz base / Turbo to 3.0GHz, full HWP/EPP
+# support — with integrated HD Graphics 520 (Gen9) driving a built-in 15"
+# touchscreen panel). CPU/GPU/NIC/storage are confirmed against SUSE's YES
+# certification for this exact model (i5-6300U, HD 520/i915, I219-LM/e1000e,
+# SanDisk Z400s SATA SSD), so the assumptions below are no longer guesses.
+# These run a Chromium dashboard 24/7 at near-idle CPU load, so the win is
+# almost entirely in idle power: deep C-states, a GPU that can power down its
+# display link between repaints, and runtime PM everywhere else, not raw
+# compute tuning.
 {
   # Newest mainline kernel: intel_idle C-state tables, i915 power fixes, and
   # intel_pstate/HWP scaling improvements land here first. Pulled from the
@@ -57,15 +59,15 @@
 
   # Skip NixOS's broad default initrd module set (covers arbitrary unknown
   # hardware) and list only what this specific, known machine needs to find
-  # its root device and basic input. SATA vs NVMe on the 128GB SSD is
-  # unconfirmed (`lsblk` on a real unit would tell us) so both are kept in;
-  # trim further once that's verified. Deliberately NOT touching Wi-Fi/
-  # Bluetooth modules — those aren't initrd-critical and guessing wrong there
-  # silently breaks hardware instead of just costing a few boot-seconds.
+  # its root device and basic input. The 128GB SSD is a SanDisk Z400s on the
+  # SATA/AHCI bus (confirmed by SUSE's YES cert for the 6140-E45 — ahci.ko),
+  # so `nvme` is dropped: this chassis has no NVMe slot. Deliberately NOT
+  # touching Wi-Fi/Bluetooth modules — those aren't initrd-critical and
+  # guessing wrong there silently breaks hardware instead of just costing a
+  # few boot-seconds.
   boot.initrd.includeDefaultModules = false;
   boot.initrd.availableKernelModules = [
     "ahci"
-    "nvme"
     "usb_storage"
     "usbhid"
   ];
