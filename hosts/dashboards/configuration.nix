@@ -3,7 +3,7 @@
 {
   imports = [
     ../../modules/common-stateful.nix
-    ../../modules/services/tcxwave-power-tuning.nix # kernel/GPU/storage/power tuning for the i5-6500U + HD 520 hardware
+    ../../modules/services/tcxwave-power-tuning.nix # kernel/GPU/storage/power tuning for the 6140-E45's i5-6300U + HD 520 hardware
     ../../modules/desktop/dashboard-gaming.nix # optional dual-VT kiosk + gaming session (off by default)
   ];
 
@@ -59,6 +59,19 @@
       "render"
     ];
   };
+
+  # Integrated 15" PCAP touchscreen: NO custom/kernel driver needed. The panel
+  # is a USB HID multitouch device handled in-tree by `hid-multitouch`, and
+  # cage/wlroots consumes it via libinput. (Toshiba's "driver kit" exists only
+  # for old SLES — SLE 12 SP2, kernel ~4.4, 2017 — where the in-tree quirk
+  # wasn't yet present; irrelevant on our linuxPackages_latest.) If, on a real
+  # unit, touch is offset or the panel is mounted rotated, that's a userspace
+  # calibration matrix — NOT a driver — applied via a udev/libinput rule, e.g.:
+  #   services.udev.extraHwdb = ''
+  #     # 90° clockwise: LIBINPUT_CALIBRATION_MATRIX=0 1 0 -1 0 1
+  #     evdev:name:*Touch*:* ENV{LIBINPUT_CALIBRATION_MATRIX}="..."
+  #   '';
+  # Left out until verified on hardware so we don't ship a wrong transform.
 
   # Optional: turn one of these units into a dual-session box — the dashboard
   # kiosk on VT 6 and a Bazzite-style gamescope/Steam session on VT 7, flipped
