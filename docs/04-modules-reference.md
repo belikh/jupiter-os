@@ -240,8 +240,13 @@ sources `kernel`/`initrd`/`cmdLine` directly from
 
 ### `modules/services/syncthing.nix`
 ```
-jupiter.services.syncthing.enable  (bool, default false)
+jupiter.services.syncthing.enable   (bool, default false)
+jupiter.services.syncthing.dataDir  (string, default "/home/io")
 ```
+`dataDir` is the sync root + config/index location. Personal machines keep the
+default (`/home/io`); the **NAS hub sets it to `/tank/personal`** so the
+canonical synced copy lands on mirrored, snapshotted, offsite storage rather
+than the OS disk.
 `services.syncthing` for user `io`, GUI bound to `0.0.0.0:8384` (reachable
 over LAN/headscale), device/folder management left to the WebUI
 (`overrideDevices`/`overrideFolders = false`). Also drops a `.stignore`
