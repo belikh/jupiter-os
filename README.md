@@ -60,11 +60,23 @@ jupiter.gaming.bazzite = {
   gamingMode.enable = true; # boot-to-Steam console/handheld session (optional)
   # decky.enable = true;    # Decky Loader
   # steamdeck.enable = true; # Steam Deck / handheld hardware quirks
+  peripherals = {
+    # controllers = true;       # Xbox pads via xpadneo/xone (on by default)
+    racingWheels = true;        # Fanatec + Logitech FFB wheels, Oversteer, Solaar
+    # openrgb = true;           # RGB peripheral / LED control
+    # drawingTablet = true;     # OpenTabletDriver
+  };
 };
 ```
 With `gamingMode.enable = false` you still get the full gaming software stack
 (Steam, Proton-GE, gamescope, MangoHud, Lutris, Heroic, OBS VkCapture, …) on a
 normal desktop; with it `true` the host boots into the SteamOS-like session.
+
+Game peripherals are handled by `jupiter.gaming.bazzite.peripherals`, modelled
+on [GLF-OS](https://glfos.org) (the French gaming NixOS distro): Xbox
+controllers (xpadneo/xone) work from first boot, with sim-racing wheels
+(Fanatec `hid-fanatec`, force-feedback Logitech `new-lg4ff` + Oversteer/Solaar),
+drawing tablets (OpenTabletDriver) and RGB control (OpenRGB) one toggle away.
 
 > The chaotic module adds the `cache.chaotic.cx` substituter to every host (its
 > recommended setup) so CachyOS kernel/Mesa builds are fetched, not rebuilt.
