@@ -64,6 +64,20 @@
     );
   };
 
+  # Public zone + the Cloudflare Tunnel. The ingress map drives BOTH the
+  # cloudflared config on lenovo (hostname → local backend) and the public
+  # proxied-CNAME records in terraform/cloudflare (hostname → the tunnel), so the
+  # two never drift.
+  publicZone = "jupiter.au";
+  tunnel = {
+    id = "aa1088b8-a0e1-4073-8567-6a9bf5fb4bd7";
+    ingress = {
+      "headscale.jupiter.au" = "http://127.0.0.1:8080";
+      "n8n.jupiter.au" = "http://127.0.0.1:5678";
+      "ha.jupiter.au" = "http://127.0.0.1:8123";
+    };
+  };
+
   # Static internal A/PTR records for the split-horizon zone.
   records = {
     "gateway.home.jupiter.au" = "10.1.1.1";
