@@ -8,6 +8,7 @@
 {
   imports = [
     ./core/impermanence.nix
+    ./core/scheduler.nix
     ./desktop/default.nix
     ./gaming/bazzite.nix
     ./storage/zfs-profiles.nix
@@ -23,6 +24,11 @@
   # headless/netboot hosts don't have to force it back off.
 
   nixpkgs.config.allowUnfree = true;
+
+  # Fleet-wide kernel default: CachyOS (chaotic-nyx) on every host except the
+  # NAS, which stays on plain linuxPackages to keep the backup hub boring and
+  # well-tested (see hosts/nas/configuration.nix override).
+  boot.kernelPackages = lib.mkDefault pkgs.linuxPackages_cachyos;
 
   # Baseline admin tooling, present on every host (headless or not). Desktop and
   # per-host modules layer their own packages on top of this.

@@ -20,6 +20,16 @@
   # RobCo/Fallout boot branding (GRUB theme, MOTD).
   jupiter.branding.enable = true;
 
+  # The backup hub stays conservative: plain nixpkgs kernel (not the fleet-wide
+  # CachyOS default from modules/common.nix) and no exposure to chaotic-nyx's
+  # binary cache/overlay/registry. The chaotic flake module is still injected
+  # uniformly via flake.nix's mkHost (per its lexical-closure design), but
+  # these three toggles neutralize its effect here.
+  boot.kernelPackages = pkgs.linuxPackages_latest;
+  chaotic.nyx.cache.enable = false;
+  chaotic.nyx.overlay.enable = false;
+  chaotic.nyx.registry.enable = false;
+
   # Static identity below the DHCP pool (.6-.254) so iSCSI/NFS clients have a
   # stable target. DNS (nas.home.jupiter.au) points here. Uses OUR resolver via
   # common.nix default (10.1.1.20). When the LACP bond is enabled, move this

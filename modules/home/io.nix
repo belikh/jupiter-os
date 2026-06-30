@@ -23,6 +23,15 @@
     btop
     jq
     fuzzel # launcher used by the niri Mod+D bind below
+    # chaotic-nyx git builds — track upstream closer than nixpkgs for tools
+    # where that matters most (yt-dlp's site-breakage fixes, distrobox).
+    distrobox_git
+    yt-dlp_git
+    # Software KVM to share one keyboard/mouse across io's niri machines.
+    # A no-op until a second personal desktop is actually registered in
+    # flake.nix (see hosts/desktop, hosts/parents-desktop), but harmless to
+    # have ready on every machine io's env roams to.
+    lan-mouse_git
   ];
 
   programs.git = {
