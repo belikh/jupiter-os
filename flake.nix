@@ -51,6 +51,14 @@
     # through chaotic ("must follow jovian through chaotic to avoid hash
     # mismatches"). See `inherit (chaotic.vendored) jovian;` below.
     chaotic.url = "github:chaotic-cx/nyx/nyxpkgs-unstable";
+
+    # Home Assistant companion daemon for Linux hosts (sensors, notifications,
+    # lock/suspend commands over MQTT discovery) — standalone project, see
+    # modules/services/ha-agent.nix for the jupiter.* wiring.
+    ha-linux-agent = {
+      url = "github:belikh/ha-linux-agent";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -65,6 +73,7 @@
       home-manager,
       terranix,
       chaotic,
+      ha-linux-agent,
       ...
     }:
     let
@@ -91,6 +100,9 @@
                 # Declarative per-user environment. Inert unless a host sets
                 # jupiter.home.enable (see modules/home).
                 home-manager.nixosModules.home-manager
+                # Home Assistant companion daemon. Inert unless a host sets
+                # jupiter.services.haAgent.enable (see modules/services/ha-agent.nix).
+                ha-linux-agent.nixosModules.default
               ];
             })
             # 2. Import the actual host configuration
