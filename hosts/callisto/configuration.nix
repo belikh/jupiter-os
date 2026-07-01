@@ -38,7 +38,7 @@ in
   boot.supportedFilesystems.zfs = lib.mkForce false;
 
   # Mostly a Postgres/Loki server with occasional casual gaming, so default to
-  # the throughput-oriented scheduler; flip jupiter.gaming.bazzite.enable +
+  # the throughput-oriented scheduler; flip jupiter.gaming.console.enable +
   # this to "scx_lavd" if this box becomes the dedicated gaming box later.
   jupiter.core.scheduler = {
     enable = true;

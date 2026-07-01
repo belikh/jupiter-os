@@ -48,7 +48,7 @@ Scope: all `.nix` files under `flake.nix`, `hosts/`, `modules/`, `terraform/`,
   through neglect.
 
 ### Deficiencies & Anti-patterns
-- `modules/gaming/bazzite.nix` (398 lines) and
+- `modules/gaming/console.nix` (398 lines) and
   `modules/desktop/dashboard-gaming.nix` (302 lines) are large, multi-concern
   modules (kernel tuning, PAM, polkit, session switching, gamescope wiring all
   in one file) — candidates to split into sub-modules (e.g.
@@ -198,7 +198,7 @@ Scope: all `.nix` files under `flake.nix`, `hosts/`, `modules/`, `terraform/`,
   no `fail2ban`/`sshguard`/`security.pam.u2f` hits anywhere in `modules/`).
 - **No kernel/kconfig hardening profile.** `boot.kernel.sysctl` is set only
   for ZFS ARC tuning (`modules/storage/zfs-tuning.nix:19`) and
-  gaming-performance tuning (`modules/gaming/bazzite.nix:315`,
+  gaming-performance tuning (`modules/gaming/console.nix:315`,
   `modules/services/tcxwave-power-tuning.nix:43`) — none of it is
   security-hardening sysctls (no `kernel.kptr_restrict`,
   `kernel.yama.ptrace_scope`, `net.ipv4.conf.all.rp_filter`, etc.), and

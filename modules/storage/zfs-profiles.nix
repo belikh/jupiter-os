@@ -109,6 +109,21 @@ in
     # lockstep whenever nixpkgs raises zfs's kernelMaxSupportedMajorMinor.
     boot.kernelPackages = lib.mkForce pkgs.linuxPackages_7_0;
 
+    # The ESP this module declares below (disko.devices, type EF00) is a UEFI
+    # System Partition — so give every host that gets one from here a working
+    # UEFI GRUB default tied to it, rather than leaving hosts with no
+    # `jupiter.branding.enable` (which happens to be the only place that
+    # currently sets `efiSupport`/`device`) with NixOS's bare defaults
+    # (`device = ""`, `efiSupport = false`), which can't actually install:
+    # legacy-BIOS GRUB needs a real block device, and this GPT layout has no
+    # BIOS boot partition for it to embed into. mkDefault so branding.nix (or
+    # any host) can still override.
+    boot.loader.efi.canTouchEfiVariables = lib.mkDefault true;
+    boot.loader.grub = {
+      efiSupport = lib.mkDefault true;
+      device = lib.mkDefault "nodev";
+    };
+
     # Automatic central-backup wiring: a server's state dataset replicates to the
     # NAS by default. Appliances/workstations (impermanent) don't — their data
     # roams via Syncthing or is reproducible. Hosts can override jupiter.backup.

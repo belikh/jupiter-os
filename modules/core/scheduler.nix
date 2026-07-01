@@ -17,7 +17,7 @@ in
         to the gaming-tuned one everywhere, e.g. scx_lavd for low-latency
         interactive/gaming hosts, scx_bpfland for general desktop
         responsiveness, scx_rustland for server/throughput workloads.
-        Requires a sched_ext-capable kernel (jupiter.gaming.bazzite's
+        Requires a sched_ext-capable kernel (jupiter.gaming.console's
         cachyOsKernel, or any other kernel with CONFIG_SCHED_CLASS_EXT).
       '';
     };

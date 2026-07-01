@@ -8,7 +8,7 @@
 #   * chaotic-nyx   -> the CachyOS kernel, bleeding-edge Mesa (mesa-git), the
 #                      sched-ext (scx) schedulers, and gamescope_git.
 #
-# Attach it to ANY host by flipping `jupiter.gaming.bazzite.enable = true;`.
+# Attach it to ANY host by flipping `jupiter.gaming.console.enable = true;`.
 # The jovian + chaotic modules are injected for every host in flake.nix, so the
 # options below resolve everywhere; nothing here activates until `enable` is set.
 # The CachyOS kernel is actually a fleet-wide default (modules/common.nix), and
@@ -31,7 +31,7 @@
 }:
 
 let
-  cfg = config.jupiter.gaming.bazzite;
+  cfg = config.jupiter.gaming.console;
   desktop = config.jupiter.desktop;
 
   # When booting into gaming mode, Steam's "Switch to Desktop" needs a desktop
@@ -118,7 +118,7 @@ let
   ) (lib.attrNames appCatalog);
 in
 {
-  options.jupiter.gaming.bazzite = {
+  options.jupiter.gaming.console = {
     enable = lib.mkEnableOption "Bazzite-style gaming stack (Jovian gaming mode + chaotic CachyOS)";
 
     gpu = lib.mkOption {

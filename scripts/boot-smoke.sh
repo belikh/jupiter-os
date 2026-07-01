@@ -43,8 +43,12 @@ while ((SECONDS < deadline)); do
     break
   fi
   # systemd prints "Reached target Multi-User System." (wording varies slightly
-  # across versions) — match loosely.
-  if grep -qiE 'Reached target .*[Mm]ulti-?[Uu]ser' "${logfile}"; then
+  # across versions) — match loosely. Also match the getty login prompt
+  # (e.g. "metis login:"): with console=ttyS0 (modules/common.nix's
+  # vmVariant), systemd's own unit-status lines don't reliably show up on the
+  # serial console, but serial-getty reaching a login prompt is equally solid
+  # proof multi-user.target was hit — it only starts after that target.
+  if grep -qiE "Reached target .*[Mm]ulti-?[Uu]ser|${host} login:" "${logfile}"; then
     echo ">> ${host} reached multi-user — boot OK."
     status=0
     break

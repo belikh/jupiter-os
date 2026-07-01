@@ -10,7 +10,7 @@
     ./core/impermanence.nix
     ./core/scheduler.nix
     ./desktop/default.nix
-    ./gaming/bazzite.nix
+    ./gaming/console.nix
     ./storage/zfs-profiles.nix
     ./storage/backup.nix
     ./services/syncthing.nix
@@ -50,6 +50,15 @@
   system.stateVersion = "26.05";
   time.timeZone = "Australia/Brisbane";
 
+  # Fleet-wide bootloader timeout. Left unset, NixOS's systemd-boot module
+  # maps `null` to `"menu-force"` — always show the menu and wait forever for
+  # a keypress, never auto-boot. Harmless on a desk with a monitor attached,
+  # but every headless/remote/diskless host here (and any host recovering
+  # from an unattended reboot with nobody physically present) would just hang
+  # at the boot menu indefinitely. A few seconds is enough to interrupt by
+  # hand if you're at the console, without meaningfully slowing anyone down.
+  boot.loader.timeout = lib.mkDefault 3;
+
   # Safer ZFS default (becomes the default in 26.11). NAS overrides explicitly.
   boot.zfs.forceImportRoot = lib.mkDefault false;
 
@@ -88,15 +97,28 @@
   # so a second hardcoded password would add no real security value, just an
   # extra literal to keep in sync.
   virtualisation.vmVariant = {
-    # Test full bootloader (GRUB) in the VM instead of direct kernel boot
+    # Test full bootloader (GRUB) in the VM instead of direct kernel boot.
     virtualisation.useBootLoader = true;
     virtualisation.diskSize = 4096; # Increase disk size to fit the full closure
 
-    # The NixOS VM disk builder uses a legacy BIOS MBR partition table by default
-    boot.loader.grub = {
-      efiSupport = lib.mkForce false;
-      device = lib.mkForce "/dev/vda";
-    };
+    # Real hardware boots UEFI (disko's ESP is an EF00 UEFI System Partition;
+    # jupiter.storage's zfs-profiles.nix defaults efiSupport/device to match).
+    # Forcing legacy BIOS here instead (as this used to do) tests a completely
+    # different, unsupported boot path: a GPT disk with no BIOS boot
+    # partition, which is exactly what made every VM boot-test hang at
+    # "Welcome to GRUB!" once CI got far enough to actually reach it. Setting
+    # useEFIBoot makes qemu-vm.nix's own mkVMOverride point GRUB at "nodev"
+    # for us — consistent with the real UEFI config, not fighting it.
+    virtualisation.useEFIBoot = true;
+
+    # With useBootLoader, the kernel is booted by the VM's own bootloader
+    # reading its normal boot entries, not qemu-vm.nix's direct-kernel-boot
+    # path — so `$QEMU_KERNEL_PARAMS`/`-append` never reaches it, only
+    # `boot.kernelParams` baked into those entries does. Without this, only
+    # OVMF/systemd-boot's own firmware-level serial writes ever reach
+    # scripts/boot-smoke.sh's captured log; the kernel boots (or hangs)
+    # completely invisibly to it, making every past boot-test result a guess.
+    boot.kernelParams = [ "console=ttyS0" ];
 
     users.users.io = {
       hashedPasswordFile = lib.mkForce null;
