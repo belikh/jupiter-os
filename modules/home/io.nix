@@ -9,7 +9,7 @@
   home.homeDirectory = "/home/io";
 
   # Match the system stateVersion lineage; bump deliberately, not automatically.
-  home.stateVersion = "24.05";
+  home.stateVersion = "26.05";
 
   # User-scoped tools that should follow io everywhere (system-wide CLI baseline
   # lives in modules/common.nix; these are the personal extras).
