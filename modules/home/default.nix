@@ -19,6 +19,10 @@ in
     home-manager = {
       useGlobalPkgs = true;
       useUserPackages = true;
+      # Move pre-existing conflicting files aside instead of failing activation
+      # outright — matters on a stateful profile or a first migration of an
+      # already-lived-in home directory.
+      backupFileExtension = "hm-backup";
       users.io = import ./io.nix;
     };
   };

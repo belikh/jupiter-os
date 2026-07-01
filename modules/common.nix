@@ -47,7 +47,7 @@
     unzip
   ];
 
-  system.stateVersion = "24.05";
+  system.stateVersion = "26.05";
   time.timeZone = "Australia/Brisbane";
 
   # Safer ZFS default (becomes the default in 26.11). NAS overrides explicitly.
