@@ -386,7 +386,7 @@ variant suited to the host’s actual workload rather than defaulting
 to the gaming-tuned one everywhere, e\.g\. scx_lavd for low-latency
 interactive/gaming hosts, scx_bpfland for general desktop
 responsiveness, scx_rustland for server/throughput workloads\.
-Requires a sched_ext-capable kernel (jupiter\.gaming\.bazzite’s
+Requires a sched_ext-capable kernel (jupiter\.gaming\.console’s
 cachyOsKernel, or any other kernel with CONFIG_SCHED_CLASS_EXT)\.
 
 
@@ -830,7 +830,7 @@ attribute set of string
 
 
 
-## jupiter\.gaming\.bazzite\.enable
+## jupiter\.gaming\.console\.enable
 
 
 
@@ -858,11 +858,11 @@ true
 ```
 
 *Declared by:*
- - modules/gaming/bazzite\.nix
+ - modules/gaming/console\.nix
 
 
 
-## jupiter\.gaming\.bazzite\.apps\.capture
+## jupiter\.gaming\.console\.apps\.capture
 
 
 
@@ -882,11 +882,11 @@ true
 ```
 
 *Declared by:*
- - modules/gaming/bazzite\.nix
+ - modules/gaming/console\.nix
 
 
 
-## jupiter\.gaming\.bazzite\.apps\.diagnostics
+## jupiter\.gaming\.console\.apps\.diagnostics
 
 
 
@@ -906,11 +906,11 @@ true
 ```
 
 *Declared by:*
- - modules/gaming/bazzite\.nix
+ - modules/gaming/console\.nix
 
 
 
-## jupiter\.gaming\.bazzite\.apps\.heroic
+## jupiter\.gaming\.console\.apps\.heroic
 
 
 
@@ -930,11 +930,11 @@ true
 ```
 
 *Declared by:*
- - modules/gaming/bazzite\.nix
+ - modules/gaming/console\.nix
 
 
 
-## jupiter\.gaming\.bazzite\.apps\.lutris
+## jupiter\.gaming\.console\.apps\.lutris
 
 
 
@@ -954,11 +954,11 @@ true
 ```
 
 *Declared by:*
- - modules/gaming/bazzite\.nix
+ - modules/gaming/console\.nix
 
 
 
-## jupiter\.gaming\.bazzite\.apps\.minecraft
+## jupiter\.gaming\.console\.apps\.minecraft
 
 
 
@@ -978,11 +978,11 @@ true
 ```
 
 *Declared by:*
- - modules/gaming/bazzite\.nix
+ - modules/gaming/console\.nix
 
 
 
-## jupiter\.gaming\.bazzite\.apps\.modManager
+## jupiter\.gaming\.console\.apps\.modManager
 
 
 
@@ -1002,11 +1002,11 @@ true
 ```
 
 *Declared by:*
- - modules/gaming/bazzite\.nix
+ - modules/gaming/console\.nix
 
 
 
-## jupiter\.gaming\.bazzite\.apps\.overlay
+## jupiter\.gaming\.console\.apps\.overlay
 
 
 
@@ -1026,11 +1026,11 @@ true
 ```
 
 *Declared by:*
- - modules/gaming/bazzite\.nix
+ - modules/gaming/console\.nix
 
 
 
-## jupiter\.gaming\.bazzite\.apps\.pcsx2
+## jupiter\.gaming\.console\.apps\.pcsx2
 
 
 
@@ -1050,11 +1050,11 @@ false
 ```
 
 *Declared by:*
- - modules/gaming/bazzite\.nix
+ - modules/gaming/console\.nix
 
 
 
-## jupiter\.gaming\.bazzite\.apps\.shadps4
+## jupiter\.gaming\.console\.apps\.shadps4
 
 
 
@@ -1074,11 +1074,11 @@ false
 ```
 
 *Declared by:*
- - modules/gaming/bazzite\.nix
+ - modules/gaming/console\.nix
 
 
 
-## jupiter\.gaming\.bazzite\.apps\.wine
+## jupiter\.gaming\.console\.apps\.wine
 
 
 
@@ -1098,11 +1098,11 @@ true
 ```
 
 *Declared by:*
- - modules/gaming/bazzite\.nix
+ - modules/gaming/console\.nix
 
 
 
-## jupiter\.gaming\.bazzite\.cachyOsKernel
+## jupiter\.gaming\.console\.cachyOsKernel
 
 
 
@@ -1124,11 +1124,11 @@ true
 ```
 
 *Declared by:*
- - modules/gaming/bazzite\.nix
+ - modules/gaming/console\.nix
 
 
 
-## jupiter\.gaming\.bazzite\.decky\.enable
+## jupiter\.gaming\.console\.decky\.enable
 
 
 
@@ -1156,11 +1156,11 @@ true
 ```
 
 *Declared by:*
- - modules/gaming/bazzite\.nix
+ - modules/gaming/console\.nix
 
 
 
-## jupiter\.gaming\.bazzite\.extraPackages
+## jupiter\.gaming\.console\.extraPackages
 
 
 
@@ -1180,11 +1180,11 @@ list of package
 ```
 
 *Declared by:*
- - modules/gaming/bazzite\.nix
+ - modules/gaming/console\.nix
 
 
 
-## jupiter\.gaming\.bazzite\.gamingMode\.enable
+## jupiter\.gaming\.console\.gamingMode\.enable
 
 
 
@@ -1206,11 +1206,11 @@ false
 ```
 
 *Declared by:*
- - modules/gaming/bazzite\.nix
+ - modules/gaming/console\.nix
 
 
 
-## jupiter\.gaming\.bazzite\.gamingMode\.autoStart
+## jupiter\.gaming\.console\.gamingMode\.autoStart
 
 
 
@@ -1230,11 +1230,11 @@ true
 ```
 
 *Declared by:*
- - modules/gaming/bazzite\.nix
+ - modules/gaming/console\.nix
 
 
 
-## jupiter\.gaming\.bazzite\.gamingMode\.desktopSession
+## jupiter\.gaming\.console\.gamingMode\.desktopSession
 
 
 
@@ -1254,11 +1254,11 @@ null or string
 ```
 
 *Declared by:*
- - modules/gaming/bazzite\.nix
+ - modules/gaming/console\.nix
 
 
 
-## jupiter\.gaming\.bazzite\.gpu
+## jupiter\.gaming\.console\.gpu
 
 
 
@@ -1278,11 +1278,11 @@ one of “amd”, “intel”, “nvidia”
 ```
 
 *Declared by:*
- - modules/gaming/bazzite\.nix
+ - modules/gaming/console\.nix
 
 
 
-## jupiter\.gaming\.bazzite\.mesaGit
+## jupiter\.gaming\.console\.mesaGit
 
 
 
@@ -1302,11 +1302,11 @@ true
 ```
 
 *Declared by:*
- - modules/gaming/bazzite\.nix
+ - modules/gaming/console\.nix
 
 
 
-## jupiter\.gaming\.bazzite\.peripherals\.controllers
+## jupiter\.gaming\.console\.peripherals\.controllers
 
 
 
@@ -1331,11 +1331,11 @@ true
 ```
 
 *Declared by:*
- - modules/gaming/bazzite\.nix
+ - modules/gaming/console\.nix
 
 
 
-## jupiter\.gaming\.bazzite\.peripherals\.drawingTablet
+## jupiter\.gaming\.console\.peripherals\.drawingTablet
 
 
 
@@ -1363,11 +1363,11 @@ true
 ```
 
 *Declared by:*
- - modules/gaming/bazzite\.nix
+ - modules/gaming/console\.nix
 
 
 
-## jupiter\.gaming\.bazzite\.peripherals\.openrgb
+## jupiter\.gaming\.console\.peripherals\.openrgb
 
 
 
@@ -1395,11 +1395,11 @@ true
 ```
 
 *Declared by:*
- - modules/gaming/bazzite\.nix
+ - modules/gaming/console\.nix
 
 
 
-## jupiter\.gaming\.bazzite\.peripherals\.racingWheels
+## jupiter\.gaming\.console\.peripherals\.racingWheels
 
 
 
@@ -1424,11 +1424,11 @@ false
 ```
 
 *Declared by:*
- - modules/gaming/bazzite\.nix
+ - modules/gaming/console\.nix
 
 
 
-## jupiter\.gaming\.bazzite\.steamdeck\.enable
+## jupiter\.gaming\.console\.steamdeck\.enable
 
 
 
@@ -1456,11 +1456,11 @@ true
 ```
 
 *Declared by:*
- - modules/gaming/bazzite\.nix
+ - modules/gaming/console\.nix
 
 
 
-## jupiter\.gaming\.bazzite\.user
+## jupiter\.gaming\.console\.user
 
 
 
@@ -1480,7 +1480,7 @@ string
 ```
 
 *Declared by:*
- - modules/gaming/bazzite\.nix
+ - modules/gaming/console\.nix
 
 
 

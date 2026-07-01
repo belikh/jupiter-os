@@ -45,7 +45,7 @@ deploy .#ganymede
 
 ### Gaming profile (Bazzite-on-Nix)
 
-`modules/gaming/bazzite.nix` brings a modern Bazzite-style gaming experience to
+`modules/gaming/console.nix` brings a modern Bazzite-style gaming experience to
 any host, built on [Jovian-NixOS](https://github.com/Jovian-Experiments/Jovian-NixOS)
 (the SteamOS gamescope "gaming mode") and [chaotic-nyx](https://github.com/chaotic-cx/nyx)
 (CachyOS kernel, `mesa-git`, sched-ext/`scx`, `gamescope_git`). Both inputs are
@@ -54,7 +54,7 @@ nothing activates until a host opts in.
 
 Attach it to a machine by toggling it in that host's `configuration.nix`:
 ```nix
-jupiter.gaming.bazzite = {
+jupiter.gaming.console = {
   enable = true;
   gpu = "amd";            # "amd" | "intel" | "nvidia"
   user = "io";            # owns Steam, autologs into gaming mode

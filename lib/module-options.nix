@@ -35,7 +35,7 @@ let
     (root + "/modules/desktop/default.nix")
     (root + "/modules/desktop/dashboard-kiosk.nix")
     (root + "/modules/desktop/dashboard-gaming.nix")
-    (root + "/modules/gaming/bazzite.nix")
+    (root + "/modules/gaming/console.nix")
     (root + "/modules/network/dns.nix")
     (root + "/modules/network/nas-bond.nix")
     (root + "/modules/network/pxe-server.nix")

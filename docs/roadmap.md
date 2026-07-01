@@ -315,6 +315,43 @@ that section is the narrative context; these are the trackable tasks.
          `nixos/modules/profiles/base.nix`'s fleet-wide zfs-on-by-default from
          pulling the module in unnecessarily. Bump the `linuxPackages_7_0` pin
          in lockstep whenever nixpkgs raises zfs's max-supported kernel.
+      3. Once (1) and (2) were fixed, `ganymede` hit a pre-existing sops-nix
+         eval error: `sops.secrets.pg_n8n_password.owner = "n8n"` required a
+         static `users.users.n8n`, but n8n's NixOS module runs under
+         `DynamicUser = true` and never creates one. Dropped the `.owner`
+         override — n8n gets the password via an `_FILE`-suffixed env var,
+         which its module already routes through systemd's `LoadCredential`
+         (root reads the sops-nix default-permission secret at service start,
+         no static user needed).
+      4. With `build` finally passing for (almost) every host, `boot-test`
+         surfaced a real, previously-never-exercised bug (CI had never gotten
+         this far before): `modules/common.nix`'s `vmVariant` forced legacy
+         BIOS GRUB (`efiSupport = false; device = "/dev/vda"`), but every
+         disko layout here uses a GPT `EF00` UEFI System Partition with no
+         BIOS boot partition — so every VM hung right after printing "Welcome
+         to GRUB!", unable to find a place to embed/read GRUB's second stage.
+         Fixed by setting `virtualisation.useEFIBoot = true` instead (matches
+         real hardware) and giving `zfs-profiles.nix` its own
+         `efiSupport`/`device` defaults tied to the ESP it creates (also fixes
+         a latent real-hardware gap: the TCx Wave kiosks had *no* bootloader
+         config at all beyond NixOS's non-functional bare default). Also found
+         `boot.loader.timeout` was unset fleet-wide, which systemd-boot treats
+         as `"menu-force"` — wait forever for a keypress, never auto-boot —
+         a real risk on any headless/remote reboot with nobody at the
+         console; added a fleet-wide `boot.loader.timeout = 3` default
+         (`modules/common.nix`). Finally, `scripts/boot-smoke.sh`'s "reached
+         multi-user" detection was unreliable in this exact setup — systemd's
+         own status line doesn't reliably reach the serial console once
+         `console=ttyS0` is added for the vmVariant's bootloader-controlled
+         boot path (needed since `$QEMU_KERNEL_PARAMS` only applies to
+         qemu-vm.nix's *direct*-kernel-boot mode, not the bootloader path) —
+         so the detection now also matches the `<host> login:` prompt, direct
+         proof multi-user was reached. Verified locally end-to-end on `metis`
+         (reaches a real login prompt); also restructured `ci.yml` into one
+         `build-and-boot-test` job per host (build, then boot-test only
+         `if: success()`, skipped for `callisto`) instead of two separate
+         matrices, so a broken build no longer burns a second runner on a
+         boot-test we already know will fail.
 - [ ] Add SSH/login hardening: `fail2ban` or `sshguard`, explicit
       `services.openssh.settings.PermitRootLogin = "no"`, consider
       U2F/WebAuthn for the `io` account (`modules/common.nix`).
@@ -346,7 +383,7 @@ that section is the narrative context; these are the trackable tasks.
 
 ### [MEDIUM PRIORITY]
 
-- [ ] Split `modules/gaming/bazzite.nix` (398 lines) and
+- [ ] Split `modules/gaming/console.nix` (398 lines) and
       `modules/desktop/dashboard-gaming.nix` (302 lines) into focused
       sub-modules (kernel/session/gaming concerns) for readability.
 - [ ] Factor `flake.nix`'s orchestration logic (`mkHost`, `deployActivate`

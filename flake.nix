@@ -93,8 +93,8 @@
                 impermanence.nixosModules.impermanence
                 disko.nixosModules.disko
                 # Bazzite-on-Nix building blocks. Inert unless a host opts into
-                # jupiter.gaming.bazzite, but injected everywhere so any machine
-                # can attach the gaming profile (see modules/gaming/bazzite.nix).
+                # jupiter.gaming.console, but injected everywhere so any machine
+                # can attach the gaming profile (see modules/gaming/console.nix).
                 jovian.nixosModules.default
                 chaotic.nixosModules.default
                 # Declarative per-user environment. Inert unless a host sets

@@ -9,7 +9,7 @@
 #   * Kiosk  (default VT 6): the existing Cage + Chromium dashboard, reusing
 #     the host's `services.cage.program`/`user` so there's a single source.
 #   * Gaming (default VT 7): a gamescope session running Steam's gamepad UI,
-#     backed by the jupiter.gaming.bazzite software stack.
+#     backed by the jupiter.gaming.console software stack.
 #
 # Toggle with the installed `jupiter-mode {dashboard|gaming|toggle}` command
 # (over SSH as root, since chvt needs CAP_SYS_TTY_CONFIG) or, with a keyboard
@@ -163,7 +163,7 @@ in
     # Pull in the Bazzite software stack (Steam + Proton-GE, gamescope, gamemode,
     # MangoHud, …). Stock kernel/Mesa: this is a low-power Intel kiosk on ZFS, not
     # a CachyOS box, and gaming mode is our own VT-pinned session below.
-    jupiter.gaming.bazzite = {
+    jupiter.gaming.console = {
       enable = true;
       gpu = "intel";
       user = cfg.gaming.user;

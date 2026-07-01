@@ -141,7 +141,6 @@ no host has to `mkForce` it back off.
 `.github/workflows/ci.yml` runs on every push/PR to `master`:
 
 1. **`check`** — `nixfmt-rfc-style --check .`, then `nix flake check --no-build` (evaluates every host plus deploy-rs checks).
-2. **`build`** — a matrix job that builds `system.build.toplevel` for each of `ganymede`, `himalia`, `europa`, `metis`, `adrastea`, `amalthea`, `thebe`, `callisto`. sops secrets are read at activation time, not build time, so CI needs no decryption key.
-3. **`boot-test`** — a matrix job that boots each *disk* host (`ganymede`, `himalia`, `europa`, `metis`, `adrastea`, `amalthea`, `thebe`) in a headless QEMU VM (KVM) via `scripts/boot-smoke.sh` and asserts it reaches multi-user, catching bootloader/disko/impermanence/unit-ordering regressions a pure build can't. `callisto` is a diskless netboot image, so it's covered by `build` only.
+2. **`build-and-boot-test`** — one matrix job per host (`ganymede`, `himalia`, `europa`, `metis`, `adrastea`, `amalthea`, `thebe`, `callisto`, `elara`, `carme`), two steps each: build `system.build.toplevel` (sops secrets are read at activation time, not build time, so CI needs no decryption key), then — for every *disk* host except `callisto` (a diskless netboot image, not VM-bootable) — boot it headless in QEMU (KVM) via `scripts/boot-smoke.sh` and assert it reaches multi-user, catching bootloader/disko/impermanence/unit-ordering regressions a pure build can't. The boot step only runs if the build step succeeded, so a broken build for a host skips its boot test instead of burning more CI time on a config already known to fail.
 
 See [09-operations.md](09-operations.md) for the full command reference.
