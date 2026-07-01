@@ -217,12 +217,14 @@
         thebe = mkHost ./hosts/thebe/configuration.nix [ ]; # robbie-room
 
         # Future personal workstations (roaming desktop — same niri + synced
-        # $HOME as the laptop). Scaffolded in hosts/ but not registered until the
-        # hardware exists, because their REPLACE-ME disks would (intentionally)
-        # fail the jupiter.storage assertion at build time. To bring one online:
-        # fill in its disk/hostId, uncomment, and add it to the CI build matrix.
-        # elara = mkHost ./hosts/elara/configuration.nix [ ];
-        # carme = mkHost ./hosts/carme/configuration.nix [ ];
+        # $HOME as the laptop). Their disk/hostId are still REPLACE-ME
+        # placeholders (no hardware yet), so their build/boot-test CI jobs are
+        # expected to fail on the jupiter.storage assertion until someone fills
+        # those in per the bring-online steps in each host's configuration.nix
+        # — registering them now (rather than leaving them as unwired
+        # scaffolds) is what gets them CI coverage the moment they're real.
+        elara = mkHost ./hosts/elara/configuration.nix [ ];
+        carme = mkHost ./hosts/carme/configuration.nix [ ];
       };
 
       packages.x86_64-linux =
