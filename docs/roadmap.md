@@ -287,6 +287,28 @@ that section is the narrative context; these are the trackable tasks.
 
 ### [HIGH PRIORITY]
 
+- [ ] **CI is currently red on master** (discovered 2026-07-01, last 5 runs on
+      master all `failure` — check with `gh run list`). Two distinct causes:
+      1. The `jupiter.storage.disk` REPLACE-ME assertion
+         (`modules/storage/zfs-profiles.nix:117`) fires for *every already-registered*
+         disk host (`ganymede`, `metis`, `adrastea`, `amalthea`, `thebe`) —
+         confirmed locally with `nix build .#nixosConfigurations.metis.config.system.build.toplevel`.
+         The assertion is unconditional (`config = lib.mkIf (cfg.profile != "none") { assertions = [...] }`),
+         so it fails `system.build.toplevel` itself, not just a real disko
+         install — meaning the CI `build`/`boot-test` jobs can never pass for
+         any disk host until real `/dev/disk/by-id` paths are filled in. Needs
+         either real hardware provisioning (out of scope pre-deployment) or
+         rethinking the assertion so CI can build/boot-test with a placeholder
+         disk (e.g. gate the assertion on an explicit
+         `jupiter.storage.allowPlaceholderDisk`/CI-only override, or use a
+         throwaway loopback device in the VM variant instead of the real
+         `cfg.disk` value).
+      2. `callisto` fails separately in CI with an eval error around
+         `system.systemBuilderCommands` in `nixos/modules/system/activation/top-level.nix`
+         — not yet root-caused, appears unrelated to the disk assertion above.
+      `elara`/`carme` (newly registered below) will fail the same
+      disk-assertion way as the other disk hosts — not a new regression, just
+      more of the same existing breakage.
 - [ ] Add SSH/login hardening: `fail2ban` or `sshguard`, explicit
       `services.openssh.settings.PermitRootLogin = "no"`, consider
       U2F/WebAuthn for the `io` account (`modules/common.nix`).
@@ -303,10 +325,13 @@ that section is the narrative context; these are the trackable tasks.
       generated once, never rotated).
 - [ ] Add CVE/vulnerability scanning to CI (e.g. `vulnix`) so host closures
       are checked against known nixpkgs advisories, not just built/boot-tested.
-- [ ] Register `hosts/elara/` and `hosts/carme/` in `flake.nix`
-      `nixosConfigurations` (or explicitly document why they stay
-      unregistered) so they get CI build/boot coverage instead of silently
-      rotting as unwired scaffolds.
+- [x] Register `hosts/elara/` and `hosts/carme/` in `flake.nix`
+      `nixosConfigurations` — **done**, added to the `build`/`boot-test` CI
+      matrices too. Their disk/hostId are still `REPLACE-ME`, so their CI jobs
+      are *expected* to fail (same as every other disk host right now — see
+      the CI-is-red note below) until the hardware exists; that's coverage
+      landing in the same broken state as the rest of the fleet, not a
+      regression.
 - [ ] Prove the deploy/rollback and unattended flake-update path against
       real hardware once provisioned — `flake.lock`'s `home-manager` input
       pin, `HEADSCALE_PREAUTH_KEY`/`DEPLOY_SSH_PRIVATE_KEY`, and the

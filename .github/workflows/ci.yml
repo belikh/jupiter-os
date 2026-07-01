@@ -32,7 +32,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        host: [ganymede, himalia, europa, metis, adrastea, amalthea, thebe, callisto]
+        host: [ganymede, himalia, europa, metis, adrastea, amalthea, thebe, callisto, elara, carme]
     steps:
       - uses: actions/checkout@v4
       - uses: DeterminateSystems/nix-installer-action@main
@@ -50,7 +50,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        host: [ganymede, himalia, europa, metis, adrastea, amalthea, thebe]
+        host: [ganymede, himalia, europa, metis, adrastea, amalthea, thebe, elara, carme]
     steps:
       - uses: actions/checkout@v4
       - name: Enable KVM

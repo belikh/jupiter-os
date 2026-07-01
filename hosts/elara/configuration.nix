@@ -2,13 +2,14 @@
 
 # SCAFFOLD — home desktop PC (not yet built). Part of the roaming-desktop set:
 # identical niri + Syncthing-synced $HOME as the laptop, so io can sit down here
-# and it's "home". Not registered in flake.nix until the hardware exists (its
-# REPLACE-ME disk would fail the jupiter.storage assertion). To bring online:
+# and it's "home". Registered in flake.nix nixosConfigurations and the CI
+# build/boot-test matrices so it gets coverage, but its disk/hostId are still
+# REPLACE-ME placeholders — the jupiter.storage assertion is expected to fail
+# CI until the hardware exists. To bring online:
 #   1. set jupiter.storage.disk to the real /dev/disk/by-id path
 #   2. set a unique networking.hostId (8 hex chars)
-#   3. uncomment the `elara` entry in flake.nix nixosConfigurations + add it
-#      to the CI build/boot-test matrices
-#   4. generate its age key and add it to .sops.yaml
+#   3. generate its age key and add it to .sops.yaml
+#   4. add a deploy.nodes entry in flake.nix once it's reachable
 
 {
   imports = [
