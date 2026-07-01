@@ -43,10 +43,12 @@ in
             directories = lib.mkOption {
               type = lib.types.listOf lib.types.str;
               default = [ ];
+              description = "Directories under this user's home to persist, relative to the home directory.";
             };
             files = lib.mkOption {
               type = lib.types.listOf lib.types.str;
               default = [ ];
+              description = "Files under this user's home to persist, relative to the home directory.";
             };
           };
         }

@@ -155,6 +155,20 @@ it in once CI is validating.
   produces random, impossible machine-to-machine passwords + the syncoid keypair
   straight into sops; no inter-service password is ever hand-set. Public syncoid
   key committed at `secrets/syncoid_ed25519.pub`, read by `lib/site.nix`.
+- **Generated `jupiter.*` options reference** — audited every `jupiter.*`
+  option across `modules/`; the handful missing a `description` (nested
+  submodule options in `impermanence.nix`, `loki.nix`, `n8n.nix`,
+  `replication.nix`) now have one. `lib/module-options.nix` evaluates a
+  synthetic host importing every option-declaring module (plus the same
+  flake-injected modules `mkHost` gives real hosts, so unconditional `config`
+  blocks resolve) and feeds `options.jupiter` to `pkgs.nixosOptionsDoc`, whose
+  `nixos-render-docs`-backed `optionsCommonMark` becomes `docs/module-options.md`.
+  `make docs-modules` regenerates it; `make docs-modules-check` (wired into the
+  CI `check` job) fails if it's stale. `docs/04-modules-reference.md` keeps its
+  hand-written per-module prose but now points at the generated file for exact
+  type/default/description — no more transcribing options by hand. Verified
+  with `make fmt` + `nix flake check` (only the pre-existing `REPLACE-ME`
+  disk-placeholder assertions remain).
 
 ## Data-durability gaps — all closed
 
@@ -324,10 +338,6 @@ that section is the narrative context; these are the trackable tasks.
 
 ### [LOW PRIORITY]
 
-- [ ] Enrich `lib.mkOption { description = ...; }` strings across
-      `jupiter.*` modules so option documentation can be generated via
-      `nixos-render-docs` instead of hand-maintained separately in
-      `docs/04-modules-reference.md` (reduces doc/code drift risk).
 - [ ] Add UPS/power monitoring (`nut`/`apcupsd`) — currently absent fleet-wide.
 - [ ] Consider explicit security-hardening `boot.kernel.sysctl` entries
       (e.g. `kernel.kptr_restrict`, `kernel.yama.ptrace_scope`,

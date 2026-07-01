@@ -16,16 +16,19 @@ in
     port = lib.mkOption {
       type = lib.types.port;
       default = 5432;
+      description = "PostgreSQL port n8n connects to.";
     };
 
     name = lib.mkOption {
       type = lib.types.str;
       default = "n8n";
+      description = "Database name n8n connects to.";
     };
 
     user = lib.mkOption {
       type = lib.types.str;
       default = "n8n";
+      description = "Database role n8n authenticates as.";
     };
 
     passwordFile = lib.mkOption {

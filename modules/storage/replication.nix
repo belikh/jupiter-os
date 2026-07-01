@@ -49,10 +49,12 @@ in
             sourceDataset = lib.mkOption {
               type = lib.types.str;
               example = "rpool/var";
+              description = "ZFS dataset on the remote host to pull from.";
             };
             targetDataset = lib.mkOption {
               type = lib.types.str;
               example = "tank/backups/ganymede";
+              description = "ZFS dataset on this host to receive into.";
             };
           };
         }
