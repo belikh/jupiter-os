@@ -170,6 +170,54 @@ the `important` sanoid policy and the wholesale restic offsite path — the live
 data stays on the fast SSD zvols while a consistent, restorable copy is
 snapshotted + shipped offsite. One-time: `zfs create tank/backups/callisto`.
 
+## Operational maturity gaps (not started)
+
+Surveyed 2026-07-01 by grepping the repo for monitoring/alerting, rollback,
+backup-verification, secrets-rotation, and hardening patterns. What exists
+today: Loki (`modules/services/loki.nix`, log storage only — no metrics/
+dashboards/paging), sanoid snapshot policies + syncoid replication + restic
+offsite (`modules/storage/{sanoid,replication,backup}.nix`), CI build +
+QEMU boot-smoke tests (`.github/workflows/ci.yml`), headscale mesh VPN,
+cloudflared tunnel ingress, `nix.gc.automatic` (common.nix), and NixOS's
+built-in generation rollback (free, but manual — nothing auto-reverts a bad
+activation). Everything below was checked for and confirmed absent as of
+that survey; re-verify before assuming still true.
+
+- **No metrics/alerting stack.** Loki covers logs; nothing scrapes metrics or
+  pages on failure (no Prometheus/Grafana/Alertmanager, no ntfy/Pushover/
+  healthchecks.io hook anywhere in `modules/`). An outage is currently
+  discovered by using the affected service, not by a notification.
+- **No post-deploy health check / automated rollback.** `deploy-rs` activates
+  and stops there — no boot-counting or watchdog reverts a generation that
+  fails to reach multi-user on real hardware (CI's `boot-test` job covers
+  this pre-merge in QEMU only, not post-deploy on the actual host).
+- **No backup-restore verification.** Syncoid replication + sanoid snapshots +
+  restic offsite all exist, but nothing periodically proves a snapshot is
+  actually restorable (vs. just "the send/recv succeeded").
+- **No secrets rotation.** `make gen-secrets` (`scripts/gen-secrets.sh`) fills
+  in missing service-to-service credentials once; nothing rotates the
+  sops-nix age keys or the generated passwords/syncoid keypair on a cadence.
+- **No CVE/vulnerability scanning in CI.** `.github/workflows/ci.yml` builds
+  and boot-tests every host but doesn't check the resulting closures against
+  known nixpkgs CVEs (e.g. `vulnix`).
+- **No unattended `nix flake update` cadence.** Updates are fully manual today
+  (see the earlier discussion in this session: recommended a scheduled
+  `flake update` + build/check → PR-for-review, manual deploy — NOT full
+  auto-deploy, given no rollback-on-failure exists yet).
+- **No disk/hardware health monitoring.** No `smartd`/SMART checks on
+  europa's NAS disks, no UPS/power monitoring (no `nut`/`apcupsd` anywhere).
+- **No SSH/login hardening beyond NixOS defaults.** `services.openssh.enable`
+  is set (`modules/common.nix`) with no `PermitRootLogin` override, no
+  fail2ban/sshguard, no 2FA/U2F/WebAuthn on any host.
+- **No TLS/cert-expiry monitoring** independent of Cloudflare's own handling
+  (only `cloudflare_cert` exists for the tunnel credential, not an ACME/cert
+  pipeline to watch).
+
+None of these are urgent for a single-operator home lab — flag as candidates
+to prioritize if europa's data footprint grows, if a second operator joins,
+or after the callisto server-consolidation move (Future direction, above)
+changes the blast radius of a bad deploy.
+
 ### Validation still required (no nix/KVM in the authoring env)
 
 - `nix flake lock` to lock the new `home-manager` input (CI auto-locks but the
