@@ -30,7 +30,6 @@
   ...
 }:
 
-with lib;
 let
   cfg = config.jupiter.gaming.bazzite;
   desktop = config.jupiter.desktop;
@@ -114,16 +113,16 @@ let
   };
 
   # Packages for every app whose toggle is on.
-  enabledAppPackages = concatMap (name: optionals cfg.apps.${name} appCatalog.${name}.packages) (
-    attrNames appCatalog
-  );
+  enabledAppPackages = lib.concatMap (
+    name: lib.optionals cfg.apps.${name} appCatalog.${name}.packages
+  ) (lib.attrNames appCatalog);
 in
 {
   options.jupiter.gaming.bazzite = {
-    enable = mkEnableOption "Bazzite-style gaming stack (Jovian gaming mode + chaotic CachyOS)";
+    enable = lib.mkEnableOption "Bazzite-style gaming stack (Jovian gaming mode + chaotic CachyOS)";
 
-    gpu = mkOption {
-      type = types.enum [
+    gpu = lib.mkOption {
+      type = lib.types.enum [
         "amd"
         "intel"
         "nvidia"
@@ -132,14 +131,14 @@ in
       description = "Primary GPU vendor. Drives driver and 32-bit graphics setup.";
     };
 
-    user = mkOption {
-      type = types.str;
+    user = lib.mkOption {
+      type = lib.types.str;
       default = "io";
       description = "User that owns the Steam install and auto-logs into gaming mode.";
     };
 
-    cachyOsKernel = mkOption {
-      type = types.bool;
+    cachyOsKernel = lib.mkOption {
+      type = lib.types.bool;
       default = true;
       description = ''
         Use the CachyOS kernel (linuxPackages_cachyos) from chaotic-nyx.
@@ -148,15 +147,15 @@ in
       '';
     };
 
-    mesaGit = mkOption {
-      type = types.bool;
+    mesaGit = lib.mkOption {
+      type = lib.types.bool;
       default = true;
       description = "Use bleeding-edge Mesa (chaotic.mesa-git), matching Bazzite's shipping Mesa.";
     };
 
     gamingMode = {
-      enable = mkOption {
-        type = types.bool;
+      enable = lib.mkOption {
+        type = lib.types.bool;
         default = false;
         description = ''
           Enable the SteamOS-like gamescope "gaming mode" session (Jovian). When
@@ -165,32 +164,32 @@ in
         '';
       };
 
-      autoStart = mkOption {
-        type = types.bool;
+      autoStart = lib.mkOption {
+        type = lib.types.bool;
         default = true;
         description = "Boot straight into gaming mode (autologin the session).";
       };
 
-      desktopSession = mkOption {
-        type = types.nullOr types.str;
+      desktopSession = lib.mkOption {
+        type = lib.types.nullOr lib.types.str;
         default = inferredDesktopSession;
-        defaultText = literalExpression ''"niri"/"gnome" inferred from jupiter.desktop.compositor'';
+        defaultText = lib.literalExpression ''"niri"/"gnome" inferred from jupiter.desktop.compositor'';
         description = "Desktop session Steam's 'Switch to Desktop' hands off to (null disables the button).";
       };
     };
 
-    decky.enable = mkEnableOption "Decky Loader (Steam plugin manager)";
+    decky.enable = lib.mkEnableOption "Decky Loader (Steam plugin manager)";
 
-    steamdeck.enable = mkEnableOption "Steam Deck / handheld hardware quirks (Jovian devices.steamdeck)";
+    steamdeck.enable = lib.mkEnableOption "Steam Deck / handheld hardware quirks (Jovian devices.steamdeck)";
 
     # Per-application toggles, generated from `appCatalog`. Default on unless
     # the catalogue entry sets `default = false` (e.g. niche emulators), so
     # enabling the profile installs the full stack; flip any to slim it down
     # (GLF-OS's à-la-carte modularity, expressed as plain options).
-    apps = mapAttrs (
+    apps = lib.mapAttrs (
       _name: spec:
-      mkOption {
-        type = types.bool;
+      lib.mkOption {
+        type = lib.types.bool;
         default = spec.default or true;
         description = "Install ${spec.description}.";
       }
@@ -200,8 +199,8 @@ in
     # for. steam-hardware alone only covers Steam Controllers/Deck; this widens
     # it to common pads, wheels, tablets and RGB gear with no manual wiring.
     peripherals = {
-      controllers = mkOption {
-        type = types.bool;
+      controllers = lib.mkOption {
+        type = lib.types.bool;
         default = true;
         description = ''
           Broaden game-controller support beyond steam-hardware's defaults:
@@ -213,8 +212,8 @@ in
         '';
       };
 
-      racingWheels = mkOption {
-        type = types.bool;
+      racingWheels = lib.mkOption {
+        type = lib.types.bool;
         default = false;
         description = ''
           Sim-racing wheel support: the force-feedback new-lg4ff driver for
@@ -226,21 +225,21 @@ in
         '';
       };
 
-      openrgb = mkEnableOption "OpenRGB daemon + GUI for RGB peripheral / LED control";
+      openrgb = lib.mkEnableOption "OpenRGB daemon + GUI for RGB peripheral / LED control";
 
-      drawingTablet = mkEnableOption "OpenTabletDriver support for drawing tablets";
+      drawingTablet = lib.mkEnableOption "OpenTabletDriver support for drawing tablets";
     };
 
-    extraPackages = mkOption {
-      type = types.listOf types.package;
+    extraPackages = lib.mkOption {
+      type = lib.types.listOf lib.types.package;
       default = [ ];
       description = "Additional gaming-related packages to install (beyond the app catalogue).";
     };
   };
 
-  config = mkIf cfg.enable {
+  config = lib.mkIf cfg.enable {
     # --- Kernel & schedulers (chaotic / CachyOS) -----------------------------
-    boot.kernelPackages = mkIf cfg.cachyOsKernel pkgs.linuxPackages_cachyos;
+    boot.kernelPackages = lib.mkIf cfg.cachyOsKernel pkgs.linuxPackages_cachyos;
 
     # sched-ext userspace scheduler, via the general jupiter.core.scheduler
     # module (modules/core/scheduler.nix) rather than setting services.scx
@@ -248,20 +247,20 @@ in
     # the gaming profile. scx_lavd is tuned for low-latency, interactive/
     # gaming workloads — the right default here, but `mkDefault` lets a host
     # that's already set jupiter.core.scheduler win.
-    jupiter.core.scheduler = mkIf cfg.cachyOsKernel {
-      enable = mkDefault true;
-      name = mkDefault "scx_lavd";
+    jupiter.core.scheduler = lib.mkIf cfg.cachyOsKernel {
+      enable = lib.mkDefault true;
+      name = lib.mkDefault "scx_lavd";
     };
 
     # ntsync gives Proton/Wine a fast in-kernel sync primitive (Bazzite default).
     boot.kernelModules = [ "ntsync" ];
 
     # --- Mesa (chaotic) ------------------------------------------------------
-    chaotic.mesa-git.enable = mkIf cfg.mesaGit (mkDefault true);
+    chaotic.mesa-git.enable = lib.mkIf cfg.mesaGit (lib.mkDefault true);
 
     # --- Gaming mode session (Jovian) ----------------------------------------
     jovian = {
-      steam = mkIf cfg.gamingMode.enable {
+      steam = lib.mkIf cfg.gamingMode.enable {
         enable = true;
         user = cfg.user;
         autoStart = cfg.gamingMode.autoStart;
@@ -299,18 +298,18 @@ in
     };
 
     # Vendor-specific driver wiring.
-    services.xserver.videoDrivers = mkIf (cfg.gpu == "nvidia") [ "nvidia" ];
-    hardware.nvidia = mkIf (cfg.gpu == "nvidia") {
+    services.xserver.videoDrivers = lib.mkIf (cfg.gpu == "nvidia") [ "nvidia" ];
+    hardware.nvidia = lib.mkIf (cfg.gpu == "nvidia") {
       modesetting.enable = true;
-      open = mkDefault true; # open kernel modules; fine for Turing+ GPUs
+      open = lib.mkDefault true; # open kernel modules; fine for Turing+ GPUs
       nvidiaSettings = true;
     };
-    hardware.amdgpu.initrd.enable = mkIf (cfg.gpu == "amd") (mkDefault true);
+    hardware.amdgpu.initrd.enable = lib.mkIf (cfg.gpu == "amd") (lib.mkDefault true);
 
     # --- Performance tuning (mirrors Bazzite's defaults) ---------------------
     zramSwap = {
-      enable = mkDefault true;
-      algorithm = mkDefault "zstd";
+      enable = lib.mkDefault true;
+      algorithm = lib.mkDefault "zstd";
     };
 
     boot.kernel.sysctl = {
@@ -320,9 +319,9 @@ in
       # and fail as "defined multiple times" — mkOverride 900 breaks that
       # tie in our favor while still letting a host mkForce/mkOverride
       # something lower to win over us.
-      "vm.max_map_count" = mkOverride 900 2147483642;
+      "vm.max_map_count" = lib.mkOverride 900 2147483642;
       # Improve responsiveness under memory pressure.
-      "vm.swappiness" = mkDefault 10;
+      "vm.swappiness" = lib.mkDefault 10;
     };
 
     # Let games raise priority / use the realtime + nice rlimits.
@@ -345,15 +344,15 @@ in
     # input-remapper lets pads/keyboards be remapped; Bluetooth covers wireless
     # controllers. Both are wanted on any gaming host.
     services.input-remapper.enable = true;
-    hardware.bluetooth.enable = mkDefault true;
+    hardware.bluetooth.enable = lib.mkDefault true;
 
     # Xbox controllers: xpadneo (Bluetooth) + xone (official dongle / wired).
-    hardware.xpadneo.enable = mkIf cfg.peripherals.controllers (mkDefault true);
-    hardware.xone.enable = mkIf cfg.peripherals.controllers (mkDefault true);
+    hardware.xpadneo.enable = lib.mkIf cfg.peripherals.controllers (lib.mkDefault true);
+    hardware.xone.enable = lib.mkIf cfg.peripherals.controllers (lib.mkDefault true);
 
     # The PlayStation pad exposes its touchpad as a mouse, which fires phantom
     # clicks mid-game; mask it the way GLF-OS does. (DualShock 4 + DualSense.)
-    services.udev.extraRules = mkIf cfg.peripherals.controllers ''
+    services.udev.extraRules = lib.mkIf cfg.peripherals.controllers ''
       ATTRS{name}=="Sony Interactive Entertainment Wireless Controller Touchpad", ENV{LIBINPUT_IGNORE_DEVICE}="1"
       ATTRS{name}=="Sony Interactive Entertainment DualSense Wireless Controller Touchpad", ENV{LIBINPUT_IGNORE_DEVICE}="1"
       ATTRS{name}=="Wireless Controller Touchpad", ENV{LIBINPUT_IGNORE_DEVICE}="1"
@@ -363,8 +362,8 @@ in
     # Sim-racing wheels — force-feedback Logitech (new-lg4ff). Oversteer and
     # Solaar ship udev rules of their own, so devices are usable without manual
     # permission setup.
-    hardware.new-lg4ff.enable = mkIf cfg.peripherals.racingWheels (mkDefault true);
-    services.udev.packages = mkIf cfg.peripherals.racingWheels (
+    hardware.new-lg4ff.enable = lib.mkIf cfg.peripherals.racingWheels (lib.mkDefault true);
+    services.udev.packages = lib.mkIf cfg.peripherals.racingWheels (
       with pkgs;
       [
         oversteer
@@ -373,8 +372,8 @@ in
     );
 
     # Drawing tablets and RGB lighting control.
-    hardware.opentabletdriver.enable = mkIf cfg.peripherals.drawingTablet true;
-    services.hardware.openrgb = mkIf cfg.peripherals.openrgb {
+    hardware.opentabletdriver.enable = lib.mkIf cfg.peripherals.drawingTablet true;
+    services.hardware.openrgb = lib.mkIf cfg.peripherals.openrgb {
       enable = true;
       # chaotic-nyx git build — tracks new device support faster than nixpkgs.
       package = pkgs.openrgb_git;
@@ -383,7 +382,7 @@ in
     # --- The gaming app stack (catalogue toggles + peripheral userland) ------
     environment.systemPackages =
       enabledAppPackages
-      ++ optionals cfg.peripherals.racingWheels (
+      ++ lib.optionals cfg.peripherals.racingWheels (
         with pkgs;
         [
           oversteer # racing-wheel configuration GUI

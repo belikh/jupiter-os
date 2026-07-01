@@ -5,21 +5,20 @@
   ...
 }:
 
-with lib;
 let
   cfg = config.jupiter.core.impermanence;
 in
 {
 
   options.jupiter.core.impermanence = {
-    enable = mkEnableOption "Enable impermanence (erase your darlings)";
-    persistPath = mkOption {
-      type = types.str;
+    enable = lib.mkEnableOption "Enable impermanence (erase your darlings)";
+    persistPath = lib.mkOption {
+      type = lib.types.str;
       default = "/persist";
       description = "The path where persistent state is kept.";
     };
-    persistAdminHome = mkOption {
-      type = types.bool;
+    persistAdminHome = lib.mkOption {
+      type = lib.types.bool;
       default = true;
       description = ''
         Persist the primary admin account (io)'s home directories. Turn off on
@@ -27,26 +26,26 @@ in
         need to persist a service account's state via `users` below.
       '';
     };
-    extraDirectories = mkOption {
-      type = types.listOf types.str;
+    extraDirectories = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
       default = [ ];
       description = "Host-specific system directories to persist.";
     };
-    extraFiles = mkOption {
-      type = types.listOf types.str;
+    extraFiles = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
       default = [ ];
       description = "Host-specific system files to persist.";
     };
-    users = mkOption {
-      type = types.attrsOf (
-        types.submodule {
+    users = lib.mkOption {
+      type = lib.types.attrsOf (
+        lib.types.submodule {
           options = {
-            directories = mkOption {
-              type = types.listOf types.str;
+            directories = lib.mkOption {
+              type = lib.types.listOf lib.types.str;
               default = [ ];
             };
-            files = mkOption {
-              type = types.listOf types.str;
+            files = lib.mkOption {
+              type = lib.types.listOf lib.types.str;
               default = [ ];
             };
           };
@@ -61,7 +60,7 @@ in
     };
   };
 
-  config = mkIf cfg.enable {
+  config = lib.mkIf cfg.enable {
     # Map essential system files and directories from the persistent store
     environment.persistence."${cfg.persistPath}" = {
       hideMounts = true;
@@ -83,7 +82,7 @@ in
       # Persist the primary admin account's home (unless this is an appliance),
       # merged with any host-specific service accounts in `users`.
       users =
-        (optionalAttrs cfg.persistAdminHome {
+        (lib.optionalAttrs cfg.persistAdminHome {
           io = {
             directories = [
               "Downloads"

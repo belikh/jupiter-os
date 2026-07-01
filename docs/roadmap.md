@@ -121,8 +121,13 @@ it in once CI is validating.
   `disko.nix`; lenovo→stateful, dashboards/t460s→impermanent, nas bespoke;
   REPLACE-ME assertion; `impermanence.nix` gained per-host persist controls.
 - **Stage 2 — module reshuffle** — `modules/` sorted into category subdirs;
-  module-style convention documented in `CLAUDE.md` (existing `with lib;`
-  conversion deferred to run with nix eval).
+  module-style convention documented in `CLAUDE.md`. The 11 modules still on
+  `with lib;` at the time (branding, desktop/default, dashboard-gaming,
+  impermanence, iscsi, nas-bond, pxe-server, dns, bazzite, mqtt, syncthing)
+  are now converted to explicit `lib.mkOption`/`lib.mkIf`/`lib.types`;
+  `with pkgs;` (package lists) is unaffected — only `with lib;` was in scope.
+  Verified with `make fmt` + `nix flake check` (only pre-existing
+  `REPLACE-ME` disk-placeholder assertions remain, unrelated to this change).
 - **Stage 3 — network SoT** — `lib/site.nix` shared by `terraform/unifi` and
   `jupiter.dns`.
 - **Stage 4 — CI boot tests** — `scripts/boot-smoke.sh` + `boot-test` CI job;
@@ -224,7 +229,6 @@ changes the blast radius of a bad deploy.
   committed lock is stale).
 - `nix flake check` + the `build`/`boot-test` CI jobs to shake out eval errors —
   nothing here was evaluated locally.
-- `with lib;` → explicit conversion of the 11 older modules.
 - `make gen-secrets` to populate the generated service credentials + syncoid
   keypair (and commit `secrets/syncoid_ed25519.pub`).
 - Real-hardware provisioning: REPLACE-ME disks + the callisto NIC name + LUN

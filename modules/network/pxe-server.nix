@@ -5,7 +5,6 @@
   ...
 }:
 
-with lib;
 let
   cfg = config.jupiter.pxe;
 in
@@ -20,20 +19,20 @@ in
   # and needs them), so the served image always matches the flake — there is no
   # manual "copy the artifacts into a webroot" step.
   options.jupiter.pxe = {
-    enable = mkEnableOption "Pixiecore netboot server for the diskless fleet";
+    enable = lib.mkEnableOption "Pixiecore netboot server for the diskless fleet";
 
-    kernel = mkOption {
-      type = types.str;
+    kernel = lib.mkOption {
+      type = lib.types.str;
       description = "Path (nix store) or URL to the netboot kernel (bzImage).";
     };
 
-    initrd = mkOption {
-      type = types.str;
+    initrd = lib.mkOption {
+      type = lib.types.str;
       description = "Path (nix store) or URL to the netboot initrd.";
     };
 
-    cmdLine = mkOption {
-      type = types.str;
+    cmdLine = lib.mkOption {
+      type = lib.types.str;
       default = "loglevel=4";
       description = ''
         Kernel command line. For a NixOS netboot image this must include
@@ -42,7 +41,7 @@ in
     };
   };
 
-  config = mkIf cfg.enable {
+  config = lib.mkIf cfg.enable {
     services.pixiecore = {
       enable = true;
       openFirewall = true;

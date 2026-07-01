@@ -1,26 +1,25 @@
 { config, lib, ... }:
 
-with lib;
 let
   cfg = config.jupiter.dns;
 
   # "host.fqdn" -> "10.1.1.x"  becomes unbound local-data A + PTR records,
   # giving us split-horizon internal names without publishing them anywhere.
-  aRecords = mapAttrsToList (fqdn: ip: ''"${fqdn}. IN A ${ip}"'') cfg.records;
-  ptrRecords = mapAttrsToList (fqdn: ip: ''"${ip} ${fqdn}"'') cfg.records;
+  aRecords = lib.mapAttrsToList (fqdn: ip: ''"${fqdn}. IN A ${ip}"'') cfg.records;
+  ptrRecords = lib.mapAttrsToList (fqdn: ip: ''"${ip} ${fqdn}"'') cfg.records;
 in
 {
   options.jupiter.dns = {
-    enable = mkEnableOption "self-hosted anonymized resolver + internal split-horizon DNS";
+    enable = lib.mkEnableOption "self-hosted anonymized resolver + internal split-horizon DNS";
 
-    domain = mkOption {
-      type = types.str;
+    domain = lib.mkOption {
+      type = lib.types.str;
       default = "home.jupiter.au";
       description = "Internal split-horizon zone served authoritatively to LAN clients.";
     };
 
-    allowedNetworks = mkOption {
-      type = types.listOf types.str;
+    allowedNetworks = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
       default = [
         "127.0.0.0/8"
         "::1/128"
@@ -28,8 +27,8 @@ in
       description = "Networks permitted to query this resolver.";
     };
 
-    records = mkOption {
-      type = types.attrsOf types.str;
+    records = lib.mkOption {
+      type = lib.types.attrsOf lib.types.str;
       default = { };
       example = {
         "europa.home.jupiter.au" = "10.1.1.2";
@@ -38,7 +37,7 @@ in
     };
   };
 
-  config = mkIf cfg.enable {
+  config = lib.mkIf cfg.enable {
     # ---- Front resolver: unbound -------------------------------------------
     # Serves the LAN, caches aggressively (reconciles "fast" with the latency
     # that anonymized relaying adds), validates DNSSEC, and hosts the internal
@@ -55,7 +54,7 @@ in
             "::"
           ];
           port = 53;
-          access-control = map (n: "${n} allow") cfg.allowedNetworks;
+          access-control = builtins.map (n: "${n} allow") cfg.allowedNetworks;
           do-ip6 = true;
 
           hide-identity = true;
