@@ -26,7 +26,12 @@
   # binary cache/overlay/registry. The chaotic flake module is still injected
   # uniformly via flake.nix's mkHost (per its lexical-closure design), but
   # these three toggles neutralize its effect here.
-  boot.kernelPackages = pkgs.linuxPackages_latest;
+  #
+  # Pinned to zfs's declared max-supported kernel series (see the comment in
+  # modules/storage/zfs-profiles.nix), not linuxPackages_latest — europa is
+  # the ZFS NAS, so a kernel newer than zfs actually supports is a hard
+  # breakage here, not just a missed optimization. Bump alongside that file.
+  boot.kernelPackages = pkgs.linuxPackages_7_0;
   chaotic.nyx.cache.enable = false;
   chaotic.nyx.overlay.enable = false;
   chaotic.nyx.registry.enable = false;

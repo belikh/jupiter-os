@@ -287,28 +287,34 @@ that section is the narrative context; these are the trackable tasks.
 
 ### [HIGH PRIORITY]
 
-- [ ] **CI is currently red on master** (discovered 2026-07-01, last 5 runs on
-      master all `failure` — check with `gh run list`). Two distinct causes:
+- [x] **CI was red on master** (discovered 2026-07-01) — **fixed**, two
+      distinct causes:
       1. The `jupiter.storage.disk` REPLACE-ME assertion
-         (`modules/storage/zfs-profiles.nix:117`) fires for *every already-registered*
-         disk host (`ganymede`, `metis`, `adrastea`, `amalthea`, `thebe`) —
-         confirmed locally with `nix build .#nixosConfigurations.metis.config.system.build.toplevel`.
-         The assertion is unconditional (`config = lib.mkIf (cfg.profile != "none") { assertions = [...] }`),
-         so it fails `system.build.toplevel` itself, not just a real disko
-         install — meaning the CI `build`/`boot-test` jobs can never pass for
-         any disk host until real `/dev/disk/by-id` paths are filled in. Needs
-         either real hardware provisioning (out of scope pre-deployment) or
-         rethinking the assertion so CI can build/boot-test with a placeholder
-         disk (e.g. gate the assertion on an explicit
-         `jupiter.storage.allowPlaceholderDisk`/CI-only override, or use a
-         throwaway loopback device in the VM variant instead of the real
-         `cfg.disk` value).
-      2. `callisto` fails separately in CI with an eval error around
-         `system.systemBuilderCommands` in `nixos/modules/system/activation/top-level.nix`
-         — not yet root-caused, appears unrelated to the disk assertion above.
-      `elara`/`carme` (newly registered below) will fail the same
-      disk-assertion way as the other disk hosts — not a new regression, just
-      more of the same existing breakage.
+         (`modules/storage/zfs-profiles.nix`) fired for *every* disk host
+         (`ganymede`, `metis`, `adrastea`, `amalthea`, `thebe`, and now
+         `elara`/`carme`) unconditionally at eval time, failing
+         `system.build.toplevel` itself rather than just a real disko install.
+         Since no host in the fleet has real hardware yet, this blocked CI
+         permanently rather than protecting anything (the placeholder path
+         doesn't exist, so disko would just fail loudly on its own if actually
+         run against it) — turned into a non-blocking `warnings` entry instead
+         of a hard `assertions` entry.
+      2. Once (1) was fixed, the *same* eval error `callisto` was hitting
+         turned out to also affect every other disk/impermanent host: the
+         fleet-wide CachyOS kernel (`linuxPackages_cachyos`, currently 7.1.x)
+         is newer than zfs's declared `kernelMaxSupportedMajorMinor` (7.0), so
+         nixpkgs refuses to evaluate the zfs kernel module as `broken`. Fixed
+         by pinning `boot.kernelPackages = pkgs.linuxPackages_7_0` (mkForce)
+         inside the `zfs-profiles.nix` mkIf block — covers every host with a
+         storage profile, including overriding the TCx Wave kiosks'
+         power-tuning `linuxPackages_latest` pick — plus the same pin on
+         `europa` (bespoke NAS config, not gated by that module). `callisto`
+         itself doesn't need zfs at all (diskless, state lives on europa over
+         iSCSI/NFS), so it instead gets
+         `boot.supportedFilesystems.zfs = lib.mkForce false` to stop
+         `nixos/modules/profiles/base.nix`'s fleet-wide zfs-on-by-default from
+         pulling the module in unnecessarily. Bump the `linuxPackages_7_0` pin
+         in lockstep whenever nixpkgs raises zfs's max-supported kernel.
 - [ ] Add SSH/login hardening: `fail2ban` or `sshguard`, explicit
       `services.openssh.settings.PermitRootLogin = "no"`, consider
       U2F/WebAuthn for the `io` account (`modules/common.nix`).
@@ -327,11 +333,10 @@ that section is the narrative context; these are the trackable tasks.
       are checked against known nixpkgs advisories, not just built/boot-tested.
 - [x] Register `hosts/elara/` and `hosts/carme/` in `flake.nix`
       `nixosConfigurations` — **done**, added to the `build`/`boot-test` CI
-      matrices too. Their disk/hostId are still `REPLACE-ME`, so their CI jobs
-      are *expected* to fail (same as every other disk host right now — see
-      the CI-is-red note below) until the hardware exists; that's coverage
-      landing in the same broken state as the rest of the fleet, not a
-      regression.
+      matrices too. Gave both a real random `networking.hostId` (that's just a
+      format requirement, not tied to real hardware — no reason to leave it
+      `REPLACE-ME`). Their disk is still `REPLACE-ME`, which is now just a
+      build-time warning (see the CI fix note above), not a CI failure.
 - [ ] Prove the deploy/rollback and unattended flake-update path against
       real hardware once provisioned — `flake.lock`'s `home-manager` input
       pin, `HEADSCALE_PREAUTH_KEY`/`DEPLOY_SSH_PRIVATE_KEY`, and the

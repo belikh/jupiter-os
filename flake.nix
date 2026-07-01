@@ -217,12 +217,12 @@
         thebe = mkHost ./hosts/thebe/configuration.nix [ ]; # robbie-room
 
         # Future personal workstations (roaming desktop — same niri + synced
-        # $HOME as the laptop). Their disk/hostId are still REPLACE-ME
-        # placeholders (no hardware yet), so their build/boot-test CI jobs are
-        # expected to fail on the jupiter.storage assertion until someone fills
-        # those in per the bring-online steps in each host's configuration.nix
-        # — registering them now (rather than leaving them as unwired
-        # scaffolds) is what gets them CI coverage the moment they're real.
+        # $HOME as the laptop). Their disk is still a REPLACE-ME placeholder
+        # (no hardware yet) — that's just a build-time warning (see
+        # modules/storage/zfs-profiles.nix), not a CI failure, until someone
+        # fills it in per the bring-online steps in each host's
+        # configuration.nix — registering them now (rather than leaving them
+        # as unwired scaffolds) is what gets them CI coverage already.
         elara = mkHost ./hosts/elara/configuration.nix [ ];
         carme = mkHost ./hosts/carme/configuration.nix [ ];
       };

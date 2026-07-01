@@ -29,6 +29,14 @@ in
   # Ensure the image is fully copied to RAM on boot
   boot.kernelParams = [ "copytoram" ];
 
+  # Diskless netboot node: no local ZFS use at all (state lives on europa over
+  # iSCSI/NFS — see fileSystems below), so don't build the zfs kernel module
+  # for this host's kernel. NixOS's base profile otherwise turns ZFS support on
+  # by mkDefault for every host that can build it, and this kernel is newer
+  # than zfs's current max-supported series (see
+  # modules/storage/zfs-profiles.nix), which would otherwise hard-fail eval.
+  boot.supportedFilesystems.zfs = lib.mkForce false;
+
   # Mostly a Postgres/Loki server with occasional casual gaming, so default to
   # the throughput-oriented scheduler; flip jupiter.gaming.bazzite.enable +
   # this to "scx_lavd" if this box becomes the dedicated gaming box later.

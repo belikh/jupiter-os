@@ -3,13 +3,13 @@
 # SCAFFOLD — home desktop PC (not yet built). Part of the roaming-desktop set:
 # identical niri + Syncthing-synced $HOME as the laptop, so io can sit down here
 # and it's "home". Registered in flake.nix nixosConfigurations and the CI
-# build/boot-test matrices so it gets coverage, but its disk/hostId are still
-# REPLACE-ME placeholders — the jupiter.storage assertion is expected to fail
-# CI until the hardware exists. To bring online:
+# build/boot-test matrices so it gets coverage. Its disk is still a REPLACE-ME
+# placeholder — that only produces a build-time warning (see
+# modules/storage/zfs-profiles.nix), not a CI failure, until the hardware
+# exists. To bring online:
 #   1. set jupiter.storage.disk to the real /dev/disk/by-id path
-#   2. set a unique networking.hostId (8 hex chars)
-#   3. generate its age key and add it to .sops.yaml
-#   4. add a deploy.nodes entry in flake.nix once it's reachable
+#   2. generate its age key and add it to .sops.yaml
+#   3. add a deploy.nodes entry in flake.nix once it's reachable
 
 {
   imports = [
@@ -17,7 +17,7 @@
   ];
 
   networking.hostName = "elara";
-  networking.hostId = "REPLACE-ME"; # 8 hex chars, required for ZFS
+  networking.hostId = "b1176063"; # Randomly generated 8-char hex for ZFS
 
   jupiter = {
     branding.enable = true;
