@@ -10,6 +10,7 @@
     ../../modules/storage/nas-nfs.nix # NFS exports to the network
     ../../modules/storage/iscsi.nix # iSCSI block export of zvols to callisto
     ../../modules/storage/replication.nix # pulls server state datasets here (syncoid)
+    ../../modules/storage/smart-monitoring.nix # SMART health checks on tank/backup's physical disks
     ../../modules/network/nas-bond.nix # optional 2×1GbE LACP (opt-in below)
     ../../modules/services/backups.nix # restic offsite (jupiter.backups.paths below)
   ];
@@ -100,4 +101,9 @@
     enable = true;
     dataDir = "/tank/personal";
   };
+
+  # SMART self-tests + health checks across every attached disk (OS SSD +
+  # tank/backup mirror members) — europa is the only host with physical
+  # spinning/SSD storage worth watching (see modules/storage/smart-monitoring.nix).
+  jupiter.storage.smartMonitoring.enable = true;
 }

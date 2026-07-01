@@ -113,6 +113,23 @@ bonded interface).
 
 **Imported by:** `europa` only.
 
+### `modules/storage/smart-monitoring.nix`
+```
+jupiter.storage.smartMonitoring.enable          (bool, default false)
+jupiter.storage.smartMonitoring.checkInterval   (int seconds, default 1800)
+jupiter.storage.smartMonitoring.selfTestSchedule (string, default short daily 02:00 / long weekly Sun 03:00)
+```
+Wires `services.smartd` (smartmontools) with `autodetect = true` — disks
+aren't enumerated in the flake (`tank`/`backup` are hand-created, see
+`hosts/europa/disko.nix`), so smartd scans whatever's physically attached
+instead of hardcoded by-id paths that would drift from real hardware.
+Failures raise a `wall` broadcast and always log at `LOG_CRIT` to the
+journal/syslog (`journalctl -u smartd`) — there's no paging integration yet
+(see docs/roadmap.md "Operational maturity gaps"), so this only helps if
+someone's watching.
+
+**Enabled by:** `europa` only.
+
 ### `modules/storage/nas-nfs.nix`
 No option — unconditional. `services.nfs.server`, exporting `/tank/media`
 (read-only, LAN + headscale mesh), `/srv/netboot` (read-only, LAN), and

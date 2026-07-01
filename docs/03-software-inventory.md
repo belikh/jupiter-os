@@ -64,6 +64,7 @@ In addition to the baseline above, `ganymede`, `europa`, the dashboard kiosks
 | sanoid (+ `syncoid`) | `hosts/europa/configuration.nix`, `modules/storage/sanoid.nix` | ZFS snapshot policy on `tank` |
 | NFS server | `modules/storage/nas-nfs.nix` | Exports `/tank/media` (ro), `/srv/netboot` (ro) |
 | LIO iSCSI target (`services.target`) | `modules/storage/iscsi.nix` (`jupiter.nas.iscsi`) | Exports `db`/`loki` zvols to `callisto` |
+| smartd (smartmontools) | `modules/storage/smart-monitoring.nix` (`jupiter.storage.smartMonitoring`) | SMART self-tests + health checks on every attached disk |
 | restic | `modules/services/backups.nix` | Offsite backup of `/tank/personal`, `/tank/backups/homeassistant`, `/tank/backups/ganymede` — the fleet's only offsite egress |
 | syncoid | `modules/storage/replication.nix` (`jupiter.replication`) | Hourly pull of `ganymede:rpool/var` → `tank/backups/ganymede` |
 | Syncthing | `modules/services/syncthing.nix` (`jupiter.services.syncthing.enable = true`) | File sync for user `io` |
