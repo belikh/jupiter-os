@@ -29,6 +29,7 @@ in
     httpPort = lib.mkOption {
       type = lib.types.port;
       default = 3100;
+      description = "HTTP port Loki's query/push API listens on.";
     };
 
     syslogPort = lib.mkOption {

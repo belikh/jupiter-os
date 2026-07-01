@@ -9,6 +9,8 @@
 | `make check` | `nix flake check` — evaluates every host plus deploy-rs checks. |
 | `make fmt` | `nix fmt` (`nixfmt-rfc-style`) — formats all Nix sources in place. |
 | `make fmt-check` | Same formatter, `--check` mode, no writes — what CI runs. |
+| `make docs-modules` | Regenerates `docs/module-options.md` — every `jupiter.*` option's description/type/default, rendered from the `mkOption` decls in `modules/` via `nixos-render-docs` (see `lib/module-options.nix`). Run after adding/changing a `jupiter.*` option. |
+| `make docs-modules-check` | Same, `--check`-style: fails if `docs/module-options.md` is stale — what CI runs. |
 | `make update` | `nix flake update` — bumps all flake input locks. |
 | `make build-mx4300` | Renders edge-device secret templates, builds the OpenWrt firmware, deletes the rendered plaintext. See [08-edge-devices.md](08-edge-devices.md#3-rendering-and-building-edge-device-artifacts). |
 | `make tf-plan-unifi` / `tf-apply-unifi` | Render + plan/apply the UniFi terranix stack. See [10-terraform.md](10-terraform.md). |
@@ -83,7 +85,7 @@ pushes cancel stale runs.
 
 | Job | Steps |
 |---|---|
-| `check` | `nixfmt-rfc-style --check .`, then `nix flake check --no-build` |
+| `check` | `nixfmt-rfc-style --check .`, then `nix flake check --no-build`, then `make docs-modules-check` |
 | `build` (matrix: `ganymede`, `himalia`, `europa`, `metis`, `adrastea`, `amalthea`, `thebe`, `callisto`) | `nix build .#nixosConfigurations.<host>.config.system.build.toplevel` |
 
 Both jobs use `DeterminateSystems/nix-installer-action` and

@@ -228,8 +228,28 @@
       packages.x86_64-linux =
         let
           pkgs = nixpkgs.legacyPackages.x86_64-linux;
+
+          # `jupiter.*` options reference, rendered via nixos-render-docs.
+          # `.optionsCommonMark` is the markdown backing `docs/module-options.md`
+          # (see `make docs-modules`); `.optionsJSON` is the structured form,
+          # for tooling that wants it instead of parsing markdown.
+          moduleOptionsDoc = import ./lib/module-options.nix {
+            inherit pkgs;
+            inherit (pkgs) lib;
+            nixpkgsLib = nixpkgs.lib;
+            sopsNixModule = sops-nix.nixosModules.sops;
+            impermanenceModule = impermanence.nixosModules.impermanence;
+            diskoModule = disko.nixosModules.disko;
+            jovianModule = jovian.nixosModules.default;
+            chaoticModule = chaotic.nixosModules.default;
+            homeManagerModule = home-manager.nixosModules.home-manager;
+            haLinuxAgentModule = ha-linux-agent.nixosModules.default;
+          };
         in
         {
+          module-options-md = moduleOptionsDoc.optionsCommonMark;
+          module-options-json = moduleOptionsDoc.optionsJSON;
+
           # Call the extracted builder function, allowing infinite custom variants
           mx4300-firmware = pkgs.callPackage ./packages/openwrt-builder/default.nix {
             nix-openwrt-imagebuilder = nix-openwrt-imagebuilder;

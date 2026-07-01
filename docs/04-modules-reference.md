@@ -8,6 +8,14 @@ configures, and which hosts currently enable it.
 Modules with no `jupiter.*` option are unconditional — every host that
 imports them gets the config with no toggle.
 
+The option code blocks below (name/type/default) are a hand-written summary
+for quick scanning. The generated, always-current reference — every
+`jupiter.*` option's full description, type, default and declaring file,
+rendered via `nixos-render-docs` from the `mkOption { description = ...; }`
+strings in `modules/` — lives in [module-options.md](module-options.md)
+(regenerate with `make docs-modules`; `make docs-modules-check` fails CI if
+it drifts from the code).
+
 ## Core
 
 ### `modules/common.nix`
