@@ -43,13 +43,14 @@ Hosts are named after Jupiter's moons.
   - `rpool` — OS SSD (Crucial MX500 500GB), disko-managed: `root`, `nix`, `var`, plus two zvols (`db`, `loki`) exported over iSCSI, and `netboot`/`scratch` filesystems.
   - `tank` — 18TB mirror, hand-created (not disko-managed), imported via `boot.zfs.extraPools`. New primary data pool.
   - `europa` — 10TB mirror, hand-created, frozen read-only legacy archive. (Coincidentally shares its name with the host — this pool predates the host-naming convention and is not renamed further.)
-- **Modules imported:** `common-stateful`, `zfs-nas`, `storage/sanoid`, `storage/zfs-tuning`, `storage/nas-nfs`, `storage/iscsi`, `network/nas-bond`, `backups`.
+- **Modules imported:** `common-stateful`, `zfs-nas`, `storage/sanoid`, `storage/zfs-tuning`, `storage/nas-nfs`, `storage/iscsi`, `storage/smart-monitoring`, `network/nas-bond`, `backups`.
 - **Distinguishing responsibilities:**
   - Samba (SMB) shares: `media`, `personal`, read-only `archive`; discoverable via `samba-wsdd`.
   - NFS exports: `/tank/media` (read-only), `/srv/netboot` (read-only).
   - iSCSI target (LIO) exporting the `db` and `loki` zvols to `callisto`'s initiator.
   - sanoid snapshot policy on `tank/personal`, `tank/backups`, `tank/vm` (frequent) and `tank/media` (light).
   - restic backs up `/tank/personal` and `/tank/backups/homeassistant` offsite.
+  - smartd (`jupiter.storage.smartMonitoring`) SMART self-tests + health checks across every attached disk.
   - Runs Syncthing for user `io`.
 
 ---

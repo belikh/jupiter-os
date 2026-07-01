@@ -209,8 +209,11 @@ that survey; re-verify before assuming still true.
   (see the earlier discussion in this session: recommended a scheduled
   `flake update` + build/check → PR-for-review, manual deploy — NOT full
   auto-deploy, given no rollback-on-failure exists yet).
-- **No disk/hardware health monitoring.** No `smartd`/SMART checks on
-  europa's NAS disks, no UPS/power monitoring (no `nut`/`apcupsd` anywhere).
+- **No UPS/power monitoring** (no `nut`/`apcupsd` anywhere). ~~No disk/
+  hardware health monitoring.~~ **Partially closed:** `jupiter.storage.smartMonitoring`
+  (`modules/storage/smart-monitoring.nix`) runs smartd on europa — autodetects
+  attached disks, schedules short/long self-tests, `wall` + journal `LOG_CRIT`
+  on failure. No paging yet (still needs the broader alerting stack below).
 - **No SSH/login hardening beyond NixOS defaults.** `services.openssh.enable`
   is set (`modules/common.nix`) with no `PermitRootLogin` override, no
   fail2ban/sshguard, no 2FA/U2F/WebAuthn on any host.
