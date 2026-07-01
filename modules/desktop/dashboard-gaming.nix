@@ -257,6 +257,15 @@ in
     # and `systemctl start` on a *system* unit is normally polkit-gated —
     # scope this as narrowly as the units it grants: io, these two unit
     # names, start only (not stop/restart/anything else).
+    #
+    # security.polkit.enable is required for extraConfig below to do
+    # anything — found live in VM testing, where a minimal host had no
+    # other module incidentally pulling polkit in (on a real host it's
+    # normally already on transitively, e.g. via bazzite.nix's
+    # hardware.bluetooth.enable, but that's an accident of what else is
+    # configured, not a real dependency this module should lean on).
+    security.polkit.enable = mkIf ha.enable true;
+
     security.polkit.extraConfig = mkIf ha.enable ''
       polkit.addRule(function(action, subject) {
         if (action.id == "org.freedesktop.systemd1.manage-units" &&
