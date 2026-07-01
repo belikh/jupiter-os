@@ -71,11 +71,24 @@ in
   jupiter.services.mqtt = {
     enable = true;
     users = {
-      homeassistant.passwordFile = config.sops.secrets.mqtt_homeassistant.path;
+      # HA's own MQTT integration: broad access is the point of it being the
+      # fleet's automation hub.
+      homeassistant = {
+        passwordFile = config.sops.secrets.mqtt_homeassistant.path;
+        acl = [ "readwrite #" ];
+      };
       # Shared by every host running jupiter.services.haAgent (see
       # modules/services/ha-agent.nix) — one broker-side user, same
-      # mqtt_ha_linux_agent secret read on each agent host.
-      ha-linux-agent.passwordFile = config.sops.secrets.mqtt_ha_linux_agent.path;
+      # mqtt_ha_linux_agent secret read on each agent host. Scoped to the
+      # two topic trees the agent actually uses (its own state/cmd topics,
+      # and homeassistant/ for MQTT discovery) rather than a blanket grant.
+      ha-linux-agent = {
+        passwordFile = config.sops.secrets.mqtt_ha_linux_agent.path;
+        acl = [
+          "readwrite homeassistant/#"
+          "readwrite ha-linux-agent/#"
+        ];
+      };
     };
   };
 

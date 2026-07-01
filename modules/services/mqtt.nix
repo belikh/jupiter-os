@@ -43,18 +43,46 @@ in
 
     users = mkOption {
       default = { };
-      description = "MQTT users. Each `passwordFile` holds the plaintext password (e.g. a sops secret).";
+      description = ''
+        MQTT users. Each `passwordFile` holds the plaintext password (e.g. a
+        sops secret). `acl` grants topic access — mosquitto's acl-file
+        plugin (which the underlying `services.mosquitto` module always
+        loads) default-denies any topic with no matching rule, so a user
+        with an empty `acl` can authenticate but can't publish or subscribe
+        to anything. Always set `acl` for a user that needs to do anything.
+      '';
       example = literalExpression ''
         {
-          homeassistant.passwordFile = config.sops.secrets.mqtt_homeassistant.path;
-          ha-linux-agent.passwordFile = config.sops.secrets.mqtt_ha_linux_agent.path;
+          homeassistant = {
+            passwordFile = config.sops.secrets.mqtt_homeassistant.path;
+            acl = [ "readwrite #" ];
+          };
+          ha-linux-agent = {
+            passwordFile = config.sops.secrets.mqtt_ha_linux_agent.path;
+            acl = [
+              "readwrite homeassistant/#"
+              "readwrite ha-linux-agent/#"
+            ];
+          };
         }
       '';
       type = types.attrsOf (
         types.submodule {
-          options.passwordFile = mkOption {
-            type = types.path;
-            description = "File containing the user's plaintext password.";
+          options = {
+            passwordFile = mkOption {
+              type = types.path;
+              description = "File containing the user's plaintext password.";
+            };
+            acl = mkOption {
+              type = types.listOf types.str;
+              default = [ ];
+              description = ''
+                Topic ACL entries, each `"[read|write|readwrite] <topic pattern>"`
+                (mosquitto acl-file syntax — see `man mosquitto.conf`). Required:
+                an authenticated user with no `acl` entries is denied every
+                topic, not granted full access.
+              '';
+            };
           };
         }
       );
@@ -62,6 +90,17 @@ in
   };
 
   config = mkIf cfg.enable {
+    assertions = mapAttrsToList (name: u: {
+      assertion = cfg.allowAnonymous || u.acl != [ ];
+      message = ''
+        jupiter.services.mqtt.users.${name} has no `acl` entries. mosquitto's
+        acl-file plugin default-denies every topic for an authenticated user
+        with an empty ACL — this user would connect successfully but be
+        unable to publish or subscribe to anything. Set `acl`, e.g.
+        [ "readwrite #" ].
+      '';
+    }) cfg.users;
+
     services.mosquitto = {
       enable = true;
       listeners = [
@@ -70,7 +109,7 @@ in
           settings.allow_anonymous = cfg.allowAnonymous;
           # Only skip the password-file requirement when there are no users.
           omitPasswordAuth = cfg.users == { };
-          users = mapAttrs (_: u: { inherit (u) passwordFile; }) cfg.users;
+          users = mapAttrs (_: u: { inherit (u) passwordFile acl; }) cfg.users;
         }
       ];
     };
