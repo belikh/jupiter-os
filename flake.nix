@@ -127,6 +127,46 @@
         };
       };
 
+      # Wrap deploy-rs's standard NixOS activation with a post-switch health
+      # check. `switch-to-configuration switch` returning 0 only proves the
+      # activation script ran — not that the resulting generation is actually
+      # healthy. deploy-rs treats a non-zero activation exit the same as a
+      # broken SSH reconnect: it auto-reverts to the previous generation
+      # (`autoRollback`, on by default) within `activationTimeout` (240s
+      # default). Adding this check is what makes `autoRollback` catch "came
+      # up but didn't reach multi-user" instead of just "network died mid
+      # deploy" — the gap flagged in docs/roadmap.md's operational-maturity
+      # section, and the precondition for unattended auto-deploy below.
+      deployActivate =
+        cfg:
+        (
+          deploy-rs.lib.x86_64-linux.activate.custom
+          // {
+            dryActivate = "$PROFILE/bin/switch-to-configuration dry-activate";
+            boot = "$PROFILE/bin/switch-to-configuration boot";
+          }
+        )
+          cfg.config.system.build.toplevel
+          ''
+            # work around https://github.com/NixOS/nixpkgs/issues/73404
+            cd /tmp
+
+            $PROFILE/bin/switch-to-configuration switch
+
+            # https://github.com/serokell/deploy-rs/issues/31
+            ${
+              with cfg.config.boot.loader;
+              nixpkgs.lib.optionalString systemd-boot.enable "sed -i '/^default /d' ${efi.efiSysMountPoint}/loader/loader.conf"
+            }
+
+            # Fail (triggering deploy-rs's auto-rollback) if the new
+            # generation doesn't reach a running system within 2 minutes.
+            if ! timeout 120 sh -c 'until [ "$(systemctl is-system-running 2>/dev/null)" = running ] || [ "$(systemctl is-system-running 2>/dev/null)" = degraded ]; do sleep 2; done'; then
+              echo "deploy-rs: system did not reach running/degraded state within 120s" >&2
+              exit 1
+            fi
+          '';
+
       # The NAS (europa) auto-derives its syncoid replication sources from
       # every OTHER host's jupiter.backup declaration — so adding a host that
       # holds state wires up central backup with no edit here. Same
@@ -220,56 +260,56 @@
           hostname = "ganymede";
           profiles.system = {
             user = "root";
-            path = deploy-rs.lib.x86_64-linux.activate.nixos self.nixosConfigurations.ganymede;
+            path = deployActivate self.nixosConfigurations.ganymede;
           };
         };
         europa = {
           hostname = "europa";
           profiles.system = {
             user = "root";
-            path = deploy-rs.lib.x86_64-linux.activate.nixos self.nixosConfigurations.europa;
+            path = deployActivate self.nixosConfigurations.europa;
           };
         };
         callisto = {
           hostname = "callisto";
           profiles.system = {
             user = "root";
-            path = deploy-rs.lib.x86_64-linux.activate.nixos self.nixosConfigurations.callisto;
+            path = deployActivate self.nixosConfigurations.callisto;
           };
         };
         himalia = {
           hostname = "himalia";
           profiles.system = {
             user = "root";
-            path = deploy-rs.lib.x86_64-linux.activate.nixos self.nixosConfigurations.himalia;
+            path = deployActivate self.nixosConfigurations.himalia;
           };
         };
         metis = {
           hostname = "metis";
           profiles.system = {
             user = "root";
-            path = deploy-rs.lib.x86_64-linux.activate.nixos self.nixosConfigurations.metis;
+            path = deployActivate self.nixosConfigurations.metis;
           };
         };
         adrastea = {
           hostname = "adrastea";
           profiles.system = {
             user = "root";
-            path = deploy-rs.lib.x86_64-linux.activate.nixos self.nixosConfigurations.adrastea;
+            path = deployActivate self.nixosConfigurations.adrastea;
           };
         };
         amalthea = {
           hostname = "amalthea";
           profiles.system = {
             user = "root";
-            path = deploy-rs.lib.x86_64-linux.activate.nixos self.nixosConfigurations.amalthea;
+            path = deployActivate self.nixosConfigurations.amalthea;
           };
         };
         thebe = {
           hostname = "thebe";
           profiles.system = {
             user = "root";
-            path = deploy-rs.lib.x86_64-linux.activate.nixos self.nixosConfigurations.thebe;
+            path = deployActivate self.nixosConfigurations.thebe;
           };
         };
       };

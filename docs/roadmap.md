@@ -192,10 +192,18 @@ that survey; re-verify before assuming still true.
   pages on failure (no Prometheus/Grafana/Alertmanager, no ntfy/Pushover/
   healthchecks.io hook anywhere in `modules/`). An outage is currently
   discovered by using the affected service, not by a notification.
-- **No post-deploy health check / automated rollback.** `deploy-rs` activates
-  and stops there — no boot-counting or watchdog reverts a generation that
-  fails to reach multi-user on real hardware (CI's `boot-test` job covers
-  this pre-merge in QEMU only, not post-deploy on the actual host).
+- ~~**No post-deploy health check / automated rollback.**~~ **Closed
+  (deploy-time only):** `deployActivate` in `flake.nix` wraps every host's
+  deploy-rs activation with a post-`switch-to-configuration switch` health
+  check (`systemctl is-system-running` must reach `running`/`degraded` within
+  120s); a non-zero exit is treated by deploy-rs as a failed activation and
+  triggers `autoRollback` to the previous generation (on by default, as is
+  `magicRollback`'s SSH-reconnect confirmation). This covers the case an
+  unattended `deploy` creates. It does **not** cover a *later*, unrelated
+  physical/manual reboot failing to reach multi-user — that needs
+  bootloader-level boot-counting (systemd-boot doesn't do this out of the box
+  the way GRUB's fallback does) and was explicitly scoped out as a separate,
+  harder problem needing real-hardware validation.
 - **No backup-restore verification.** Syncoid replication + sanoid snapshots +
   restic offsite all exist, but nothing periodically proves a snapshot is
   actually restorable (vs. just "the send/recv succeeded").
@@ -205,10 +213,23 @@ that survey; re-verify before assuming still true.
 - **No CVE/vulnerability scanning in CI.** `.github/workflows/ci.yml` builds
   and boot-tests every host but doesn't check the resulting closures against
   known nixpkgs CVEs (e.g. `vulnix`).
-- **No unattended `nix flake update` cadence.** Updates are fully manual today
-  (see the earlier discussion in this session: recommended a scheduled
-  `flake update` + build/check → PR-for-review, manual deploy — NOT full
-  auto-deploy, given no rollback-on-failure exists yet).
+- ~~**No unattended `nix flake update` cadence.**~~ **Closed, including
+  auto-deploy:** `.github/workflows/flake-update.yml` runs weekly (Mondays
+  06:00 UTC, `workflow_dispatch` too). `update` job: `nix flake update`,
+  validated through the same gates as regular CI (fmt, `nix flake check`,
+  build every host, boot-smoke every VM-bootable host); if `flake.lock`
+  changed and everything passed, it's committed straight to `master` — no PR
+  gate, by deliberate choice (all the same checks already ran on that exact
+  lockfile). `deploy` job: on that push, deploys every host over the
+  headscale mesh (`tailscale/github-action` joins as an ephemeral node, then
+  `deploy .#<host> --hostname <host>.home.jupiter.au`), relying on
+  `deployActivate`'s rollback (previous gap) to make an unattended deploy
+  safe. Needs two hand-provisioned repo secrets before it does anything real
+  — `HEADSCALE_PREAUTH_KEY` (from `headscale preauthkeys create` on
+  ganymede) and `DEPLOY_SSH_PRIVATE_KEY` (whose public half must be
+  authorized for the deploy user on every host) — see the workflow file's
+  header comment. Not yet exercised against real hardware (see "Validation
+  still required" below — the whole repo is pre-deployment).
 - **No UPS/power monitoring** (no `nut`/`apcupsd` anywhere). ~~No disk/
   hardware health monitoring.~~ **Partially closed:** `jupiter.storage.smartMonitoring`
   (`modules/storage/smart-monitoring.nix`) runs smartd on europa — autodetects
@@ -236,3 +257,10 @@ changes the blast radius of a bad deploy.
   keypair (and commit `secrets/syncoid_ed25519.pub`).
 - Real-hardware provisioning: REPLACE-ME disks + the callisto NIC name + LUN
   `mkfs`/labels.
+- `.github/workflows/flake-update.yml`'s `deploy` job needs
+  `HEADSCALE_PREAUTH_KEY` + `DEPLOY_SSH_PRIVATE_KEY` repo secrets provisioned
+  by hand before it can do anything (headscale itself isn't live yet either —
+  chicken-and-egg with the rest of pre-deployment). Also unverified: whether
+  `systemctl is-system-running` reliably lands on `running`/`degraded` (not
+  stuck `starting`) within the 120s health-check window on real hardware for
+  every host, especially europa (iSCSI/NFS mounts) and callisto (netboot).
