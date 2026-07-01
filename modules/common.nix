@@ -14,6 +14,7 @@
     ./storage/zfs-profiles.nix
     ./storage/backup.nix
     ./services/syncthing.nix
+    ./services/ha-agent.nix
     ./core/branding.nix
     ./home
   ];
