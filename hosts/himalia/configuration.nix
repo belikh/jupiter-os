@@ -8,6 +8,11 @@
   networking.hostName = "himalia";
   networking.hostId = "c0ffee00"; # Randomly generated 8-char hex for ZFS
 
+  # Confirmed Intel i5-6200U (Skylake-U, same family as the kiosks' i5-6300U)
+  # via `lscpu` — safe to target for the "rebuild the world" build-server
+  # workflow (see docs/roadmap.md).
+  jupiter.build.microarch = "skylake";
+
   # Dendritic Feature Toggles
   jupiter = {
     branding.enable = true; # RobCo/Fallout boot branding (GRUB theme, MOTD)

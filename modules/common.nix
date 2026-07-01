@@ -140,6 +140,32 @@
     "nix-command"
     "flakes"
   ];
+
+  # Pull CPU-tuned closures from europa's attic cache (the "rebuild the
+  # world" BinaryLane build server, see docs/roadmap.md) ahead of
+  # cache.nixos.org's generic baseline. Listed now so every host is ready the
+  # moment the cache has real content — but the trusted-public-keys entry
+  # below is a REPLACE-ME placeholder until `attic cache create jupiter-os`
+  # is actually run on europa and its real public key is retrieved (`attic
+  # cache info jupiter-os`); an untrusted/invalid key just means Nix silently
+  # skips this substituter and falls back to cache.nixos.org, so this is safe
+  # to carry as-is until then.
+  nix.settings.substituters = lib.mkBefore [ "https://attic.jupiter.au/jupiter-os" ];
+  nix.settings.trusted-public-keys = lib.mkBefore [
+    "jupiter-os:REPLACE-ME-once-attic-cache-create-has-run-on-europa="
+  ];
+
+  # Friendly nudge, not a hard assertion — an unreplaced placeholder key just
+  # means Nix skips this substituter, so it must not block `nix build` /
+  # `nix flake check` / CI (same reasoning as the storage.disk REPLACE-ME
+  # warning in modules/storage/zfs-profiles.nix).
+  warnings = lib.optional (lib.any (lib.hasInfix "REPLACE-ME") config.nix.settings.trusted-public-keys) ''
+    modules/common.nix's attic trusted-public-keys is still the REPLACE-ME
+    placeholder on host "${config.networking.hostName}" — run
+    `attic cache create jupiter-os` on europa, then `attic cache info
+    jupiter-os` to get the real key (see docs/roadmap.md).
+  '';
+
   nix.gc = {
     automatic = true;
     dates = "weekly";

@@ -29,6 +29,9 @@ in
       type = "string";
       sensitive = true;
     };
+    cloudflare_account_id = {
+      type = "string";
+    };
   };
 
   provider.cloudflare = {
@@ -44,4 +47,14 @@ in
   resource.cloudflare_record = lib.mapAttrs' (
     host: backend: lib.nameValuePair (lib.replaceStrings [ "." ] [ "_" ] host) (mkRecord host backend)
   ) site.tunnel.ingress;
+
+  # Landing spot for the "rebuild the world" pallene ISO (see docs/roadmap.md)
+  # — scripts/binarylane-build-server.sh uploads the built ISO here via the R2
+  # S3-compatible API and hands BinaryLane a presigned URL to fetch it from,
+  # rather than making the bucket public.
+  resource.cloudflare_r2_bucket.pallene_iso = {
+    account_id = "\${var.cloudflare_account_id}";
+    name = "jupiter-os-pallene-iso";
+    location = "APAC";
+  };
 }

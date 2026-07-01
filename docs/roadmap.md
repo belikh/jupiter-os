@@ -103,7 +103,14 @@ once per commit, tuned per host, on a beefy short-lived VPS is cheaper and
 faster than every host locally compiling its own optimized closure (or
 running untuned forever).
 
-### What's landed (scaffolding only — not yet wired to a real account)
+**Trigger model:** the roadmap goal above (launch on every green CI run on
+`master`) is confirmed as the real design, not a weekly cron — commits to
+this repo are already infrequent (roughly weekly, more often when adding
+software/config), so "every green run" and "roughly weekly" are the same
+thing in practice. `make rebuild-world` also exists for an on-demand run
+without waiting on CI.
+
+### What's landed
 
 - **`hosts/pallene/configuration.nix`** — the minimal NixOS config the
   BinaryLane build server boots. Not a fleet member: no storage profile, no
@@ -119,56 +126,97 @@ running untuned forever).
   it fires on success, on a build failure, and on a script bug alike — never
   just the happy path. A completely independent systemd timer force-destroys
   the server after 4h regardless, in case the main run hangs outright.
+  `atticServer` points at `https://attic.jupiter.au` — reached over the
+  public internet via the Cloudflare Tunnel, since pallene has no route to
+  the home LAN otherwise.
 - **`modules/core/build-tuning.nix`** (`jupiter.build.microarch`) — per-host
   option wiring `nixpkgs.hostPlatform.gcc.arch`/`.tune` to that host's actual
-  CPU. Defaults to `null` (today's portable baseline) everywhere; set to
-  `"skylake"` on the 4 kiosks as a first concrete example, since their CPU is
-  already confirmed. Leave unset for any host whose real hardware isn't
-  confirmed yet (most of the fleet — see the CI-fix notes above).
+  CPU. Defaults to `null` (today's portable baseline). Set on every host
+  whose real CPU is now confirmed: `"skylake"` on the 4 kiosks and `himalia`
+  (all Skylake-U — i5-6300U / i5-6200U respectively), `"btver2"` on `europa`
+  (HPE MicroServer Gen10, AMD Opteron X3216 — a Puma-core "Cato" APU,
+  ISA-equivalent to Jaguar). Left `null` everywhere else until hardware is
+  confirmed.
+- **`modules/services/attic-server.nix`** (`jupiter.services.attic`) — runs
+  `services.atticd` on `europa`, storage on `tank/services/attic` (bulk,
+  reproducible — deliberately outside the offsite restic set), token auth via
+  a `make gen-secrets`-generated RS256 key (`attic_server_token_secret`).
+  Exposed at `attic.jupiter.au` through the existing Cloudflare Tunnel
+  (`lib/site.nix`'s `tunnel.ingress`) rather than only on the home LAN, since
+  both pallene and roaming `himalia` need to reach it from outside the house.
+- **Fleet substituters** (`modules/common.nix`) — every host that imports
+  `common.nix` lists `https://attic.jupiter.au/jupiter-os` ahead of
+  `cache.nixos.org`. The paired `trusted-public-keys` entry is a
+  `REPLACE-ME` placeholder (see Open questions) — until it's replaced with
+  the cache's real key, Nix just silently skips this substituter, so it's
+  safe to ship as-is.
+- **Cloudflare R2 for ISO hosting** (`terraform/cloudflare/default.nix`'s
+  `cloudflare_r2_bucket.pallene_iso`, `scripts/upload-pallene-iso-r2.sh`) —
+  chosen over Backblaze B2 because this account doesn't actually have a B2
+  bucket — despite `restic_env`/`restic_password` already existing as sops
+  keys, nothing real has been deployed to a B2 account yet (this whole repo
+  is pre-deployment; see the fleet-wide `REPLACE-ME` disk placeholders). R2
+  slots into the terraform/cloudflare stack that already exists for the
+  tunnel/DNS. The upload script pushes the built ISO via R2's
+  S3-compatible API and hands back a presigned URL (bucket stays private) —
+  `make rebuild-world` wires it into `scripts/binarylane-build-server.sh`'s
+  `ISO_URL`.
 - **`scripts/binarylane-build-server.sh`** — the CI-side driver against the
-  actual BinaryLane API (openapi spec `binarylane.com.au`, v0.39.0): create a
-  placeholder server, `POST .../backups` to upload the pallene ISO from a
-  hosted URL as a backup image (BinaryLane has no "create server booting a
-  custom ISO" endpoint — only `AttachBackup` on an *existing* server, whose
-  description explicitly calls out ISO-boot as a supported use), attach it,
-  reboot into it, then poll `GET /v2/servers/{id}` until it 404s (self-
-  destructed) or force-destroy after a timeout.
+  actual BinaryLane API (openapi spec `binarylane.com.au`, v0.39.0): resolves
+  the Melbourne region and the cheapest `>=8vcpu/16GB/300GB` size slug
+  dynamically against the live account (`GET /v2/regions`, `/v2/sizes`) —
+  matches the "CPU Optimised" 8-thread/16GB/300-600GB tier, ~AUD $144/mo —
+  rather than hardcoding slugs BinaryLane could renumber. Then: create a
+  placeholder server, `POST .../backups` to upload the pallene ISO from the
+  R2 presigned URL as a backup image (BinaryLane has no "create server
+  booting a custom ISO" endpoint — only `AttachBackup` on an *existing*
+  server, whose description explicitly calls out ISO-boot as a supported
+  use), attach it, reboot into it, then poll `GET /v2/servers/{id}` until it
+  404s (self-destructed) or force-destroy after a timeout.
 - **`make pallene-iso`** / **`make rebuild-world`** — build the ISO with the
   BinaryLane API token + attic push token baked in (materialized from sops
   immediately before the build, deleted immediately after — same pattern as
-  `make build-mx4300`'s OpenWrt secret injection), then drive one full run.
+  `make build-mx4300`'s OpenWrt secret injection), upload it to R2, then
+  drive one full run.
 
-### Open questions / not yet real (needs the account's actual details)
+### Open questions / not yet real
 
-- **Where the built ISO is hosted** for BinaryLane to fetch over HTTP(S) —
-  candidate: reuse the existing Backblaze B2 bucket (already wired for restic
-  offsite). Not implemented.
-- **Real `BL_SIZE_SLUG`/`BL_REGION_SLUG`/image slugs** — placeholders in
-  `scripts/binarylane-build-server.sh` right now; need `GET /v2/sizes`,
-  `/v2/regions`, `/v2/images` against the real account.
-- **Where the attic server itself runs** — `jupiter.services.buildServer`
-  just takes an `atticServer` URL; nothing stands one up yet. Candidate:
-  a small service on `europa` (the NAS, already the fleet's central hub) or
-  `ganymede`.
-- **`secrets/secrets.yaml` needs `binarylane_api_token` and
-  `attic_push_token`** added by hand (external-account creds, like
-  `cloudflare_api_token` below — never auto-generated by `gen-secrets.sh`).
+- **BinaryLane API token**: the user has a real token ready to hand over for
+  testing — add it to `secrets/secrets.yaml` as `binarylane_api_token`
+  directly via `sops secrets/secrets.yaml` (not pasted into chat/logs) so it
+  never sits in plaintext anywhere but the encrypted file.
+- **R2 credentials**: `cloudflare_account_id`, `r2_access_key_id`,
+  `r2_secret_access_key` need adding to `secrets/secrets.yaml` by hand
+  (external-account creds, like `cloudflare_api_token` — never auto-generated
+  by `gen-secrets.sh`). The R2 API token needs Object Read & Write scope on
+  the `jupiter-os-pallene-iso` bucket.
+- **`attic cache create jupiter-os` hasn't been run yet** — once
+  `jupiter.services.attic` is actually deployed to europa, create the cache,
+  retrieve its real public key (`attic cache info jupiter-os`), and replace
+  the `REPLACE-ME` placeholder in `modules/common.nix`'s
+  `trusted-public-keys`.
+- **`attic_push_token` doesn't exist yet** — it's a JWT that has to be minted
+  with `atticadm make-token` against the real, running atticd instance (see
+  docs/07-secrets-management.md's "third category" note), so it can't be
+  generated ahead of that server existing. One-time manual step once atticd
+  is deployed.
 - **BinaryLane's cloud-init datasource on a custom-booted ISO is unverified**
   — `modules/services/build-server.nix` reads the target git ref from
   `/var/lib/cloud/instance/user-data.txt` so one ISO build can be reused
   across commits, but this assumes BinaryLane exposes cloud-init user-data to
-  a raw ISO boot the same way it does for their own catalog images. If it
-  doesn't, fall back to baking the ref into the ISO at build time instead.
+  a raw ISO boot the same way it does for their own catalog images. Decision:
+  test this once for real against an actual BinaryLane boot before relying on
+  it in CI; fall back to baking the ref into the ISO at build time if it
+  doesn't work.
 - **CPU-microarch tuning risk**: targeting a host's real `-march` only
   changes what gets *built*, and a package whose own test suite (`checkPhase`)
   executes target-tuned code — not just compiles it — will fail loudly on
   the build server if its CPU doesn't support those instructions. That's a
   wasted build, not a silently-broken host, but it means "rebuild the world"
-  isn't unattended-safe yet for hosts with an exotic `microarch` until this
-  is actually exercised once real hardware exists.
-- **Hosts need to actually be told to pull from attic** instead of (or ahead
-  of) `cache.nixos.org` — not wired into `nix.settings.substituters` on any
-  fleet host yet.
+  isn't unattended-safe for `europa`'s `btver2` target (untested combination)
+  until exercised once for real. `ganymede`/`callisto`/dashboards beyond the
+  4 confirmed kiosks stay `null` (portable baseline) until their hardware is
+  confirmed too.
 
 ## Out of scope / deferred
 

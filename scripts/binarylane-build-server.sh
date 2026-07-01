@@ -18,12 +18,8 @@
 set -euo pipefail
 
 : "${BINARYLANE_API_TOKEN:?set BINARYLANE_API_TOKEN}"
-: "${ISO_URL:?set ISO_URL to somewhere BinaryLane can fetch the built pallene ISO over HTTP(S) — e.g. a B2 presigned URL, since this infra already has a B2 bucket for restic}"
+: "${ISO_URL:?set ISO_URL to somewhere BinaryLane can fetch the built pallene ISO over HTTP(S) — a Cloudflare R2 presigned URL (see make pallene-iso)}"
 
-# TODO: confirm these against the account's actual catalogue before relying on
-# this script (GET /v2/sizes, /v2/regions, /v2/images) — placeholders for now.
-SIZE_SLUG="${BL_SIZE_SLUG:?set BL_SIZE_SLUG, e.g. via: curl .../v2/sizes}"
-REGION_SLUG="${BL_REGION_SLUG:?set BL_REGION_SLUG, e.g. via: curl .../v2/regions}"
 PLACEHOLDER_IMAGE="${BL_PLACEHOLDER_IMAGE:-debian-12}"
 HOSTNAME="pallene-run-$(date -u +%Y%m%d%H%M%S 2>/dev/null || echo unknown)"
 GIT_REF="${GIT_REF:-master}"
@@ -49,6 +45,22 @@ wait_action() {
     esac
   done
 }
+
+# Resolve region/size by human-readable criteria against the live account
+# instead of hardcoding slugs, which BinaryLane can renumber/rename. Override
+# with BL_REGION_SLUG/BL_SIZE_SLUG if this ever picks the wrong one.
+REGION_SLUG="${BL_REGION_SLUG:-$(api GET /v2/regions | jq -r '
+  [.regions[] | select(.available) | select(.name | test("melbourne"; "i"))][0].slug // empty')}"
+[ -n "$REGION_SLUG" ] || { echo "!! no available Melbourne region found via /v2/regions — set BL_REGION_SLUG" >&2; exit 1; }
+
+# The "CPU Optimised" 8-thread/16GB/300-600GB NVMe tier (~AUD $144/mo as of
+# 2026) is the target: pick the cheapest size with >=8 vcpus, >=16GB memory,
+# and >=300GB disk available in $REGION_SLUG.
+SIZE_SLUG="${BL_SIZE_SLUG:-$(api GET /v2/sizes | jq -r --arg region "$REGION_SLUG" '
+  [.sizes[] | select(.available) | select(.regions | index($region))
+    | select(.vcpus >= 8 and .memory >= 16384 and .disk >= 300)]
+  | sort_by(.price_monthly)[0].slug // empty')}"
+[ -n "$SIZE_SLUG" ] || { echo "!! no matching >=8vcpu/16GB/300GB size found via /v2/sizes in $REGION_SLUG — set BL_SIZE_SLUG" >&2; exit 1; }
 
 echo ">> creating placeholder server ($HOSTNAME, $SIZE_SLUG in $REGION_SLUG)..."
 create_resp="$(api POST /v2/servers "$(jq -n \

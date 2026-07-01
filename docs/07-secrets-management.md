@@ -52,13 +52,16 @@ what's missing. The syncoid public key is written to
 | `mqtt_homeassistant`, `mqtt_dashboard` | MQTT broker + clients |
 | `restic_password` | restic backup encryption key |
 | `syncoid_ssh_key` | europa's syncoid pull key (private → sops; public → committed `.pub`) |
+| `attic_server_token_secret` | atticd's own RS256 JWT signing key (`modules/services/attic-server.nix`, europa) |
 
 ### External — you provide (from the provider/account)
 
 | Key | Needed for |
 |---|---|
 | `restic_env` | Backblaze B2 S3 credentials |
-| `cloudflare_cert`, `cloudflare_api_token` | Cloudflare tunnel + API |
+| `cloudflare_cert`, `cloudflare_api_token`, `cloudflare_account_id` | Cloudflare tunnel + API + R2/terraform account id |
+| `r2_access_key_id`, `r2_secret_access_key` | R2 API token (Object Read & Write) for the pallene-iso bucket |
+| `binarylane_api_token` | BinaryLane API (ephemeral "rebuild the world" build server, see `docs/roadmap.md`) |
 | `unifi_password` | terranix UniFi stack |
 | `io_password` | the human login password for user `io` |
 | `PARENTS_MESH_SECRET`, `PARENTS_WIFI_SECRET`, `WYZE_PASSWORD` | edge device templates |
@@ -68,6 +71,16 @@ what's missing. The syncoid public key is written to
 `sops` before assuming it's missing — the table above reflects what's
 referenced in tracked files, not a guaranteed-current dump of the encrypted
 file's keys.)
+
+### Third category — minted against our own service, one-time by hand
+
+`attic_push_token` doesn't fit either bucket above: it's not random (it's a
+JWT with specific claims) and it can't be generated ahead of time like the
+"Generated" table (it has to be signed with `attic_server_token_secret`,
+which only exists once atticd is actually running on europa). Once
+`jupiter.services.attic` is deployed, mint it once with `atticadm make-token`
+on europa and add the result to `secrets/secrets.yaml` by hand — see
+docs/roadmap.md.
 
 ## 3. Editing secrets
 
