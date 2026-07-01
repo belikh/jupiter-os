@@ -17,6 +17,11 @@
     ../../modules/desktop/dashboard-gaming.nix # optional dual-VT kiosk + gaming session (off by default)
   ];
 
+  # Confirmed i5-6300U (Skylake-U) per tcxwave-power-tuning.nix — safe to
+  # target for the "rebuild the world" build-server workflow (see
+  # docs/roadmap.md). All 4 kiosks share this exact model.
+  jupiter.build.microarch = "skylake";
+
   # Stateless kiosk appliance: erase-your-darlings root so the box always boots
   # to a known-pristine state and can't accumulate drift. Only a minimal set
   # plus the kiosk Chromium profile survives (below).

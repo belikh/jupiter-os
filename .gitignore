@@ -16,3 +16,10 @@ terraform/*/config.tf.json
 # Generated edge configs
 hosts/parents-house/access-points/mx4300-files/etc/uci-defaults/99-mesh-setup.sh
 hosts/parents-house/wyze-cams/wz_mini.conf
+
+# Decrypted pallene build-server secrets, materialized by `make pallene-iso`
+# immediately before the build and removed immediately after (see
+# hosts/pallene/configuration.nix). The .placeholder files are NOT ignored —
+# those are the committed dummy fallbacks `nix flake check` evaluates against.
+secrets/pallene-secrets/binarylane-api-token
+secrets/pallene-secrets/attic-push-token

@@ -173,10 +173,20 @@
       # cross-host-via-closure pattern as pxeModule above. (Reading other
       # hosts' config is acyclic: they never read europa's config.)
       site = import ./lib/site.nix;
+      # Non-fleet hosts (never deployed, no persistent state to back up) don't
+      # import modules/storage/backup.nix at all, so jupiter.backup wouldn't
+      # even be a defined option on them — excluded here rather than given a
+      # no-op import just to satisfy this scan.
+      nonFleetHosts = [
+        site.backupHub.host
+        "pallene"
+      ];
       backupHubModule =
         { lib, ... }:
         let
-          otherHosts = lib.filterAttrs (name: _: name != site.backupHub.host) self.nixosConfigurations;
+          otherHosts = lib.filterAttrs (
+            name: _: !(builtins.elem name nonFleetHosts)
+          ) self.nixosConfigurations;
           replicating = lib.filterAttrs (_: node: node.config.jupiter.backup.enable) otherHosts;
           sourcesFor =
             name: node:
@@ -225,6 +235,13 @@
         # as unwired scaffolds) is what gets them CI coverage already.
         elara = mkHost ./hosts/elara/configuration.nix [ ];
         carme = mkHost ./hosts/carme/configuration.nix [ ];
+
+        # Ephemeral BinaryLane "rebuild the world" build server — see
+        # docs/roadmap.md and hosts/pallene/configuration.nix. NOT a fleet
+        # member: deliberately absent from ci.yml's build-and-boot-test
+        # matrix and from deploy.nodes below — it's never deployed to, only
+        # turned into an ISO (see the `pallene-iso` package output).
+        pallene = mkHost ./hosts/pallene/configuration.nix [ ];
       };
 
       packages.x86_64-linux =
@@ -274,6 +291,13 @@
             system = "x86_64-linux";
             modules = [ ./terraform/unifi/default.nix ];
           };
+
+          # ISO for the ephemeral BinaryLane build server (see
+          # hosts/pallene/configuration.nix, docs/roadmap.md). Build with
+          # `make pallene-iso`, not plain `nix build` — that target injects
+          # the BinaryLane API + attic push tokens the same way
+          # `make build-mx4300` injects OpenWrt secrets.
+          pallene-iso = self.nixosConfigurations.pallene.config.system.build.isoImage;
         };
 
       # Deployment configuration for deploy-rs

@@ -141,6 +141,42 @@ true
 
 
 
+## jupiter\.build\.microarch
+
+
+
+GCC ` -march `/` -mtune ` target (a ` nixpkgs.hostPlatform.gcc.arch ` value,
+e\.g\. “skylake”, “znver3”) matching this host’s actual CPU\. Leave null
+(the default) to build the ordinary portable baseline every other
+nixpkgs consumer gets — the safe choice for any host whose real
+hardware isn’t confirmed yet\.
+
+
+
+*Type:*
+null or string
+
+
+
+*Default:*
+
+```nix
+null
+```
+
+
+
+*Example:*
+
+```nix
+"skylake"
+```
+
+*Declared by:*
+ - modules/core/build-tuning\.nix
+
+
+
 ## jupiter\.core\.impermanence\.enable
 
 
@@ -1990,6 +2026,199 @@ absolute path
 
 
 
+## jupiter\.services\.buildServer\.enable
+
+
+
+Whether to enable the ephemeral BinaryLane rebuild-the-world build server\.
+
+
+
+*Type:*
+boolean
+
+
+
+*Default:*
+
+```nix
+false
+```
+
+
+
+*Example:*
+
+```nix
+true
+```
+
+*Declared by:*
+ - modules/services/build-server\.nix
+
+
+
+## jupiter\.services\.buildServer\.apiTokenFile
+
+
+
+Path to a file containing the BinaryLane API bearer token, used only
+to look up and delete *this* server at the end of the run\. Baked into
+the ISO at build time the same way ` make build-mx4300 ` injects
+secrets (see the Makefile ` pallene-iso ` target and
+docs/roadmap\.md) — there is no persistent host key here for
+sops-nix to decrypt against at runtime\.
+
+
+
+*Type:*
+absolute path
+
+
+
+*Default:*
+
+```nix
+"/etc/jupiter-build-server/binarylane-api-token"
+```
+
+*Declared by:*
+ - modules/services/build-server\.nix
+
+
+
+## jupiter\.services\.buildServer\.atticCache
+
+
+
+Name of the attic cache to push built closures into\.
+
+
+
+*Type:*
+string
+
+
+
+*Default:*
+
+```nix
+"jupiter-os"
+```
+
+*Declared by:*
+ - modules/services/build-server\.nix
+
+
+
+## jupiter\.services\.buildServer\.atticPushTokenFile
+
+
+
+Path to a file containing the attic push token\. Baked in at ISO build time, same as apiTokenFile\.
+
+
+
+*Type:*
+absolute path
+
+
+
+*Default:*
+
+```nix
+"/etc/jupiter-build-server/attic-push-token"
+```
+
+*Declared by:*
+ - modules/services/build-server\.nix
+
+
+
+## jupiter\.services\.buildServer\.atticServer
+
+
+
+Base URL of the attic server hosts pull the binary cache from\.
+
+
+
+*Type:*
+string
+
+
+
+*Example:*
+
+```nix
+"https://attic.home.jupiter.au"
+```
+
+*Declared by:*
+ - modules/services/build-server\.nix
+
+
+
+## jupiter\.services\.buildServer\.hosts
+
+
+
+The nixosConfigurations to rebuild and push each run\. Defaults to
+every currently-registered fleet host (excluding pallene itself)\.
+
+
+
+*Type:*
+list of string
+
+
+
+*Default:*
+
+```nix
+[
+  "ganymede"
+  "himalia"
+  "europa"
+  "metis"
+  "adrastea"
+  "amalthea"
+  "thebe"
+  "callisto"
+  "elara"
+  "carme"
+]
+```
+
+*Declared by:*
+ - modules/services/build-server\.nix
+
+
+
+## jupiter\.services\.buildServer\.repoUrl
+
+
+
+Repo to clone and build from at boot\.
+
+
+
+*Type:*
+string
+
+
+
+*Default:*
+
+```nix
+"https://github.com/belikh/jupiter-os.git"
+```
+
+*Declared by:*
+ - modules/services/build-server\.nix
+
+
+
 ## jupiter\.services\.haAgent\.enable
 
 
@@ -2381,8 +2610,6 @@ true
 
 ## jupiter\.services\.mqtt\.port
 
-
-
 TCP port the broker listens on\.
 
 
@@ -2594,6 +2821,8 @@ absolute path
 
 
 ## jupiter\.services\.n8n\.database\.port
+
+
 
 PostgreSQL port n8n connects to\.
 

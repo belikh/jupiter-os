@@ -9,6 +9,7 @@
   imports = [
     ./core/impermanence.nix
     ./core/scheduler.nix
+    ./core/build-tuning.nix
     ./desktop/default.nix
     ./gaming/console.nix
     ./storage/zfs-profiles.nix
