@@ -47,7 +47,7 @@ in
       example = literalExpression ''
         {
           homeassistant.passwordFile = config.sops.secrets.mqtt_homeassistant.path;
-          dashboard.passwordFile = config.sops.secrets.mqtt_dashboard.path;
+          ha-linux-agent.passwordFile = config.sops.secrets.mqtt_ha_linux_agent.path;
         }
       '';
       type = types.attrsOf (

@@ -68,27 +68,16 @@
   # Optional: turn this unit into a dual-session box — the dashboard kiosk on
   # VT 6 and a Bazzite-style gamescope/Steam session on VT 7, flipped at
   # runtime with `jupiter-mode {dashboard|gaming|toggle}` (run as root over
-  # SSH; chvt needs CAP_SYS_TTY_CONFIG). Reuses the Cage program/user from
-  # jupiter.dashboardKiosk above. The Intel HD 520 suits light/streamed/
-  # emulated play, not AAA, and TLP keeps the CPU in powersave — see
-  # modules/services/tcxwave-power-tuning.nix.
-  # Only required once the dual-VT/gaming feature is switched on, so a plain
-  # dashboard deploy doesn't depend on the MQTT secret existing.
-  sops.secrets = lib.mkIf config.jupiter.dashboardGaming.enable {
-    mqtt_dashboard = { };
-  };
-
+  # SSH; chvt needs CAP_SYS_TTY_CONFIG) or via Home Assistant (see below).
+  # Reuses the Cage program/user from jupiter.dashboardKiosk above. The Intel
+  # HD 520 suits light/streamed/emulated play, not AAA, and TLP keeps the CPU
+  # in powersave — see modules/services/tcxwave-power-tuning.nix.
   jupiter.dashboardGaming = {
     enable = false;
-    # When enabled, Home Assistant auto-discovers a "Display Mode" select
-    # (Dashboard/Gaming) and drives the active VT over MQTT, with live state.
-    # Broker runs on ganymede (10.1.1.20); authenticates as the "dashboard"
-    # user using the shared sops password (add mqtt_dashboard to secrets.yaml).
-    homeAssistant = {
-      enable = true;
-      broker = "10.1.1.20";
-      username = "dashboard";
-      passwordFile = config.sops.secrets.mqtt_dashboard.path;
-    };
+    # When enabled, HA gets two switches ("Switch to Dashboard" / "Switch to
+    # Gaming") via jupiter.services.haAgent's backend-launcher — see
+    # modules/desktop/dashboard-gaming.nix for the full mechanism (it wires
+    # jupiter.services.haAgent itself; nothing more to set here).
+    homeAssistant.enable = true;
   };
 }

@@ -24,7 +24,6 @@ PASSWORD_KEYS=(
   pg_homeassistant_password
   pg_n8n_password
   mqtt_homeassistant
-  mqtt_dashboard
   mqtt_ha_linux_agent
   restic_password
 )
