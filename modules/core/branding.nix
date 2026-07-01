@@ -5,16 +5,15 @@
   ...
 }:
 
-with lib;
 let
   cfg = config.jupiter.branding;
 in
 {
   options.jupiter.branding = {
-    enable = mkEnableOption "Enable Jupiter OS / RobCo Pip-Boy branding (MOTD, boot, login)";
+    enable = lib.mkEnableOption "Enable Jupiter OS / RobCo Pip-Boy branding (MOTD, boot, login)";
   };
 
-  config = mkIf cfg.enable {
+  config = lib.mkIf cfg.enable {
     # =========================================================================
     # 1. THE BOOTLOADER: ROBCO INDUSTRIES UNIFIED OPERATING SYSTEM MENU
     # =========================================================================
@@ -92,7 +91,7 @@ in
     # =========================================================================
     # 4. POST-BOOT DISPLAY: LY TEXT-BASED TTY MATRIX DISPLAY MANAGER
     # =========================================================================
-    services.displayManager.ly = mkIf config.jupiter.desktop.enable {
+    services.displayManager.ly = lib.mkIf config.jupiter.desktop.enable {
       enable = true;
     };
 

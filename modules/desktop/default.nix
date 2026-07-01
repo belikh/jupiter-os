@@ -5,15 +5,14 @@
   ...
 }:
 
-with lib;
 let
   cfg = config.jupiter.desktop;
 in
 {
   options.jupiter.desktop = {
-    enable = mkEnableOption "Enable desktop environment";
-    compositor = mkOption {
-      type = types.enum [
+    enable = lib.mkEnableOption "Enable desktop environment";
+    compositor = lib.mkOption {
+      type = lib.types.enum [
         "niri"
         "gnome"
         "none"
@@ -23,7 +22,7 @@ in
     };
   };
 
-  config = mkIf cfg.enable {
+  config = lib.mkIf cfg.enable {
     # If Niri is chosen
     programs.niri.enable = cfg.compositor == "niri";
 

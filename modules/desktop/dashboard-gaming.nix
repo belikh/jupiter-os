@@ -40,7 +40,6 @@
   ...
 }:
 
-with lib;
 let
   cfg = config.jupiter.dashboardGaming;
 
@@ -107,31 +106,31 @@ let
 in
 {
   options.jupiter.dashboardGaming = {
-    enable = mkEnableOption "dual-VT dashboard + Bazzite gaming session with a runtime toggle";
+    enable = lib.mkEnableOption "dual-VT dashboard + Bazzite gaming session with a runtime toggle";
 
     kiosk = {
-      vt = mkOption {
-        type = types.ints.between 1 12;
+      vt = lib.mkOption {
+        type = lib.types.ints.between 1 12;
         default = 6;
         description = "Virtual terminal the Cage/Chromium dashboard runs on.";
       };
     };
 
     gaming = {
-      vt = mkOption {
-        type = types.ints.between 1 12;
+      vt = lib.mkOption {
+        type = lib.types.ints.between 1 12;
         default = 7;
         description = "Virtual terminal the gamescope/Steam session runs on.";
       };
 
-      user = mkOption {
-        type = types.str;
+      user = lib.mkOption {
+        type = lib.types.str;
         default = "gamer";
         description = "User that owns the Steam install and runs the gaming session.";
       };
 
-      command = mkOption {
-        type = types.str;
+      command = lib.mkOption {
+        type = lib.types.str;
         default = "gamescope --steam -e -- steam -gamepadui";
         description = ''
           Session command for the gaming VT. Runs with current-system's PATH so
@@ -141,8 +140,8 @@ in
       };
     };
 
-    defaultMode = mkOption {
-      type = types.enum [
+    defaultMode = lib.mkOption {
+      type = lib.types.enum [
         "dashboard"
         "gaming"
       ];
@@ -150,10 +149,10 @@ in
       description = "Which session is foreground at boot.";
     };
 
-    homeAssistant.enable = mkEnableOption "Home Assistant control via jupiter.services.haAgent's backend-launcher (two switches: Switch to Dashboard / Switch to Gaming)";
+    homeAssistant.enable = lib.mkEnableOption "Home Assistant control via jupiter.services.haAgent's backend-launcher (two switches: Switch to Dashboard / Switch to Gaming)";
   };
 
-  config = mkIf cfg.enable {
+  config = lib.mkIf cfg.enable {
     assertions = [
       {
         assertion = cfg.kiosk.vt != cfg.gaming.vt;
@@ -168,14 +167,14 @@ in
       enable = true;
       gpu = "intel";
       user = cfg.gaming.user;
-      cachyOsKernel = mkDefault false;
-      mesaGit = mkDefault false;
+      cachyOsKernel = lib.mkDefault false;
+      mesaGit = lib.mkDefault false;
       gamingMode.enable = false;
     };
 
     # Take over session management: the stock services.cage runs on tty1; we run
     # our own VT-pinned kiosk instead (reusing its program/user).
-    services.cage.enable = mkForce false;
+    services.cage.enable = lib.mkForce false;
 
     users.users.${cfg.gaming.user} = {
       isNormalUser = true;
@@ -187,7 +186,7 @@ in
       ];
     };
 
-    systemd.services.jupiter-kiosk = mkMerge [
+    systemd.services.jupiter-kiosk = lib.mkMerge [
       (vtSession cfg.kiosk.vt)
       {
         description = "Cage/Chromium dashboard kiosk (VT ${toString cfg.kiosk.vt})";
@@ -199,7 +198,7 @@ in
       }
     ];
 
-    systemd.services.jupiter-gaming = mkMerge [
+    systemd.services.jupiter-gaming = lib.mkMerge [
       (vtSession cfg.gaming.vt)
       {
         description = "gamescope/Steam gaming session (VT ${toString cfg.gaming.vt})";
@@ -237,7 +236,7 @@ in
     # this is the whole reason they're separate from jupiter-kiosk/jupiter-gaming:
     # backend-launcher only ever starts/stops a named unit, and starting these
     # never touches the two resident session units above.
-    systemd.services.jupiter-mode-dashboard = mkIf ha.enable {
+    systemd.services.jupiter-mode-dashboard = lib.mkIf ha.enable {
       description = "Switch the active VT to the dashboard kiosk";
       serviceConfig = {
         Type = "oneshot";
@@ -245,7 +244,7 @@ in
       };
     };
 
-    systemd.services.jupiter-mode-gaming = mkIf ha.enable {
+    systemd.services.jupiter-mode-gaming = lib.mkIf ha.enable {
       description = "Switch the active VT to the gaming session";
       serviceConfig = {
         Type = "oneshot";
@@ -264,9 +263,9 @@ in
     # normally already on transitively, e.g. via bazzite.nix's
     # hardware.bluetooth.enable, but that's an accident of what else is
     # configured, not a real dependency this module should lean on).
-    security.polkit.enable = mkIf ha.enable true;
+    security.polkit.enable = lib.mkIf ha.enable true;
 
-    security.polkit.extraConfig = mkIf ha.enable ''
+    security.polkit.extraConfig = lib.mkIf ha.enable ''
       polkit.addRule(function(action, subject) {
         if (action.id == "org.freedesktop.systemd1.manage-units" &&
             subject.user == "io") {
@@ -280,7 +279,7 @@ in
       });
     '';
 
-    jupiter.services.haAgent = mkIf ha.enable {
+    jupiter.services.haAgent = lib.mkIf ha.enable {
       enable = true;
       launcherApps = [
         {

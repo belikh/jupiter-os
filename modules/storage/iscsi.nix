@@ -1,26 +1,25 @@
 { config, lib, ... }:
 
-with lib;
 let
   cfg = config.jupiter.nas.iscsi;
 
   # Build one LIO storage object (block backstore) per LUN.
-  storageObjects = imap0 (i: lun: {
+  storageObjects = lib.imap0 (i: lun: {
     name = lun.name;
     plugin = "block";
     dev = lun.dev;
     # Stable per-LUN WWN derived from the name (must be constant across rebuilds).
-    wwn = "naa.6001405" + substring 0 9 (builtins.hashString "sha256" lun.name);
+    wwn = "naa.6001405" + lib.substring 0 9 (builtins.hashString "sha256" lun.name);
     write_back = true;
     attributes.emulate_tpu = 1; # honour UNMAP/TRIM from the initiator
   }) cfg.luns;
 
-  luns = imap0 (i: lun: {
+  luns = lib.imap0 (i: lun: {
     index = i;
     storage_object = "/backstores/block/${lun.name}";
   }) cfg.luns;
 
-  nodeAcls = imap0 (i: lun: {
+  nodeAcls = lib.imap0 (i: lun: {
     node_wwn = lun.initiatorIqn;
     mapped_luns = [
       {
@@ -33,30 +32,30 @@ let
 in
 {
   options.jupiter.nas.iscsi = {
-    enable = mkEnableOption "LIO iSCSI target exporting zvols to network hosts";
+    enable = lib.mkEnableOption "LIO iSCSI target exporting zvols to network hosts";
 
-    targetIqn = mkOption {
-      type = types.str;
+    targetIqn = lib.mkOption {
+      type = lib.types.str;
       default = "iqn.2026-06.au.jupiter:europa.target0";
       description = "The NAS's iSCSI target IQN.";
     };
 
-    luns = mkOption {
+    luns = lib.mkOption {
       description = "Block LUNs to export. Each maps a zvol to an allowed initiator.";
       default = [ ];
-      type = types.listOf (
-        types.submodule {
+      type = lib.types.listOf (
+        lib.types.submodule {
           options = {
-            name = mkOption {
-              type = types.str;
+            name = lib.mkOption {
+              type = lib.types.str;
               description = "Backstore name (e.g. \"db\").";
             };
-            dev = mkOption {
-              type = types.str;
+            dev = lib.mkOption {
+              type = lib.types.str;
               description = "Backing device, e.g. /dev/zvol/rpool/db.";
             };
-            initiatorIqn = mkOption {
-              type = types.str;
+            initiatorIqn = lib.mkOption {
+              type = lib.types.str;
               description = ''
                 The CONSUMING host's initiator IQN (the ACL). Read it on that
                 host from /etc/iscsi/initiatorname.iscsi.
@@ -68,7 +67,7 @@ in
     };
   };
 
-  config = mkIf cfg.enable {
+  config = lib.mkIf cfg.enable {
     services.target = {
       enable = true;
       # NOTE: rtslib-fb is picky. If `systemctl status iscsi-target` shows a

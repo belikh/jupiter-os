@@ -5,16 +5,15 @@
   ...
 }:
 
-with lib;
 let
   cfg = config.jupiter.services.syncthing;
 in
 {
   options.jupiter.services.syncthing = {
-    enable = mkEnableOption "Enable Syncthing for user io";
+    enable = lib.mkEnableOption "Enable Syncthing for user io";
 
-    dataDir = mkOption {
-      type = types.str;
+    dataDir = lib.mkOption {
+      type = lib.types.str;
       default = "/home/io";
       description = ''
         Base directory for Syncthing's data, config/index, and the default
@@ -26,7 +25,7 @@ in
     };
   };
 
-  config = mkIf cfg.enable {
+  config = lib.mkIf cfg.enable {
     services.syncthing = {
       enable = true;
       user = "io";

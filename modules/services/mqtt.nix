@@ -10,30 +10,29 @@
   ...
 }:
 
-with lib;
 let
   cfg = config.jupiter.services.mqtt;
 in
 {
   options.jupiter.services.mqtt = {
-    enable = mkEnableOption "Mosquitto MQTT broker";
+    enable = lib.mkEnableOption "Mosquitto MQTT broker";
 
-    port = mkOption {
-      type = types.port;
+    port = lib.mkOption {
+      type = lib.types.port;
       default = 1883;
       description = "TCP port the broker listens on.";
     };
 
-    openFirewall = mkOption {
-      type = types.bool;
+    openFirewall = lib.mkOption {
+      type = lib.types.bool;
       default = true;
       description = "Open the broker port in the firewall (intended for the trusted LAN).";
     };
 
-    allowAnonymous = mkOption {
-      type = types.bool;
+    allowAnonymous = lib.mkOption {
+      type = lib.types.bool;
       default = cfg.users == { };
-      defaultText = literalExpression "true when no `users` are defined";
+      defaultText = lib.literalExpression "true when no `users` are defined";
       description = ''
         Allow unauthenticated clients. Defaults to true only while no users are
         defined, for quick bring-up on a trusted VLAN. Define `users` (with sops
@@ -41,7 +40,7 @@ in
       '';
     };
 
-    users = mkOption {
+    users = lib.mkOption {
       default = { };
       description = ''
         MQTT users. Each `passwordFile` holds the plaintext password (e.g. a
@@ -51,7 +50,7 @@ in
         with an empty `acl` can authenticate but can't publish or subscribe
         to anything. Always set `acl` for a user that needs to do anything.
       '';
-      example = literalExpression ''
+      example = lib.literalExpression ''
         {
           homeassistant = {
             passwordFile = config.sops.secrets.mqtt_homeassistant.path;
@@ -66,15 +65,15 @@ in
           };
         }
       '';
-      type = types.attrsOf (
-        types.submodule {
+      type = lib.types.attrsOf (
+        lib.types.submodule {
           options = {
-            passwordFile = mkOption {
-              type = types.path;
+            passwordFile = lib.mkOption {
+              type = lib.types.path;
               description = "File containing the user's plaintext password.";
             };
-            acl = mkOption {
-              type = types.listOf types.str;
+            acl = lib.mkOption {
+              type = lib.types.listOf lib.types.str;
               default = [ ];
               description = ''
                 Topic ACL entries, each `"[read|write|readwrite] <topic pattern>"`
@@ -89,8 +88,8 @@ in
     };
   };
 
-  config = mkIf cfg.enable {
-    assertions = mapAttrsToList (name: u: {
+  config = lib.mkIf cfg.enable {
+    assertions = lib.mapAttrsToList (name: u: {
       assertion = cfg.allowAnonymous || u.acl != [ ];
       message = ''
         jupiter.services.mqtt.users.${name} has no `acl` entries. mosquitto's
@@ -109,11 +108,11 @@ in
           settings.allow_anonymous = cfg.allowAnonymous;
           # Only skip the password-file requirement when there are no users.
           omitPasswordAuth = cfg.users == { };
-          users = mapAttrs (_: u: { inherit (u) passwordFile acl; }) cfg.users;
+          users = lib.mapAttrs (_: u: { inherit (u) passwordFile acl; }) cfg.users;
         }
       ];
     };
 
-    networking.firewall.allowedTCPPorts = mkIf cfg.openFirewall [ cfg.port ];
+    networking.firewall.allowedTCPPorts = lib.mkIf cfg.openFirewall [ cfg.port ];
   };
 }
