@@ -2026,6 +2026,91 @@ absolute path
 
 
 
+## jupiter\.services\.attic\.enable
+
+
+
+Whether to enable the atticd binary cache server\.
+
+
+
+*Type:*
+boolean
+
+
+
+*Default:*
+
+```nix
+false
+```
+
+
+
+*Example:*
+
+```nix
+true
+```
+
+*Declared by:*
+ - modules/services/attic-server\.nix
+
+
+
+## jupiter\.services\.attic\.port
+
+
+
+Port atticd listens on (proxied by the Cloudflare Tunnel — see lib/site\.nix)\.
+
+
+
+*Type:*
+16 bit unsigned integer; between 0 and 65535 (both inclusive)
+
+
+
+*Default:*
+
+```nix
+8080
+```
+
+*Declared by:*
+ - modules/services/attic-server\.nix
+
+
+
+## jupiter\.services\.attic\.storagePath
+
+
+
+Where atticd stores its cache objects and sqlite database\. Lives on
+tank — bulk, reproducible state (every object here can just be
+rebuilt), so it’s deliberately NOT part of the offsite restic set
+(see docs/01-architecture\.md)\. Must exist before atticd starts:
+` zfs create -p tank/services/attic `, matching the other by-hand tank
+datasets in modules/storage/zfs-nas\.nix\.
+
+
+
+*Type:*
+absolute path
+
+
+
+*Default:*
+
+```nix
+"/tank/services/attic"
+```
+
+*Declared by:*
+ - modules/services/attic-server\.nix
+
+
+
 ## jupiter\.services\.buildServer\.enable
 
 
@@ -2560,8 +2645,6 @@ true
 
 ## jupiter\.services\.mqtt\.allowAnonymous
 
-
-
 Allow unauthenticated clients\. Defaults to true only while no users are
 defined, for quick bring-up on a trusted VLAN\. Define ` users ` (with sops
 password files) to require authentication\.
@@ -2609,6 +2692,8 @@ true
 
 
 ## jupiter\.services\.mqtt\.port
+
+
 
 TCP port the broker listens on\.
 

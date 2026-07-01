@@ -37,8 +37,10 @@ in
 
   jupiter.services.buildServer = {
     enable = true;
-    # TODO once the attic server is actually stood up (see docs/roadmap.md):
-    atticServer = "https://attic.home.jupiter.au";
+    # europa's atticd (modules/services/attic-server.nix), reached over the
+    # public internet via the Cloudflare Tunnel — pallene has no route to the
+    # home LAN otherwise. See docs/roadmap.md.
+    atticServer = "https://attic.jupiter.au";
   };
 
   # There's no persistent host key here for sops-nix to decrypt against at

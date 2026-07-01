@@ -13,10 +13,18 @@
     ../../modules/storage/smart-monitoring.nix # SMART health checks on tank/backup's physical disks
     ../../modules/network/nas-bond.nix # optional 2×1GbE LACP (opt-in below)
     ../../modules/services/backups.nix # restic offsite (jupiter.backups.paths below)
+    ../../modules/services/attic-server.nix # binary cache for the "rebuild the world" build server (jupiter.services.attic below)
   ];
 
   networking.hostName = "europa";
   networking.hostId = "deadbeef"; # Stable per-host 8-char hex, required for ZFS
+
+  # Confirmed HPE MicroServer Gen10, AMD Opteron X3216 (see
+  # modules/storage/zfs-tuning.nix's hardware notes) — a "Cato" APU on the
+  # Puma core, ISA-equivalent to Jaguar, which GCC targets as btver2. Safe to
+  # target for the "rebuild the world" build-server workflow (see
+  # docs/roadmap.md).
+  jupiter.build.microarch = "btver2";
 
   # RobCo/Fallout boot branding (GRUB theme, MOTD).
   jupiter.branding.enable = true;
@@ -91,6 +99,11 @@
     "/tank/personal"
     "/tank/backups"
   ];
+
+  # Binary cache for the "rebuild the world" build server (docs/roadmap.md) —
+  # storage lives on tank/services/attic, not backed up offsite (reproducible
+  # bulk state), and is exposed at attic.jupiter.au via the Cloudflare Tunnel.
+  jupiter.services.attic.enable = true;
 
   environment.systemPackages = with pkgs; [
     zfs

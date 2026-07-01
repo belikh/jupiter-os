@@ -7,8 +7,12 @@
 #
 # Scope: service-to-service credentials only. It deliberately does NOT touch
 #   - io_password    (a human login password — set that yourself)
-#   - restic_env, cloudflare_*, unifi_password, WYZE_*, PARENTS_* (external
-#     accounts whose values come from the provider, not us)
+#   - restic_env, cloudflare_*, unifi_password, WYZE_*, PARENTS_*,
+#     binarylane_api_token, r2_* (external accounts whose values come from
+#     the provider, not us)
+#   - attic_push_token (a client JWT that has to be minted with `atticadm
+#     make-token` against atticd's OWN running instance — see
+#     docs/roadmap.md; can't be generated ahead of that server existing)
 #
 # Requires the age key (same as editing secrets) + sops, openssl, ssh-keygen, jq.
 # Run from anywhere: `make gen-secrets`.
@@ -53,6 +57,15 @@ else
   cp "$tmp/key.pub" "$PUBKEY_FILE"
   echo "    syncoid_ssh_key: generated (private -> sops)"
   echo "    $PUBKEY_FILE: written (public key — commit it, it's not secret)"
+fi
+
+echo "==> attic binary cache server token secret (RS256 JWT signing key)"
+if have attic_server_token_secret; then
+  echo "    attic_server_token_secret: present, skipping"
+else
+  rsa_b64="$(openssl genrsa -traditional 4096 2>/dev/null | base64 -w0)"
+  set_value attic_server_token_secret "\"ATTIC_SERVER_TOKEN_RS256_SECRET_BASE64=$rsa_b64\""
+  echo "    attic_server_token_secret: generated"
 fi
 
 echo

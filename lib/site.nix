@@ -75,6 +75,10 @@
       "headscale.jupiter.au" = "http://127.0.0.1:8080";
       "n8n.jupiter.au" = "http://127.0.0.1:5678";
       "ha.jupiter.au" = "http://127.0.0.1:8123";
+      # europa's attic binary cache (docs/roadmap.md) — routed publicly so the
+      # ephemeral pallene build server (on BinaryLane's public cloud) and any
+      # roaming host (himalia) can reach it, not just the home LAN.
+      "attic.jupiter.au" = "http://10.1.1.2:8080";
     };
   };
 

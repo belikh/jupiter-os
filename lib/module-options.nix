@@ -40,6 +40,7 @@ let
     (root + "/modules/network/dns.nix")
     (root + "/modules/network/nas-bond.nix")
     (root + "/modules/network/pxe-server.nix")
+    (root + "/modules/services/attic-server.nix")
     (root + "/modules/services/backups.nix")
     (root + "/modules/services/build-server.nix")
     (root + "/modules/services/ha-agent.nix")
