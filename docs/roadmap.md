@@ -290,11 +290,14 @@ that section is the narrative context; these are the trackable tasks.
 - [ ] Add SSH/login hardening: `fail2ban` or `sshguard`, explicit
       `services.openssh.settings.PermitRootLogin = "no"`, consider
       U2F/WebAuthn for the `io` account (`modules/common.nix`).
-- [ ] Replace the duplicate literal `hashedPassword` shared by
+- [x] Replace the duplicate literal `hashedPassword` shared by
       `users.users.io` and `users.users.root` in the `virtualisation.vmVariant`
-      block (`hosts/ganymede/configuration.nix:101,107`) with distinct
-      per-account throwaway hashes, or add a comment explaining why sharing
-      is intentional for this test-only VM variant.
+      block — **done**: it's in `modules/common.nix` (not
+      `hosts/ganymede/configuration.nix` as the audit's line ref said; that
+      block is shared by every host's VM variant, not ganymede-specific).
+      Added a comment explaining the sharing is intentional — the block only
+      ever runs as an ephemeral local `make test-<host>` QEMU VM, never
+      deployed, so a second hardcoded hash would add no real security value.
 - [ ] Add a secrets-rotation cadence for sops-nix age keys and
       `make gen-secrets`-generated passwords/syncoid keypair (currently
       generated once, never rotated).
