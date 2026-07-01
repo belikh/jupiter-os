@@ -264,3 +264,72 @@ changes the blast radius of a bad deploy.
   `systemctl is-system-running` reliably lands on `running`/`degraded` (not
   stuck `starting`) within the 120s health-check window on real hardware for
   every host, especially europa (iSCSI/NFS mounts) and callisto (netboot).
+
+## NixOS Configuration Tech Debt & Hardening
+
+Generated from the static audit in `NIX_AUDIT_REPORT.md` (2026-07-01, score
+85/100). Most items below overlap with "Operational maturity gaps" above —
+that section is the narrative context; these are the trackable tasks.
+
+### [HIGH PRIORITY]
+
+- [ ] Add SSH/login hardening: `fail2ban` or `sshguard`, explicit
+      `services.openssh.settings.PermitRootLogin = "no"`, consider
+      U2F/WebAuthn for the `io` account (`modules/common.nix`).
+- [ ] Replace the duplicate literal `hashedPassword` shared by
+      `users.users.io` and `users.users.root` in the `virtualisation.vmVariant`
+      block (`hosts/ganymede/configuration.nix:101,107`) with distinct
+      per-account throwaway hashes, or add a comment explaining why sharing
+      is intentional for this test-only VM variant.
+- [ ] Add a secrets-rotation cadence for sops-nix age keys and
+      `make gen-secrets`-generated passwords/syncoid keypair (currently
+      generated once, never rotated).
+- [ ] Add CVE/vulnerability scanning to CI (e.g. `vulnix`) so host closures
+      are checked against known nixpkgs advisories, not just built/boot-tested.
+- [ ] Register `hosts/elara/` and `hosts/carme/` in `flake.nix`
+      `nixosConfigurations` (or explicitly document why they stay
+      unregistered) so they get CI build/boot coverage instead of silently
+      rotting as unwired scaffolds.
+- [ ] Prove the deploy/rollback and unattended flake-update path against
+      real hardware once provisioned — `flake.lock`'s `home-manager` input
+      pin, `HEADSCALE_PREAUTH_KEY`/`DEPLOY_SSH_PRIVATE_KEY`, and the
+      120s `systemctl is-system-running` health-check window are all
+      currently unverified outside CI/QEMU (tracked under "Validation still
+      required" above; listed here so it isn't lost as a discrete task).
+
+### [MEDIUM PRIORITY]
+
+- [ ] Split `modules/gaming/bazzite.nix` (398 lines) and
+      `modules/desktop/dashboard-gaming.nix` (302 lines) into focused
+      sub-modules (kernel/session/gaming concerns) for readability.
+- [ ] Factor `flake.nix`'s orchestration logic (`mkHost`, `deployActivate`
+      wrapping, `backupHubModule` derivation) out into `lib/` helpers so the
+      flake entry point stays a thin, skimmable declaration.
+- [ ] Wire real `checks` into `flake.nix` (`flake.nix:318` currently only
+      exposes `deploy-rs`'s `deployChecks`) so `make check`/`nix flake check`
+      locally exercises what CI's boot-smoke job actually gates on, instead
+      of giving a false sense of completeness.
+- [ ] Add a metrics/alerting stack (Prometheus/Grafana/Alertmanager or a
+      lighter ntfy/healthchecks.io hook) — Loki today covers logs only, so
+      outages are discovered by using the affected service, not by
+      notification.
+- [ ] Add a periodic backup-restore verification job — syncoid/sanoid/restic
+      all exist, but nothing proves a snapshot is actually restorable versus
+      "the send/recv succeeded."
+- [ ] Add TLS/cert-expiry monitoring independent of Cloudflare's own tunnel
+      handling (no ACME/cert pipeline is currently watched).
+- [ ] Convert `modules/services/tcxwave-power-tuning.nix:160`'s
+      `services.journald.extraConfig` raw string block to structured
+      `services.journald.settings` attrs where the option surface allows it.
+
+### [LOW PRIORITY]
+
+- [ ] Enrich `lib.mkOption { description = ...; }` strings across
+      `jupiter.*` modules so option documentation can be generated via
+      `nixos-render-docs` instead of hand-maintained separately in
+      `docs/04-modules-reference.md` (reduces doc/code drift risk).
+- [ ] Add UPS/power monitoring (`nut`/`apcupsd`) — currently absent fleet-wide.
+- [ ] Consider explicit security-hardening `boot.kernel.sysctl` entries
+      (e.g. `kernel.kptr_restrict`, `kernel.yama.ptrace_scope`,
+      `net.ipv4.conf.all.rp_filter`) or a documented decision to accept the
+      current trusted-LAN threat model without them.
