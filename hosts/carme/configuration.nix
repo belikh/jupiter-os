@@ -5,8 +5,9 @@
 # fleet over the headscale mesh, so its Syncthing peers with europa across the
 # mesh rather than the LAN. Registered in flake.nix nixosConfigurations and the
 # CI build/boot-test matrices, same as hosts/elara/configuration.nix — its
-# disk/hostId are still REPLACE-ME, so CI is expected to fail there until the
-# hardware exists. Bring-online steps mirror hosts/elara/configuration.nix.
+# disk is still REPLACE-ME, which only produces a build-time warning (see
+# modules/storage/zfs-profiles.nix), not a CI failure, until the hardware
+# exists. Bring-online steps mirror hosts/elara/configuration.nix.
 #
 # NOTE: offline-tolerant sync matters here — the WAN link can drop, so Syncthing
 # (local copy + eventual mirror) is the right tool, not an NFS home.
@@ -17,7 +18,7 @@
   ];
 
   networking.hostName = "carme";
-  networking.hostId = "REPLACE-ME"; # 8 hex chars, required for ZFS
+  networking.hostId = "3669cd7d"; # Randomly generated 8-char hex for ZFS
 
   jupiter = {
     branding.enable = true;

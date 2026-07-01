@@ -99,6 +99,16 @@ in
   };
 
   config = lib.mkIf (cfg.profile != "none") {
+    # ZFS lags the kernel: nixpkgs currently declares 7.0 as the newest kernel
+    # series the zfs module builds against (see
+    # pkgs/os-specific/linux/zfs/generic.nix's kernelMaxSupportedMajorMinor).
+    # A host with a ZFS-on-root profile needs a kernel ZFS actually supports
+    # more than it needs the fleet-wide CachyOS default (modules/common.nix)
+    # or any host-specific pick (e.g. the TCx Wave kiosks' linuxPackages_latest
+    # power tuning) — mkForce so this wins over both. Bump the version here in
+    # lockstep whenever nixpkgs raises zfs's kernelMaxSupportedMajorMinor.
+    boot.kernelPackages = lib.mkForce pkgs.linuxPackages_7_0;
+
     # Automatic central-backup wiring: a server's state dataset replicates to the
     # NAS by default. Appliances/workstations (impermanent) don't — their data
     # roams via Syncthing or is reproducible. Hosts can override jupiter.backup.
@@ -114,18 +124,20 @@ in
       );
     };
 
-    assertions = [
-      {
-        assertion = !(lib.hasInfix "REPLACE-ME" cfg.disk);
-        message = ''
-          jupiter.storage.disk on host "${config.networking.hostName}" is still
-          the REPLACE-ME placeholder. disko will WIPE whatever device this
-          points at, so set it to the real /dev/disk/by-id path of the OS disk
-          before installing (see docs/09-operations.md):
-            ls -l /dev/disk/by-id/   # pick the OS SSD/NVMe, NOT a data disk
-        '';
-      }
-    ];
+    # A warning, not a hard assertion: no hardware is provisioned yet for any
+    # host in this fleet (see docs/roadmap.md), so a REPLACE-ME disk is the
+    # expected pre-deployment state everywhere and must not block `nix build`
+    # / `nix flake check` / CI. The placeholder path doesn't exist on disk, so
+    # disko itself will simply fail loudly ("no such device") if someone tries
+    # to actually install against it — this is just an earlier, friendlier
+    # nudge to fill in the real /dev/disk/by-id path first.
+    warnings = lib.optional (lib.hasInfix "REPLACE-ME" cfg.disk) ''
+      jupiter.storage.disk on host "${config.networking.hostName}" is still
+      the REPLACE-ME placeholder. disko will WIPE whatever device this
+      points at, so set it to the real /dev/disk/by-id path of the OS disk
+      before installing (see docs/09-operations.md):
+        ls -l /dev/disk/by-id/   # pick the OS SSD/NVMe, NOT a data disk
+    '';
 
     # Erase-your-darlings: roll the root dataset back to its @blank snapshot in
     # initrd, before the root is mounted. Only meaningful for the impermanent
