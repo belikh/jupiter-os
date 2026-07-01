@@ -82,26 +82,39 @@ let
     # --- attic auth -----------------------------------------------------------
     ${pkgs.attic-client}/bin/attic login jupiter "${cfg.atticServer}" "$(cat "${cfg.atticPushTokenFile}")"
 
-    # --- rebuild the world, one host at a time, best-effort ------------------
-    # A single broken host must not stop the rest from being pushed, but the
-    # overall run should still report failure so CI knows something needs
-    # attention.
-    overall_status=0
+    # --- rebuild the world, all hosts at once, best-effort --------------------
+    # Every host's build+push runs as its own background job, all talking to
+    # the SAME nix-daemon — the daemon (tuned below via nix.settings.max-jobs/
+    # cores for this box's 8 threads) does the actual scheduling, dedup, and
+    # concurrency-limiting across all of them, so this doesn't need its own
+    # job pool. A single broken host must not stop the rest from being built
+    # and pushed, and each host is pushed to attic the moment ITS build
+    # finishes rather than waiting on the slowest host — but the overall run
+    # should still report failure so CI knows something needs attention.
+    pids=()
     for host in ${lib.concatStringsSep " " cfg.hosts}; do
-      log "building $host..."
-      if ${pkgs.nix}/bin/nix build ".#nixosConfigurations.$host.config.system.build.toplevel" \
-           --no-link --print-out-paths > "$workdir/$host.outpath" 2>"$workdir/$host.log"; then
-        outpath="$(cat "$workdir/$host.outpath")"
-        log "$host built: $outpath — pushing to attic cache '${cfg.atticCache}'"
-        if ! ${pkgs.attic-client}/bin/attic push "${cfg.atticCache}" "$outpath"; then
-          log "!! attic push failed for $host" >&2
-          overall_status=1
+      (
+        log "building $host..."
+        if ${pkgs.nix}/bin/nix build ".#nixosConfigurations.$host.config.system.build.toplevel" \
+             --no-link --print-out-paths > "$workdir/$host.outpath" 2>"$workdir/$host.log"; then
+          outpath="$(cat "$workdir/$host.outpath")"
+          log "$host built: $outpath — pushing to attic cache '${cfg.atticCache}'"
+          if ! ${pkgs.attic-client}/bin/attic push "${cfg.atticCache}" "$outpath"; then
+            log "!! attic push failed for $host" >&2
+            exit 1
+          fi
+        else
+          log "!! build failed for $host — see $workdir/$host.log" >&2
+          tail -n 40 "$workdir/$host.log" >&2 || true
+          exit 1
         fi
-      else
-        log "!! build failed for $host — see $workdir/$host.log" >&2
-        tail -n 40 "$workdir/$host.log" >&2 || true
-        overall_status=1
-      fi
+      ) &
+      pids+=("$!")
+    done
+
+    overall_status=0
+    for pid in "''${pids[@]}"; do
+      wait "$pid" || overall_status=1
     done
 
     log "rebuild-the-world run complete, overall_status=$overall_status"
@@ -184,6 +197,18 @@ in
     # before relying on it; if it doesn't, fall back to baking the ref into
     # the ISO at build time instead (same mechanism as the secret files above).
     services.cloud-init.enable = true;
+
+    # Tuned for the 8-thread BinaryLane plan this box runs on (see
+    # docs/roadmap.md's "CPU Optimised" size). max-jobs=8/cores=1 favors
+    # derivation-level parallelism over per-derivation multithreading: a
+    # "rebuild the world" run has ~10 hosts' worth of independent (and often
+    # shared/deduped) derivations in flight at once, which keeps all 8
+    # threads busy far more reliably than a handful of packages each trying
+    # to multithread their own build. Revisit if real runs show a different
+    # bottleneck (e.g. one huge package that would benefit from more cores
+    # per job).
+    nix.settings.max-jobs = 8;
+    nix.settings.cores = 1;
 
     environment.systemPackages = [
       pkgs.git
