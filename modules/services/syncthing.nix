@@ -59,8 +59,6 @@ in
       .cache
       .local/share
       .config
-      .ssh
-      .gnupg
       .mozilla
       .thunderbird
       .nix-profile
@@ -73,11 +71,22 @@ in
       target
       result
 
-      # 3. Explicitly INCLUDE the AI brains we want to sync (must come before the .* rule)
-      !.gemini
+      # 3. Explicitly INCLUDE things that should be identical everywhere io logs
+      # in — AI brains, SSH identity, GPG keyring (must come before the .* rule
+      # below; later patterns win, same as .gitignore).
       !.claude
+      !.gemini
+      !.ssh
+      !.gnupg
 
-      # 4. Ignore all other hidden files/folders (prevents dotfile conflicts across machines)
+      # 4. ...but exclude GPG/SSH live agent sockets and lockfiles specifically —
+      # syncing these while an agent is running on another machine corrupts them.
+      .gnupg/S.*
+      .gnupg/*.lock
+      .gnupg/.#lk*
+      .gnupg/random_seed
+
+      # 5. Ignore all other hidden files/folders (prevents dotfile conflicts across machines)
       .*
       EOF
               chown io:users ${cfg.dataDir}/.stignore
