@@ -82,7 +82,11 @@
     ];
   };
 
-  # Make it easy to log into the VM for testing
+  # Make it easy to log into the VM for testing. io and root intentionally
+  # share the same hardcoded hash below ("test") — this variant only ever
+  # runs as an ephemeral local QEMU VM (`make test-<host>`), never deployed,
+  # so a second hardcoded password would add no real security value, just an
+  # extra literal to keep in sync.
   virtualisation.vmVariant = {
     # Test full bootloader (GRUB) in the VM instead of direct kernel boot
     virtualisation.useBootLoader = true;
