@@ -315,7 +315,12 @@ in
 
     boot.kernel.sysctl = {
       # Required by many modern games / Proton (e.g. Hogwarts Legacy, CS2).
-      "vm.max_map_count" = mkDefault 2147483642;
+      # mkOverride 900, not mkDefault: nixpkgs' own sysctl.nix sets this same
+      # key via mkDefault (priority 1000), so two mkDefaults here would tie
+      # and fail as "defined multiple times" — mkOverride 900 breaks that
+      # tie in our favor while still letting a host mkForce/mkOverride
+      # something lower to win over us.
+      "vm.max_map_count" = mkOverride 900 2147483642;
       # Improve responsiveness under memory pressure.
       "vm.swappiness" = mkDefault 10;
     };

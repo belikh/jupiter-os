@@ -22,6 +22,52 @@ in
       default = "ganymede.${site.domain}";
       description = "Mosquitto broker to publish sensors/commands to.";
     };
+
+    launcherApps = lib.mkOption {
+      type = lib.types.listOf (
+        lib.types.submodule {
+          options = {
+            id = lib.mkOption {
+              type = lib.types.str;
+              description = "Stable id — becomes the MQTT switch entity id and command-topic allowlist entry.";
+            };
+            name = lib.mkOption {
+              type = lib.types.str;
+              description = "HA-facing display name.";
+            };
+            unit = lib.mkOption {
+              type = lib.types.str;
+              description = "systemd unit this profile starts/stops.";
+            };
+            scope = lib.mkOption {
+              type = lib.types.enum [
+                "user"
+                "system"
+              ];
+              default = "user";
+              description = "`systemctl --user` vs plain `systemctl`.";
+            };
+            group = lib.mkOption {
+              type = lib.types.nullOr lib.types.str;
+              default = null;
+              description = "Profiles sharing a group are mutually exclusive.";
+            };
+            icon = lib.mkOption {
+              type = lib.types.nullOr lib.types.str;
+              default = null;
+              description = "Optional mdi icon override.";
+            };
+          };
+        }
+      );
+      default = [ ];
+      description = ''
+        Remote-controllable systemd units, exposed as HA switches via
+        ha-linux-agent's `backend-launcher` (see its ROADMAP.md "Layer 1 —
+        session switch"). See `modules/desktop/dashboard-gaming.nix` for the
+        canonical consumer (kiosk/gaming VT switch on the TCx Wave units).
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -42,6 +88,19 @@ in
           username = "ha-linux-agent";
           password_file = config.sops.secrets.mqtt_ha_linux_agent.path;
         };
+        backends.launcher.apps = map (
+          app:
+          {
+            inherit (app)
+              id
+              name
+              unit
+              scope
+              ;
+          }
+          // lib.optionalAttrs (app.group != null) { inherit (app) group; }
+          // lib.optionalAttrs (app.icon != null) { inherit (app) icon; }
+        ) cfg.launcherApps;
       };
     };
   };

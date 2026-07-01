@@ -60,19 +60,18 @@ in
     passwordFile = config.sops.secrets.pg_n8n_password.path;
   };
 
-  # MQTT broker for Home Assistant + the dashboards' display-mode control.
+  # MQTT broker for Home Assistant + the dashboards' display-mode control
+  # (via jupiter.services.haAgent's backend-launcher).
   # Authenticated: defining `users` turns anonymous access off automatically.
   # The password files hold the plaintext passwords (shared with each client);
   # add the matching entries to secrets/secrets.yaml before deploying.
   sops.secrets.mqtt_homeassistant = { };
-  sops.secrets.mqtt_dashboard = { };
   sops.secrets.mqtt_ha_linux_agent = { };
 
   jupiter.services.mqtt = {
     enable = true;
     users = {
       homeassistant.passwordFile = config.sops.secrets.mqtt_homeassistant.path;
-      dashboard.passwordFile = config.sops.secrets.mqtt_dashboard.path;
       # Shared by every host running jupiter.services.haAgent (see
       # modules/services/ha-agent.nix) — one broker-side user, same
       # mqtt_ha_linux_agent secret read on each agent host.
