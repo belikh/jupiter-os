@@ -187,6 +187,28 @@ in
       default = "check the BinaryLane control panel and destroy this server by hand to stop billing.";
       internal = true;
     };
+
+    microarchs = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [
+        "skylake"
+        "btver2"
+      ];
+      description = ''
+        Every distinct `jupiter.build.microarch` value used anywhere in
+        `hosts`. nixpkgs tags CPU-tuned bootstrap derivations (e.g. the
+        stage0 glibc/gcc bootstrap) with `requiredSystemFeatures =
+        [ "gccarch-<arch>" ]` — a hard Nix-level gate, confirmed against a
+        real BinaryLane run: without the matching `gccarch-<arch>` in this
+        builder's own `system-features`, Nix refuses to even attempt the
+        build ("missing system features"), regardless of whether the CPU
+        could actually run it. Must be kept in sync by hand with every
+        host's `jupiter.build.microarch` (see modules/core/build-tuning.nix)
+        — there's no way to derive it automatically from within this
+        module, since pallene's own eval has no visibility into other
+        hosts' config.
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -209,6 +231,11 @@ in
     # per job).
     nix.settings.max-jobs = 8;
     nix.settings.cores = 1;
+
+    # Without this, every microarch-tuned host build fails deterministically
+    # with "missing system features" on the CPU-tuned bootstrap derivations
+    # — see the microarchs option above for why.
+    nix.settings.system-features = lib.mkAfter (map (a: "gccarch-${a}") cfg.microarchs);
 
     environment.systemPackages = [
       pkgs.git
