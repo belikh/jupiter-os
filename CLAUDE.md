@@ -9,9 +9,11 @@ wholesale — port pieces only when the machine that needs them is brought up.
 
 ## Current state
 
-Single registered host: `amalthea`, a TCx Wave dashboard kiosk and the
-bootstrap machine for the whole fleet. Everything must keep building from
-cache.nixos.org with `nix flake check`.
+Registered hosts: the 4 TCx Wave dashboard kiosks — `amalthea`
+(jupiter-bedroom, the bootstrap machine and canonical template), `metis`
+(kitchen), `adrastea` (office), `thebe` (robbie-room). The siblings are
+clones of amalthea differing only in hostName/hostId/dashboard URL/disk.
+Everything must keep building from cache.nixos.org with `nix flake check`.
 
 ## Layout
 
@@ -60,7 +62,7 @@ make fmt                # format all Nix (nixfmt-rfc-style); fmt-check to verify
 
 ## Roadmap (bring-up order)
 
-amalthea (done, this tree) → the other 3 kiosks (metis/adrastea/thebe) →
+amalthea (done) → the other 3 kiosks (metis/adrastea/thebe — done) →
 ganymede (resolver/services) → europa (NAS + backup wiring) → callisto
 (diskless PXE) → himalia (laptop) → gaming/branding/terranix/edge layers.
 Port each from `master`, keeping the buildability rules above.

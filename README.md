@@ -25,21 +25,27 @@ front and was never successfully built end-to-end. The main reasons:
 This tree inverts that: start from the **smallest real machine**, prove it
 builds/boots/deploys, then grow.
 
-## Bootstrap host: amalthea
+## Registered hosts: the 4 dashboard kiosks
 
-A Toshiba TCx Wave 6140-E45 dashboard kiosk (jupiter-bedroom). Impermanent
-ZFS root (erase-your-darlings), Cage + Chromium kiosk session, stock nixpkgs
-kernel — everything comes from cache.nixos.org.
+Toshiba TCx Wave 6140-E45 dashboard kiosks, one per room: **amalthea**
+(jupiter-bedroom — the bootstrap host and canonical template), **metis**
+(kitchen), **adrastea** (office), **thebe** (robbie-room). Impermanent ZFS
+root (erase-your-darlings), Cage + Chromium kiosk session, stock nixpkgs
+kernel — everything comes from cache.nixos.org. The siblings are clones of
+`hosts/amalthea/configuration.nix` differing only in hostName/hostId/
+dashboard URL/disk.
 
 ```bash
 make check            # nix flake check — builds every registered host
-make build-all        # build the amalthea closure explicitly
-make test-amalthea    # build & boot it in an interactive QEMU VM
-make boot-smoke-amalthea  # headless CI-style boot test
+make build-all        # build all kiosk closures explicitly
+make test-<host>      # build & boot a host in an interactive QEMU VM
+make boot-smoke-<host>  # headless CI-style boot test
 make fmt              # format all Nix (nixfmt-rfc-style)
 ```
 
-### Installing onto the real unit
+### Installing onto a real unit
+
+(Shown for amalthea; identical for metis/adrastea/thebe.)
 
 1. Set the real OS disk in `hosts/amalthea/configuration.nix`
    (`jupiter.storage.disk` — currently a REPLACE-ME placeholder; disko will
@@ -69,10 +75,10 @@ Bring machines back one at a time, in dependency order, porting their config
 from `master` and re-adding flake inputs only when a machine actually needs
 them:
 
-1. **amalthea** (this tree) — proves the flake, storage profiles,
-   impermanence, sops, kiosk stack.
+1. **amalthea** — proves the flake, storage profiles, impermanence, sops,
+   kiosk stack. ✅ registered
 2. **metis / adrastea / thebe** — clones of amalthea (different
-   hostName/hostId/dashboard URL). Trivial once amalthea is on hardware.
+   hostName/hostId/dashboard URL/disk). ✅ registered
 3. **ganymede** (always-on services: resolver/DNS, PXE, tunnels) — then pin
    `networking.nameservers` back to it in `modules/common.nix`.
 4. **europa** (NAS) — restores the `jupiter.backup` auto-replication wiring
