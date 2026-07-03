@@ -33,7 +33,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        host: [amalthea]
+        host: [amalthea, metis, adrastea, thebe]
     steps:
       - uses: actions/checkout@v4
       - name: Enable KVM

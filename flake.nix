@@ -62,12 +62,16 @@
     in
     {
       nixosConfigurations = {
-        # TCx Wave dashboard kiosk, jupiter-bedroom. The bootstrap host: the
-        # first machine of the rebuilt fleet, brought up standalone (no
-        # resolver, NAS, or PXE host exists yet). Its siblings
-        # (metis/adrastea/thebe) and the servers follow once this one builds,
-        # boots, and deploys.
-        amalthea = mkHost ./hosts/amalthea/configuration.nix;
+        # TCx Wave dashboard kiosks — 4 identical units, one per room. Each is
+        # its own host (own hostName/hostId/dashboard URL) since they can't
+        # share an identity; the shared hardware tuning lives in
+        # modules/services/tcxwave-power-tuning.nix and the shared kiosk
+        # session in modules/desktop/dashboard-kiosk.nix. amalthea is the
+        # bootstrap host and the canonical template; the others are clones.
+        amalthea = mkHost ./hosts/amalthea/configuration.nix; # jupiter-bedroom
+        metis = mkHost ./hosts/metis/configuration.nix; # kitchen
+        adrastea = mkHost ./hosts/adrastea/configuration.nix; # office
+        thebe = mkHost ./hosts/thebe/configuration.nix; # robbie-room
       };
 
       # `nix flake check` builds every registered host closure — for a

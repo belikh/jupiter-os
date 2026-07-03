@@ -1,10 +1,12 @@
 .PHONY: build-all check update fmt fmt-check
 
-# Build every registered host closure (currently just amalthea — the
-# bootstrap host).
+# Build every registered host closure (the 4 dashboard kiosks).
 build-all:
-	@echo "Building amalthea (bootstrap dashboard kiosk)..."
+	@echo "Building dashboard kiosks (amalthea, metis, adrastea, thebe)..."
 	nix build .#nixosConfigurations.amalthea.config.system.build.toplevel
+	nix build .#nixosConfigurations.metis.config.system.build.toplevel
+	nix build .#nixosConfigurations.adrastea.config.system.build.toplevel
+	nix build .#nixosConfigurations.thebe.config.system.build.toplevel
 	@echo "All builds completed successfully!"
 
 # Build and run a QEMU virtual machine for a specific host

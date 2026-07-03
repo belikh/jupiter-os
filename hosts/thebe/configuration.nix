@@ -1,11 +1,12 @@
 { ... }:
 
-# TCx Wave kiosk: jupiter-bedroom. The BOOTSTRAP host — the first machine of
-# the rebuilt fleet, brought up standalone, and the canonical template for its
-# siblings. One of 4 identical 6140-E45 units (see
-# modules/services/tcxwave-power-tuning.nix for the shared hardware tuning);
-# metis/adrastea/thebe are clones of this file differing only in
-# hostName/hostId/dashboard URL/disk.
+# TCx Wave kiosk: robbie-room. One of 4 identical 6140-E45 units (see
+# modules/services/tcxwave-power-tuning.nix for the shared hardware tuning
+# and modules/desktop/dashboard-kiosk.nix for the shared kiosk session) —
+# a clone of hosts/amalthea/configuration.nix, the bootstrap host, differing
+# only in hostName/hostId/dashboard URL/disk. Each unit is its own host
+# because each points at a different room's Home Assistant dashboard and
+# can't share an identity.
 {
   imports = [
     ../../modules/common.nix
@@ -13,15 +14,15 @@
     ../../modules/desktop/dashboard-kiosk.nix
   ];
 
-  networking.hostName = "amalthea";
-  networking.hostId = "0515cf00"; # Stable per-host 8-char hex, required for ZFS
+  networking.hostName = "thebe";
+  networking.hostId = "af54f5c3"; # Stable per-host 8-char hex, required for ZFS
 
   # Stateless kiosk appliance: erase-your-darlings root so the box always
   # boots to a known-pristine state and can't accumulate drift.
   # ⚠️ disk is a REPLACE-ME placeholder — set the real by-id path before install.
   jupiter.storage = {
     profile = "impermanent";
-    disk = "/dev/disk/by-id/REPLACE-ME-amalthea-os-disk";
+    disk = "/dev/disk/by-id/REPLACE-ME-thebe-os-disk";
   };
 
   jupiter.core.impermanence = {
@@ -39,7 +40,7 @@
 
   jupiter.dashboardKiosk = {
     enable = true;
-    url = "https://ha.jupiter.au/jupiter-bedroom";
+    url = "https://ha.jupiter.au/robbie-room";
   };
 
   # Integrated 15" PCAP touchscreen: NO custom/kernel driver needed. The panel
