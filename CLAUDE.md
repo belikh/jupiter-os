@@ -1,104 +1,66 @@
 # CLAUDE.md
 
-Context for AI agents working in **jupiter-os** — a declarative, ZFS-backed NixOS
-monorepo for the Jupiter home/lab infrastructure.
+Context for AI agents working in **jupiter-os** — a declarative, ZFS-backed
+NixOS monorepo for the Jupiter home/lab infrastructure, currently being
+**rebuilt from scratch one machine at a time**. The previous full-fleet tree
+lives on the `master` branch and serves as the design reference; it was never
+buildable end-to-end (see README.md for why). Do not copy code from it
+wholesale — port pieces only when the machine that needs them is brought up.
+
+## Current state
+
+Single registered host: `amalthea`, a TCx Wave dashboard kiosk and the
+bootstrap machine for the whole fleet. Everything must keep building from
+cache.nixos.org with `nix flake check`.
 
 ## Layout
 
-- `flake.nix` — entry point. Defines `nixosConfigurations`, `deploy.nodes`
-  (deploy-rs), `packages` (OpenWrt firmware + terranix configs), `checks`,
-  `formatter`, and the dev shell (`shell.nix`).
-- `hosts/<name>/` — per-host config (`configuration.nix`; `disko.nix` only for
-  bespoke layouts like `europa` — most hosts use `jupiter.storage.profile`).
-  Hosts are named after Jupiter's moons. Active hosts: `ganymede` (always-on
-  services), `europa` (NAS), `callisto` (diskless/PXE netboot compute),
-  `himalia` (laptop), and the 4 identical TCx Wave dashboard kiosks `metis`,
-  `adrastea`, `amalthea`, `thebe` (one per room, each its own host since each
-  points `jupiter.dashboardKiosk.url` at a different room's dashboard).
-  `hosts/elara/` and `hosts/carme/` are scaffolds for future roaming
-  workstations (not yet registered in `flake.nix`). `hosts/parents-house/`
-  holds edge device templates (Linksys MX4300 APs, Wyze cams) — not NixOS
-  hosts.
-- `modules/` — reusable NixOS modules, exposed behind a `jupiter.*` options
-  namespace (feature toggles), e.g. `jupiter.core.impermanence.enable`,
-  `jupiter.desktop`, `jupiter.storage.profile`, `jupiter.services.*`,
-  `jupiter.pxe`. Organized into category subdirs: `core/`, `desktop/`,
-  `gaming/`, `storage/`, `network/`, `services/`. `common.nix` /
-  `common-stateful.nix` are the base layers at the `modules/` root.
-- `terraform/<stack>/default.nix` — terranix (Nix-authored HCL) for `unifi` and
-  `cloudflare`. Rendered to `config.tf.json` and applied via the Makefile.
-- `secrets/secrets.yaml` — sops-nix + age. Recipients (one age key per host plus
-  the admin key) are listed in `.sops.yaml`.
-- `packages/` — custom builds (OpenWrt MX4300 firmware, Share Tech Mono font).
+- `flake.nix` — entry point. Inputs are deliberately minimal (nixpkgs, disko,
+  impermanence, sops-nix). `mkHost` injects flake modules via a lexical
+  closure — avoid `specialArgs`. Every host in `nixosConfigurations` is also
+  a flake check.
+- `hosts/<name>/` — per-host config (`configuration.nix`). Hosts are named
+  after Jupiter's moons.
+- `modules/` — reusable NixOS modules behind a `jupiter.*` options namespace,
+  organized into category subdirs (`core/`, `desktop/`, `storage/`,
+  `services/`). `common.nix` at the `modules/` root is the base layer.
+- `secrets/secrets.yaml` — sops-nix + age. Recipients (one age key per host
+  plus the admin key) are listed in `.sops.yaml`. Carried over unchanged from
+  the previous tree.
 
 ## Conventions
 
-- New cross-host functionality goes in a `modules/<category>/` file gated by a
-  `jupiter.*` option; hosts opt in via toggles rather than inlining config.
-- **Module style:** prefer explicit `lib.mkOption` / `lib.mkIf` / `lib.types`
-  over `with lib;`; argument order `{ config, lib, pkgs, ... }`; structure each
-  module as `options.jupiter.<…> = { … }` then `config = lib.mkIf cfg.enable { … }`
-  with `cfg = config.jupiter.<…>` bound in a `let`. (Some older modules still
-  use `with lib;` — convert opportunistically; new modules follow this.)
-- `mkHost` in `flake.nix` injects flake modules (sops, impermanence, disko,
-  home-manager, jovian, chaotic) via a lexical closure — avoid `specialArgs`.
-- The portable user environment for `io` (dotfiles, niri config) lives in
-  `modules/home/` and is opt-in via `jupiter.home.enable`; data dirs roam via
-  Syncthing rather than home-manager.
-- **Central backup is automatic — don't wire it per host.** A host with local
-  persistent state replicates to the NAS (`europa`, the data hub) and thence
-  offsite. The `stateful` storage profile defaults `jupiter.backup.enable` on
-  with `datasets = [ "rpool/var" ]`; override `jupiter.backup` for anything
-  unusual. Europa derives its syncoid sources from every host's
-  `jupiter.backup` in `flake.nix` (`backupHubModule`), and
-  `modules/storage/backup.nix` auto-authorizes europa's pull key on each
-  source — so **new state-holding hosts are backed up with no edit to
-  europa**. (Diskless hosts whose data already lives on europa's iSCSI leave
-  it off; appliances/laptops roam via Syncthing instead.)
-- The PXE server on `ganymede` is wired directly to `callisto`'s netboot build
-  products in `flake.nix`; keep that closure linkage intact.
-- Network facts (VLANs/subnets/resolver/DNS records) live once in `lib/site.nix`
-  as plain data; both the NixOS resolver config (`hosts/ganymede` →
-  `jupiter.dns`) and the terranix UniFi stack (`terraform/unifi`) `import` it,
-  so CIDRs are never re-stated in two places.
-
-- **Service-to-service passwords are generated, never hand-set.** Any credential
-  two machines/services use to talk to each other is a random, impossible value
-  produced by `make gen-secrets` (`scripts/gen-secrets.sh`) straight into sops —
-  add the key name to that script's list, never ask a human to choose it. Only
-  human logins (`io_password`) and external-account creds (B2, Cloudflare, UniFi,
-  edge devices) are set by hand.
+- New cross-host functionality goes in a `modules/<category>/` file gated by
+  a `jupiter.*` option; hosts opt in via toggles rather than inlining config.
+- **Module style:** explicit `lib.mkOption` / `lib.mkIf` / `lib.types`, never
+  `with lib;`; argument order `{ config, lib, pkgs, ... }`; structure each
+  module as `options.jupiter.<…> = { … }` then
+  `config = lib.mkIf cfg.enable { … }` with `cfg = config.jupiter.<…>` bound
+  in a `let`.
+- **Buildability rules (the reason this rebuild exists):**
+  - No custom kernels on ZFS hosts — the stock `linuxPackages` default is
+    the one ZFS always supports and cache.nixos.org always has built.
+  - No microarch tuning (`nixpkgs.hostPlatform.gcc.arch`) — it invalidates
+    the binary cache for the entire closure.
+  - A new flake input must be justified by a registered host that uses it.
+  - No cross-host closure wiring (PXE, backup-hub scans) until both ends of
+    the wire are registered and building.
+- sops secrets are read at **activation**, not build time — `nix build`, CI,
+  and `nix flake check` work without the age key.
 
 ## Common commands
 
 ```bash
-make build-all          # build every host closure + mx4300 firmware
+make check              # nix flake check (builds every registered host)
+make build-all          # build every host closure
 make test-<host>        # build & boot a host in a QEMU VM
-make check              # nix flake check
+make boot-smoke-<host>  # headless CI-style boot test
 make fmt                # format all Nix (nixfmt-rfc-style); fmt-check to verify
-make build-mx4300       # build OpenWrt firmware (injects secrets via sops)
-make tf-plan-unifi      # render + plan/apply terranix stacks (unifi|cloudflare)
-make tf-apply-unifi
-deploy .#<host>         # remote deploy via deploy-rs
 ```
 
-## Gotchas
+## Roadmap (bring-up order)
 
-- sops secrets are read at **activation**, not build time — `nix build` and CI
-  work without the age key. `make build-mx4300` and `make tf-*` DO need it.
-- `terraform/cloudflare` expects a `cloudflare_api_token` secret; only
-  `cloudflare_cert` currently exists in `secrets.yaml` — add the token before
-  running `tf-apply-cloudflare`.
-- Don't commit `result*`, `*.qcow2`, rendered `config.tf.json`, or decrypted edge
-  configs — all are gitignored.
-- chaotic-nyx (`chaotic` flake input) packages are normally served pre-built
-  from `nyx-cache.chaotic.cx`. If a chaotic-sourced package (the fleet-wide
-  CachyOS kernel, `gamescope_git`, `proton-cachyos`, `mesa-git`, the
-  `_git`-suffixed packages, etc.) suddenly starts building from source after a
-  `nix flake update`, it almost always means the local `chaotic` input has
-  drifted ahead of what the cache has built yet, or hit a hash mismatch — check
-  `https://nyx-cache.chaotic.cx/` reachability and compare the pinned `chaotic`
-  rev in `flake.lock` against the latest cached build on the Nyx site before
-  assuming the package itself is broken. Jovian-NixOS is *not* a separate input
-  for this reason — it's consumed via `inherit (chaotic.vendored) jovian;` in
-  `flake.nix` specifically to avoid this class of hash mismatch.
+amalthea (done, this tree) → the other 3 kiosks (metis/adrastea/thebe) →
+ganymede (resolver/services) → europa (NAS + backup wiring) → callisto
+(diskless PXE) → himalia (laptop) → gaming/branding/terranix/edge layers.
+Port each from `master`, keeping the buildability rules above.

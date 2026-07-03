@@ -1,150 +1,103 @@
-# Jupiter OS
+# jupiter-os (bootstrap rebuild)
 
-A declarative, ZFS-backed NixOS monorepo for the Jupiter infrastructure.
+Declarative, ZFS-backed NixOS monorepo for the Jupiter home/lab
+infrastructure — **rebuilt from scratch, one machine at a time**.
 
-> **Full documentation:** see [`docs/`](docs/README.md) for architecture,
-> a per-host reference, the complete software inventory for every machine,
-> networking/storage/secrets details, and operational runbooks. This README
-> stays focused on the quick-start commands.
+The previous iteration of this repo (preserved on the `master` branch, and
+used as the reference for this rebuild) designed the entire 10-host fleet up
+front and was never successfully built end-to-end. The main reasons:
 
-## Topology
-Hosts are named after Jupiter's moons.
-- **`ganymede`** (Lenovo compute node): Bare-metal NixOS host running the Home Assistant VM (HAOS) and `n8n`.
-- **`europa`** (NAS): ZFS storage array. The central backup and replication target for the fleet.
-- **`himalia`** (laptop): Personal workstation.
-- **`metis` / `adrastea` / `amalthea` / `thebe`** (Toshiba TCx Wave dashboards): 4x Wayland kiosk touchscreen nodes, one per room (kitchen/office/jupiter-bedroom/robbie-room), each its own host pointing `jupiter.dashboardKiosk.url` at that room's dashboard.
-- **`callisto`** (Elitedesk 800 G4): Diskless compute node (netboots from PXE).
+- **Microarch-tuned closures** (`nixpkgs.hostPlatform.gcc.arch = "skylake"`)
+  invalidated the public binary cache for the whole system — Chromium, the
+  kernel, everything compiled from source, gated on a private attic cache
+  that didn't exist yet.
+- **Custom kernels everywhere** (fleet-wide CachyOS via chaotic-nyx,
+  `linuxPackages_latest` on the kiosks, a `mkForce linuxPackages_7_0` patch
+  in the ZFS layer to hold it all together) — three modules fighting over the
+  kernel, none of them the cached, ZFS-supported default.
+- **Heavy, fragile inputs** (chaotic-nyx, jovian, home-manager, deploy-rs,
+  terranix, a private `ha-linux-agent` flake) injected into every host, so
+  nothing evaluated unless everything fetched.
+- **Cross-host coupling** (PXE closure wiring, the backup-hub scan over all
+  hosts, deploy-rs checks) meant building one machine required evaluating
+  the whole fleet.
 
-## Secrets
-Secrets are managed with `sops-nix` and `Age`. The master key is derived from the primary admin SSH key (`id_ed25519`).
-All secrets live encrypted in `secrets/secrets.yaml`.
+This tree inverts that: start from the **smallest real machine**, prove it
+builds/boots/deploys, then grow.
 
-## Deployment
+## Bootstrap host: amalthea
 
-Build and test configurations locally using the `Makefile`:
+A Toshiba TCx Wave 6140-E45 dashboard kiosk (jupiter-bedroom). Impermanent
+ZFS root (erase-your-darlings), Cage + Chromium kiosk session, stock nixpkgs
+kernel — everything comes from cache.nixos.org.
+
 ```bash
-make build-all          # build every host closure + mx4300 firmware
-make test-ganymede      # build & boot a host in a QEMU VM
-make check              # nix flake check (evaluates all hosts + deploy checks)
-make fmt                # format Nix sources (nixfmt-rfc-style)
+make check            # nix flake check — builds every registered host
+make build-all        # build the amalthea closure explicitly
+make test-amalthea    # build & boot it in an interactive QEMU VM
+make boot-smoke-amalthea  # headless CI-style boot test
+make fmt              # format all Nix (nixfmt-rfc-style)
 ```
 
-Deploy remotely using `deploy-rs` (all eight hosts are registered as nodes):
-```bash
-deploy .#ganymede
-```
+### Installing onto the real unit
 
-### Bootstrapping a new host
-1. Generate the host's age key and add its public key to `.sops.yaml`, then
-   re-encrypt: `sops updatekeys secrets/secrets.yaml`.
-2. Add the host to `hosts/`, then to `nixosConfigurations` and `deploy.nodes`
-   in `flake.nix`.
-3. Partition + install with disko (for hosts with local disks), e.g. via
-   `nixos-anywhere --flake .#<host> root@<ip>`. `callisto` is diskless and
-   netboots from the PXE server on `ganymede`.
+1. Set the real OS disk in `hosts/amalthea/configuration.nix`
+   (`jupiter.storage.disk` — currently a REPLACE-ME placeholder; disko will
+   WIPE that device).
+2. Boot the unit from a NixOS installer/rescue image with SSH up, then from
+   a machine holding this repo:
 
-### Gaming profile (Bazzite-on-Nix)
+   ```bash
+   nix run github:nix-community/nixos-anywhere -- --flake .#amalthea root@<installer-ip>
+   ```
 
-`modules/gaming/console.nix` brings a modern Bazzite-style gaming experience to
-any host, built on [Jovian-NixOS](https://github.com/Jovian-Experiments/Jovian-NixOS)
-(the SteamOS gamescope "gaming mode") and [chaotic-nyx](https://github.com/chaotic-cx/nyx)
-(CachyOS kernel, `mesa-git`, sched-ext/`scx`, `gamescope_git`). Both inputs are
-injected into every host in `flake.nix`, so the options resolve everywhere and
-nothing activates until a host opts in.
+3. After first boot, derive the host's age key from its SSH host key and
+   re-key the secrets so it can decrypt `io_password`:
 
-Attach it to a machine by toggling it in that host's `configuration.nix`:
-```nix
-jupiter.gaming.console = {
-  enable = true;
-  gpu = "amd";            # "amd" | "intel" | "nvidia"
-  user = "io";            # owns Steam, autologs into gaming mode
-  gamingMode.enable = true; # boot-to-Steam console/handheld session (optional)
-  # decky.enable = true;    # Decky Loader
-  # steamdeck.enable = true; # Steam Deck / handheld hardware quirks
-  apps.minecraft = false;   # drop any individual app from the stack (all on by default)
-  peripherals = {
-    # controllers = true;       # Xbox pads via xpadneo/xone (on by default)
-    racingWheels = true;        # Logitech FFB wheels (new-lg4ff), Oversteer, Solaar
-    # openrgb = true;           # RGB peripheral / LED control
-    # drawingTablet = true;     # OpenTabletDriver
-  };
-};
-```
-With `gamingMode.enable = false` you still get the full gaming software stack
-(Steam, Proton-GE, gamescope, MangoHud, Lutris, Heroic, OBS VkCapture, …) on a
-normal desktop; with it `true` the host boots into the SteamOS-like session.
+   ```bash
+   ssh amalthea 'cat /etc/ssh/ssh_host_ed25519_key.pub' | nix run nixpkgs#ssh-to-age
+   # replace amalthea's placeholder recipient in .sops.yaml with that key, then:
+   sops updatekeys secrets/secrets.yaml
+   ```
 
-Two ideas are borrowed from [GLF-OS](https://glfos.org) (the French gaming
-NixOS distro):
+   (The kiosk works without secrets — only the `io` admin login password
+   comes from sops.)
 
-- **À-la-carte app toggles** — the optional software stack is a data-driven
-  catalogue (`appCatalog` in the module), surfaced as `apps.<name>` options
-  that all default on. Enabling the profile gives you everything; set any to
-  `false` (e.g. `apps.minecraft = false`) to slim it down. Steam, gamescope,
-  gamemode and Proton-GE are the always-on core.
-- **First-boot peripherals** (`peripherals`) — Xbox controllers (xpadneo/xone)
-  plus a DualSense touchpad fix are on by default; force-feedback Logitech
-  wheels (`new-lg4ff`) with Oversteer/Solaar, drawing tablets (OpenTabletDriver)
-  and RGB control (OpenRGB) are one toggle away. (Fanatec's kernel driver is
-  out-of-tree and not vendored here, unlike GLF-OS.)
+## Growing the fleet
 
-> The chaotic module adds the `cache.chaotic.cx` substituter to every host (its
-> recommended setup) so CachyOS kernel/Mesa builds are fetched, not rebuilt.
+Bring machines back one at a time, in dependency order, porting their config
+from `master` and re-adding flake inputs only when a machine actually needs
+them:
 
-#### Dual-session dashboards (kiosk + gaming on separate VTs)
+1. **amalthea** (this tree) — proves the flake, storage profiles,
+   impermanence, sops, kiosk stack.
+2. **metis / adrastea / thebe** — clones of amalthea (different
+   hostName/hostId/dashboard URL). Trivial once amalthea is on hardware.
+3. **ganymede** (always-on services: resolver/DNS, PXE, tunnels) — then pin
+   `networking.nameservers` back to it in `modules/common.nix`.
+4. **europa** (NAS) — restores the `jupiter.backup` auto-replication wiring
+   that was stripped from `modules/storage/zfs-profiles.nix`.
+5. **callisto** (diskless PXE), **himalia** (laptop, home-manager), gaming/
+   branding/terranix/edge-device layers — each restores its own inputs.
 
-`modules/desktop/dashboard-gaming.nix` (`jupiter.dashboardGaming`, off by
-default, wired into each of `hosts/{metis,adrastea,amalthea,thebe}`) turns a
-dashboard unit into a dual-session box: the Cage/Chromium kiosk on VT 6 and a
-gamescope/Steam session on VT 7, both live at once. systemd-logind hands DRM
-master between them on VT switch, so flipping is just:
-```bash
-ssh root@<unit> jupiter-mode gaming      # or: dashboard | toggle
-```
-(Ctrl+Alt+F6 / Ctrl+Alt+F7 also work with a keyboard attached.) It reuses the
-host's `services.cage` kiosk command (set per-host via
-`jupiter.dashboardKiosk.url` in `modules/desktop/dashboard-kiosk.nix`) and
-pulls in the Bazzite stack with stock kernel/Mesa and `gpu = "intel"`. The 4
-dashboard kiosks are already separate hosts (`metis`/`adrastea`/`amalthea`/
-`thebe`, one per room), so enable this on just the unit(s) you want.
+Rules that keep this buildable:
 
-**Home Assistant control:** with `jupiter.dashboardGaming.homeAssistant.enable`,
-each unit runs an MQTT agent that emits HA discovery — HA auto-creates a
-*Display Mode* `select` (Dashboard/Gaming) — accepts commands, and publishes the
-live active VT (so manual Ctrl+Alt+F switches show up too). The broker is
-Mosquitto on ganymede (`modules/services/mqtt.nix`, `jupiter.services.mqtt`,
-`10.1.1.20:1883`), running **authenticated** — defining `users` disables
-anonymous access automatically. The `homeassistant` and `dashboard` users share
-plaintext passwords stored as sops secrets, so add them before deploying:
-```bash
-sops secrets/secrets.yaml      # add: mqtt_homeassistant, mqtt_dashboard
-```
-Then set the same `mqtt_homeassistant` password in Home Assistant's MQTT
-integration (the HAOS VM connects to `10.1.1.20`). Plaintext over `1883` is fine
-on the trusted LAN/headscale mesh; add a TLS listener if you want transport
-encryption too.
+- **No custom kernels on ZFS hosts.** The stock `linuxPackages` default is
+  the one ZFS always supports and the cache always has.
+- **No microarch tuning** until a trusted build cache exists and is proven.
+- **A new input must be justified by a registered host** that uses it.
+- **Every registered host is a flake check** — `nix flake check` builds it,
+  CI boot-tests it. Don't register scaffolds that can't build.
 
-> Because the broker on ganymede is authenticated and always-on, the
-> `mqtt_homeassistant`/`mqtt_dashboard` secrets must exist in `secrets.yaml`
-> before the next `deploy .#ganymede` (sops reads them at activation).
+## Layout
 
-### Network / DNS (Terraform via terranix)
-The UniFi and Cloudflare configs are authored in Nix under `terraform/` and
-applied through the Makefile (secrets injected from `secrets.yaml` as `TF_VAR_*`):
-```bash
-make tf-plan-unifi      # review changes
-make tf-apply-unifi
-make tf-plan-cloudflare
-make tf-apply-cloudflare
-```
-> Note: `tf-apply-cloudflare` needs a `cloudflare_api_token` entry in
-> `secrets/secrets.yaml` (add it with `sops secrets/secrets.yaml`).
-
-### Edge firmware (Linksys MX4300 APs)
-```bash
-make build-mx4300       # renders secret templates via sops, builds OpenWrt image
-```
-
-## CI
-`.github/workflows/ci.yml` runs formatting + `nix flake check` and builds every
-host closure on each push/PR.
+- `flake.nix` — inputs (nixpkgs, disko, impermanence, sops-nix), `mkHost`,
+  `nixosConfigurations`, checks, formatter, dev shell.
+- `hosts/<name>/configuration.nix` — per-host config. Hosts are named after
+  Jupiter's moons.
+- `modules/` — reusable NixOS modules behind the `jupiter.*` options
+  namespace (`jupiter.storage.profile`, `jupiter.core.impermanence`,
+  `jupiter.dashboardKiosk`, …). Hosts opt in via toggles.
+- `secrets/secrets.yaml` — sops-nix + age (recipients in `.sops.yaml`);
+  carried over unchanged from the previous tree.
+- `scripts/boot-smoke.sh` — headless QEMU boot assertion used by CI.

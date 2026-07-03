@@ -1,6 +1,5 @@
 {
   config,
-  pkgs,
   lib,
   ...
 }:
@@ -9,14 +8,15 @@ let
   cfg = config.jupiter.core.impermanence;
 in
 {
-
   options.jupiter.core.impermanence = {
-    enable = lib.mkEnableOption "Enable impermanence (erase your darlings)";
+    enable = lib.mkEnableOption "impermanence (erase your darlings)";
+
     persistPath = lib.mkOption {
       type = lib.types.str;
       default = "/persist";
       description = "The path where persistent state is kept.";
     };
+
     persistAdminHome = lib.mkOption {
       type = lib.types.bool;
       default = true;
@@ -26,16 +26,19 @@ in
         need to persist a service account's state via `users` below.
       '';
     };
+
     extraDirectories = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [ ];
       description = "Host-specific system directories to persist.";
     };
+
     extraFiles = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [ ];
       description = "Host-specific system files to persist.";
     };
+
     users = lib.mkOption {
       type = lib.types.attrsOf (
         lib.types.submodule {
@@ -63,15 +66,13 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    # Map essential system files and directories from the persistent store
+    # Map essential system files and directories from the persistent store.
     environment.persistence."${cfg.persistPath}" = {
       hideMounts = true;
       directories = [
         "/var/log"
         "/var/lib/nixos"
         "/var/lib/systemd/coredump"
-        "/var/lib/libvirt"
-        "/etc/NetworkManager/system-connections"
         "/var/lib/sops-nix" # Essential for secret decryption after reboot
       ]
       ++ cfg.extraDirectories;
@@ -88,17 +89,11 @@ in
           io = {
             directories = [
               "Downloads"
-              "Music"
-              "Pictures"
               "Documents"
-              "Videos"
               "Projects"
               ".config"
               ".ssh"
               ".local/share/keyrings"
-              ".local/share/direnv"
-              ".gemini"
-              ".claude"
             ];
             files = [
               ".bash_history"
