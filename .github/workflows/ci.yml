@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Fast feedback: formatting + full flake evaluation (includes deploy-rs checks).
+  # Fast feedback: formatting + flake evaluation.
   check:
     runs-on: ubuntu-latest
     steps:
@@ -20,33 +20,23 @@ jobs:
       - uses: DeterminateSystems/magic-nix-cache-action@main
       - name: Check formatting
         run: nix run nixpkgs#nixfmt-rfc-style -- --check .
-      - name: Flake check (evaluates every host + deploy checks)
+      - name: Flake check (evaluates every host)
         run: nix flake check --no-build
-      - name: Modules options doc is up to date
-        run: make docs-modules-check
 
-  # Build each host's system closure, then (for VM-bootable hosts) boot it
-  # headless in QEMU and assert it reaches multi-user — catches bootloader /
-  # disko / impermanence / unit-ordering regressions that a pure `nix build`
-  # of the toplevel can't. One job per host (not two separate build/boot-test
-  # matrices) so: (1) a host whose build fails skips straight past its own
-  # boot test instead of wasting a whole second runner on a build we already
-  # know is broken, and (2) the boot-test step reuses the same runner's local
-  # Nix store the build step just populated, instead of re-fetching/rebuilding
-  # everything from cold on a second machine. sops secrets are read at
-  # activation time, not build time, so no decryption key is needed here.
-  # callisto is a diskless netboot image (not VM-bootable this way), so it
-  # only gets the build step.
+  # Build each host's system closure, then boot it headless in QEMU and
+  # assert it reaches multi-user — catches bootloader / disko / impermanence
+  # / unit-ordering regressions that a pure `nix build` of the toplevel
+  # can't. sops secrets are read at activation time, not build time, so no
+  # decryption key is needed here.
   build-and-boot-test:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        host: [ganymede, himalia, europa, metis, adrastea, amalthea, thebe, callisto, elara, carme]
+        host: [amalthea]
     steps:
       - uses: actions/checkout@v4
       - name: Enable KVM
-        if: success() && matrix.host != 'callisto'
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -57,5 +47,4 @@ jobs:
       - name: Build ${{ matrix.host }}
         run: nix build .#nixosConfigurations.${{ matrix.host }}.config.system.build.toplevel
       - name: Boot smoke test ${{ matrix.host }}
-        if: success() && matrix.host != 'callisto'
         run: ./scripts/boot-smoke.sh ${{ matrix.host }} 360

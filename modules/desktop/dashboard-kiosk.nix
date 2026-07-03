@@ -9,8 +9,7 @@
 # fleet. Each unit is its own host (own hostName/hostId/dashboard URL — they
 # can't share an identity since they each point at a different room's Home
 # Assistant dashboard), but the kiosk session itself is identical hardware
-# and identical mechanics, so it lives here once instead of being
-# quadruplicated across hosts/{metis,adrastea,amalthea,thebe}.
+# and identical mechanics, so it lives here once.
 
 let
   cfg = config.jupiter.dashboardKiosk;

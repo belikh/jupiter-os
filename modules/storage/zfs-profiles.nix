@@ -6,21 +6,25 @@
 }:
 
 # Shared ZFS-on-root disko layouts, selected per host by an opinionated
-# `jupiter.storage.profile`. Replaces the old per-host `disko.nix` boilerplate
-# for the simple single-OS-disk hosts. Hosts with bespoke multi-pool layouts
-# (the NAS) keep their own `disko.nix` and leave `profile = "none"`.
+# `jupiter.storage.profile`. Hosts with bespoke multi-pool layouts (the future
+# NAS) keep their own `disko.nix` and leave `profile = "none"`.
 #
 # Profiles:
 #   impermanent  rpool/{local/root@blank, local/nix, safe/persist}; root rolls
 #                back to @blank every boot (erase-your-darlings). Pair with
 #                jupiter.core.impermanence to choose what survives. For
-#                appliances/workstations (laptop, kiosks).
+#                appliances/workstations (kiosks, laptop).
 #   stateful     rpool/{root, nix, var}; persistent root, no rollback. For
 #                always-on servers whose state must not be wiped on reboot.
-#   minimal      rpool/{root, nix}; persistent root, no extra datasets. For
-#                simple stateless boxes with nothing under a separate /var.
+#   minimal      rpool/{root, nix}; persistent root, no extra datasets.
 #   none         contributes nothing (default) — the host declares its own
 #                disko layout, or is diskless.
+#
+# Kernel note: any host with a ZFS root deliberately stays on the stock
+# `pkgs.linuxPackages` default — always within ZFS's supported range and
+# served from cache.nixos.org. The old tree's per-host kernel picks
+# (linuxPackages_latest, CachyOS) are what forced the unbuildable
+# lib.mkForce kernel-pinning hack here; don't reintroduce them on ZFS hosts.
 
 let
   cfg = config.jupiter.storage;
@@ -86,8 +90,8 @@ in
       default = "/dev/disk/by-id/REPLACE-ME";
       description = ''
         The OS disk to partition. disko is DESTRUCTIVE to this device, so it
-        defaults to a placeholder that fails the assertion below — set it to
-        the real /dev/disk/by-id path before installing.
+        defaults to a placeholder — set it to the real /dev/disk/by-id path
+        before installing.
       '';
     };
 
@@ -99,64 +103,22 @@ in
   };
 
   config = lib.mkIf (cfg.profile != "none") {
-    # ZFS lags the kernel: nixpkgs currently declares 7.0 as the newest kernel
-    # series the zfs module builds against (see
-    # pkgs/os-specific/linux/zfs/generic.nix's kernelMaxSupportedMajorMinor).
-    # A host with a ZFS-on-root profile needs a kernel ZFS actually supports
-    # more than it needs the fleet-wide CachyOS default (modules/common.nix)
-    # or any host-specific pick (e.g. the TCx Wave kiosks' linuxPackages_latest
-    # power tuning) — mkForce so this wins over both. Bump the version here in
-    # lockstep whenever nixpkgs raises zfs's kernelMaxSupportedMajorMinor.
-    boot.kernelPackages = lib.mkForce pkgs.linuxPackages_7_0;
-
-    # The ESP this module declares below (disko.devices, type EF00) is a UEFI
-    # System Partition — so give every host that gets one from here a working
-    # UEFI GRUB default tied to it, rather than leaving hosts with no
-    # `jupiter.branding.enable` (which happens to be the only place that
-    # currently sets `efiSupport`/`device`) with NixOS's bare defaults
-    # (`device = ""`, `efiSupport = false`), which can't actually install:
-    # legacy-BIOS GRUB needs a real block device, and this GPT layout has no
-    # BIOS boot partition for it to embed into. mkDefault so branding.nix (or
-    # any host) can still override.
-    boot.loader.efi.canTouchEfiVariables = lib.mkDefault true;
-    boot.loader.grub = {
-      efiSupport = lib.mkDefault true;
-      device = lib.mkDefault "nodev";
-    };
-
-    # Automatic central-backup wiring: a server's state dataset replicates to the
-    # NAS by default. Appliances/workstations (impermanent) don't — their data
-    # roams via Syncthing or is reproducible. Hosts can override jupiter.backup.
-    jupiter.backup = {
-      enable = lib.mkDefault (cfg.profile == "stateful");
-      datasets = lib.mkDefault (
-        if cfg.profile == "stateful" then
-          [ "rpool/var" ]
-        else if cfg.profile == "impermanent" then
-          [ "rpool/safe/persist" ]
-        else
-          [ ]
-      );
-    };
-
-    # A warning, not a hard assertion: no hardware is provisioned yet for any
-    # host in this fleet (see docs/roadmap.md), so a REPLACE-ME disk is the
-    # expected pre-deployment state everywhere and must not block `nix build`
-    # / `nix flake check` / CI. The placeholder path doesn't exist on disk, so
-    # disko itself will simply fail loudly ("no such device") if someone tries
-    # to actually install against it — this is just an earlier, friendlier
-    # nudge to fill in the real /dev/disk/by-id path first.
+    # A warning, not a hard assertion: a REPLACE-ME disk must not block
+    # `nix build` / `nix flake check` / CI. The placeholder path doesn't exist
+    # on disk, so disko itself fails loudly ("no such device") if someone
+    # tries to actually install against it — this is just an earlier,
+    # friendlier nudge.
     warnings = lib.optional (lib.hasInfix "REPLACE-ME" cfg.disk) ''
       jupiter.storage.disk on host "${config.networking.hostName}" is still
       the REPLACE-ME placeholder. disko will WIPE whatever device this
       points at, so set it to the real /dev/disk/by-id path of the OS disk
-      before installing (see docs/09-operations.md):
+      before installing:
         ls -l /dev/disk/by-id/   # pick the OS SSD/NVMe, NOT a data disk
     '';
 
-    # Erase-your-darlings: roll the root dataset back to its @blank snapshot in
-    # initrd, before the root is mounted. Only meaningful for the impermanent
-    # profile.
+    # Erase-your-darlings: roll the root dataset back to its @blank snapshot
+    # in initrd, before the root is mounted. Only meaningful for the
+    # impermanent profile. Requires boot.initrd.systemd.enable.
     boot.initrd.systemd.services.rollback = lib.mkIf isImpermanent {
       description = "Rollback root ZFS dataset to a pristine state";
       wantedBy = [ "initrd.target" ];
@@ -165,9 +127,9 @@ in
       path = [ pkgs.zfs ];
       unitConfig.DefaultDependencies = "no";
       serviceConfig.Type = "oneshot";
-      # Guard on the snapshot existing: a no-op if the pool isn't present (e.g.
-      # a synthesized build-vm during CI), and we'd rather skip than wedge boot
-      # if the @blank snapshot is somehow missing on real hardware.
+      # Guard on the snapshot existing: a no-op if the pool isn't present
+      # (e.g. a synthesized build-vm during CI), and we'd rather skip than
+      # wedge boot if the @blank snapshot is somehow missing on real hardware.
       script = ''
         if zfs list -t snapshot rpool/local/root@blank >/dev/null 2>&1; then
           zfs rollback -r rpool/local/root@blank
