@@ -22,7 +22,7 @@
   # ⚠️ disk is a REPLACE-ME placeholder — set the real by-id path before install.
   jupiter.storage = {
     profile = "impermanent";
-    disk = "/dev/disk/by-id/REPLACE-ME-thebe-os-disk";
+    disk = "/dev/disk/by-id/ata-SanDisk_SD9SN8W128G1011_204903800540";
   };
 
   jupiter.core.impermanence = {
@@ -40,7 +40,17 @@
 
   jupiter.dashboardKiosk = {
     enable = true;
-    url = "https://ha.jupiter.au/robbie-room";
+    url = "https://iot.jupiter.au/robert-room/quarters";
+  };
+
+  # Wireless configuration for the USB Wi-Fi adapter (NetGear A6210 / MediaTek MT7612U)
+  networking.wireless = {
+    enable = true;
+    networks = {
+      "jupiter.au" = {
+        psk = "lolcats66";
+      };
+    };
   };
 
   # Integrated 15" PCAP touchscreen: NO custom/kernel driver needed. The panel

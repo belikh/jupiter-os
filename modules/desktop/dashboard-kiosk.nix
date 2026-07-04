@@ -36,7 +36,7 @@ in
       # (offloads the CPU), and trimming background networking/sync/updates
       # that would otherwise wake the box for no benefit on a single-purpose
       # kiosk.
-      program = "${pkgs.chromium}/bin/chromium --kiosk --incognito --app=${cfg.url} --ozone-platform=wayland --use-gl=egl --enable-features=VaapiVideoDecoder,VaapiIgnoreDriverChecks --disable-background-networking --disable-sync --disable-translate --disable-component-update --disable-extensions --no-first-run";
+      program = "${pkgs.chromium}/bin/chromium --kiosk --app=${cfg.url} --ozone-platform=wayland --use-gl=egl --enable-features=VaapiVideoDecoder,VaapiIgnoreDriverChecks --disable-background-networking --disable-sync --disable-translate --disable-component-update --disable-extensions --no-first-run --remote-debugging-port=9222 --remote-allow-origins=*";
     };
 
     users.users.kiosk = {

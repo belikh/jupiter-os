@@ -16,6 +16,7 @@
   ];
 
   nixpkgs.config.allowUnfree = true;
+  hardware.enableRedistributableFirmware = lib.mkDefault true;
 
   # Baseline admin tooling, present on every host (headless or not).
   environment.systemPackages = with pkgs; [
@@ -78,6 +79,8 @@
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICGxxtapYd7cY/NJjzTjdRQpuTKCs6jisSmKc5WfypZV forensic-analysis"
     ];
   };
+
+  users.users.root.openssh.authorizedKeys.keys = config.users.users.io.openssh.authorizedKeys.keys;
 
   # Make it easy to log into the VM for testing (`make test-<host>` /
   # scripts/boot-smoke.sh). io and root intentionally share the same hardcoded

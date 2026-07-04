@@ -55,12 +55,17 @@
   # hardware) and list only what this specific, known machine needs to find
   # its root device and basic input. The 128GB SSD is a SanDisk Z400s on the
   # SATA/AHCI bus (confirmed by SUSE's YES cert for the 6140-E45 — ahci.ko);
-  # this chassis has no NVMe slot.
+  # this chassis has no NVMe slot. sd_mod is required for SCSI/SATA disk block
+  # devices, xhci_pci is needed for USB host controllers on Skylake, and uas
+  # helps with USB storage/installers.
   boot.initrd.includeDefaultModules = false;
   boot.initrd.availableKernelModules = [
     "ahci"
+    "xhci_pci"
     "usb_storage"
+    "uas"
     "usbhid"
+    "sd_mod"
   ];
 
   # No beep hardware worth a kernel module on a touchscreen kiosk appliance.
@@ -144,5 +149,13 @@
   services.journald.extraConfig = ''
     Storage=volatile
     RuntimeMaxUse=64M
+  '';
+
+  # Udev rules for integrated POS peripherals (MSR, customer display, etc.)
+  # to grant the kiosk session user access to them via the video group.
+  services.udev.extraRules = ''
+    # Toshiba TCxWave IO Control (customer display, MSR, keylock)
+    SUBSYSTEM=="hidraw", ATTRS{idVendor}=="0f66", ATTRS{idProduct}=="4500", MODE="0660", GROUP="video"
+    SUBSYSTEM=="usb", ATTRS{idVendor}=="0f66", ATTRS{idProduct}=="4500", MODE="0660", GROUP="video"
   '';
 }

@@ -38,7 +38,7 @@
 
   jupiter.dashboardKiosk = {
     enable = true;
-    url = "https://ha.jupiter.au/jupiter-bedroom";
+    url = "https://iot.jupiter.au/jupiter-room/quarters";
   };
 
   # Integrated 15" PCAP touchscreen: NO custom/kernel driver needed. The panel
