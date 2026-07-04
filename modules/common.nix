@@ -41,8 +41,15 @@
   # unattended reboot.
   boot.loader.timeout = lib.mkDefault 3;
 
-  # Safer ZFS default (becomes the default in 26.11).
-  boot.zfs.forceImportRoot = lib.mkDefault false;
+  # Force-import the root pool in initrd. These are single-disk appliances
+  # with no shared/multipath storage, so the split-brain protection that
+  # forceImportRoot=false buys is irrelevant here — but it DOES break the
+  # first boot after a nixos-anywhere install: disko creates rpool under the
+  # installer's hostId, and on first boot the host's own hostId differs, so
+  # ZFS refuses the import without -f. Forcing it is safe and lets a fresh
+  # install boot unattended. (After the first import under the host's own
+  # hostId, subsequent boots match anyway.)
+  boot.zfs.forceImportRoot = lib.mkDefault true;
 
   # DNS comes from DHCP (the UDM gateway) during the bootstrap phase — the
   # ganymede resolver doesn't exist yet. When it's brought back up, pin
