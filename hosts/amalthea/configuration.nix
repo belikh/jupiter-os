@@ -18,10 +18,9 @@
 
   # Stateless kiosk appliance: erase-your-darlings root so the box always
   # boots to a known-pristine state and can't accumulate drift.
-  # ⚠️ disk is a REPLACE-ME placeholder — set the real by-id path before install.
   jupiter.storage = {
     profile = "impermanent";
-    disk = "/dev/disk/by-id/REPLACE-ME-amalthea-os-disk";
+    disk = "/dev/disk/by-id/ata-SanDisk_SD9SN8W128G1011_204903800470";
   };
 
   jupiter.core.impermanence = {
