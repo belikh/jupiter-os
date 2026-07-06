@@ -41,6 +41,12 @@ fn parse_args() -> Args {
 }
 
 fn main() -> Result<(), slint::PlatformError> {
+    // rustls 0.23 needs a process-level CryptoProvider before any TLS. We use
+    // tokio-tungstenite's rustls backend for wss://; without this the first
+    // connect_async panics ("Could not automatically determine the process-level
+    // CryptoProvider"). Install ring once — idempotent across reconnects.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     let args = parse_args();
     let room = args
         .room
