@@ -1,5 +1,6 @@
 {
   config,
+  lib,
   ...
 }:
 
@@ -24,6 +25,24 @@
     enable = true;
     dashboardUrl = "https://iot.jupiter.au/jupiter-room/quarters";
     disk = "/dev/disk/by-id/ata-SanDisk_SD9SN8W128G1011_204903800470";
+  };
+
+  # ── robcoterm cutover (task.md T4.4) ──────────────────────────────────────
+  # Cage+Chromium is stopped here (the `kiosk` user it created in
+  # dashboard-kiosk.nix stays — robcoterm runs as it). robcoterm then owns tty1
+  # and the DRM scanout directly. Rollback = revert this block (cage comes back
+  # via the tcxWaveKiosk profile). cage was already inactive on this box before
+  # the cutover, so this is the first thing to actually light the panel.
+  # NOTE: robcoterm does not yet own DPMS/idle (Phase 4.1/4.2 code is unwired),
+  # so the screen won't sleep until that lands — acceptable for the bring-up.
+  services.cage.enable = lib.mkForce false;
+
+  sops.secrets.robcoterm_ha_token_amalthea.owner = "kiosk";
+
+  jupiter.robcotermKiosk = {
+    enable = true;
+    room = "bedroom";
+    haTokenFile = config.sops.secrets.robcoterm_ha_token_amalthea.path;
   };
 
   # Broker runs locally on amalthea — point ha-agent at localhost instead of
