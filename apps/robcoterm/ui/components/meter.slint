@@ -1,17 +1,43 @@
 import { Theme } from "../theme.slint";
 
-// A row of rectangles emulating a retro segmented LED array.
+// Retro LED bar. The fill colour comes from the caller (coloured by the gauge's
+// current level via level-color). Optional `warn-tick`/`alert-tick` (0..1
+// fractions) mark where the warn/alert zones begin on the track, so the bar
+// reads like the YAML's multi-segment gauges without per-segment layout math.
 export component Meter inherits Rectangle {
-    in property <float> value: 0.0;       // 0.0 .. 1.0
+    in property <float> value: 0.0;       // 0.0 .. 1.0 fill
+    in property <brush> fill-color: Theme.primary; // coloured by caller via level-color
+    in property <float> warn-tick: 1.0;   // 0..1 fraction where warn zone starts (1.0 = hidden)
+    in property <float> alert-tick: 1.0;  // 0..1 fraction where alert zone starts (1.0 = hidden)
     height: 14px;
     border-width: 1px;
     border-color: Theme.primary-dim;
-    background: rgba(0, 0, 0, 0.35);
-    HorizontalLayout {
-        spacing: 2px;
-        padding: 2px;
-        for seg[i] in [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] : Rectangle {
-            background: i < value * 20 ? Theme.primary : transparent;
-        }
+    background: Theme.track;
+
+    // Filled portion, coloured by level. Inline clamp (Slint has no builtin).
+    Rectangle {
+        x: 0px;
+        y: 0px;
+        width: parent.width * (root.value < 0.0 ? 0.0 : (root.value > 1.0 ? 1.0 : root.value));
+        height: parent.height;
+        background: root.fill-color;
+    }
+
+    // Zone boundary ticks.
+    Rectangle {
+        visible: root.warn-tick < 1.0;
+        x: parent.width * root.warn-tick;
+        y: 0px;
+        width: 1px;
+        height: parent.height;
+        background: Theme.warn;
+    }
+    Rectangle {
+        visible: root.alert-tick < 1.0;
+        x: parent.width * root.alert-tick;
+        y: 0px;
+        width: 1px;
+        height: parent.height;
+        background: Theme.alert;
     }
 }

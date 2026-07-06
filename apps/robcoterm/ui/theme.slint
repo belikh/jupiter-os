@@ -15,6 +15,12 @@ export global Theme {
 
     in-out property <color> background: #0c0700;
     in-out property <color> alert: #ff3333;
+    // mid-tier warning colour (between primary and alert) — the YAML gauges use
+    // --fallout-warn for the middle segment. Yellow-ish so it reads distinct
+    // from the room primary (which is amber/green/blue/purple per room).
+    in-out property <color> warn: #ffcc00;
+    // dimmed track colour for gauge backgrounds / unfilled segments.
+    in-out property <color> track: primary.transparentize(0.78);
 
     in-out property <string> font-family: "Monofonto";
     in-out property <length>  font-size-base: 14px;

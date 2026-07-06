@@ -4,19 +4,27 @@ import { StatusBar } from "components/status_bar.slint";
 import { NavBar } from "components/nav_bar.slint";
 import { Meter } from "components/meter.slint";
 
-// One telemetry gauge: title + numeric readout + a segmented meter bar whose
-// fill is (value-min)/(max-min) clamped to 0..1. Min/max/unit are UI concerns
-// (they live in jupiter-room.yaml `environment` view), so the page owns them;
-// Rust only delivers the raw float from the sensor state.
+// One telemetry gauge: title + numeric readout + a level-coloured meter with
+// warn/alert zone ticks. Min/max/warn-at/alert-at are UI constants from the
+// YAML (`environment` view); Rust only delivers the raw float. Level is
+// monotonic-high: value >= alert-at -> alert, >= warn-at -> warn, else ok.
 component GaugeCell inherits Rectangle {
     in property <string> title: "";
     in property <float> value: 0.0;
     in property <float> min: 0.0;
     in property <float> max: 1.0;
     in property <string> unit: "";
+    in property <float> warn-at: 9999999.0;
+    in property <float> alert-at: 9999999.0;
+
+    property <string> level:
+        root.value >= root.alert-at ? "alert"
+      : root.value >= root.warn-at ? "warn"
+      : "ok";
+    property <float> frac: (root.value - root.min) / (root.max - root.min);
 
     border-width: 1px;
-    border-color: Theme.primary-dim;
+    border-color: root.level == "alert" ? Theme.alert : root.level == "warn" ? Theme.warn : Theme.primary;
     background: Theme.background;
 
     VerticalLayout {
@@ -31,15 +39,16 @@ component GaugeCell inherits Rectangle {
         }
         Text {
             text: "\{round(root.value)} \{root.unit}";
-            color: Theme.primary;
+            color: root.level == "alert" ? Theme.alert : root.level == "warn" ? Theme.warn : Theme.primary;
             font-family: Theme.font-family;
             font-size: 22px;
             vertical-alignment: center;
         }
         Meter {
-            // Meter tolerates out-of-range (segments all-on >1.0 / all-off <0.0),
-            // so no clamp needed; the gauge min/max are distinct per YAML.
-            value: (root.value - root.min) / (root.max - root.min);
+            value: root.frac;
+            fill-color: root.level == "alert" ? Theme.alert : root.level == "warn" ? Theme.warn : Theme.primary;
+            warn-tick: (root.warn-at - root.min) / (root.max - root.min);
+            alert-tick: (root.alert-at - root.min) / (root.max - root.min);
         }
     }
 }
@@ -77,6 +86,8 @@ export component EnviroPage inherits Rectangle {
                     min: 400.0;
                     max: 2000.0;
                     unit: "ppm";
+                    warn-at: 800.0;
+                    alert-at: 1200.0;
                 }
                 GaugeCell {
                     title: "PM2.5";
@@ -84,22 +95,30 @@ export component EnviroPage inherits Rectangle {
                     min: 0.0;
                     max: 150.0;
                     unit: "µg";
+                    warn-at: 25.0;
+                    alert-at: 75.0;
                 }
             }
             Row {
                 GaugeCell {
+                    // YAML is non-monotonic (cold=warn, hot=alert); flag the
+                    // hot end as alert, leave cold unflagged.
                     title: "TEMPERATURE";
                     value: root.temperature;
                     min: 10.0;
                     max: 35.0;
                     unit: "°C";
+                    alert-at: 26.0;
                 }
                 GaugeCell {
+                    // YAML flags both dry and humid; flag the humid end.
                     title: "HUMIDITY";
                     value: root.humidity;
                     min: 0.0;
                     max: 100.0;
                     unit: "%";
+                    warn-at: 65.0;
+                    alert-at: 80.0;
                 }
             }
         }

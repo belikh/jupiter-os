@@ -4,19 +4,27 @@ import { StatusBar } from "components/status_bar.slint";
 import { NavBar } from "components/nav_bar.slint";
 import { Meter } from "components/meter.slint";
 
-// One body-metric row: label + numeric value + unit + a meter bar whose fill
-// is (value-min)/(max-min). min/max/unit are page-owned UI constants from the
-// YAML (`stats` view); Rust only delivers the float from the body-scale sensor.
+// One body-metric row: label + numeric value + unit + a level-coloured meter.
+// Healthy bounds (from the YAML `stats` healthy_min/healthy_max) drive the
+// level: value > healthy-max -> alert, value < healthy-min -> warn, else ok.
+// A bound of 0 disables that side (stats without a healthy bound stay "ok").
 component StatRow inherits Rectangle {
     in property <string> label: "";
     in property <float> value: 0.0;
     in property <float> min: 0.0;
     in property <float> max: 1.0;
     in property <string> unit: "";
+    in property <float> healthy-min: 0.0;
+    in property <float> healthy-max: 0.0;
+
+    property <string> level:
+        (root.healthy-max > 0.0 && root.value > root.healthy-max) ? "alert"
+      : (root.healthy-min > 0.0 && root.value < root.healthy-min) ? "warn"
+      : "ok";
 
     height: 48px;
     border-width: 1px;
-    border-color: Theme.primary-dim;
+    border-color: root.level == "alert" ? Theme.alert : root.level == "warn" ? Theme.warn : Theme.primary;
     background: Theme.background;
 
     HorizontalLayout {
@@ -33,7 +41,7 @@ component StatRow inherits Rectangle {
         }
         Text {
             text: "\{round(root.value)} \{root.unit}";
-            color: Theme.primary;
+            color: root.level == "alert" ? Theme.alert : root.level == "warn" ? Theme.warn : Theme.primary;
             font-family: Theme.font-family;
             font-size: 18px;
             width: 130px;
@@ -42,6 +50,7 @@ component StatRow inherits Rectangle {
         Meter {
             width: 220px;
             value: (root.value - root.min) / (root.max - root.min);
+            fill-color: root.level == "alert" ? Theme.alert : root.level == "warn" ? Theme.warn : Theme.primary;
         }
     }
 }
@@ -103,15 +112,15 @@ export component StatsPage inherits Rectangle {
             padding: 6px;
             spacing: 4px;
 
-            StatRow { label: "BODY FAT";      value: root.body-fat;      min: 0.0;   max: 40.0;  unit: "%"; }
-            StatRow { label: "MUSCLE";        value: root.muscle;        min: 0.0;   max: 70.0;  unit: "%"; }
-            StatRow { label: "WATER";         value: root.water;         min: 0.0;   max: 80.0;  unit: "%"; }
+            StatRow { label: "BODY FAT";      value: root.body-fat;      min: 0.0;   max: 40.0;  unit: "%"; healthy-max: 22.0; }
+            StatRow { label: "MUSCLE";        value: root.muscle;        min: 0.0;   max: 70.0;  unit: "%"; healthy-min: 35.0; }
+            StatRow { label: "WATER";         value: root.water;         min: 0.0;   max: 80.0;  unit: "%"; healthy-min: 45.0; }
             StatRow { label: "LEAN MASS";     value: root.lean;          min: 0.0;   max: 90.0;  unit: "KG"; }
             StatRow { label: "FAT MASS";      value: root.fat-mass;      min: 0.0;   max: 30.0;  unit: "KG"; }
             StatRow { label: "BONE MASS";     value: root.bone;          min: 0.0;   max: 6.0;   unit: "KG"; }
             StatRow { label: "BMR";           value: root.bmr;           min: 800.0; max: 2500.0; unit: "KCAL"; }
-            StatRow { label: "METABOLIC AGE"; value: root.metabolic-age; min: 0.0;   max: 80.0;  unit: "YRS"; }
-            StatRow { label: "VISCERAL FAT";  value: root.visceral;      min: 0.0;   max: 20.0;  unit: ""; }
+            StatRow { label: "METABOLIC AGE"; value: root.metabolic-age; min: 0.0;   max: 80.0;  unit: "YRS"; healthy-max: 40.0; }
+            StatRow { label: "VISCERAL FAT";  value: root.visceral;      min: 0.0;   max: 20.0;  unit: ""; healthy-max: 10.0; }
         }
 
         NavBar {
