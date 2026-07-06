@@ -1,0 +1,45 @@
+import { Theme } from "../theme.slint";
+import { PageId } from "../pages.slint";
+
+component NavButton inherits Rectangle {
+    in property <bool> active: false;
+    in property <string> label: "";
+    callback clicked();
+    background: root.active ? Theme.primary-soft : transparent;
+    border-width: root.active ? 1px : 0px;
+    border-color: Theme.primary;
+    Text {
+        text: root.label;
+        color: root.active ? Theme.primary : Theme.primary-dim;
+        font-family: Theme.font-family;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    TouchArea {
+        x: 0px; y: 0px;
+        width: root.width; height: root.height;
+        clicked => { root.clicked(); }
+    }
+}
+
+export component NavBar inherits Rectangle {
+    in property <PageId> current: PageId.quarters;
+    callback page-requested(PageId);
+
+    height: 44px;
+    border-width: 1px;
+    border-color: Theme.primary-dim;
+    background: Theme.background;
+
+    HorizontalLayout {
+        padding: 4px;
+        spacing: 4px;
+        NavButton { label: "QUARTERS"; active: root.current == PageId.quarters; clicked => { root.page-requested(PageId.quarters); } }
+        NavButton { label: "ENVIRO";   active: root.current == PageId.enviro;    clicked => { root.page-requested(PageId.enviro); } }
+        NavButton { label: "STATS";    active: root.current == PageId.stats;     clicked => { root.page-requested(PageId.stats); } }
+        NavButton { label: "ROSTER";   active: root.current == PageId.roster;    clicked => { root.page-requested(PageId.roster); } }
+        NavButton { label: "PAY";      active: root.current == PageId.pay;       clicked => { root.page-requested(PageId.pay); } }
+        NavButton { label: "PRINTER";  active: root.current == PageId.printer;   clicked => { root.page-requested(PageId.printer); } }
+        NavButton { label: "LIGHTS";   active: root.current == PageId.lights;    clicked => { root.page-requested(PageId.lights); } }
+    }
+}

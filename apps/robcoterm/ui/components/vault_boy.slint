@@ -1,0 +1,23 @@
+import { Theme } from "../theme.slint";
+
+// PLACEHOLDER: the spec renders @image-url("assets/<state>.png") here. The PNG
+// fallbacks do not exist in-tree yet (T3.2 asset population); until they do we
+// show a labelled tile so the layout compiles and the cell is visible. The
+// `y-offset` property is the hook the Rust `slint::Timer` bob will drive.
+export component VaultBoyMascot inherits Rectangle {
+    in property <string> state: "thumbs_up";
+    in property <length> y-offset: 0px;
+
+    border-width: 1px;
+    border-color: Theme.primary-dim;
+    background: Theme.primary-soft;
+
+    Text {
+        text: root.state;
+        y: parent.y + root.y-offset;
+        color: Theme.primary;
+        font-family: Theme.font-family;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}

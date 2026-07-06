@@ -6,8 +6,10 @@
 //!   - `ha`     — Home Assistant WebSocket client (Phase 2)
 //!   - `state`  — typed entity state cache (Phase 2)
 //!
-//! Phase 3 adds `dispatch` and Phase 4 add `display`/`input` here.
+//! Phase 3 adds `dispatch` (entity -> UI mutation plan). Phase 4 adds
+//! `display`/`input`.
 
+pub mod dispatch;
 pub mod ha;
 pub mod state;
 pub mod theme;

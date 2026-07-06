@@ -1,0 +1,88 @@
+import { Theme } from "theme.slint";
+import { PageId } from "pages.slint";
+import { StatusBar } from "components/status_bar.slint";
+import { NavBar } from "components/nav_bar.slint";
+import { OverviewCell } from "components/overview_cell.slint";
+
+// Bedroom overview (slint_layout_spec.md §3A). Presentational only — every
+// value arrives as an `in property` set from Rust (dispatch_plan -> App.set_*).
+// Tapping a cell requests a page change via cell-tapped; the root owns
+// current-page and conditionally mounts the matching page (Phase 3.5 adds the
+// detail pages; for now only the overview renders).
+export component QuartersPage inherits Rectangle {
+    in property <string>  air-quality:    "BREATHABLE";
+    in property <string>  occupancy:      "VACANT";
+    in property <bool>    room-lights-on: false;
+    in property <string>  temperature:    "--";
+    in property <string>  printer-state:  "STANDBY";
+    in property <string>  clock:          "";
+    in property <PageId>  current-page:   PageId.quarters;
+    in property <string>  connection:     "connected";
+
+    callback page-requested(PageId);
+    callback cell-tapped(PageId);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0px;
+
+        StatusBar {
+            title: "JUPITER QUARTERS";
+            air-quality: root.air-quality;
+            clock: root.clock;
+        }
+
+        GridLayout {
+            spacing: 8px;
+            padding: 8px;
+            Row {
+                OverviewCell {
+                    title: "ROOM LIGHTS";
+                    value: root.room-lights-on ? "ON" : "OFF";
+                    level: root.room-lights-on ? "ok" : "dim";
+                    tapped => { root.cell-tapped(PageId.lights); }
+                }
+                OverviewCell {
+                    title: "TEMPERATURE";
+                    value: root.temperature;
+                    level: "ok";
+                }
+            }
+            Row {
+                OverviewCell {
+                    title: "OCCUPANCY";
+                    value: root.occupancy;
+                    level: root.occupancy == "OCCUPIED" ? "ok" : "dim";
+                }
+                OverviewCell {
+                    title: "3D PRINTER";
+                    value: root.printer-state;
+                    level: root.printer-state == "PRINTING" ? "alert" : "ok";
+                    tapped => { root.cell-tapped(PageId.printer); }
+                }
+            }
+        }
+
+        NavBar {
+            current: root.current-page;
+            page-requested(p) => { root.page-requested(p); }
+        }
+    }
+
+    // ReconnectBanner (implementation_plan.md "Reconnect UX"): non-blocking
+    // overlay along the top while the worker reports not-Connected.
+    if root.connection != "connected" : Rectangle {
+        x: 0px; y: 0px;
+        width: root.width;
+        height: 28px;
+        background: Theme.alert;
+        Text {
+            text: root.connection == "connecting" ? "▒ RECONNECTING ▒" : "▒ LINK DOWN ▒";
+            color: black;
+            font-family: Theme.font-family;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}

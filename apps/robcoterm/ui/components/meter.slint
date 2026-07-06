@@ -1,0 +1,17 @@
+import { Theme } from "../theme.slint";
+
+// A row of rectangles emulating a retro segmented LED array.
+export component Meter inherits Rectangle {
+    in property <float> value: 0.0;       // 0.0 .. 1.0
+    height: 14px;
+    border-width: 1px;
+    border-color: Theme.primary-dim;
+    background: rgba(0, 0, 0, 0.35);
+    HorizontalLayout {
+        spacing: 2px;
+        padding: 2px;
+        for seg[i] in [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] : Rectangle {
+            background: i < value * 20 ? Theme.primary : transparent;
+        }
+    }
+}

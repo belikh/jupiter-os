@@ -1,0 +1,40 @@
+import { Theme } from "../theme.slint";
+
+// One tile of the 2x2 overview grid. level drives the phosphor colour:
+// "ok" -> primary, "alert" -> alert red, "dim" -> primary-dim.
+export component OverviewCell inherits Rectangle {
+    in property <string> title: "";
+    in property <string> value: "";
+    in property <string> level: "ok";
+    callback tapped();
+
+    border-width: 1px;
+    border-color: root.level == "alert" ? Theme.alert : Theme.primary-dim;
+    background: Theme.background;
+
+    VerticalLayout {
+        padding: 12px;
+        spacing: 6px;
+        Text {
+            text: root.title;
+            color: Theme.primary-dim;
+            font-family: Theme.font-family;
+            font-size: Theme.font-size-base;
+        }
+        Text {
+            text: root.value;
+            color: root.level == "alert" ? Theme.alert :
+                   root.level == "dim"   ? Theme.primary-dim : Theme.primary;
+            font-family: Theme.font-family;
+            font-size: 28px;
+            vertical-alignment: center;
+        }
+    }
+
+    // Invisible touch layer on top.
+    TouchArea {
+        x: 0px; y: 0px;
+        width: root.width; height: root.height;
+        clicked => { root.tapped(); }
+    }
+}

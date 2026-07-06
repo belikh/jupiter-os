@@ -1,16 +1,35 @@
-// Root window. The bedroom quarters overview mounts here in Phase C2; for T3.1
-// this exists so slint-build compiles the Theme global and Rust can reach it
-// via Theme::get(&ui). background + a single label prove the binding live.
 import { Theme } from "theme.slint";
+import { PageId } from "pages.slint";
+import { QuartersPage } from "quarters.slint";
 
-export { Theme }
+// Re-export so main.rs can reach them via the generated module.
+export { Theme, PageId }
 
+// Full-screen kiosk window. All data properties are in-out so Rust sets them
+// from the HA worker (dispatch_plan -> set_<prop>). Page nav is handled inside
+// Slint (page-requested sets current-page); Rust only observes.
 export component App inherits Window {
+    in-out property <string>  air-quality:    "BREATHABLE";
+    in-out property <string>  occupancy:      "VACANT";
+    in-out property <bool>    room-lights-on: false;
+    in-out property <string>  temperature:    "--";
+    in-out property <string>  printer-state:  "STANDBY";
+    in-out property <string>  clock:          "";
+    in-out property <PageId>  current-page:   PageId.quarters;
+    in-out property <string>  connection:     "connected";
+
     background: Theme.background;
-    Text {
-        text: "JUPITER";
-        color: Theme.primary;
-        font-family: Theme.font-family;
-        font-size: 24px;
+
+    QuartersPage {
+        air-quality:    root.air-quality;
+        occupancy:      root.occupancy;
+        room-lights-on: root.room-lights-on;
+        temperature:    root.temperature;
+        printer-state:  root.printer-state;
+        clock:          root.clock;
+        current-page:   root.current-page;
+        connection:     root.connection;
+        page-requested(p) => { root.current-page = p; }
+        cell-tapped(p)   => { root.current-page = p; }
     }
 }
