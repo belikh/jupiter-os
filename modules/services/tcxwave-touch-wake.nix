@@ -152,7 +152,11 @@ in
     systemd.services.tcxwave-screen-power = {
       description = "TCx Wave Display Power Control (DPMS)";
       after = [ "cage-tty1.service" ];
-      bindsTo = [ "cage-tty1.service" ];
+      # partOf (NOT bindsTo): restart/stop WITH cage so the daemon tracks the
+      # compositor, but without bindsTo's "forcibly stop if the bound unit is
+      # re-evaluated" semantic — which killed the daemon on every nixos-rebuild
+      # switch (Restart=always does not override a binding-initiated stop).
+      partOf = [ "cage-tty1.service" ];
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
@@ -176,7 +180,11 @@ in
         "cage-tty1.service"
         "tcxwave-screen-power.service"
       ];
-      bindsTo = [ "cage-tty1.service" ];
+      # partOf (NOT bindsTo): restart/stop WITH cage so the daemon tracks the
+      # compositor, but without bindsTo's "forcibly stop if the bound unit is
+      # re-evaluated" semantic — which killed the daemon on every nixos-rebuild
+      # switch (Restart=always does not override a binding-initiated stop).
+      partOf = [ "cage-tty1.service" ];
       wantedBy = [ "multi-user.target" ];
       serviceConfig = {
         ExecStart = "${touchWakeScript}/bin/tcxwave-touch-wake";
