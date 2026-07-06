@@ -1,23 +1,39 @@
 import { Theme } from "../theme.slint";
 
-// PLACEHOLDER: the spec renders @image-url("assets/<state>.png") here. The PNG
-// fallbacks do not exist in-tree yet (T3.2 asset population); until they do we
-// show a labelled tile so the layout compiles and the cell is visible. The
-// `y-offset` property is the hook the Rust `slint::Timer` bob will drive.
+// Vault Boy mascot. Renders one of the bundled FO76 PNGs (embedded at compile
+// time via @image-url, resolved by slint-build from apps/robcoterm/assets/vaultboy)
+// based on `mood`, colourized to the room's primary so the full-colour cartoon
+// reads as monochrome phosphor like the rest of the terminal:
+//   "idle"/"sleeping" -> lone wanderer, "home"/"occupied" -> camp (thumbs up),
+//   "alert"           -> first-aid,        "radiation"     -> geiger counter.
+// Multiple Image elements with visibility guards (rather than one dynamic
+// source) because @image-url is resolved at compile time.
 export component VaultBoyMascot inherits Rectangle {
-    in property <string> state: "thumbs_up";
-    in property <length> y-offset: 0px;
+    in property <string> mood: "idle";
+    background: transparent;
 
-    border-width: 1px;
-    border-color: Theme.primary-dim;
-    background: Theme.primary-soft;
-
-    Text {
-        text: root.state;
-        y: parent.y + root.y-offset;
-        color: Theme.primary;
-        font-family: Theme.font-family;
-        horizontal-alignment: center;
-        vertical-alignment: center;
+    Image {
+        source: @image-url("../../assets/vaultboy/FO76_vaultboy_lonewanderer.png");
+        visible: root.mood == "idle" || root.mood == "sleeping";
+        image-fit: contain;
+        colorize: Theme.primary;
+    }
+    Image {
+        source: @image-url("../../assets/vaultboy/FO76_vaultboy_camp.png");
+        visible: root.mood == "home" || root.mood == "occupied";
+        image-fit: contain;
+        colorize: Theme.primary;
+    }
+    Image {
+        source: @image-url("../../assets/vaultboy/FO76_vaultboy_firstaid.png");
+        visible: root.mood == "alert";
+        image-fit: contain;
+        colorize: Theme.warn;
+    }
+    Image {
+        source: @image-url("../../assets/vaultboy/FO76_vaultboy_geiger.png");
+        visible: root.mood == "radiation";
+        image-fit: contain;
+        colorize: Theme.alert;
     }
 }

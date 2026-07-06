@@ -3,6 +3,7 @@ import { PageId } from "pages.slint";
 import { StatusBar } from "components/status_bar.slint";
 import { NavBar } from "components/nav_bar.slint";
 import { OverviewCell } from "components/overview_cell.slint";
+import { VaultBoyMascot } from "components/vault_boy.slint";
 
 // Bedroom overview (slint_layout_spec.md §3A). Presentational only — every
 // value arrives as an `in property` set from Rust (dispatch_plan -> App.set_*).
@@ -50,10 +51,36 @@ export component QuartersPage inherits Rectangle {
                 }
             }
             Row {
-                OverviewCell {
-                    title: "OCCUPANCY";
-                    value: root.occupancy;
-                    level: root.occupancy == "OCCUPIED" ? "ok" : "dim";
+                // OCCUPANCY — Vault Boy mascot (camp/thumbs-up when occupied,
+                // lone wanderer when vacant), per the YAML's vaultboy-card.
+                Rectangle {
+                    horizontal-stretch: 1;
+                    border-width: 1px;
+                    border-color: root.occupancy == "OCCUPIED" ? Theme.primary : Theme.primary-dim;
+                    background: Theme.background;
+                    VerticalLayout {
+                        padding: 6px;
+                        spacing: 2px;
+                        Text {
+                            text: "OCCUPANCY";
+                            color: Theme.primary-dim;
+                            font-family: Theme.font-family;
+                            font-size: Theme.font-size-base;
+                            horizontal-alignment: center;
+                        }
+                        VaultBoyMascot {
+                            horizontal-stretch: 1;
+                            vertical-stretch: 1;
+                            mood: root.occupancy == "OCCUPIED" ? "home" : "idle";
+                        }
+                        Text {
+                            text: root.occupancy;
+                            color: root.occupancy == "OCCUPIED" ? Theme.primary : Theme.primary-dim;
+                            font-family: Theme.font-family;
+                            font-size: 16px;
+                            horizontal-alignment: center;
+                        }
+                    }
                 }
                 OverviewCell {
                     title: "3D PRINTER";
