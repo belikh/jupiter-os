@@ -180,6 +180,12 @@ fn apply_ha_event(ui: &App, ev: HaEvent) {
                 ui.set_bed_on(on);
                 ui.set_bed_brightness(brightness_pct.unwrap_or(0) as i32);
             }
+            Some(UiUpdate::EnviroSensor { which, value }) => match which {
+                dispatch::EnviroSensor::Co2 => ui.set_enviro_co2(value),
+                dispatch::EnviroSensor::Pm25 => ui.set_enviro_pm25(value),
+                dispatch::EnviroSensor::Temp => ui.set_enviro_temp(value),
+                dispatch::EnviroSensor::Humidity => ui.set_enviro_hum(value),
+            },
             None => {}
         },
     }

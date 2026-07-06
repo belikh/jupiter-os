@@ -2,6 +2,7 @@ import { Theme } from "theme.slint";
 import { PageId } from "pages.slint";
 import { QuartersPage } from "quarters.slint";
 import { LightsPage } from "lights.slint";
+import { EnviroPage } from "enviro.slint";
 
 // Re-export so main.rs can reach them via the generated module.
 export { Theme, PageId }
@@ -26,6 +27,12 @@ export component App inherits Window {
     in-out property <int>  fan-brightness:     0;
     in-out property <bool> bed-on:            false;
     in-out property <int>  bed-brightness:     0;
+
+    // Enviro page — one float per gauge (jupiter-room.yaml `environment`).
+    in-out property <float> enviro-co2:   400.0;
+    in-out property <float> enviro-pm25:  0.0;
+    in-out property <float> enviro-temp:  20.0;
+    in-out property <float> enviro-hum:   50.0;
 
     // UI -> worker. entity_id is carried by the callback so Rust forwards it
     // verbatim into a ServiceCall (no UI-identity -> entity map in Rust).
@@ -59,5 +66,14 @@ export component App inherits Window {
         page-requested(p) => { root.current-page = p; }
         light-toggled(e)   => { root.light-toggled(e); }
         brightness-changed(e, b) => { root.brightness-changed(e, b); }
+    }
+    if root.current-page == PageId.enviro : EnviroPage {
+        current-page: root.current-page;
+        connection:   root.connection;
+        co2:          root.enviro-co2;
+        pm25:         root.enviro-pm25;
+        temperature:  root.enviro-temp;
+        humidity:     root.enviro-hum;
+        page-requested(p) => { root.current-page = p; }
     }
 }

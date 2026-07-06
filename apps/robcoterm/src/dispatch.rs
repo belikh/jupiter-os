@@ -40,6 +40,17 @@ pub const FAN_LIGHT: &str = "light.fanlight";
 /// BED LED strip. YAML: light.bed (brightness + color).
 pub const BED_LIGHT: &str = "light.bed";
 
+// ---- enviro page entity IDs (jupiter-room.yaml `environment` view) ---------
+
+/// CO2 gauge. ALPSTUGA monitor, 400..2000 ppm.
+pub const CO2: &str = "sensor.alpstuga_air_quality_monitor_carbon_dioxide";
+/// PM2.5 gauge. ALPSTUGA monitor, 0..150 µg/m³.
+pub const PM25: &str = "sensor.alpstuga_air_quality_monitor_pm2_5";
+/// Air temperature gauge. ALPSTUGA monitor, 10..35 °C.
+pub const ENVIRO_TEMP: &str = "sensor.alpstuga_air_quality_monitor_temperature";
+/// Relative humidity gauge. ALPSTUGA monitor, 0..100 %.
+pub const HUMIDITY: &str = "sensor.alpstuga_air_quality_monitor_humidity";
+
 // ---- typed UI values ------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -105,6 +116,29 @@ pub enum UiUpdate {
         on: bool,
         brightness_pct: Option<u8>,
     },
+    // Enviro page — one float per gauge.
+    EnviroSensor {
+        which: EnviroSensor,
+        value: f32,
+    },
+}
+
+/// Which enviro gauge a sensor update targets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EnviroSensor {
+    Co2,
+    Pm25,
+    Temp,
+    Humidity,
+}
+
+/// Parse a sensor's string state into f32. Returns None on a non-numeric
+/// payload (keeps the last known value rather than forcing a 0.0 onto the gauge).
+fn sensor_to_f32(state: &EntityState) -> Option<f32> {
+    match state {
+        EntityState::Sensor { value, .. } => value.parse::<f32>().ok(),
+        _ => None,
+    }
 }
 
 /// Package a light fixture update for the given fixture.
@@ -184,6 +218,23 @@ pub fn dispatch_plan(entity_id: &str, state: &EntityState) -> Option<UiUpdate> {
         CEILING_LIGHT => light_from_state(WhichLight::Ceiling, state),
         FAN_LIGHT => light_from_state(WhichLight::Fan, state),
         BED_LIGHT => light_from_state(WhichLight::Bed, state),
+        // Enviro page — parse the sensor's numeric state into a gauge float.
+        CO2 => sensor_to_f32(state).map(|v| UiUpdate::EnviroSensor {
+            which: EnviroSensor::Co2,
+            value: v,
+        }),
+        PM25 => sensor_to_f32(state).map(|v| UiUpdate::EnviroSensor {
+            which: EnviroSensor::Pm25,
+            value: v,
+        }),
+        ENVIRO_TEMP => sensor_to_f32(state).map(|v| UiUpdate::EnviroSensor {
+            which: EnviroSensor::Temp,
+            value: v,
+        }),
+        HUMIDITY => sensor_to_f32(state).map(|v| UiUpdate::EnviroSensor {
+            which: EnviroSensor::Humidity,
+            value: v,
+        }),
         PRINTER => match state {
             EntityState::Sensor { value, .. } => Some(UiUpdate::PrinterState(parse_printer(value))),
             _ => None,
@@ -365,5 +416,52 @@ mod tests {
             dispatch_plan(ROOM_LIGHTS, &group),
             Some(UiUpdate::RoomLightsOn(true))
         );
+    }
+
+    // ---- enviro page (jupiter-room.yaml `environment` view) -----------------
+
+    #[test]
+    fn enviro_sensors_parse_to_their_own_gauge() {
+        let co2 = EntityState::from_ha(CO2, &json!({ "state": "823.4", "attributes": { "unit_of_measurement": "ppm" } }));
+        let pm = EntityState::from_ha(PM25, &json!({ "state": "12" }));
+        let temp = EntityState::from_ha(ENVIRO_TEMP, &json!({ "state": "21.5" }));
+        let hum = EntityState::from_ha(HUMIDITY, &json!({ "state": "48" }));
+
+        assert_eq!(
+            dispatch_plan(CO2, &co2),
+            Some(UiUpdate::EnviroSensor {
+                which: EnviroSensor::Co2,
+                value: 823.4
+            })
+        );
+        assert_eq!(
+            dispatch_plan(PM25, &pm),
+            Some(UiUpdate::EnviroSensor {
+                which: EnviroSensor::Pm25,
+                value: 12.0
+            })
+        );
+        assert_eq!(
+            dispatch_plan(ENVIRO_TEMP, &temp),
+            Some(UiUpdate::EnviroSensor {
+                which: EnviroSensor::Temp,
+                value: 21.5
+            })
+        );
+        assert_eq!(
+            dispatch_plan(HUMIDITY, &hum),
+            Some(UiUpdate::EnviroSensor {
+                which: EnviroSensor::Humidity,
+                value: 48.0
+            })
+        );
+    }
+
+    #[test]
+    fn enviro_non_numeric_sensor_is_none_keeps_last_value() {
+        // A garbage push must NOT force 0.0 onto a gauge — return None so the
+        // UI keeps the last good reading (matches the lights Raw-payload rule).
+        let bad = EntityState::from_ha(CO2, &json!({ "state": "unavailable" }));
+        assert_eq!(dispatch_plan(CO2, &bad), None);
     }
 }

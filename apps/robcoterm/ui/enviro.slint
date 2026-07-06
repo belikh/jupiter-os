@@ -1,0 +1,129 @@
+import { Theme } from "theme.slint";
+import { PageId } from "pages.slint";
+import { StatusBar } from "components/status_bar.slint";
+import { NavBar } from "components/nav_bar.slint";
+import { Meter } from "components/meter.slint";
+
+// One telemetry gauge: title + numeric readout + a segmented meter bar whose
+// fill is (value-min)/(max-min) clamped to 0..1. Min/max/unit are UI concerns
+// (they live in jupiter-room.yaml `environment` view), so the page owns them;
+// Rust only delivers the raw float from the sensor state.
+component GaugeCell inherits Rectangle {
+    in property <string> title: "";
+    in property <float> value: 0.0;
+    in property <float> min: 0.0;
+    in property <float> max: 1.0;
+    in property <string> unit: "";
+
+    border-width: 1px;
+    border-color: Theme.primary-dim;
+    background: Theme.background;
+
+    VerticalLayout {
+        padding: 10px;
+        spacing: 6px;
+
+        Text {
+            text: root.title;
+            color: Theme.primary-dim;
+            font-family: Theme.font-family;
+            font-size: Theme.font-size-base;
+        }
+        Text {
+            text: "\{round(root.value)} \{root.unit}";
+            color: Theme.primary;
+            font-family: Theme.font-family;
+            font-size: 22px;
+            vertical-alignment: center;
+        }
+        Meter {
+            // Meter tolerates out-of-range (segments all-on >1.0 / all-off <0.0),
+            // so no clamp needed; the gauge min/max are distinct per YAML.
+            value: (root.value - root.min) / (root.max - root.min);
+        }
+    }
+}
+
+// Bedroom environment page (jupiter-room.yaml `environment` view): 4 air-quality
+// gauges. Read-only — no ServiceCall round-trip, just sensor -> meter binding.
+export component EnviroPage inherits Rectangle {
+    in property <PageId> current-page: PageId.enviro;
+    in property <string> connection: "connected";
+
+    in property <float> co2: 400.0;
+    in property <float> pm25: 0.0;
+    in property <float> temperature: 20.0;
+    in property <float> humidity: 50.0;
+
+    callback page-requested(PageId);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0px;
+
+        StatusBar {
+            title: "JUPITER QUARTERS // ENVIRONMENT";
+        }
+
+        GridLayout {
+            spacing: 8px;
+            padding: 8px;
+
+            Row {
+                GaugeCell {
+                    title: "CO2";
+                    value: root.co2;
+                    min: 400.0;
+                    max: 2000.0;
+                    unit: "ppm";
+                }
+                GaugeCell {
+                    title: "PM2.5";
+                    value: root.pm25;
+                    min: 0.0;
+                    max: 150.0;
+                    unit: "µg";
+                }
+            }
+            Row {
+                GaugeCell {
+                    title: "TEMPERATURE";
+                    value: root.temperature;
+                    min: 10.0;
+                    max: 35.0;
+                    unit: "°C";
+                }
+                GaugeCell {
+                    title: "HUMIDITY";
+                    value: root.humidity;
+                    min: 0.0;
+                    max: 100.0;
+                    unit: "%";
+                }
+            }
+        }
+
+        NavBar {
+            current: root.current-page;
+            page-requested(p) => {
+                root.page-requested(p);
+            }
+        }
+    }
+
+    if root.connection != "connected" : Rectangle {
+        x: 0px;
+        y: 0px;
+        width: root.width;
+        height: 28px;
+        background: Theme.alert;
+        Text {
+            text: root.connection == "connecting" ? "▒ RECONNECTING ▒" : "▒ LINK DOWN ▒";
+            color: black;
+            font-family: Theme.font-family;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}
