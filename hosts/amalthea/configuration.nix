@@ -1,4 +1,9 @@
-{ config, pkgs, lib, ... }:
+{
+  config,
+  pkgs,
+  lib,
+  ...
+}:
 
 # TCx Wave kiosk: jupiter-bedroom. The BOOTSTRAP host — the first machine of
 # the rebuilt fleet, brought up standalone, and the canonical template for its
@@ -35,6 +40,11 @@
       directories = [
         ".config/chromium"
         ".cache/chromium"
+      ];
+    };
+    users.io = {
+      directories = [
+        ".gemini"
       ];
     };
   };
