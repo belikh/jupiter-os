@@ -1,4 +1,4 @@
-{ ... }:
+{ config, pkgs, lib, ... }:
 
 # TCx Wave kiosk: jupiter-bedroom. The BOOTSTRAP host — the first machine of
 # the rebuilt fleet, brought up standalone, and the canonical template for its
@@ -10,7 +10,10 @@
   imports = [
     ../../modules/common.nix
     ../../modules/services/tcxwave-power-tuning.nix
+    ../../modules/services/tcxwave-touch-wake.nix
     ../../modules/desktop/dashboard-kiosk.nix
+    ../../modules/services/mqtt.nix
+    ../../modules/services/ha-agent.nix
   ];
 
   networking.hostName = "amalthea";
@@ -39,6 +42,47 @@
   jupiter.dashboardKiosk = {
     enable = true;
     url = "https://iot.jupiter.au/jupiter-room/quarters";
+  };
+
+  jupiter.touchWake = {
+    enable = true;
+    idleTimeout = 300; # 5 minutes
+  };
+
+  # MQTT broker configuration (running locally on amalthea for now)
+  sops.secrets.mqtt_homeassistant = { };
+  sops.secrets.mqtt_ha_linux_agent = { };
+
+  jupiter.services.mqtt = {
+    enable = true;
+    users = {
+      homeassistant = {
+        passwordFile = config.sops.secrets.mqtt_homeassistant.path;
+        acl = [ "readwrite #" ];
+      };
+      ha-linux-agent = {
+        passwordFile = config.sops.secrets.mqtt_ha_linux_agent.path;
+        acl = [
+          "readwrite homeassistant/#"
+          "readwrite ha-linux-agent/#"
+        ];
+      };
+    };
+  };
+
+  # Home Assistant Linux Agent
+  jupiter.services.haAgent = {
+    enable = true;
+    mqttHost = "localhost";
+    launcherApps = [
+      {
+        id = "screen-power";
+        name = "Bedroom Kiosk Screen";
+        unit = "tcxwave-screen-power.service";
+        scope = "system";
+        icon = "mdi:monitor";
+      }
+    ];
   };
 
   # Integrated 15" PCAP touchscreen: NO custom/kernel driver needed. The panel

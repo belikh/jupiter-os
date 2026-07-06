@@ -27,6 +27,12 @@
       url = "github:Mic92/sops-nix";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # Home Assistant companion agent
+    ha-linux-agent = {
+      url = "github:belikh/ha-linux-agent";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -36,6 +42,7 @@
       disko,
       impermanence,
       sops-nix,
+      ha-linux-agent,
       ...
     }:
     let
@@ -53,6 +60,7 @@
                   sops-nix.nixosModules.sops
                   impermanence.nixosModules.impermanence
                   disko.nixosModules.disko
+                  ha-linux-agent.nixosModules.default
                 ];
               }
             )
