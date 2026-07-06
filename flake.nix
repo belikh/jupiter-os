@@ -64,6 +64,14 @@
                 ];
               }
             )
+            # Provide the robcoterm binary to any host that imports
+            # robcoterm-kiosk.nix (all four kiosks do, via tcxwave-kiosk.nix).
+            # Lexical closure — no specialArgs (per CLAUDE.md). A future
+            # non-kiosk host added to mkHost must also import robcoterm-kiosk.nix
+            # or drop this line, else the option won't exist.
+            {
+              jupiter.robcotermKiosk.package = nixpkgs.lib.mkDefault self.packages.x86_64-linux.robcoterm;
+            }
             hostPath
           ];
         };
@@ -90,6 +98,74 @@
       ) self.nixosConfigurations;
 
       formatter.x86_64-linux = nixpkgs.legacyPackages.x86_64-linux.nixfmt-rfc-style;
+
+      # Native Rust + Slint kiosk binary (robcoterm) — the eventual replacement
+      # for the Cage + Chromium stack on the TCx Wave panels. Phase 0 spike:
+      # builds and links under stock nixpkgs Rust with NO new flake input.
+      # Backend is backend-linuxkms-noseat (DRM/KMS direct, no compositor); the
+      # mesa DRI drivers are put on the runtime path via addOpenGLRunpath (the
+      # nixpkgs-blessed patchelf alternative — do NOT hand-roll DT_RUNPATH).
+      packages.x86_64-linux.robcoterm =
+        let
+          pkgs = nixpkgs.legacyPackages.x86_64-linux;
+          # Exclude target/ so a stray local cargo build never lands in the
+          # store closure. .gitignore keeps it out of git; this keeps it out
+          # of `src = ./apps/robcoterm` regardless of git state.
+          src = pkgs.lib.sources.cleanSourceWith {
+            src = ./apps/robcoterm;
+            filter = name: _type: !(pkgs.lib.hasSuffix "/target" name);
+          };
+        in
+        pkgs.rustPlatform.buildRustPackage {
+          pname = "robcoterm";
+          version = "0.1.0";
+          inherit src;
+          cargoLock.lockFile = ./apps/robcoterm/Cargo.lock;
+
+          nativeBuildInputs = [
+            pkgs.pkg-config
+            pkgs.addDriverRunpath # injects mesa DRI into DT_RUNPATH at fixup
+          ];
+          buildInputs = [
+            pkgs.libdrm
+            pkgs.libgbm # linuxkms backend's buffer manager (separate attr; mesa has no .dev here)
+            pkgs.libinput
+            pkgs.libxkbcommon
+            pkgs.udev
+            pkgs.mesa
+            pkgs.fontconfig
+          ];
+
+          # Slint's @image-url() and font refs are resolved by slint-build at
+          # compile time, so assets/fonts ship inside src and need no extra
+          # install step beyond the default cargo install.
+        };
+
+      # Separate dev shell for robcoterm work (cargo + the same sysdeps the
+      # derivation builds against). The default ops shell is unchanged.
+      devShells.x86_64-linux.robcoterm =
+        let
+          pkgs = nixpkgs.legacyPackages.x86_64-linux;
+        in
+        pkgs.mkShell {
+          packages =
+            with pkgs;
+            [
+              cargo
+              rustc
+              rust-analyzer
+              rustfmt
+              clippy
+              pkg-config
+              libdrm
+              libinput
+              libxkbcommon
+              udev
+              mesa
+              fontconfig
+            ]
+            ++ (pkgs.lib.optional (pkgs ? slint-lsp) slint-lsp);
+        };
 
       devShells.x86_64-linux.default =
         let

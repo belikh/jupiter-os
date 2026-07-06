@@ -1,0 +1,27 @@
+[package]
+name = "robcoterm"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Native Rust + Slint RobCo/Vault-Tec kiosk for the TCx Wave dashboard panels"
+
+# Slint feature set per implementation_plan.md §2. default-features = false
+# drops backend-default + system-tray (unwanted on a kiosk); we explicitly
+# re-add the mandatory bits + the linuxkms-noseat DRM backend, the femtovg
+# EGL renderer, and libinput multitouch access for the Atmel panel.
+[dependencies]
+slint = { version = "~1.17", default-features = false, features = [
+    "compat-1-2",
+    "std",
+    "backend-linuxkms-noseat",
+    "renderer-femtovg",
+    "unstable-libinput-09",
+    "accessibility",
+] }
+
+[build-dependencies]
+slint-build = "~1.17"
+
+[profile.release]
+lto = true
+strip = true

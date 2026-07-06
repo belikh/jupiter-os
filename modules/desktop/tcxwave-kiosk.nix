@@ -29,6 +29,7 @@ in
     ../services/tcxwave-touch-wake.nix
     ../services/ha-agent.nix
     ./dashboard-kiosk.nix
+    ./robcoterm-kiosk.nix # native Slint kiosk; inert until a host sets jupiter.robcotermKiosk.enable = true
   ];
 
   options.jupiter.tcxWaveKiosk = {
