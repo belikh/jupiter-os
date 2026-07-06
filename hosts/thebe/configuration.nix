@@ -11,6 +11,7 @@
   imports = [
     ../../modules/common.nix
     ../../modules/services/tcxwave-power-tuning.nix
+    ../../modules/services/ha-agent.nix
     ../../modules/desktop/dashboard-kiosk.nix
   ];
 
@@ -44,6 +45,18 @@
   };
 
   jupiter.boot.falloutSplash.enable = true;
+
+  # Home Assistant companion agent. thebe is a CLIENT only — amalthea runs
+  # the mosquitto broker; thebe publishes CPU/governor/EPP sensors to it
+  # over the LAN. No launcherApps: thebe doesn't import tcxwave-touch-wake,
+  # so it has no screen-power unit to expose (hardware sensors only). If
+  # touch-wake is added later, mirror amalthea's launcherApps entry.
+  sops.secrets.mqtt_ha_linux_agent = { };
+
+  jupiter.services.haAgent = {
+    enable = true;
+    mqttHost = "amalthea.localdomain";
+  };
 
   # Wireless configuration for the USB Wi-Fi adapter (NetGear A6210 / MediaTek MT7612U)
   networking.wireless = {
