@@ -54,6 +54,8 @@
     url = "https://iot.jupiter.au/jupiter-room/quarters";
   };
 
+  jupiter.boot.falloutSplash.enable = true;
+
   jupiter.touchWake = {
     enable = true;
     idleTimeout = 300; # 5 minutes
