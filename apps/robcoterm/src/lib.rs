@@ -10,6 +10,8 @@
 //! `display`/`input`.
 
 pub mod dispatch;
+pub mod display;
 pub mod ha;
+pub mod input;
 pub mod state;
 pub mod theme;

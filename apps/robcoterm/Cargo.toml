@@ -31,6 +31,10 @@ serde_json = "1"
 url = "2"
 thiserror = "2"
 
+[features]
+# Enables the mock DRM backend so display::tests runs without a real DRM fd.
+drm-mock = []
+
 [dev-dependencies]
 # Mock WS server in tests is just tokio-tungstenite::accept_async on a
 # TcpListener bound to 127.0.0.1:0 (per task.md T2.1 verify). No extra crate.
