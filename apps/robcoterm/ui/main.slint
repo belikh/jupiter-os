@@ -1,6 +1,7 @@
 import { Theme } from "theme.slint";
 import { PageId } from "pages.slint";
 import { QuartersPage } from "quarters.slint";
+import { LightsPage } from "lights.slint";
 
 // Re-export so main.rs can reach them via the generated module.
 export { Theme, PageId }
@@ -18,9 +19,23 @@ export component App inherits Window {
     in-out property <PageId>  current-page:   PageId.quarters;
     in-out property <string>  connection:     "connected";
 
+    // Per-fixture state for the lights detail page (jupiter-room.yaml `lights`).
+    in-out property <bool> ceiling-on:       false;
+    in-out property <int>  ceiling-brightness: 0;
+    in-out property <bool> fan-on:           false;
+    in-out property <int>  fan-brightness:     0;
+    in-out property <bool> bed-on:            false;
+    in-out property <int>  bed-brightness:     0;
+
+    // UI -> worker. entity_id is carried by the callback so Rust forwards it
+    // verbatim into a ServiceCall (no UI-identity -> entity map in Rust).
+    callback light-toggled(string);
+    callback brightness-changed(string, int);
+
     background: Theme.background;
 
-    QuartersPage {
+    // Only the active page is mounted (each is a full-screen Rectangle).
+    if root.current-page == PageId.quarters : QuartersPage {
         air-quality:    root.air-quality;
         occupancy:      root.occupancy;
         room-lights-on: root.room-lights-on;
@@ -31,5 +46,18 @@ export component App inherits Window {
         connection:     root.connection;
         page-requested(p) => { root.current-page = p; }
         cell-tapped(p)   => { root.current-page = p; }
+    }
+    if root.current-page == PageId.lights : LightsPage {
+        current-page:      root.current-page;
+        connection:        root.connection;
+        ceiling-on:        root.ceiling-on;
+        ceiling-brightness: root.ceiling-brightness;
+        fan-on:            root.fan-on;
+        fan-brightness:    root.fan-brightness;
+        bed-on:            root.bed-on;
+        bed-brightness:    root.bed-brightness;
+        page-requested(p) => { root.current-page = p; }
+        light-toggled(e)   => { root.light-toggled(e); }
+        brightness-changed(e, b) => { root.brightness-changed(e, b); }
     }
 }

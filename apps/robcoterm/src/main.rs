@@ -82,10 +82,36 @@ fn main() -> Result<(), slint::PlatformError> {
         let _enter = rt.enter();
 
         let link = ha::spawn(cfg);
-        // Keep the calls sender alive for the process lifetime so the worker's
-        // calls_rx never sees a close (which would gracefully shut it down).
-        // Phase 3.5 wires UI sliders to it; until then it's intentionally held.
-        let _calls_tx = link.calls;
+        // The worker's calls_rx must never see all senders drop (that would
+        // gracefully shut it down), so the original Sender is held for the
+        // process lifetime. Clones captured by the UI callbacks below also
+        // keep the channel open; together they cover the two ways UI input
+        // becomes a ServiceCall: tap -> Toggle, slider -> Light{brightness}.
+        let calls_tx = link.calls;
+
+        // UI -> worker: lights page round-trip (task.md T3.5). The entity_id
+        // arrives on the callback from Slint (the row owns it per the YAML) and
+        // is forwarded verbatim — no UI-identity -> entity mapping in Rust.
+        {
+            let tx = calls_tx.clone();
+            ui.on_light_toggled(move |entity: slint::SharedString| {
+                let _ = tx.try_send(ha::ServiceCall::Toggle {
+                    entity: entity.to_string(),
+                });
+            });
+        }
+        {
+            let tx = calls_tx.clone();
+            ui.on_brightness_changed(move |entity: slint::SharedString, brightness: i32| {
+                let pct = brightness.clamp(0, 100) as u8;
+                let _ = tx.try_send(ha::ServiceCall::Light {
+                    entity: entity.to_string(),
+                    brightness_pct: Some(pct),
+                });
+            });
+        }
+        // Keep the original Sender alive for the process lifetime (see above).
+        std::mem::forget(calls_tx);
 
         // Drain worker events on the runtime and forward each to the Slint
         // main thread. invoke_from_event_loop is the only legal way to touch
@@ -142,6 +168,18 @@ fn apply_ha_event(ui: &App, ev: HaEvent) {
             Some(UiUpdate::RoomLightsOn(b)) => ui.set_room_lights_on(b),
             Some(UiUpdate::Temperature(t)) => ui.set_temperature(t.into()),
             Some(UiUpdate::PrinterState(p)) => ui.set_printer_state(p.label().into()),
+            Some(UiUpdate::CeilingLight { on, brightness_pct }) => {
+                ui.set_ceiling_on(on);
+                ui.set_ceiling_brightness(brightness_pct.unwrap_or(0) as i32);
+            }
+            Some(UiUpdate::FanLight { on, brightness_pct }) => {
+                ui.set_fan_on(on);
+                ui.set_fan_brightness(brightness_pct.unwrap_or(0) as i32);
+            }
+            Some(UiUpdate::BedLight { on, brightness_pct }) => {
+                ui.set_bed_on(on);
+                ui.set_bed_brightness(brightness_pct.unwrap_or(0) as i32);
+            }
             None => {}
         },
     }

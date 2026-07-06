@@ -31,6 +31,15 @@ pub const CLIMATE: &str = "climate.smart_thermostat_jupiter";
 /// 3D PRINTER overview cell. YAML: "ready" -> STANDBY.
 pub const PRINTER: &str = "sensor.living_room_kobra_printer_state";
 
+// ---- lights detail page entity IDs (jupiter-room.yaml `lights` view) -------
+
+/// CEILING fixture. YAML `lights` view: light.jupiter_room (brightness + color_temp).
+pub const CEILING_LIGHT: &str = "light.jupiter_room";
+/// FAN LIGHT fixture. YAML: light.fanlight (brightness + color_temp).
+pub const FAN_LIGHT: &str = "light.fanlight";
+/// BED LED strip. YAML: light.bed (brightness + color).
+pub const BED_LIGHT: &str = "light.bed";
+
 // ---- typed UI values ------------------------------------------------------
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,6 +73,15 @@ impl Printer {
     }
 }
 
+/// Which fixture a lights-page update targets. One variant per row so main.rs
+/// can `set_<fixture>_on` / `set_<fixture>_brightness` without a string match.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WhichLight {
+    Ceiling,
+    Fan,
+    Bed,
+}
+
 /// Abstract UI mutation. Each variant maps 1:1 to a `ui.set_<prop>(...)` call
 /// in main.rs. `None` from `dispatch_plan` means "entity not rendered here"
 /// — the state cache still records it for a detail page that may need it.
@@ -74,6 +92,53 @@ pub enum UiUpdate {
     RoomLightsOn(bool),
     Temperature(String),
     PrinterState(Printer),
+    // Lights detail page — per fixture on/off + brightness.
+    CeilingLight {
+        on: bool,
+        brightness_pct: Option<u8>,
+    },
+    FanLight {
+        on: bool,
+        brightness_pct: Option<u8>,
+    },
+    BedLight {
+        on: bool,
+        brightness_pct: Option<u8>,
+    },
+}
+
+/// Package a light fixture update for the given fixture.
+fn light_update(
+    which: WhichLight,
+    on: bool,
+    brightness_pct: Option<u8>,
+) -> UiUpdate {
+    match which {
+        WhichLight::Ceiling => UiUpdate::CeilingLight {
+            on,
+            brightness_pct,
+        },
+        WhichLight::Fan => UiUpdate::FanLight {
+            on,
+            brightness_pct,
+        },
+        WhichLight::Bed => UiUpdate::BedLight {
+            on,
+            brightness_pct,
+        },
+    }
+}
+
+/// Lift an EntityState::Light into a fixture UI update. Non-light payload
+/// (e.g. a malformed Raw push) -> None (keep the last known value).
+fn light_from_state(which: WhichLight, state: &EntityState) -> Option<UiUpdate> {
+    match state {
+        EntityState::Light {
+            on,
+            brightness_pct,
+        } => Some(light_update(which, *on, *brightness_pct)),
+        _ => None,
+    }
 }
 
 /// Parse the Kobra printer's `sensor.*_state` string. The YAML only defines
@@ -115,6 +180,10 @@ pub fn dispatch_plan(entity_id: &str, state: &EntityState) -> Option<UiUpdate> {
             EntityState::Light { on, .. } => Some(UiUpdate::RoomLightsOn(*on)),
             _ => None,
         },
+        // Lights detail page — per-fixture on/off + brightness.
+        CEILING_LIGHT => light_from_state(WhichLight::Ceiling, state),
+        FAN_LIGHT => light_from_state(WhichLight::Fan, state),
+        BED_LIGHT => light_from_state(WhichLight::Bed, state),
         PRINTER => match state {
             EntityState::Sensor { value, .. } => Some(UiUpdate::PrinterState(parse_printer(value))),
             _ => None,
@@ -231,5 +300,70 @@ mod tests {
         assert_eq!(Printer::Standby.label(), "STANDBY");
         assert_eq!(Printer::Printing.label(), "PRINTING");
         assert_eq!(Printer::Unknown.label(), "---");
+    }
+
+    // ---- lights detail page (jupiter-room.yaml `lights` view) ---------------
+
+    #[test]
+    fn ceiling_light_maps_on_and_brightness() {
+        let lit = EntityState::from_ha(
+            CEILING_LIGHT,
+            &json!({ "state": "on", "attributes": { "brightness_pct": 70 } }),
+        );
+        let dark = EntityState::from_ha(CEILING_LIGHT, &json!({ "state": "off" }));
+        assert_eq!(
+            dispatch_plan(CEILING_LIGHT, &lit),
+            Some(UiUpdate::CeilingLight {
+                on: true,
+                brightness_pct: Some(70)
+            })
+        );
+        assert_eq!(
+            dispatch_plan(CEILING_LIGHT, &dark),
+            Some(UiUpdate::CeilingLight {
+                on: false,
+                brightness_pct: None,
+            })
+        );
+    }
+
+    #[test]
+    fn fan_and_bed_light_route_to_their_own_variants() {
+        // load-bearing: each fixture must land in its OWN UiUpdate variant so
+        // main.rs hits the right set_<fixture>_* property — never cross-talk.
+        let fan = EntityState::from_ha(
+            FAN_LIGHT,
+            &json!({ "state": "on", "attributes": { "brightness_pct": 40 } }),
+        );
+        let bed = EntityState::from_ha(
+            BED_LIGHT,
+            &json!({ "state": "on", "attributes": { "brightness_pct": 100 } }),
+        );
+        assert_eq!(
+            dispatch_plan(FAN_LIGHT, &fan),
+            Some(UiUpdate::FanLight {
+                on: true,
+                brightness_pct: Some(40)
+            })
+        );
+        assert_eq!(
+            dispatch_plan(BED_LIGHT, &bed),
+            Some(UiUpdate::BedLight {
+                on: true,
+                brightness_pct: Some(100)
+            })
+        );
+    }
+
+    #[test]
+    fn fixtures_never_cross_route_into_room_lights_or_each_other() {
+        // The overview's ROOM_LIGHTS (light.jupiter_quarters_lights) is a
+        // DIFFERENT entity from the three fixtures — confirm it still routes
+        // to RoomLightsOn, not to a fixture variant.
+        let group = EntityState::from_ha(ROOM_LIGHTS, &json!({ "state": "on" }));
+        assert_eq!(
+            dispatch_plan(ROOM_LIGHTS, &group),
+            Some(UiUpdate::RoomLightsOn(true))
+        );
     }
 }
