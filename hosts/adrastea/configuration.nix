@@ -40,8 +40,10 @@
 
   jupiter.dashboardKiosk = {
     enable = true;
-    url = "https://ha.jupiter.au/office";
+    url = "https://iot.jupiter.au/office-command/office";
   };
+
+  jupiter.boot.falloutSplash.enable = true;
 
   # Integrated 15" PCAP touchscreen: NO custom/kernel driver needed. The panel
   # is a USB HID multitouch device handled in-tree by `hid-multitouch`, and

@@ -15,6 +15,7 @@
     ./core/antigravity-cli.nix
     ./core/ecc.nix
     ./core/zed.nix
+    ./boot/fallout-splash.nix
     ./storage/zfs-profiles.nix
   ];
 
@@ -93,6 +94,10 @@
   # hash ("test") — this variant only ever runs as an ephemeral local QEMU VM,
   # never deployed.
   virtualisation.vmVariant = {
+    # The Fallout splash is pointless in the headless serial QEMU VM (no
+    # display to render to) and just bloats the initrd, so force it off for
+    # `make test-<host>` / boot-smoke runs.
+    jupiter.boot.falloutSplash.enable = lib.mkForce false;
     # Test the full UEFI bootloader path in the VM instead of direct kernel
     # boot — matches real hardware (disko's ESP is an EF00 UEFI System
     # Partition). Forcing legacy BIOS here would test a GPT disk with no BIOS

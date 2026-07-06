@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=Fallout
+Description=Fallout by Griffen8280
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/fallout
+ScriptFile=/usr/share/plymouth/themes/fallout/fallout.script

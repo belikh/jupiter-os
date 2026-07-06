@@ -22,6 +22,13 @@
   # render-engine idle. fastboot skips a redundant modeset when firmware
   # already matches.
   #
+  # NOTE (kernel 6.18): `enable_rc6` and `fastboot` are silently ignored —
+  # they were removed from the i915 module in recent kernels (the boot log
+  # prints `unknown parameter 'enable_rc6' ignored`, and neither appears in
+  # /sys/module/i915/parameters). Only enable_fbc / enable_psr still take
+  # effect. Left in place as documentation of intent rather than rewritten
+  # piecemeal — needs a proper pass over which tunables still exist.
+  #
   # Deliberately NOT capping processor.max_cstate / intel_idle.max_cstate:
   # deep C-states between repaints are exactly where we want it sitting.
   #

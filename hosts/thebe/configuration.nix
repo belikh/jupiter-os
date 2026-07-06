@@ -43,6 +43,8 @@
     url = "https://iot.jupiter.au/robert-room/quarters";
   };
 
+  jupiter.boot.falloutSplash.enable = true;
+
   # Wireless configuration for the USB Wi-Fi adapter (NetGear A6210 / MediaTek MT7612U)
   networking.wireless = {
     enable = true;
