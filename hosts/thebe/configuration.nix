@@ -1,81 +1,25 @@
 { ... }:
 
-# TCx Wave kiosk: robbie-room. One of 4 identical 6140-E45 units (see
-# modules/services/tcxwave-power-tuning.nix for the shared hardware tuning
-# and modules/desktop/dashboard-kiosk.nix for the shared kiosk session) —
-# a clone of hosts/amalthea/configuration.nix, the bootstrap host, differing
-# only in hostName/hostId/dashboard URL/disk. Each unit is its own host
-# because each points at a different room's Home Assistant dashboard and
-# can't share an identity.
+# TCx Wave kiosk: robbie-room. One of 4 identical 6140-E45 units — a clone of
+# amalthea minus the broker role. All shared behavior lives in
+# modules/desktop/tcxwave-kiosk.nix; this file holds only what differs per
+# unit: hostName, hostId, the OS disk, the dashboard URL, and (uniquely among
+# the fleet) its USB Wi-Fi adapter — the other three are wired. Each unit is
+# its own host only because each points at a different room's Home Assistant
+# dashboard and can't share an identity.
 {
   imports = [
     ../../modules/common.nix
-    ../../modules/services/tcxwave-power-tuning.nix
-    ../../modules/services/ha-agent.nix
-    ../../modules/desktop/dashboard-kiosk.nix
+    ../../modules/desktop/tcxwave-kiosk.nix
   ];
 
   networking.hostName = "thebe";
   networking.hostId = "af54f5c3"; # Stable per-host 8-char hex, required for ZFS
 
-  # Stateless kiosk appliance: erase-your-darlings root so the box always
-  # boots to a known-pristine state and can't accumulate drift.
-  # ⚠️ disk is a REPLACE-ME placeholder — set the real by-id path before install.
-  jupiter.storage = {
-    profile = "impermanent";
+  jupiter.tcxWaveKiosk = {
+    enable = true;
+    dashboardUrl = "https://iot.jupiter.au/robert-room/quarters";
     disk = "/dev/disk/by-id/ata-SanDisk_SD9SN8W128G1011_204903800540";
+    wifi.enable = true; # NetGear A6210 / MediaTek MT7612U USB adapter
   };
-
-  jupiter.core.impermanence = {
-    enable = true;
-    persistAdminHome = false; # no personal session on a kiosk
-    # Keep the Chromium profile so the HA dashboard's session/cache survive
-    # reboots (faster warm-up, stays logged in).
-    users.kiosk = {
-      directories = [
-        ".config/chromium"
-        ".cache/chromium"
-      ];
-    };
-  };
-
-  jupiter.dashboardKiosk = {
-    enable = true;
-    url = "https://iot.jupiter.au/robert-room/quarters";
-  };
-
-  jupiter.boot.falloutSplash.enable = true;
-
-  # Home Assistant companion agent. thebe is a CLIENT only — amalthea runs
-  # the mosquitto broker; thebe publishes CPU/governor/EPP sensors to it
-  # over the LAN. No launcherApps: thebe doesn't import tcxwave-touch-wake,
-  # so it has no screen-power unit to expose (hardware sensors only). If
-  # touch-wake is added later, mirror amalthea's launcherApps entry.
-  sops.secrets.mqtt_ha_linux_agent = { };
-
-  jupiter.services.haAgent = {
-    enable = true;
-    mqttHost = "amalthea.localdomain";
-  };
-
-  # Wireless configuration for the USB Wi-Fi adapter (NetGear A6210 / MediaTek MT7612U)
-  networking.wireless = {
-    enable = true;
-    networks = {
-      "jupiter.au" = {
-        psk = "lolcats66";
-      };
-    };
-  };
-
-  # Integrated 15" PCAP touchscreen: NO custom/kernel driver needed. The panel
-  # is a USB HID multitouch device handled in-tree by `hid-multitouch`, and
-  # cage/wlroots consumes it via libinput. If, on a real unit, touch is offset
-  # or the panel is mounted rotated, that's a userspace calibration matrix —
-  # NOT a driver — applied via a udev/libinput rule, e.g.:
-  #   services.udev.extraHwdb = ''
-  #     # 90° clockwise: LIBINPUT_CALIBRATION_MATRIX=0 1 0 -1 0 1
-  #     evdev:name:*Touch*:* ENV{LIBINPUT_CALIBRATION_MATRIX}="..."
-  #   '';
-  # Left out until verified on hardware so we don't ship a wrong transform.
 }
