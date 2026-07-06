@@ -1,0 +1,130 @@
+import { Theme } from "theme.slint";
+import { PageId } from "pages.slint";
+import { StatusBar } from "components/status_bar.slint";
+import { NavBar } from "components/nav_bar.slint";
+
+// One label/value row, as used by the roster and pay datalists. Retro mono.
+// Exported so pay.slint can reuse it (same datalist look fleet-wide).
+export component DataRow inherits Rectangle {
+    in property <string> label: "";
+    in property <string> value: "";
+    height: 40px;
+    background: Theme.background;
+    HorizontalLayout {
+        padding: 4px;
+        spacing: 12px;
+        Text {
+            text: root.label;
+            color: Theme.primary-dim;
+            font-family: Theme.font-family;
+            font-size: Theme.font-size-base;
+            width: 140px;
+            vertical-alignment: center;
+        }
+        Text {
+            text: root.value;
+            color: Theme.primary;
+            font-family: Theme.font-family;
+            font-size: 16px;
+            horizontal-stretch: 1;
+            vertical-alignment: center;
+        }
+    }
+}
+
+// A titled block of DataRow entries. Children are placed at @children, so the
+// caller composes the rows inline (keeps each page's row set explicit).
+export component DataList inherits Rectangle {
+    in property <string> title: "";
+    border-width: 1px;
+    border-color: Theme.primary-dim;
+    background: Theme.background;
+    VerticalLayout {
+        padding: 8px;
+        spacing: 2px;
+        Text {
+            text: root.title;
+            color: Theme.primary;
+            font-family: Theme.font-family;
+            font-size: 16px;
+        }
+        @children
+    }
+}
+
+// Bedroom work-roster page (jupiter-room.yaml `roster` view). All fields come
+// from `sensor.next_shift`'s state (STARTS, relative) and attributes (day,
+// shift_date, start_local, end_local, duration_hours, location,
+// this_week_count, this_week_hours). Read-only.
+export component RosterPage inherits Rectangle {
+    in property <PageId> current-page: PageId.roster;
+    in property <string> connection: "connected";
+
+    in property <string> starts: "--";
+    in property <string> day: "--";
+    in property <string> date: "--";
+    in property <string> start: "--";
+    in property <string> end: "--";
+    in property <string> duration: "--";
+    in property <string> location: "--";
+    in property <string> week-count: "--";
+    in property <string> week-hours: "--";
+
+    callback page-requested(PageId);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0px;
+
+        StatusBar {
+            title: "JUPITER QUARTERS // WORK ROSTER";
+        }
+
+        HorizontalLayout {
+            padding: 8px;
+            spacing: 8px;
+
+            DataList {
+                title: "NEXT SHIFT";
+                horizontal-stretch: 1;
+                DataRow { label: "STARTS";    value: root.starts; }
+                DataRow { label: "DAY";       value: root.day; }
+                DataRow { label: "DATE";      value: root.date; }
+                DataRow { label: "START";     value: root.start; }
+                DataRow { label: "END";       value: root.end; }
+                DataRow { label: "DURATION";  value: root.duration; }
+                DataRow { label: "LOCATION";  value: root.location; }
+            }
+
+            DataList {
+                title: "THIS WEEK";
+                horizontal-stretch: 1;
+                DataRow { label: "SHIFTS"; value: root.week-count; }
+                DataRow { label: "HOURS";  value: root.week-hours; }
+            }
+        }
+
+        NavBar {
+            current: root.current-page;
+            page-requested(p) => {
+                root.page-requested(p);
+            }
+        }
+    }
+
+    if root.connection != "connected" : Rectangle {
+        x: 0px;
+        y: 0px;
+        width: root.width;
+        height: 28px;
+        background: Theme.alert;
+        Text {
+            text: root.connection == "connecting" ? "▒ RECONNECTING ▒" : "▒ LINK DOWN ▒";
+            color: black;
+            font-family: Theme.font-family;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}

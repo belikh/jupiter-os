@@ -3,6 +3,9 @@ import { PageId } from "pages.slint";
 import { QuartersPage } from "quarters.slint";
 import { LightsPage } from "lights.slint";
 import { EnviroPage } from "enviro.slint";
+import { StatsPage } from "stats.slint";
+import { RosterPage } from "roster.slint";
+import { PayPage } from "pay.slint";
 
 // Re-export so main.rs can reach them via the generated module.
 export { Theme, PageId }
@@ -33,6 +36,36 @@ export component App inherits Window {
     in-out property <float> enviro-pm25:  0.0;
     in-out property <float> enviro-temp:  20.0;
     in-out property <float> enviro-hum:   50.0;
+
+    // Stats page — weight + bmi + 9 body-composition metrics (`stats` view).
+    in-out property <float> stat-weight: 0.0;
+    in-out property <float> stat-bmi:    0.0;
+    in-out property <float> stat-body-fat: 0.0;
+    in-out property <float> stat-muscle:   0.0;
+    in-out property <float> stat-water:    0.0;
+    in-out property <float> stat-lean:     0.0;
+    in-out property <float> stat-fat-mass: 0.0;
+    in-out property <float> stat-bone:     0.0;
+    in-out property <float> stat-bmr:      0.0;
+    in-out property <float> stat-metabolic-age: 0.0;
+    in-out property <float> stat-visceral:     0.0;
+
+    // Roster page — next_shift state + attributes (`roster` view).
+    in-out property <string> shift-starts:     "--";
+    in-out property <string> shift-day:        "--";
+    in-out property <string> shift-date:       "--";
+    in-out property <string> shift-start:      "--";
+    in-out property <string> shift-end:        "--";
+    in-out property <string> shift-duration:   "--";
+    in-out property <string> shift-location:   "--";
+    in-out property <string> shift-week-count: "--";
+    in-out property <string> shift-week-hours: "--";
+
+    // Pay page — four payslip fields (`pay` view).
+    in-out property <string> pay-period:      "--";
+    in-out property <string> pay-net:         "--";
+    in-out property <string> pay-annual:      "--";
+    in-out property <string> pay-sick:        "--";
 
     // UI -> worker. entity_id is carried by the callback so Rust forwards it
     // verbatim into a ServiceCall (no UI-identity -> entity map in Rust).
@@ -74,6 +107,45 @@ export component App inherits Window {
         pm25:         root.enviro-pm25;
         temperature:  root.enviro-temp;
         humidity:     root.enviro-hum;
+        page-requested(p) => { root.current-page = p; }
+    }
+    if root.current-page == PageId.stats : StatsPage {
+        current-page: root.current-page;
+        connection:   root.connection;
+        weight:        root.stat-weight;
+        bmi:           root.stat-bmi;
+        body-fat:      root.stat-body-fat;
+        muscle:        root.stat-muscle;
+        water:         root.stat-water;
+        lean:          root.stat-lean;
+        fat-mass:      root.stat-fat-mass;
+        bone:          root.stat-bone;
+        bmr:           root.stat-bmr;
+        metabolic-age: root.stat-metabolic-age;
+        visceral:      root.stat-visceral;
+        page-requested(p) => { root.current-page = p; }
+    }
+    if root.current-page == PageId.roster : RosterPage {
+        current-page:  root.current-page;
+        connection:    root.connection;
+        starts:        root.shift-starts;
+        day:           root.shift-day;
+        date:          root.shift-date;
+        start:         root.shift-start;
+        end:           root.shift-end;
+        duration:      root.shift-duration;
+        location:      root.shift-location;
+        week-count:    root.shift-week-count;
+        week-hours:    root.shift-week-hours;
+        page-requested(p) => { root.current-page = p; }
+    }
+    if root.current-page == PageId.pay : PayPage {
+        current-page: root.current-page;
+        connection:   root.connection;
+        period:       root.pay-period;
+        net-pay:      root.pay-net;
+        annual-leave: root.pay-annual;
+        sick-leave:   root.pay-sick;
         page-requested(p) => { root.current-page = p; }
     }
 }

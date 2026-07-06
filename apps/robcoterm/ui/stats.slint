@@ -1,0 +1,139 @@
+import { Theme } from "theme.slint";
+import { PageId } from "pages.slint";
+import { StatusBar } from "components/status_bar.slint";
+import { NavBar } from "components/nav_bar.slint";
+import { Meter } from "components/meter.slint";
+
+// One body-metric row: label + numeric value + unit + a meter bar whose fill
+// is (value-min)/(max-min). min/max/unit are page-owned UI constants from the
+// YAML (`stats` view); Rust only delivers the float from the body-scale sensor.
+component StatRow inherits Rectangle {
+    in property <string> label: "";
+    in property <float> value: 0.0;
+    in property <float> min: 0.0;
+    in property <float> max: 1.0;
+    in property <string> unit: "";
+
+    height: 48px;
+    border-width: 1px;
+    border-color: Theme.primary-dim;
+    background: Theme.background;
+
+    HorizontalLayout {
+        padding: 8px;
+        spacing: 10px;
+
+        Text {
+            text: root.label;
+            color: Theme.primary-dim;
+            font-family: Theme.font-family;
+            font-size: Theme.font-size-base;
+            horizontal-stretch: 1;
+            vertical-alignment: center;
+        }
+        Text {
+            text: "\{round(root.value)} \{root.unit}";
+            color: Theme.primary;
+            font-family: Theme.font-family;
+            font-size: 18px;
+            width: 130px;
+            vertical-alignment: center;
+        }
+        Meter {
+            width: 220px;
+            value: (root.value - root.min) / (root.max - root.min);
+        }
+    }
+}
+
+// Bedroom body-composition page (jupiter-room.yaml `stats` view). Read-only.
+export component StatsPage inherits Rectangle {
+    in property <PageId> current-page: PageId.stats;
+    in property <string> connection: "connected";
+
+    in property <float> weight: 0.0;
+    in property <float> bmi: 0.0;
+    in property <float> body-fat: 0.0;
+    in property <float> muscle: 0.0;
+    in property <float> water: 0.0;
+    in property <float> lean: 0.0;
+    in property <float> fat-mass: 0.0;
+    in property <float> bone: 0.0;
+    in property <float> bmr: 0.0;
+    in property <float> metabolic-age: 0.0;
+    in property <float> visceral: 0.0;
+
+    callback page-requested(PageId);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0px;
+
+        StatusBar {
+            title: "JUPITER QUARTERS // S.T.A.T.S.";
+        }
+
+        // Weight + BMI headline.
+        Rectangle {
+            height: 56px;
+            border-width: 1px;
+            border-color: Theme.primary-dim;
+            HorizontalLayout {
+                padding: 8px;
+                spacing: 24px;
+                Text {
+                    text: "WEIGHT \{round(root.weight)} KG";
+                    color: Theme.primary;
+                    font-family: Theme.font-family;
+                    font-size: 20px;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: "BMI \{round(root.bmi)}";
+                    color: Theme.primary;
+                    font-family: Theme.font-family;
+                    font-size: 20px;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        VerticalLayout {
+            padding: 6px;
+            spacing: 4px;
+
+            StatRow { label: "BODY FAT";      value: root.body-fat;      min: 0.0;   max: 40.0;  unit: "%"; }
+            StatRow { label: "MUSCLE";        value: root.muscle;        min: 0.0;   max: 70.0;  unit: "%"; }
+            StatRow { label: "WATER";         value: root.water;         min: 0.0;   max: 80.0;  unit: "%"; }
+            StatRow { label: "LEAN MASS";     value: root.lean;          min: 0.0;   max: 90.0;  unit: "KG"; }
+            StatRow { label: "FAT MASS";      value: root.fat-mass;      min: 0.0;   max: 30.0;  unit: "KG"; }
+            StatRow { label: "BONE MASS";     value: root.bone;          min: 0.0;   max: 6.0;   unit: "KG"; }
+            StatRow { label: "BMR";           value: root.bmr;           min: 800.0; max: 2500.0; unit: "KCAL"; }
+            StatRow { label: "METABOLIC AGE"; value: root.metabolic-age; min: 0.0;   max: 80.0;  unit: "YRS"; }
+            StatRow { label: "VISCERAL FAT";  value: root.visceral;      min: 0.0;   max: 20.0;  unit: ""; }
+        }
+
+        NavBar {
+            current: root.current-page;
+            page-requested(p) => {
+                root.page-requested(p);
+            }
+        }
+    }
+
+    if root.connection != "connected" : Rectangle {
+        x: 0px;
+        y: 0px;
+        width: root.width;
+        height: 28px;
+        background: Theme.alert;
+        Text {
+            text: root.connection == "connecting" ? "▒ RECONNECTING ▒" : "▒ LINK DOWN ▒";
+            color: black;
+            font-family: Theme.font-family;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}

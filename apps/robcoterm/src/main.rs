@@ -186,6 +186,46 @@ fn apply_ha_event(ui: &App, ev: HaEvent) {
                 dispatch::EnviroSensor::Temp => ui.set_enviro_temp(value),
                 dispatch::EnviroSensor::Humidity => ui.set_enviro_hum(value),
             },
+            Some(UiUpdate::Weight(w)) => ui.set_stat_weight(w),
+            Some(UiUpdate::Bmi(b)) => ui.set_stat_bmi(b),
+            Some(UiUpdate::BodyMetric { which, value }) => match which {
+                dispatch::BodyMetric::BodyFat => ui.set_stat_body_fat(value),
+                dispatch::BodyMetric::Muscle => ui.set_stat_muscle(value),
+                dispatch::BodyMetric::Water => ui.set_stat_water(value),
+                dispatch::BodyMetric::LeanMass => ui.set_stat_lean(value),
+                dispatch::BodyMetric::FatMass => ui.set_stat_fat_mass(value),
+                dispatch::BodyMetric::BoneMass => ui.set_stat_bone(value),
+                dispatch::BodyMetric::Bmr => ui.set_stat_bmr(value),
+                dispatch::BodyMetric::MetabolicAge => ui.set_stat_metabolic_age(value),
+                dispatch::BodyMetric::VisceralFat => ui.set_stat_visceral(value),
+            },
+            Some(UiUpdate::Shift {
+                starts,
+                day,
+                date,
+                start,
+                end,
+                duration,
+                location,
+                week_count,
+                week_hours,
+            }) => {
+                ui.set_shift_starts(starts.into());
+                ui.set_shift_day(day.into());
+                ui.set_shift_date(date.into());
+                ui.set_shift_start(start.into());
+                ui.set_shift_end(end.into());
+                ui.set_shift_duration(duration.into());
+                ui.set_shift_location(location.into());
+                ui.set_shift_week_count(week_count.into());
+                ui.set_shift_week_hours(week_hours.into());
+            }
+            Some(UiUpdate::PayField { which, value }) => match which {
+                dispatch::PayField::Period => ui.set_pay_period(value.into()),
+                dispatch::PayField::Net => ui.set_pay_net(value.into()),
+                dispatch::PayField::Annual => ui.set_pay_annual(value.into()),
+                dispatch::PayField::Sick => ui.set_pay_sick(value.into()),
+            },
             None => {}
         },
     }

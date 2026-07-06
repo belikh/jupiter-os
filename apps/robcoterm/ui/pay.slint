@@ -1,0 +1,93 @@
+import { Theme } from "theme.slint";
+import { PageId } from "pages.slint";
+import { StatusBar } from "components/status_bar.slint";
+import { NavBar } from "components/nav_bar.slint";
+import { DataRow, DataList } from "roster.slint";
+
+// Bedroom payroll page (jupiter-room.yaml `pay` view). The datalist reads the
+// four payslip entities directly. The three chart cards in the YAML use HA
+// statistics (history) which need a separate history-fetch (not in the Phase 3
+// state-cache layer); they're rendered as placeholders until that lands.
+export component PayPage inherits Rectangle {
+    in property <PageId> current-page: PageId.pay;
+    in property <string> connection: "connected";
+
+    in property <string> period: "--";
+    in property <string> net-pay: "--";
+    in property <string> annual-leave: "--";
+    in property <string> sick-leave: "--";
+
+    callback page-requested(PageId);
+
+    background: Theme.background;
+
+    VerticalLayout {
+        spacing: 0px;
+
+        StatusBar {
+            title: "JUPITER QUARTERS // PAYROLL";
+        }
+
+        HorizontalLayout {
+            padding: 8px;
+            spacing: 8px;
+
+            DataList {
+                title: "LATEST PAYSLIP";
+                horizontal-stretch: 1;
+                DataRow { label: "PERIOD";       value: root.period; }
+                DataRow { label: "NET PAY";      value: root.net-pay; }
+                DataRow { label: "ANNUAL LEAVE"; value: root.annual-leave; }
+                DataRow { label: "SICK LEAVE";  value: root.sick-leave; }
+            }
+
+            // Chart placeholder — see file header. Kept as a labelled panel so
+            // the layout matches the YAML while the history fetch is unwired.
+            Rectangle {
+                horizontal-stretch: 1;
+                border-width: 1px;
+                border-color: Theme.primary-dim;
+                background: Theme.background;
+                VerticalLayout {
+                    padding: 10px;
+                    spacing: 6px;
+                    Text {
+                        text: "LEAVE / INCOME / HOURS";
+                        color: Theme.primary-dim;
+                        font-family: Theme.font-family;
+                        font-size: Theme.font-size-base;
+                    }
+                    Text {
+                        text: "// STATISTICS UNAVAILABLE\n// HISTORY FETCH NOT IMPLEMENTED";
+                        color: Theme.primary-dim;
+                        font-family: Theme.font-family;
+                        font-size: 12px;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+
+        NavBar {
+            current: root.current-page;
+            page-requested(p) => {
+                root.page-requested(p);
+            }
+        }
+    }
+
+    if root.connection != "connected" : Rectangle {
+        x: 0px;
+        y: 0px;
+        width: root.width;
+        height: 28px;
+        background: Theme.alert;
+        Text {
+            text: root.connection == "connecting" ? "▒ RECONNECTING ▒" : "▒ LINK DOWN ▒";
+            color: black;
+            font-family: Theme.font-family;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}

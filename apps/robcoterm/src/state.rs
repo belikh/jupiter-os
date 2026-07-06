@@ -20,8 +20,15 @@ pub enum EntityState {
         on: bool,
         brightness_pct: Option<u8>,
     },
-    /// `sensor.*` — string-valued state + optional unit_of_measurement.
-    Sensor { value: String, unit: Option<String> },
+    /// `sensor.*` — string-valued state + optional unit_of_measurement. The
+    /// full `attributes` object is retained because several dashboards read
+    /// structured data from attributes (e.g. roster reads `sensor.next_shift`'s
+    /// `day` / `start_local` / `duration_hours` / `location`).
+    Sensor {
+        value: String,
+        unit: Option<String>,
+        attributes: Value,
+    },
     /// `media_player.*` — playback state string ("playing"/"idle"/...).
     MediaPlayer { state: String },
     /// `binary_sensor.*` — boolean derived from state == "on".
@@ -70,6 +77,7 @@ impl EntityState {
                     .get("unit_of_measurement")
                     .and_then(Value::as_str)
                     .map(str::to_owned),
+                attributes: attrs,
             },
             "media_player" => EntityState::MediaPlayer { state: state_str },
             "binary_sensor" => EntityState::BinarySensor {

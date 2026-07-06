@@ -14,6 +14,7 @@
 //! jupiter-room.yaml` — the port invents nothing (implementation_plan §6.2).
 
 use crate::state::EntityState;
+use serde_json::Value;
 
 // ---- bedroom overview entity IDs (jupiter-room.yaml) ----------------------
 
@@ -50,6 +51,34 @@ pub const PM25: &str = "sensor.alpstuga_air_quality_monitor_pm2_5";
 pub const ENVIRO_TEMP: &str = "sensor.alpstuga_air_quality_monitor_temperature";
 /// Relative humidity gauge. ALPSTUGA monitor, 0..100 %.
 pub const HUMIDITY: &str = "sensor.alpstuga_air_quality_monitor_humidity";
+
+// ---- stats page entity IDs (jupiter-room.yaml `stats` view) ----------------
+
+pub const WEIGHT: &str = "sensor.anko_body_scale_weight";
+pub const BMI: &str = "sensor.anko_body_scale_bmi";
+pub const BODY_FAT: &str = "sensor.anko_body_scale_body_fat";
+pub const MUSCLE: &str = "sensor.anko_body_scale_muscle_mass";
+pub const BODY_WATER: &str = "sensor.anko_body_scale_body_water";
+pub const LEAN_MASS: &str = "sensor.anko_body_scale_lean_mass";
+pub const FAT_MASS: &str = "sensor.anko_body_scale_fat_mass";
+pub const BONE_MASS: &str = "sensor.anko_body_scale_bone_mass";
+pub const BMR: &str = "sensor.anko_body_scale_basal_metabolic_rate";
+pub const METABOLIC_AGE: &str = "sensor.anko_body_scale_metabolic_age";
+pub const VISCERAL_FAT: &str = "sensor.anko_body_scale_visceral_fat_index";
+
+// ---- roster page entity IDs (jupiter-room.yaml `roster` view) --------------
+
+/// One entity carrying the whole roster: `state` = relative "starts in", and
+/// attributes hold day / shift_date / start_local / end_local / duration_hours
+/// / location / this_week_count / this_week_hours.
+pub const NEXT_SHIFT: &str = "sensor.next_shift";
+
+// ---- pay page entity IDs (jupiter-room.yaml `pay` view) --------------------
+
+pub const PAYSLIP_PERIOD: &str = "input_text.payslip_period";
+pub const PAYSLIP_NET: &str = "input_number.payslip_net_pay";
+pub const ANNUAL_LEAVE_BAL: &str = "input_number.annual_leave_balance";
+pub const SICK_LEAVE_BAL: &str = "input_number.sick_leave_balance";
 
 // ---- typed UI values ------------------------------------------------------
 
@@ -121,6 +150,31 @@ pub enum UiUpdate {
         which: EnviroSensor,
         value: f32,
     },
+    // Stats page — weight + bmi headline floats.
+    Weight(f32),
+    Bmi(f32),
+    // Stats page — one body-composition metric float.
+    BodyMetric {
+        which: BodyMetric,
+        value: f32,
+    },
+    // Roster page — all fields of `sensor.next_shift` in one update.
+    Shift {
+        starts: String,
+        day: String,
+        date: String,
+        start: String,
+        end: String,
+        duration: String,
+        location: String,
+        week_count: String,
+        week_hours: String,
+    },
+    // Pay page — one payslip field at a time.
+    PayField {
+        which: PayField,
+        value: String,
+    },
 }
 
 /// Which enviro gauge a sensor update targets.
@@ -132,11 +186,57 @@ pub enum EnviroSensor {
     Humidity,
 }
 
+/// Which body-composition metric a stats update targets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BodyMetric {
+    BodyFat,
+    Muscle,
+    Water,
+    LeanMass,
+    FatMass,
+    BoneMass,
+    Bmr,
+    MetabolicAge,
+    VisceralFat,
+}
+
+/// Which payslip field a pay update targets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PayField {
+    Period,
+    Net,
+    Annual,
+    Sick,
+}
+
 /// Parse a sensor's string state into f32. Returns None on a non-numeric
 /// payload (keeps the last known value rather than forcing a 0.0 onto the gauge).
 fn sensor_to_f32(state: &EntityState) -> Option<f32> {
     match state {
         EntityState::Sensor { value, .. } => value.parse::<f32>().ok(),
+        _ => None,
+    }
+}
+
+/// Read a `sensor` attribute as a display string. Strings pass through;
+/// numbers format with one decimal (or none if integral); absent -> "--".
+fn attr_str(attrs: &Value, key: &str) -> String {
+    match attrs.get(key) {
+        Some(Value::String(s)) => s.clone(),
+        Some(v) if v.is_number() => match v.as_f64() {
+            Some(f) if f.fract() == 0.0 => format!("{}", f as i64),
+            Some(f) => format!("{:.1}", f),
+            None => "--".into(),
+        },
+        _ => "--".into(),
+    }
+}
+
+/// Read the top-level `state` string of a Raw entity (input_text /
+/// input_number fall here since they're not in the typed-domain match).
+fn raw_state_str(state: &EntityState) -> Option<String> {
+    match state {
+        EntityState::Raw(v) => v.get("state").and_then(Value::as_str).map(str::to_owned),
         _ => None,
     }
 }
@@ -234,6 +334,77 @@ pub fn dispatch_plan(entity_id: &str, state: &EntityState) -> Option<UiUpdate> {
         HUMIDITY => sensor_to_f32(state).map(|v| UiUpdate::EnviroSensor {
             which: EnviroSensor::Humidity,
             value: v,
+        }),
+        // Stats page — body scale.
+        WEIGHT => sensor_to_f32(state).map(UiUpdate::Weight),
+        BMI => sensor_to_f32(state).map(UiUpdate::Bmi),
+        BODY_FAT => sensor_to_f32(state).map(|v| UiUpdate::BodyMetric {
+            which: BodyMetric::BodyFat,
+            value: v,
+        }),
+        MUSCLE => sensor_to_f32(state).map(|v| UiUpdate::BodyMetric {
+            which: BodyMetric::Muscle,
+            value: v,
+        }),
+        BODY_WATER => sensor_to_f32(state).map(|v| UiUpdate::BodyMetric {
+            which: BodyMetric::Water,
+            value: v,
+        }),
+        LEAN_MASS => sensor_to_f32(state).map(|v| UiUpdate::BodyMetric {
+            which: BodyMetric::LeanMass,
+            value: v,
+        }),
+        FAT_MASS => sensor_to_f32(state).map(|v| UiUpdate::BodyMetric {
+            which: BodyMetric::FatMass,
+            value: v,
+        }),
+        BONE_MASS => sensor_to_f32(state).map(|v| UiUpdate::BodyMetric {
+            which: BodyMetric::BoneMass,
+            value: v,
+        }),
+        BMR => sensor_to_f32(state).map(|v| UiUpdate::BodyMetric {
+            which: BodyMetric::Bmr,
+            value: v,
+        }),
+        METABOLIC_AGE => sensor_to_f32(state).map(|v| UiUpdate::BodyMetric {
+            which: BodyMetric::MetabolicAge,
+            value: v,
+        }),
+        VISCERAL_FAT => sensor_to_f32(state).map(|v| UiUpdate::BodyMetric {
+            which: BodyMetric::VisceralFat,
+            value: v,
+        }),
+        // Roster page — read next_shift's state + attributes in one update.
+        NEXT_SHIFT => match state {
+            EntityState::Sensor { value, attributes, .. } => Some(UiUpdate::Shift {
+                starts: value.clone(),
+                day: attr_str(attributes, "day"),
+                date: attr_str(attributes, "shift_date"),
+                start: attr_str(attributes, "start_local"),
+                end: attr_str(attributes, "end_local"),
+                duration: attr_str(attributes, "duration_hours"),
+                location: attr_str(attributes, "location"),
+                week_count: attr_str(attributes, "this_week_count"),
+                week_hours: attr_str(attributes, "this_week_hours"),
+            }),
+            _ => None,
+        },
+        // Pay page — input_text/input_number are Raw; read their state string.
+        PAYSLIP_PERIOD => raw_state_str(state).map(|value| UiUpdate::PayField {
+            which: PayField::Period,
+            value,
+        }),
+        PAYSLIP_NET => raw_state_str(state).map(|value| UiUpdate::PayField {
+            which: PayField::Net,
+            value,
+        }),
+        ANNUAL_LEAVE_BAL => raw_state_str(state).map(|value| UiUpdate::PayField {
+            which: PayField::Annual,
+            value,
+        }),
+        SICK_LEAVE_BAL => raw_state_str(state).map(|value| UiUpdate::PayField {
+            which: PayField::Sick,
+            value,
         }),
         PRINTER => match state {
             EntityState::Sensor { value, .. } => Some(UiUpdate::PrinterState(parse_printer(value))),
@@ -463,5 +634,118 @@ mod tests {
         // UI keeps the last good reading (matches the lights Raw-payload rule).
         let bad = EntityState::from_ha(CO2, &json!({ "state": "unavailable" }));
         assert_eq!(dispatch_plan(CO2, &bad), None);
+    }
+
+    // ---- stats page (jupiter-room.yaml `stats` view) ------------------------
+
+    #[test]
+    fn stats_weight_and_bmi_route_to_headline_floats() {
+        let w = EntityState::from_ha(WEIGHT, &json!({ "state": "82.4" }));
+        let b = EntityState::from_ha(BMI, &json!({ "state": "24.1" }));
+        assert_eq!(dispatch_plan(WEIGHT, &w), Some(UiUpdate::Weight(82.4)));
+        assert_eq!(dispatch_plan(BMI, &b), Some(UiUpdate::Bmi(24.1)));
+    }
+
+    #[test]
+    fn stats_body_metrics_each_route_to_their_own_variant() {
+        // load-bearing: each of the 9 metrics lands in BodyMetric with the
+        // right `which`, so main.rs hits the matching stats_* property.
+        let bf = EntityState::from_ha(BODY_FAT, &json!({ "state": "18" }));
+        assert_eq!(
+            dispatch_plan(BODY_FAT, &bf),
+            Some(UiUpdate::BodyMetric {
+                which: BodyMetric::BodyFat,
+                value: 18.0
+            })
+        );
+        let bmr = EntityState::from_ha(BMR, &json!({ "state": "1789" }));
+        assert_eq!(
+            dispatch_plan(BMR, &bmr),
+            Some(UiUpdate::BodyMetric {
+                which: BodyMetric::Bmr,
+                value: 1789.0
+            })
+        );
+    }
+
+    // ---- roster page (jupiter-room.yaml `roster` view) ----------------------
+
+    #[test]
+    fn roster_reads_next_shift_state_and_attributes() {
+        // The whole roster comes from ONE entity: state = relative "starts",
+        // attributes hold the structured fields. One push -> one Shift update.
+        let shift = EntityState::from_ha(
+            NEXT_SHIFT,
+            &json!({
+                "state": "in 3h",
+                "attributes": {
+                    "day": "Mon",
+                    "shift_date": "2026-07-13",
+                    "start_local": "07:00",
+                    "end_local": "15:00",
+                    "duration_hours": 8.0,
+                    "location": "Site A",
+                    "this_week_count": 5,
+                    "this_week_hours": 40.0
+                }
+            }),
+        );
+        assert_eq!(
+            dispatch_plan(NEXT_SHIFT, &shift),
+            Some(UiUpdate::Shift {
+                starts: "in 3h".into(),
+                day: "Mon".into(),
+                date: "2026-07-13".into(),
+                start: "07:00".into(),
+                end: "15:00".into(),
+                duration: "8".into(),
+                location: "Site A".into(),
+                week_count: "5".into(),
+                week_hours: "40".into(),
+            })
+        );
+    }
+
+    #[test]
+    fn roster_missing_attribute_falls_back_to_dash() {
+        // A push with no attributes must not panic — every field falls back.
+        let bare = EntityState::from_ha(NEXT_SHIFT, &json!({ "state": "off" }));
+        let u = dispatch_plan(NEXT_SHIFT, &bare).expect("still a Shift update");
+        assert_eq!(u, UiUpdate::Shift {
+            starts: "off".into(),
+            day: "--".into(),
+            date: "--".into(),
+            start: "--".into(),
+            end: "--".into(),
+            duration: "--".into(),
+            location: "--".into(),
+            week_count: "--".into(),
+            week_hours: "--".into(),
+        });
+    }
+
+    // ---- pay page (jupiter-room.yaml `pay` view) ----------------------------
+
+    #[test]
+    fn pay_fields_route_individually_from_raw_state() {
+        // input_text/input_number aren't typed domains -> Raw. Each entity
+        // produces its OWN PayField update (one entity -> one field, never a
+        // bundle), so a single push can't clobber the other three.
+        let period = EntityState::from_ha(PAYSLIP_PERIOD, &json!({ "state": "2026-06 FN" }));
+        let net = EntityState::from_ha(PAYSLIP_NET, &json!({ "state": "3210.50" }));
+        assert_eq!(
+            dispatch_plan(PAYSLIP_PERIOD, &period),
+            Some(UiUpdate::PayField {
+                which: PayField::Period,
+                value: "2026-06 FN".into()
+            })
+        );
+        assert_eq!(
+            dispatch_plan(PAYSLIP_NET, &net),
+            Some(UiUpdate::PayField {
+                which: PayField::Net,
+                value: "3210.50".into()
+            })
+        );
     }
 }
