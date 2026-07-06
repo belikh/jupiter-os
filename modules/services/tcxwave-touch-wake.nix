@@ -8,7 +8,7 @@
 let
   cfg = config.jupiter.touchWake;
 
-  touchWakeScript = pkgs.writers.writePython3Bin "tcxwave-touch-wake" {} ''
+  touchWakeScript = pkgs.writers.writePython3Bin "tcxwave-touch-wake" { } ''
     import sys
     import os
     import select
@@ -172,7 +172,10 @@ in
 
     systemd.services.tcxwave-touch-wake = {
       description = "TCx Wave Touch-Wake Daemon";
-      after = [ "cage-tty1.service" "tcxwave-screen-power.service" ];
+      after = [
+        "cage-tty1.service"
+        "tcxwave-screen-power.service"
+      ];
       bindsTo = [ "cage-tty1.service" ];
       wantedBy = [ "multi-user.target" ];
       serviceConfig = {

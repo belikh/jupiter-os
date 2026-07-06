@@ -12,8 +12,14 @@
 {
   imports = [
     ./core/impermanence.nix
+    ./core/antigravity-cli.nix
+    ./core/ecc.nix
+    ./core/zed.nix
     ./storage/zfs-profiles.nix
   ];
+
+  jupiter.core.ecc.enable = true;
+  jupiter.core.zed.enable = true;
 
   nixpkgs.config.allowUnfree = true;
   hardware.enableRedistributableFirmware = lib.mkDefault true;
