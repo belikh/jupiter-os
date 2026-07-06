@@ -158,6 +158,7 @@
               clippy
               pkg-config
               libdrm
+              libgbm # mirror the derivation: linuxkms backend links -lgbm
               libinput
               libxkbcommon
               udev

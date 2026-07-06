@@ -1,8 +1,16 @@
-// Placeholder UI. Real overview/detail pages land in Phase 3
-// (quarters.slint, lights.slint, ...). This only exists so slint-build has
-// something to compile during the Phase 0 spike.
+// Root window. The bedroom quarters overview mounts here in Phase C2; for T3.1
+// this exists so slint-build compiles the Theme global and Rust can reach it
+// via Theme::get(&ui). background + a single label prove the binding live.
+import { Theme } from "theme.slint";
+
+export { Theme }
+
 export component App inherits Window {
+    background: Theme.background;
     Text {
-        text: "hi";
+        text: "JUPITER";
+        color: Theme.primary;
+        font-family: Theme.font-family;
+        font-size: 24px;
     }
 }

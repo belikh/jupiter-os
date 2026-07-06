@@ -10,3 +10,4 @@
 
 pub mod ha;
 pub mod state;
+pub mod theme;
