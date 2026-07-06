@@ -76,6 +76,18 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    # Monofonto (the Vault-Tec display face, bundled under apps/robcoterm/
+    # assets/fonts) — installed system-wide so fontconfig discovers it and
+    # Slint's fontique resolves Theme.font-family = "Monofonto". Tiny (57 KB),
+    # so a dedicated font derivation is cheaper than pulling the whole robcoterm
+    # binary closure into fonts.packages.
+    fonts.packages = [
+      (pkgs.runCommand "monofonto-font" { } ''
+        mkdir -p $out/share/fonts
+        cp ${../../apps/robcoterm/assets/fonts/monofonto.otf} $out/share/fonts/monofonto.otf
+      '')
+    ];
+
     # robcoterm owns DRM master on /dev/dri/cardN and runs on tty1 as the
     # kiosk user (video/render/input groups). The TTY binding is load-bearing:
     # DRM page_flip returns EACCES unless the process is the active VT session

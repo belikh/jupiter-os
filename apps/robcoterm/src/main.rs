@@ -57,6 +57,24 @@ fn main() -> Result<(), slint::PlatformError> {
     let ui = App::new()?;
     Theme::get(&ui).set_primary(room_color(room));
 
+    // StatusBar clock — tick every second on the Slint event loop. The Weak handle
+    // is the legal way to reach the component from the timer closure; the Timer
+    // is held for the process lifetime (until ui.run() returns).
+    let clock_timer = slint::Timer::default();
+    {
+        let clock_weak = ui.as_weak();
+        clock_timer.start(
+            slint::TimerMode::Repeated,
+            Duration::from_secs(1),
+            move || {
+                if let Some(ui) = clock_weak.upgrade() {
+                    ui.set_clock(chrono::Local::now().format("%H:%M:%S").to_string().into());
+                }
+            },
+        );
+    }
+    std::mem::forget(clock_timer);
+
     // Best-effort HA wiring: the UI runs even if HA is unreachable — the
     // ReconnectBanner overlay (quarters.slint) shows LINK DOWN / RECONNECTING.
     let ha_cfg = match (&args.ha_url, &args.ha_token_file) {

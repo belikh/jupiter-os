@@ -45,6 +45,15 @@
     haTokenFile = config.sops.secrets.robcoterm_ha_token_amalthea.path;
   };
 
+  # High-performance mode. TLP normally holds this kiosk at powersave/power-EPP
+  # for 24/7 idle efficiency; flipped to performance so the box can build its
+  # own system on-target without crawling. Revert these two lines to return to
+  # the powersave profile (tcxwave-power-tuning.nix default).
+  services.tlp.settings = {
+    CPU_SCALING_GOVERNOR_ON_AC = lib.mkForce "performance";
+    CPU_ENERGY_PERF_POLICY_ON_AC = lib.mkForce "performance";
+  };
+
   # Broker runs locally on amalthea — point ha-agent at localhost instead of
   # the profile's amalthea.localdomain default.
   jupiter.services.haAgent.mqttHost = "localhost";

@@ -30,6 +30,8 @@ tokio-tungstenite = { version = "0.27", features = ["rustls-tls-native-roots"] }
 # panics ("Could not automatically determine the process-level CryptoProvider").
 # Enable ring here and install it once at startup in main.rs.
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+# Local-time formatting for the StatusBar clock (slint::Timer ticks every 1s).
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 futures-util = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
