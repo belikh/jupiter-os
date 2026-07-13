@@ -69,19 +69,18 @@ pallene-iso:
 	@echo "Cleaning up plaintext secrets (gitignored — do not commit)..."
 	rm -f secrets/pallene-secrets/binarylane-api-token secrets/pallene-secrets/attic-push-token
 
-# Build the ISO, then boot it on BinaryLane to run one rebuild-the-world cycle.
-# On this branch the BinaryLane create/attach-ISO/wait lifecycle is a manual
-# step (the driving scripts from master aren't ported yet): upload the built
-# ISO (./result/iso/*.iso) to a host BinaryLane can fetch, create a server
-# booted from it, and let the build-server module self-destruct on completion.
-# The cloud-init user-data can carry a target git ref (overriding defaultRef).
+# Drive one full ephemeral build-server run: build the ISO, upload it to R2,
+# then hand off to scripts/binarylane-build-server.sh to create the
+# BinaryLane server, boot it from the ISO, and wait for it to rebuild the
+# world and self-destruct. Requires awscli on PATH (for the R2 upload) and
+# real values for the cloudflare_account_id / r2_access_key_id /
+# r2_secret_access_key / binarylane_api_token sops keys. Override the build
+# target git ref with GIT_REF=... (defaults to dashboard-v2).
 rebuild-world: pallene-iso
-	@echo "pallene ISO built at ./result — boot it on BinaryLane to run one cycle:"
-	@echo "  1. Upload ./result/iso/*.iso to a URL BinaryLane can fetch."
-	@echo "  2. Create a BinaryLane VPS (>=8 vcpu / 16GB) booted from the custom ISO."
-	@echo "     Optional: set user-data to a git ref to build a specific commit."
-	@echo "  3. The build-server module clones the repo, builds europa's btver2"
-	@echo "     closure, pushes to attic.jupiter.au, then self-destructs."
-	@echo "  4. On europa: \`attic cache create jupiter-os\` (if not done), then"
-	@echo "     \`nixos-rebuild switch\` substitutes the tuned closure from localhost:8080."
-	@echo "See docs/plans/2026-07-13-001-feat-europa-phase2-tuned-closure-plan.md."
+	sops exec-env secrets/secrets.yaml '\
+		export AWS_ACCESS_KEY_ID="$$r2_access_key_id"; \
+		export AWS_SECRET_ACCESS_KEY="$$r2_secret_access_key"; \
+		export R2_ACCOUNT_ID="$$cloudflare_account_id"; \
+		export ISO_URL="$$(./scripts/upload-pallene-iso-r2.sh)"; \
+		export BINARYLANE_API_TOKEN="$$binarylane_api_token"; \
+		./scripts/binarylane-build-server.sh'

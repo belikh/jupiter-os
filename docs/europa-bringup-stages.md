@@ -122,10 +122,18 @@ ship as placeholders.
    string as `jupiter.services.attic.publicKey` in
    `modules/services/attic-server.nix` (currently the `TODO-replace-…`
    placeholder).
-3. **Build-server secrets.** `sops secrets/secrets.yaml` and set real values
+3. **R2 bucket for the pallene ISO.** BinaryLane fetches the custom ISO from
+   an HTTPS URL (its API has no local-ISO-upload — see
+   `scripts/binarylane-build-server.sh`). Create the bucket
+   `jupiter-os-pallene-iso` in the Cloudflare dashboard (R2 free tier covers
+   it: ~1 GB ISO, one PUT + one GET per run, zero egress), then create an R2
+   API token scoped to Object Read & Write on that bucket. Set in sops:
+   `cloudflare_account_id`, `r2_access_key_id`, `r2_secret_access_key`
+   (currently dummy placeholders).
+4. **Build-server secrets.** `sops secrets/secrets.yaml` and set real values
    for `binarylane_api_token` and `attic_push_token` (currently dummy
    placeholders).
-4. Rebuild europa so the real tunnel ID + public key take effect:
+5. Rebuild europa so the real tunnel ID + public key take effect:
    `nixos-rebuild switch`.
 
 **Verify:**
@@ -147,15 +155,17 @@ Phase 2 closure, substituted from its own Attic.
 **Precondition:** Stage 3 complete.
 
 **Actions:**
-1. `make pallene-iso` — materializes the real tokens from sops, builds the ISO
-   with them baked in, cleans up the plaintext. Output: `./result/iso/*.iso`.
-2. Boot the ISO on BinaryLane: upload the ISO to a URL BinaryLane can fetch,
-   create a server (≥8 vcpu / 16 GB) booted from it. Optionally set cloud-init
-   user-data to a target git ref (otherwise defaults to `dashboard-v2`).
-3. `pallene` runs unattended: clones the repo, builds europa's `btver2` closure,
-   pushes to `attic.jupiter.au`, then self-destructs via the BinaryLane API. The
-   4 h force-destroy timer is the ceiling if anything hangs.
-4. On europa: `nixos-rebuild switch`. nix substitutes the tuned closure from
+1. `make rebuild-world` — one command runs the whole cycle: builds the
+   pallene ISO (`make pallene-iso`, baking in the real tokens), uploads it to
+   the R2 bucket (`scripts/upload-pallene-iso-r2.sh`, presigning a 4 h URL),
+   then drives BinaryLane (`scripts/binarylane-build-server.sh`: create a
+   placeholder server → upload the ISO as a backup image from the presigned
+   URL → attach as boot media → reboot → wait for self-destruct). Override
+   the build target git ref with `GIT_REF=<ref>` (defaults to `dashboard-v2`).
+2. `pallene` runs unattended once booted: clones the repo, builds europa's
+   `btver2` closure, pushes to `attic.jupiter.au`, then self-destructs via
+   the BinaryLane API. The 4 h force-destroy timer is the ceiling.
+3. On europa: `nixos-rebuild switch`. nix substitutes the tuned closure from
    `localhost:8080` (europa IS the attic server); falls through to
    `cache.nixos.org` only for anything the tuned closure shares with baseline.
 
