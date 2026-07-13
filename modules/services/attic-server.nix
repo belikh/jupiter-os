@@ -1,12 +1,16 @@
-{ config, lib, ... }:
+{
+  config,
+  lib,
+  ...
+}:
 
 # Runs atticd, the binary cache the ephemeral BinaryLane "rebuild the world"
-# build server pushes CPU-tuned closures into, and the rest of the fleet
-# pulls from ahead of cache.nixos.org.
+# build server pushes CPU-tuned closures into, and configures THIS host to
+# substitute from it ahead of cache.nixos.org.
 #
-# Phase 1 (bootstrap): atticd runs and accepts pushes, but no hosts are
-# configured to substitute from it yet — that comes in Phase 2 when the
-# first tuned closure is pushed.
+# On europa the host IS the server, so its substituter points at localhost
+# (no tunnel roundtrip). The build server and future roaming hosts reach the
+# same atticd over the public tunnel at attic.jupiter.au.
 #
 # Storage lives on tank/services/attic (created by the zfs-nas module's
 # dataset service), not backed up offsite (reproducible bulk state).
@@ -31,6 +35,41 @@ in
         Where atticd stores its cache objects and sqlite database. Lives on
         tank — bulk, reproducible state (every object here can just be
         rebuilt), so it's deliberately NOT part of the offsite restic set.
+      '';
+    };
+
+    cacheName = lib.mkOption {
+      type = lib.types.str;
+      default = "jupiter-os";
+      description = ''
+        Name of the attic cache to substitute from. Must be created once
+        atticd is live via `attic cache create <name>` — that command also
+        mints the cache's public key, which must then be set in
+        `publicKey` below.
+      '';
+    };
+
+    publicKey = lib.mkOption {
+      type = lib.types.str;
+      default = "jupiter-os:TODO-replace-after-attic-cache-create";
+      description = ''
+        The attic cache's public key (a `name:base64...` string). Generated
+        by `attic cache create <cacheName>` once atticd is running — copy the
+        printed key here. Until it's set, the substituter entry is present
+        but untrusted (nix will simply fall through to cache.nixos.org), so
+        the host keeps building from the public cache. This is the bootstrap
+        gap noted as Q4 in the Phase 2 plan.
+      '';
+    };
+
+    substituterEnable = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Whether to configure this host to substitute from the local attic
+        ahead of cache.nixos.org. Defaults to true: the NAS hosts its own
+        cache and should prefer it. Set false on a host that runs atticd
+        but should not consume from it (none today).
       '';
     };
   };
@@ -76,8 +115,21 @@ in
       "d ${cfg.storagePath}/storage 0755 atticd atticd -"
     ];
 
-    # Allow direct access on the LAN (Cloudflare Tunnel will also reach in
+    # Allow direct access on the LAN (the Cloudflare Tunnel also reaches in
     # without an open port, once configured).
     networking.firewall.allowedTCPPorts = [ cfg.port ];
+
+    # ---- Substituter consumer ----------------------------------------------
+    # This host pulls its own (tuned) closure from the local attic. europa IS
+    # the server, so localhost avoids the tunnel roundtrip. The cache public
+    # key gates whether nix actually trusts these paths — until
+    # `attic cache create` mints the real key, nix falls through to
+    # cache.nixos.org (harmless: the host just keeps building untuned).
+    nix.settings = lib.mkIf cfg.substituterEnable {
+      substituters = [
+        "http://localhost:${toString cfg.port}/${cfg.cacheName}"
+      ];
+      trusted-public-keys = [ cfg.publicKey ];
+    };
   };
 }
