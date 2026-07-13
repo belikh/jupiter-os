@@ -108,8 +108,7 @@
       # `make pallene-iso` (not plain `nix build .#pallene-iso`) — that target
       # injects the BinaryLane API + attic push tokens the same way
       # `make build-mx4300` injects OpenWrt secrets, then cleans up.
-      packages.x86_64-linux.pallene-iso =
-        self.nixosConfigurations.pallene.config.system.build.isoImage;
+      packages.x86_64-linux.pallene-iso = self.nixosConfigurations.pallene.config.system.build.isoImage;
 
       # `nix flake check` builds every registered host closure — for a
       # single-host bootstrap that's cheap, and it's the whole point: prove

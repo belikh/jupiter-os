@@ -1,4 +1,4 @@
-.PHONY: build-all check update fmt fmt-check
+.PHONY: build-all check update fmt fmt-check pallene-iso rebuild-world
 
 # Build every registered host closure (the 4 dashboard kiosks).
 build-all:
@@ -45,3 +45,43 @@ fmt:
 # Verify formatting without writing changes (used by CI)
 fmt-check:
 	nix run nixpkgs#nixfmt-rfc-style -- --check .
+
+# ---------------------------------------------------------------------------
+# Ephemeral BinaryLane "rebuild the world" build server. See
+# hosts/pallene/configuration.nix + modules/services/build-server.nix.
+# Required sops keys (secrets/secrets.yaml): binarylane_api_token,
+# attic_push_token — set real values via `sops secrets/secrets.yaml` before
+# the first real run (committed values are dummy placeholders).
+# ---------------------------------------------------------------------------
+
+# Build the pallene ISO with the BinaryLane API + attic push tokens baked in.
+# Materializes plaintext secrets from sops, builds, then removes the plaintext
+# copies immediately (gitignored — see .gitignore). Do NOT use plain
+# `nix build .#pallene-iso` for a real run — that bakes in the dummy
+# placeholder tokens; always go through this target.
+pallene-iso:
+	@echo "Materializing pallene build-server secrets from sops..."
+	@mkdir -p secrets/pallene-secrets
+	sops exec-env secrets/secrets.yaml 'printf "%s" "$$binarylane_api_token" > secrets/pallene-secrets/binarylane-api-token'
+	sops exec-env secrets/secrets.yaml 'printf "%s" "$$attic_push_token" > secrets/pallene-secrets/attic-push-token'
+	@echo "Building pallene ISO..."
+	nix build .#pallene-iso
+	@echo "Cleaning up plaintext secrets (gitignored — do not commit)..."
+	rm -f secrets/pallene-secrets/binarylane-api-token secrets/pallene-secrets/attic-push-token
+
+# Build the ISO, then boot it on BinaryLane to run one rebuild-the-world cycle.
+# On this branch the BinaryLane create/attach-ISO/wait lifecycle is a manual
+# step (the driving scripts from master aren't ported yet): upload the built
+# ISO (./result/iso/*.iso) to a host BinaryLane can fetch, create a server
+# booted from it, and let the build-server module self-destruct on completion.
+# The cloud-init user-data can carry a target git ref (overriding defaultRef).
+rebuild-world: pallene-iso
+	@echo "pallene ISO built at ./result — boot it on BinaryLane to run one cycle:"
+	@echo "  1. Upload ./result/iso/*.iso to a URL BinaryLane can fetch."
+	@echo "  2. Create a BinaryLane VPS (>=8 vcpu / 16GB) booted from the custom ISO."
+	@echo "     Optional: set user-data to a git ref to build a specific commit."
+	@echo "  3. The build-server module clones the repo, builds europa's btver2"
+	@echo "     closure, pushes to attic.jupiter.au, then self-destructs."
+	@echo "  4. On europa: \`attic cache create jupiter-os\` (if not done), then"
+	@echo "     \`nixos-rebuild switch\` substitutes the tuned closure from localhost:8080."
+	@echo "See docs/plans/2026-07-13-001-feat-europa-phase2-tuned-closure-plan.md."
