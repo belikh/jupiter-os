@@ -8,13 +8,17 @@
 # Hardware: AMD Opteron X3216 APU (1c/2t, btver2/Puma), 8GB ECC,
 # Crucial MX500 500GB SSD (OS), 2× WD 18TB (tank pool / file transfer).
 #
-# Phase 1 (this config): untuned NixOS from cache.nixos.org. Stock kernel,
-# no microarch flags. Gets the machine running with ZFS, Samba, NFS, Attic,
-# Syncthing, and SMART monitoring.
+# Phase 1: untuned NixOS from cache.nixos.org (stock kernel, no microarch
+# flags). Gets the machine running with ZFS, Samba, NFS, Attic, Syncthing,
+# and SMART monitoring.
 #
-# Phase 2 (deferred): once Attic is live, the BinaryLane build server
-# compiles a btver2-tuned closure and pushes it here, then europa switches
-# to it via nixos-rebuild.
+# Phase 2 (active): jupiter.build.microarch = "btver2" tunes the closure for
+# this exact CPU (Puma core, ISA-equivalent to Jaguar). The BinaryLane build
+# server (pallene) compiles it and pushes to europa's own Attic; europa then
+# substitutes from localhost:8080 ahead of cache.nixos.org. This is the
+# deliberate, mitigated exception to the "no microarch" buildability rule —
+# the private Attic cache exists precisely to serve what cache.nixos.org
+# cannot once gcc.arch is set.
 {
   imports = [
     ../../modules/common.nix
@@ -52,6 +56,13 @@
 
   # ---- ZFS NAS layer -------------------------------------------------------
   jupiter.nas.enable = true;
+
+  # ---- Phase 2: CPU-tuned closure ------------------------------------------
+  # Opteron X3216 is a "Cato" APU on the Puma core, ISA-equivalent to Jaguar,
+  # which GCC targets as btver2. The BinaryLane build server compiles this
+  # host's closure with -march=btver2 and pushes it to the local Attic; see
+  # modules/core/build-tuning.nix for the SIGILL/march caveats.
+  jupiter.build.microarch = "btver2";
 
   # ---- Networking ----------------------------------------------------------
   # Static identity below the DHCP pool so iSCSI/NFS clients have a stable
