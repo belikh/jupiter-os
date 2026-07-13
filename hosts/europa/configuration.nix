@@ -27,6 +27,7 @@
     ../../modules/services/syncthing.nix
     ../../modules/services/smart-monitoring.nix
     ../../modules/services/console-screensaver.nix
+    ../../modules/services/cloudflare-tunnel.nix
   ];
 
   networking.hostName = "europa";
@@ -94,6 +95,20 @@
   # Console screensaver — Matrix rain on tty1 for the (rare) moments a
   # monitor is plugged in. Login stays on tty2 (Ctrl+Alt+F2).
   jupiter.consoleScreensaver.enable = true;
+
+  # Cloudflare Tunnel — exposes atticd at attic.jupiter.au so the remote
+  # BinaryLane build server (pallene) can push tuned closures and future
+  # roaming hosts can pull them, without opening a router port. Runs on
+  # europa itself because no other always-on server host is registered yet
+  # (master ran it on ganymede). Uses the cloudflare_cert sops secret.
+  jupiter.services.cloudflareTunnel = {
+    enable = true;
+    # TODO(ops): replace with the real tunnel UUID from the Cloudflare
+    # dashboard. The cloudflare_cert secret must be this tunnel's credentials
+    # JSON, and attic.jupiter.au must be routed to this tunnel. Open question
+    # Q2 in docs/plans/2026-07-13-001-feat-europa-phase2-tuned-closure-plan.md.
+    tunnelId = "00000000-0000-0000-0000-000000000000";
+  };
 
   # ---- sops secrets --------------------------------------------------------
   # attic_server_token_secret: RS256 JWT signing key for atticd.
