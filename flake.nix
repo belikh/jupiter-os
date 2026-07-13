@@ -80,6 +80,11 @@
         metis = mkHost ./hosts/metis/configuration.nix; # kitchen
         adrastea = mkHost ./hosts/adrastea/configuration.nix; # office
         thebe = mkHost ./hosts/thebe/configuration.nix; # robbie-room
+
+        # HPE MicroServer Gen10 — the ZFS NAS and data hub. Untuned Phase 1
+        # bootstrap from cache.nixos.org (stock kernel, no microarch); Phase 2
+        # switches to a btver2-tuned closure served from its own Attic cache.
+        europa = mkHost ./hosts/europa/configuration.nix; # NAS + data hub
       };
 
       # `nix flake check` builds every registered host closure — for a
