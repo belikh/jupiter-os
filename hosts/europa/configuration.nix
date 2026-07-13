@@ -114,11 +114,9 @@
   # (master ran it on ganymede). Uses the cloudflare_cert sops secret.
   jupiter.services.cloudflareTunnel = {
     enable = true;
-    # TODO(ops): replace with the real tunnel UUID from the Cloudflare
-    # dashboard. The cloudflare_cert secret must be this tunnel's credentials
-    # JSON, and attic.jupiter.au must be routed to this tunnel. Open question
-    # Q2 in docs/plans/2026-07-13-001-feat-europa-phase2-tuned-closure-plan.md.
-    tunnelId = "00000000-0000-0000-0000-000000000000";
+    # Cloudflare tunnel UUID (from ~/.cloudflared/<id>.json / the dashboard).
+    # The cloudflare_cert sops secret is this tunnel's credentials JSON.
+    tunnelId = "aa1088b8-a0e1-4073-8567-6a9bf5fb4bd7";
   };
 
   # ---- sops secrets --------------------------------------------------------
