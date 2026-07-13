@@ -67,6 +67,17 @@
             hostPath
           ];
         };
+
+      # Ephemeral build-server ISO host (pallene): no common flake-module
+      # injection — it's an installer ISO with no persistent host key, no
+      # storage profile, no impermanence. Secrets are baked in at ISO build
+      # time, not decrypted at runtime.
+      mkIsoHost =
+        hostPath:
+        nixpkgs.lib.nixosSystem {
+          system = "x86_64-linux";
+          modules = [ hostPath ];
+        };
     in
     {
       nixosConfigurations = {
@@ -81,11 +92,24 @@
         adrastea = mkHost ./hosts/adrastea/configuration.nix; # office
         thebe = mkHost ./hosts/thebe/configuration.nix; # robbie-room
 
-        # HPE MicroServer Gen10 — the ZFS NAS and data hub. Untuned Phase 1
+        # HPE MicroServer Gen10 — the ZFS NAS and data hub. Phase 1 untuned
         # bootstrap from cache.nixos.org (stock kernel, no microarch); Phase 2
         # switches to a btver2-tuned closure served from its own Attic cache.
         europa = mkHost ./hosts/europa/configuration.nix; # NAS + data hub
+
+        # Ephemeral BinaryLane build server. Never a persistent fleet member —
+        # booted from the pallene-iso package, rebuilds europa's tuned closure,
+        # pushes to attic, self-destructs. See hosts/pallene/configuration.nix
+        # and modules/services/build-server.nix.
+        pallene = mkIsoHost ./hosts/pallene/configuration.nix; # build server
       };
+
+      # The disposable build server as a bootable ISO. Build with
+      # `make pallene-iso` (not plain `nix build .#pallene-iso`) — that target
+      # injects the BinaryLane API + attic push tokens the same way
+      # `make build-mx4300` injects OpenWrt secrets, then cleans up.
+      packages.x86_64-linux.pallene-iso =
+        self.nixosConfigurations.pallene.config.system.build.isoImage;
 
       # `nix flake check` builds every registered host closure — for a
       # single-host bootstrap that's cheap, and it's the whole point: prove
