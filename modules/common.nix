@@ -16,6 +16,7 @@
     ./core/ecc.nix
     ./core/zed.nix
     ./boot/fallout-splash.nix
+    ./core/build-tuning.nix
     ./storage/zfs-profiles.nix
   ];
 

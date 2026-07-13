@@ -28,9 +28,15 @@ boot-smoke-%:
 update:
 	nix flake update
 
-# Evaluate + build all flake checks (every host closure)
+# Evaluate all flake checks (every host closure). Eval-only (--no-build):
+# once a host sets jupiter.build.microarch its closure derivations carry
+# requiredSystemFeatures=["gccarch-<arch>"] and can't build on a dev machine
+# without the matching system-feature + the private attic substituter. The
+# real build verification lives in CI's boot-test matrix (kiosks) and the
+# build server (microarch-tuned hosts). Use `make build-all` for a local
+# full build of the untuned hosts.
 check:
-	nix flake check
+	nix flake check --no-build
 
 # Format all Nix files with the flake's formatter (nixfmt-rfc-style)
 fmt:
