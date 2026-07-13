@@ -22,14 +22,46 @@ let
   # Datasets to create on tank. Each entry is { name, mountpoint, recordsize }.
   # Existing datasets (like tank/junk) are NOT listed — they're left alone.
   tankDatasets = [
-    { name = "tank/personal";       mountpoint = "/tank/personal";       recordsize = "128K"; }
-    { name = "tank/media";          mountpoint = "/tank/media";          recordsize = "1M"; }
-    { name = "tank/backups";        mountpoint = "/tank/backups";        recordsize = "128K"; }
-    { name = "tank/services";       mountpoint = "/tank/services";       recordsize = "128K"; }
-    { name = "tank/services/attic"; mountpoint = "/tank/services/attic"; recordsize = "256K"; }
-    { name = "tank/surveillance";   mountpoint = "/tank/surveillance";   recordsize = "1M"; }
-    { name = "tank/downloads";      mountpoint = "/tank/downloads";      recordsize = "1M"; }
-    { name = "tank/vm";             mountpoint = "/tank/vm";             recordsize = "64K"; }
+    {
+      name = "tank/personal";
+      mountpoint = "/tank/personal";
+      recordsize = "128K";
+    }
+    {
+      name = "tank/media";
+      mountpoint = "/tank/media";
+      recordsize = "1M";
+    }
+    {
+      name = "tank/backups";
+      mountpoint = "/tank/backups";
+      recordsize = "128K";
+    }
+    {
+      name = "tank/services";
+      mountpoint = "/tank/services";
+      recordsize = "128K";
+    }
+    {
+      name = "tank/services/attic";
+      mountpoint = "/tank/services/attic";
+      recordsize = "256K";
+    }
+    {
+      name = "tank/surveillance";
+      mountpoint = "/tank/surveillance";
+      recordsize = "1M";
+    }
+    {
+      name = "tank/downloads";
+      mountpoint = "/tank/downloads";
+      recordsize = "1M";
+    }
+    {
+      name = "tank/vm";
+      mountpoint = "/tank/vm";
+      recordsize = "64K";
+    }
   ];
 
   # Generate the idempotent create script.

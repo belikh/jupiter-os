@@ -13,7 +13,10 @@ in
 
     interfaces = lib.mkOption {
       type = lib.types.listOf lib.types.str;
-      default = [ "enp2s0f0" "enp2s0f1" ];
+      default = [
+        "enp2s0f0"
+        "enp2s0f1"
+      ];
       description = "The two NICs to bond (both BCM5720 ports on the MicroServer).";
     };
   };
