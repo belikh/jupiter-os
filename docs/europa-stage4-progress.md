@@ -56,3 +56,4 @@ Monitoring: BinaryLane server 639489 (alive = building, 404 = done/self-destruct
 and attic for europa's toplevel path. Next step after self-destruct: restore
 `microarch=btver2` locally and `nixos-rebuild switch` europa to substitute the
 tuned closure from `localhost:8080`.
+- 05:16 AEST: ~1h into build — server 639489 active, no europa paths in attic yet (push happens at end of build)
