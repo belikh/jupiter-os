@@ -57,3 +57,4 @@ and attic for europa's toplevel path. Next step after self-destruct: restore
 `microarch=btver2` locally and `nixos-rebuild switch` europa to substitute the
 tuned closure from `localhost:8080`.
 - 05:16 AEST: ~1h into build — server 639489 active, no europa paths in attic yet (push happens at end of build)
+- 06:17 AEST: ~2h into build — server 639489 still active; btver2 closure rebuilds the full gcc/glibc bootstrap so this is the heavy part; no push yet (expected)
