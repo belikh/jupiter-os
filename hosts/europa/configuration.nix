@@ -63,6 +63,15 @@
   ];
   networking.defaultGateway = "10.1.1.1";
 
+  # Static networking leaves no nameservers behind — common.nix defers DNS to
+  # DHCP, which europa disabled above, so without this /etc/resolv.conf ends
+  # up empty and the box can't resolve cache.nixos.org or any substituter.
+  # The UniFi gateway resolves; 1.1.1.1 is the fallback if it's ever down.
+  networking.nameservers = [
+    "10.1.1.1"
+    "1.1.1.1"
+  ];
+
   # LACP bonding — disabled until the UniFi switch-side is configured.
   jupiter.nas.bond.enable = false;
 
