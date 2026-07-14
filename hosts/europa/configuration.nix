@@ -26,6 +26,7 @@
     ../../modules/services/attic-server.nix
     ../../modules/services/syncthing.nix
     ../../modules/services/smart-monitoring.nix
+    ../../modules/services/console-screensaver.nix
   ];
 
   networking.hostName = "europa";
@@ -89,6 +90,10 @@
 
   # SMART monitoring on all attached disks (OS SSD + WD 18TB drives).
   jupiter.storage.smartMonitoring.enable = true;
+
+  # Console screensaver — Matrix rain on tty1 for the (rare) moments a
+  # monitor is plugged in. Login stays on tty2 (Ctrl+Alt+F2).
+  jupiter.consoleScreensaver.enable = true;
 
   # ---- sops secrets --------------------------------------------------------
   # attic_server_token_secret: RS256 JWT signing key for atticd.
