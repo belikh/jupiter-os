@@ -41,6 +41,10 @@ iso_path="$(find result/iso -maxdepth 1 -name '*.iso' -print -quit 2>/dev/null |
 key="pallene-$(date -u +%Y%m%d%H%M%S).iso"
 
 echo ">> uploading $iso_path to r2://$BUCKET/$key..." >&2
-aws --endpoint-url "$ENDPOINT" s3 cp "$iso_path" "s3://$BUCKET/$key" >&2
+# --region auto is mandatory for R2: without it awscli defaults to a
+# SigV2 presigned URL ("AWSAccessKeyId=…") which R2 rejects with 401 (R2 is
+# SigV4-only), so BinaryLane's image-fetch would fail in ~2s. region=auto
+# forces SigV4 ("X-Amz-Algorithm=…"), which R2 serves correctly.
+aws --endpoint-url "$ENDPOINT" s3 cp "$iso_path" "s3://$BUCKET/$key" --region auto >&2
 
-aws --endpoint-url "$ENDPOINT" s3 presign "s3://$BUCKET/$key" --expires-in "$EXPIRES_SECS"
+aws --endpoint-url "$ENDPOINT" s3 presign "s3://$BUCKET/$key" --expires-in "$EXPIRES_SECS" --region auto
