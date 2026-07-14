@@ -35,6 +35,12 @@ let
   runScript = pkgs.writeShellScript "jupiter-build-server-run" ''
     set -uo pipefail
 
+    # Mirror the entire run to a log file so it survives self-destruct
+    # (uploaded to attic in the self_destruct trap below; the server's own
+    # journal is lost when it deletes itself, which otherwise makes any
+    # build/push failure invisible from the outside).
+    exec > >(tee /tmp/jupiter-build.log) 2>&1
+
     log() { echo "[jupiter-build-server] $*"; }
 
     # --- self-destruct, unconditionally, no matter what happens above -------
@@ -42,6 +48,17 @@ let
     # path (success, build failure, script bug) via the trap below, not just
     # the happy path.
     self_destruct() {
+      # Upload the build log to attic so it survives this self-destruct
+      # (best-effort — never let a log-upload problem block the destroy).
+      # Retrieve from a client with: nix path-info --store <attic> --all | grep jupiter-build-log
+      if [ -f /tmp/jupiter-build.log ]; then
+        _logpath="$(${pkgs.nix}/bin/nix store add-path /tmp/jupiter-build.log 2>/dev/null || true)"
+        if [ -n "''${_logpath:-}" ]; then
+          ${pkgs.attic-client}/bin/attic push "${cfg.atticCache}" "$_logpath" >/dev/null 2>&1 \
+            && log "build log uploaded to attic: $_logpath" \
+            || log "!! failed to upload build log to attic"
+        fi
+      fi
       log "self-destruct: looking up this server's id by hostname..."
       my_id="$(${bl}/bin/bl-api GET "/v2/servers?hostname=$(hostname)" \
         | ${pkgs.jq}/bin/jq -r '.servers[0].id // empty')"
