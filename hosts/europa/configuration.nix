@@ -31,6 +31,18 @@
   networking.hostName = "europa";
   networking.hostId = "deadbeef"; # Stable per-host 8-char hex, required for ZFS
 
+  # ---- Platform / kernel ---------------------------------------------------
+  # The HPE MicroServer Gen10 wires its 4 data-drive bays to a Marvell 88SE9230
+  # PCIe SATA HBA; only the single OS port is on the AMD FCH (which is why the
+  # OS SSD always enumerates regardless). The 88SE9230 has a PCIe DMA bug: with
+  # AMD IOMMU enabled its DMA strikes IOMMU-reserved memory, every AHCI
+  # IDENTIFY times out, and the data drives never appear — so `tank` can't
+  # import. Disabling AMD IOMMU is the proven, community-documented fix for
+  # this exact machine (HPE even ships it with IOMMU off by default). This is a
+  # boot *parameter* on the stock linuxPackages kernel, NOT a custom kernel —
+  # rule-compliant for a ZFS host. europa runs no VMs, so IOMMU isn't needed.
+  boot.kernelParams = [ "amd_iommu=off" ];
+
   # ---- Storage profile (OS SSD) --------------------------------------------
   # Stateful root (no impermanence — the NAS needs persistent state).
   jupiter.storage.profile = "stateful";
