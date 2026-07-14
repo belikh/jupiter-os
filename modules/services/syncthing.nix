@@ -50,5 +50,14 @@ in
       22000
       21027
     ];
+
+    # Ensure the data dir exists and is owned by the service user. ZFS dataset
+    # mountpoints (e.g. /tank/personal) are created root-owned by the NAS
+    # dataset service; without this, syncthing fails on boot with
+    # "mkdir <dataDir>: permission denied". tmpfiles enforces ownership
+    # idempotently at boot.
+    systemd.tmpfiles.rules = [
+      "d ${cfg.dataDir} 0755 io users -"
+    ];
   };
 }
