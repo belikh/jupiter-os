@@ -1,7 +1,7 @@
 keys:
   - &admin_io age17c04srm4e5p3sgkrkv9emjqesya57qzwexpf4mdu5gzqv6t9asfskrwyqa
   - &ganymede age1p8c8ylcp27yd4a69akgs4wxh4t70zyun9e7t3h344jp6ug227epq6x3cg8
-  - &europa age1glcaw46rwfkwnkpdz60zhk5hfzaqr93aw440remjtyawn5m8xvrs89ll99
+  - &europa age19cucywtpf6fa0sy9ghnwwwn7nc4nqxwzeq6jlp73wsnlhaqvxuss4m23x0
   - &himalia age1mz3axkge52zt06vmetwhdf805kk458k0a7ysqk3wjtwvncuf9g4s2ywp0f
   - &callisto age1ywucpcl3mvk249vu663knxgm06nl749j95mu2kupdawpa4v5l46sw7jexf
   # Dashboard kiosks (metis/adrastea/amalthea/thebe) aren't installed yet —
