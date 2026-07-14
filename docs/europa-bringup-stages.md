@@ -1,28 +1,48 @@
 # europa Bring-Up Stages
 
-Operational runbook for taking europa (HPE MicroServer Gen10) from its current
-state — running Elementary OS, `tank` on a single vdev, second disk receiving a
-file transfer — through to a fully-tuned JupiterOS NAS. Each stage lists its
-precondition, the actions, how to verify it, and what it unblocks.
+> **START HERE (new session):** Stages 0–3 are **complete**. The next action is
+> **Stage 4 — `make rebuild-world`** (build the `btver2`-tuned closure on the
+> ephemeral BinaryLane `pallene` host, push to attic, switch europa to it).
+> All preconditions are met: europa is running the untuned Phase 1 closure at
+> `10.1.1.2`, atticd is live with cache `jupiter-os` created, and every
+> Stage 3 runtime value (tunnel UUID, R2 creds, tokens, attic public key) is
+> real and committed. Jump to [Stage 4](#stage-4--build--deploy-the-tuned-closure).
+
+Operational runbook for taking europa (HPE MicroServer Gen10) from bare metal
+through to a fully-tuned JupiterOS NAS. Each stage lists its precondition, the
+actions, how to verify it, and what it unblocks.
+
+**Current status (2026-07-14):**
+- **Stage 0** ✅ file transfer complete; `sdc` free to mirror (Stage 2).
+- **Stage 1** ✅ europa installed via nixos-anywhere; running untuned JupiterOS
+  at `10.1.1.2`. ZFS (`rpool` + `tank`, 1.97 TB preserved), Samba, NFS, atticd,
+  syncthing, smartd, ARC capped at 5 GB. `amd_iommu=off` set so the Marvell
+  88SE9230 data drives enumerate. cmatrix screensaver on tty1.
+- **Stage 2** ⬜ not started — `zpool attach` the second WD 18 TB. Independent
+  of Stage 4; do whenever convenient.
+- **Stage 3** ✅ all runtime prerequisites real and committed (see below).
+- **Stage 4** ⬜ **NEXT** — `make rebuild-world`.
+- **Stage 5** deferred.
 
 Config for every stage is already staged, CI-green, and committed:
 
 - **Phase 1 config** — PR #15 (`feat/europa-nas-host`): host registration, ZFS
-  NAS layer, Samba/NFS, Sanoid, Attic server, Syncthing, SMART, ARC tuning.
+  NAS layer, Samba/NFS, Sanoid, Attic server, Syncthing, SMART, ARC tuning,
+  `amd_iommu=off`, DNS nameservers, cmatrix screensaver.
 - **Phase 2 config** — PR #16 (`feat/europa-phase2-tuned-closure`, stacked on
   #15): `jupiter.build.microarch = "btver2"`, Cloudflare Tunnel, build-server
-  module, `pallene` ISO host, substituter consumer wiring.
+  module, `pallene` ISO host, substituter consumer wiring, real attic public key.
 - **Plans** — `docs/plans/2026-07-13-001-feat-europa-phase2-tuned-closure-plan.md`
   (Phase 2; its appendix and the recovered agy `europa-plan.md` cover Phase 1).
 
 Hardware reference (SSH-discovered 2026-07-13): AMD Opteron X3216 (1c/2t,
 btver2/Puma), 8 GB ECC, Crucial MX500 500 GB SSD (OS), 2× WD 18 TB (`tank` on
-sdb1; sdc is ext4 at `/mnt/sdc1` receiving the transfer). Live NIC is
-`enp2s0f1` (not `enp2s0f0`). Static target `10.1.1.2/24`, gateway `10.1.1.1`.
+`sdb1`; `sdc` now free). Live NIC is `enp2s0f1` (not `enp2s0f0`). Static
+`10.1.1.2/24`, gateway `10.1.1.1`.
 
 ---
 
-## Stage 0 — File transfer (in progress, precondition for Stages 1–2)
+## Stage 0 — File transfer ✅ DONE
 
 **State:** `tank/junk` (336 GB) holds data being drained off the second disk
 (`sdc`, ext4). `tank` is a single vdev on `sdb1`; `sdc` must be empty before it
@@ -39,7 +59,7 @@ but Stage 2 — the mirror attach — does).
 
 ---
 
-## Stage 1 — Physical install: Phase 1 untuned NAS
+## Stage 1 — Physical install: Phase 1 untuned NAS ✅ DONE
 
 **Goal:** europa boots JupiterOS, untuned from `cache.nixos.org`, with the full
 NAS service stack running. This is the closure from PR #15.
@@ -77,7 +97,7 @@ replaces.
 
 ---
 
-## Stage 2 — ZFS mirror completion
+## Stage 2 — ZFS mirror completion ⬜ (independent, do whenever)
 
 **Goal:** `tank` becomes a two-disk mirror so it survives a drive failure.
 
@@ -102,41 +122,35 @@ easiest to reason about once europa is on JupiterOS (Stage 1).
 
 ---
 
-## Stage 3 — Phase 2 runtime prerequisites
+## Stage 3 — Phase 2 runtime prerequisites ✅ DONE
 
 **Goal:** make the three runtime-only values real so the tuned closure can be
 built, pushed, and trusted. None of these are knowable at config time, so they
-ship as placeholders.
+shipped as placeholders — **all now filled** (commits `dae0b15`, `5bd9872`, and
+the attic-public-key commit on `feat/europa-phase2-tuned-closure`).
 
-**Precondition:** Stage 1 complete (atticd running, reachable).
+**Precondition:** Stage 1 complete (atticd running, reachable). ✅
 
-**Actions:**
-1. **Cloudflare Tunnel.** In the Cloudflare dashboard, confirm the tunnel whose
-   credentials are in the `cloudflare_cert` sops secret, route
-   `attic.jupiter.au` → this tunnel, and copy the tunnel UUID into
-   `jupiter.services.cloudflareTunnel.tunnelId` in
-   `hosts/europa/configuration.nix` (currently `00000000-…`).
-2. **Attic cache + public key.** On europa, create the cache and capture its
-   public key:
-   `attic cache create jupiter-os` → prints `jupiter-os:base64…`. Set that
-   string as `jupiter.services.attic.publicKey` in
-   `modules/services/attic-server.nix` (currently the `TODO-replace-…`
-   placeholder).
-3. **R2 bucket for the pallene ISO.** BinaryLane fetches the custom ISO from
-   an HTTPS URL (its API has no local-ISO-upload — see
-   `scripts/binarylane-build-server.sh`). Create the bucket
-   `jupiter-os-pallene-iso` in the Cloudflare dashboard (R2 free tier covers
-   it: ~1 GB ISO, one PUT + one GET per run, zero egress), then create an R2
-   API token scoped to Object Read & Write on that bucket. Set in sops:
-   `cloudflare_account_id`, `r2_access_key_id`, `r2_secret_access_key`
-   (currently dummy placeholders).
-4. **Build-server secrets.** `sops secrets/secrets.yaml` and set real values
-   for `binarylane_api_token` and `attic_push_token` (currently dummy
-   placeholders).
-5. Rebuild europa so the real tunnel ID + public key take effect:
-   `nixos-rebuild switch`.
+**Status of each piece:**
+1. **Cloudflare Tunnel** ✅ — `jupiter.services.cloudflareTunnel.tunnelId` in
+   `hosts/europa/configuration.nix` is the real UUID
+   `aa1088b8-a0e1-4073-8567-6a9bf5fb4bd7`. Tunnel credentials are in the
+   `cloudflare_cert` sops secret; `attic.jupiter.au` is routed to it.
+2. **Attic cache + public key** ✅ — cache `jupiter-os` created on europa's
+   atticd via `atticadm make-token` + `attic cache create`. Public key
+   `jupiter-os:jd6naJxSxt9xPtYTaOSQDOoeoHil5OsVy8ltpIBs9dQ=` is set as
+   `jupiter.services.attic.publicKey` in `modules/services/attic-server.nix`.
+3. **R2 bucket for the pallene ISO** ✅ — `cloudflare_account_id`,
+   `r2_access_key_id`, `r2_secret_access_key` are all real in sops. The bucket
+   `jupiter-os-pallene-iso` is referenced by `scripts/upload-pallene-iso-r2.sh`.
+4. **Build-server secrets** ✅ — `binarylane_api_token` and `attic_push_token`
+   are real in sops.
+5. Rebuild so the real tunnel ID + public key take effect: still pending — run
+   `nixos-rebuild switch --flake .#europa --target-host root@10.1.1.2
+   --build-host root@10.1.1.2` **as the first step of Stage 4** (it also brings
+   the Phase 2 config — microarch, tunnel, substituter — live on europa).
 
-**Verify:**
+**Verify (optional, before Stage 4):**
 - From outside the LAN: `curl -sf https://attic.jupiter.au` responds (tunnel
   live).
 - On europa: `nix show-config` shows the attic substituter with the real public
@@ -147,27 +161,46 @@ token; europa needs the real public key to trust the pushed closure).
 
 ---
 
-## Stage 4 — Build + deploy the tuned closure
+## Stage 4 — Build + deploy the tuned closure ⬜ NEXT
 
 **Goal:** europa switches from the untuned Phase 1 closure to the `btver2`-tuned
 Phase 2 closure, substituted from its own Attic.
 
-**Precondition:** Stage 3 complete.
+**Precondition:** Stage 3 complete. ✅ (europa is on `feat/europa-nas-host`
+Phase 1 closure; Phase 2 config is committed on `feat/europa-phase2-tuned-closure`
+but not yet switched to on the box.)
+
+**You should be on branch `feat/europa-phase2-tuned-closure` for this stage.**
 
 **Actions:**
-1. `make rebuild-world` — one command runs the whole cycle: builds the
+0. **Bring the Phase 2 config live on europa** (tunnel, substituter, real
+   public key, microarch flag — config-only, no tuned binaries yet; everything
+   still substitutes from `cache.nixos.org`):
+   ```bash
+   nix run nixpkgs#nixos-rebuild -- switch --flake .#europa \
+     --target-host root@10.1.1.2 --build-host root@10.1.1.2
+   ```
+   This also wires europa to *consume* from `localhost:8080` — until a tuned
+   closure is pushed there, nix simply falls through to `cache.nixos.org`
+   (harmless).
+1. **`make rebuild-world`** — one command runs the whole cycle: builds the
    pallene ISO (`make pallene-iso`, baking in the real tokens), uploads it to
    the R2 bucket (`scripts/upload-pallene-iso-r2.sh`, presigning a 4 h URL),
    then drives BinaryLane (`scripts/binarylane-build-server.sh`: create a
    placeholder server → upload the ISO as a backup image from the presigned
    URL → attach as boot media → reboot → wait for self-destruct). Override
    the build target git ref with `GIT_REF=<ref>` (defaults to `dashboard-v2`).
-2. `pallene` runs unattended once booted: clones the repo, builds europa's
+2. **`pallene` runs unattended** once booted: clones the repo, builds europa's
    `btver2` closure, pushes to `attic.jupiter.au`, then self-destructs via
    the BinaryLane API. The 4 h force-destroy timer is the ceiling.
-3. On europa: `nixos-rebuild switch`. nix substitutes the tuned closure from
-   `localhost:8080` (europa IS the attic server); falls through to
-   `cache.nixos.org` only for anything the tuned closure shares with baseline.
+3. **On europa, switch to the tuned closure:**
+   ```bash
+   nix run nixpkgs#nixos-rebuild -- switch --flake .#europa \
+     --target-host root@10.1.1.2 --build-host root@10.1.1.2
+   ```
+   nix substitutes the tuned closure from `localhost:8080` (europa IS the attic
+   server); falls through to `cache.nixos.org` only for anything the tuned
+   closure shares with baseline.
 
 **Verify:**
 - `pallene` self-destructed (BinaryLane control panel shows no running server).
