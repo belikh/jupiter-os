@@ -51,7 +51,7 @@ in
 
     publicKey = lib.mkOption {
       type = lib.types.str;
-      default = "jupiter-os:TODO-replace-after-attic-cache-create";
+      default = "jupiter-os:jd6naJxSxt9xPtYTaOSQDOoeoHil5OsVy8ltpIBs9dQ=";
       description = ''
         The attic cache's public key (a `name:base64...` string). Generated
         by `attic cache create <cacheName>` once atticd is running — copy the
