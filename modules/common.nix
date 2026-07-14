@@ -17,11 +17,13 @@
     ./core/zed.nix
     ./boot/fallout-splash.nix
     ./core/build-tuning.nix
+    ./core/branding.nix
     ./storage/zfs-profiles.nix
   ];
 
   jupiter.core.ecc.enable = true;
   jupiter.core.zed.enable = true;
+  jupiter.core.branding.enable = true;
 
   nixpkgs.config.allowUnfree = true;
   hardware.enableRedistributableFirmware = lib.mkDefault true;
