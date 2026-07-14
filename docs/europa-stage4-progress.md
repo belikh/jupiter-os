@@ -36,4 +36,9 @@ R2 creds list `jupiter-os-pallene-iso`; BinaryLane token returns 200.
 ## Status / timeline (AEST)
 
 - run launched (background, detached) — `make rebuild-world`
-- pallene ISO building → ISO built → uploading to R2
+- pallene ISO built ✓ → uploaded to R2 ✓
+- BinaryLane server-create FAILED: `cpu-8thr` "Unable to find a suitable host"
+  (shared-tier capacity stockout in melbourne). Catalog lists it available but
+  no physical host free. Retrying with `BL_SIZE_SLUG=std-8vcpu` (32GB, better
+  for 8 parallel nix jobs). If that also fails, escalate to a `ded-*` host or
+  Sydney.
