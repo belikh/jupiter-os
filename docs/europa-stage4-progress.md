@@ -42,3 +42,17 @@ R2 creds list `jupiter-os-pallene-iso`; BinaryLane token returns 200.
   no physical host free. Retrying with `BL_SIZE_SLUG=std-8vcpu` (32GB, better
   for 8 parallel nix jobs). If that also fails, escalate to a `ded-*` host or
   Sydney.
+- `std-8vcpu` created OK (server 639488) but ISO upload from R2 **errored in 2s**.
+  Root cause: `aws s3 presign` with no `--region` emits a SigV2 URL (`AWSAccessKeyId=`)
+  which R2 rejects (401, R2 is SigV4-only). Orphaned server destroyed to stop billing.
+  Fix: `scripts/upload-pallene-iso-r2.sh` now passes `--region auto` (forces SigV4).
+- Re-run succeeded: server 639489 created, ISO uploaded (SigV4, action completed),
+  attached + rebooted. **pallene is now booted and building europa's btver2 closure.**
+  (Note: the driver logs "clone @ dashboard-v2" — that's its dead-code `GIT_REF` var;
+  pallene actually clones the ISO's baked `defaultRef = feat/europa-phase2-tuned-closure`.)
+
+## Build phase (long; ETA 1–3h on 8 vcpu)
+Monitoring: BinaryLane server 639489 (alive = building, 404 = done/self-destructed),
+and attic for europa's toplevel path. Next step after self-destruct: restore
+`microarch=btver2` locally and `nixos-rebuild switch` europa to substitute the
+tuned closure from `localhost:8080`.
