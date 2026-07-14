@@ -58,3 +58,4 @@ and attic for europa's toplevel path. Next step after self-destruct: restore
 tuned closure from `localhost:8080`.
 - 05:16 AEST: ~1h into build — server 639489 active, no europa paths in attic yet (push happens at end of build)
 - 06:17 AEST: ~2h into build — server 639489 still active; btver2 closure rebuilds the full gcc/glibc bootstrap so this is the heavy part; no push yet (expected)
+- 07:21 AEST: server 639489 self-destructed after ~3h BUT attic has 0 europa paths → pallene exited non-zero (build or push failed). Logs lost with the server. Investigating: can I build locally for real-time logs?
