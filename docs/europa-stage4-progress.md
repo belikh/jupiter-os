@@ -61,3 +61,4 @@ tuned closure from `localhost:8080`.
 - 07:21 AEST: server 639489 self-destructed after ~3h BUT attic has 0 europa paths → pallene exited non-zero (build or push failed). Logs lost with the server. Investigating: can I build locally for real-time logs?
 - 07:40 AEST: re-launched with log-capture (commit on build-server.nix); server 639523 created (std-8vcpu), booting into the new ISO. Will upload /tmp/jupiter-build.log to attic on exit.
 - 08:41 AEST: ~1h into log-capture run — server 639523 active, building (no push/log yet)
+- 09:41 AEST: ~2h into log-capture run — server 639523 still active (previous run failed at ~3h, so the next hour is the critical window)
