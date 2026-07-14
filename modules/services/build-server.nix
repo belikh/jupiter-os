@@ -131,7 +131,11 @@ in
 
     defaultRef = lib.mkOption {
       type = lib.types.str;
-      default = "dashboard-v2";
+      # Until scripts/binarylane-build-server.sh wires GIT_REF through
+      # cloud-init user-data, this default is what pallene actually builds.
+      # dashboard-v2 has no europa host; point at the branch carrying the
+      # hosts in `hosts/` (currently the phase2 branch).
+      default = "feat/europa-phase2-tuned-closure";
       description = ''
         Git ref to build when cloud-init user-data is absent. Defaults to the
         active development branch; override via BinaryLane user-data at
