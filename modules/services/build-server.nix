@@ -148,21 +148,35 @@ let
     # attempt. Also log the lsblk output + swapon result so the next run's log
     # shows the disk layout if this still goes wrong.
     ul=${pkgs.util-linux}
-    # Prefer a partition on the data disk (BinaryLane's disk carries a leftover
-    # vda1 from the debian-12 placeholder, so mkswap on the whole /dev/vda is
-    # refused because a partition table already exists); fall back to the whole
-    # disk if there's no partition.
-    data_disk="$($ul/bin/lsblk -nbo NAME,TYPE,SIZE 2>/dev/null | awk '$2=="part" {print $1, $3}' | sort -k2 -n | tail -1 | awk '{print $1}')"
-    if [ -z "$data_disk" ]; then
-      data_disk="$($ul/bin/lsblk -nbo NAME,TYPE,SIZE 2>/dev/null | awk '$2=="disk" {print $1, $3}' | sort -k2 -n | tail -1 | awk '{print $1}')"
-    fi
+    # Pick the largest block device to repurpose as swap, preferring a
+    # partition (BinaryLane's disk carries a leftover vda1 part from the
+    # debian-12 placeholder, so mkswap on the whole /dev/vda is refused because
+    # a partition table already exists); fall back to the whole disk. Parsed in
+    # PURE BASH because the minimal installer's service PATH has no awk/jq —
+    # the first attempt piped lsblk through `awk`, which silently errored
+    # "command not found" → empty result → "no data disk found" → no swap →
+    # RAM-bound OOM mid-build. -l = flat list (no ├─/└─ tree glyphs), -b =
+    # bytes. Skip partitions < 1 GiB (vda14/vda15 boot/efi leftovers).
+    pick_swap_dev() {
+      local want_type="$1" best="" best_size=0 name typ size
+      while IFS=$' \t' read -r name typ size _; do
+        [ "$typ" = "$want_type" ] || continue
+        size="''${size:-0}"
+        [ "$size" -gt 1073741824 ] 2>/dev/null || continue
+        if [ "$size" -gt "$best_size" ]; then best="$name"; best_size="$size"; fi
+      done < <($ul/bin/lsblk -lnbo NAME,TYPE,SIZE 2>/dev/null)
+      printf '%s' "$best"
+    }
+    data_disk="$(pick_swap_dev part)"
+    [ -n "$data_disk" ] || data_disk="$(pick_swap_dev disk)"
     log "swap setup: swap device=''${data_disk:-<none>}; lsblk: $($ul/bin/lsblk -nbo NAME,TYPE,SIZE 2>/dev/null | tr '\n' ';')"
     if [ -n "$data_disk" ] && [ -b "/dev/$data_disk" ]; then
       if $ul/bin/mkswap "/dev/$data_disk" >/dev/null 2>&1 && $ul/bin/swapon "/dev/$data_disk"; then
         log "swap online on /dev/$data_disk; raising tmpfs size caps so the store + /tmp can spill to it"
-        for m in $($ul/bin/findmnt -nbo TARGET,FSTYPE 2>/dev/null | awk '$2=="tmpfs" {print $1}'); do
+        while IFS=$' \t' read -r m fstype _; do
+          [ "$fstype" = "tmpfs" ] || continue
           $ul/bin/mount -o remount,size=300G "$m" 2>/dev/null || true
-        done
+        done < <($ul/bin/findmnt -nbo TARGET,FSTYPE 2>/dev/null)
         log "swap now active: $($ul/bin/swapon --show 2>/dev/null | tr '\n' ' ')"
       else
         log "!! mkswap/swapon failed on /dev/$data_disk — build may run out of RAM"
