@@ -64,3 +64,8 @@ tuned closure from `localhost:8080`.
 - 09:41 AEST: ~2h into log-capture run — server 639523 still active (previous run failed at ~3h, so the next hour is the critical window)
 - 12:03 AEST: 3rd run — added R2-based log upload (robust, independent of nix/attic). Server 639562 created (std-8vcpu), booting. When it exits, log -> r2://jupiter-os-pallene-iso/logs/. Previous 2 runs self-destructed ~3h with 0 paths + no log (attic-based upload also failed).
 - 13:05 AEST: 3rd run ~1h — server 639562 active, building; R2 log uploads on exit
+- 15:22 AEST: ROOT CAUSE FOUND (from the recovered /tmp/jupiter-build.log the user pulled via the BinaryLane console): the build never ran — 0 CPU. Two bugs:
+-   1. 'experimental Nix feature nix-command is disabled' — pallene is mkIsoHost (skips common.nix, which sets experimental-features), so nix build died INSTANTLY. FIXED: build-server.nix now sets [nix-command flakes].
+-   2. 'hostname: command not found' broke the log upload AND self-destruct, so the server couldn't destroy itself → idle billing until manual destroy. FIXED: dropped the hostname dep — log name is timestamp-only; self-destruct lists servers and destroys every pallene-run-*.
+-   Also added timeouts on git clone (10m) + attic login (2m) so a network hang can't strand a server, and console=ttyS0 on the ISO for serial visibility.
+- LOCAL VALIDATION: booted the fixed ISO in QEMU (serial console via tmux). The build-server service now RUNS nix build (CPU-saturated the 2vcpu/3GB VM into OOM-thrashing) — i.e. it builds now instead of the old instant 0-CPU fail. The box is too small to complete a build, but the fix is confirmed. The real BinaryLane run (8vcpu/32GB/340GB) is now de-risked.

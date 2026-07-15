@@ -40,6 +40,11 @@ in
 
   networking.hostName = "pallene";
 
+  # Kernel console on the serial port so the boot + the jupiter-build-server
+  # service output is visible under QEMU -nographic (and over any serial
+  # console BinaryLane exposes). Harmless alongside the VGA console.
+  boot.kernelParams = [ "console=ttyS0" "console=tty0" ];
+
   jupiter.services.buildServer = {
     enable = true;
     # europa's atticd (modules/services/attic-server.nix), reached over the
