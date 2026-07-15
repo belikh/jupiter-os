@@ -173,10 +173,18 @@ let
     if [ -n "$data_disk" ] && [ -b "/dev/$data_disk" ]; then
       if $ul/bin/mkswap "/dev/$data_disk" >/dev/null 2>&1 && $ul/bin/swapon "/dev/$data_disk"; then
         log "swap online on /dev/$data_disk; raising tmpfs size caps so the store + /tmp can spill to it"
+        # NOTE: findmnt needs -l (list mode) so targets come back clean
+        # ("/nix/.rw-store") and NOT tree-formatted ("├─/nix/.rw-store") — the
+        # leading glyph would make the remount target an invalid path, failing
+        # silently under `|| true` and leaving the store tmpfs at its default
+        # 50%-of-RAM cap (986 MiB here), which ENOSPC's the build even with 40G
+        # of swap available. swap alone does NOT raise a tmpfs size= cap.
         while IFS=$' \t' read -r m fstype _; do
           [ "$fstype" = "tmpfs" ] || continue
-          $ul/bin/mount -o remount,size=300G "$m" 2>/dev/null || true
-        done < <($ul/bin/findmnt -nbo TARGET,FSTYPE 2>/dev/null)
+          if $ul/bin/mount -o remount,size=300G "$m" 2>/dev/null; then
+            log "  tmpfs raised: $m -> size=300G"
+          fi
+        done < <($ul/bin/findmnt -nlbo TARGET,FSTYPE 2>/dev/null)
         log "swap now active: $($ul/bin/swapon --show 2>/dev/null | tr '\n' ' ')"
       else
         log "!! mkswap/swapon failed on /dev/$data_disk — build may run out of RAM"
