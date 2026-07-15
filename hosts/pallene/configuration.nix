@@ -52,6 +52,17 @@ in
     atticServer = "https://attic.jupiter.au";
   };
 
+  # SSH for direct investigation: bake the admin key so the box is reachable by
+  # SSH (root, key-only) right after boot. The live CD's sshd otherwise has no
+  # usable creds (empty passwords are rejected), which forced blind console
+  # debugging. PermitRootLogin yes + the key lets me get in early and inspect
+  # the swap setup / build start directly instead of waiting hours.
+  services.openssh.enable = true;
+  services.openssh.settings.PermitRootLogin = "yes";
+  users.users.root.openssh.authorizedKeys.keys = [
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICGxxtapYd7cY/NJjzTjdRQpuTKCs6jisSmKc5WfypZV forensic-analysis"
+  ];
+
   # There's no persistent host key here for sops-nix to decrypt against at
   # runtime (this box never survives past one run), so the two secrets the
   # build-server module needs are instead baked into the ISO's Nix store at
