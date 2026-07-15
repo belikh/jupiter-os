@@ -148,8 +148,15 @@ let
     # attempt. Also log the lsblk output + swapon result so the next run's log
     # shows the disk layout if this still goes wrong.
     ul=${pkgs.util-linux}
-    data_disk="$($ul/bin/lsblk -nbo NAME,TYPE,SIZE 2>/dev/null | awk '$2=="disk" {print $1, $3}' | sort -k2 -n | tail -1 | awk '{print $1}')"
-    log "swap setup: largest disk=''${data_disk:-<none>}; lsblk: $($ul/bin/lsblk -nbo NAME,TYPE,SIZE 2>/dev/null | tr '\n' ';')"
+    # Prefer a partition on the data disk (BinaryLane's disk carries a leftover
+    # vda1 from the debian-12 placeholder, so mkswap on the whole /dev/vda is
+    # refused because a partition table already exists); fall back to the whole
+    # disk if there's no partition.
+    data_disk="$($ul/bin/lsblk -nbo NAME,TYPE,SIZE 2>/dev/null | awk '$2=="part" {print $1, $3}' | sort -k2 -n | tail -1 | awk '{print $1}')"
+    if [ -z "$data_disk" ]; then
+      data_disk="$($ul/bin/lsblk -nbo NAME,TYPE,SIZE 2>/dev/null | awk '$2=="disk" {print $1, $3}' | sort -k2 -n | tail -1 | awk '{print $1}')"
+    fi
+    log "swap setup: swap device=''${data_disk:-<none>}; lsblk: $($ul/bin/lsblk -nbo NAME,TYPE,SIZE 2>/dev/null | tr '\n' ';')"
     if [ -n "$data_disk" ] && [ -b "/dev/$data_disk" ]; then
       if $ul/bin/mkswap "/dev/$data_disk" >/dev/null 2>&1 && $ul/bin/swapon "/dev/$data_disk"; then
         log "swap online on /dev/$data_disk; raising tmpfs size caps so the store + /tmp can spill to it"
