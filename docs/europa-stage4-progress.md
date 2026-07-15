@@ -62,3 +62,4 @@ tuned closure from `localhost:8080`.
 - 07:40 AEST: re-launched with log-capture (commit on build-server.nix); server 639523 created (std-8vcpu), booting into the new ISO. Will upload /tmp/jupiter-build.log to attic on exit.
 - 08:41 AEST: ~1h into log-capture run — server 639523 active, building (no push/log yet)
 - 09:41 AEST: ~2h into log-capture run — server 639523 still active (previous run failed at ~3h, so the next hour is the critical window)
+- 12:03 AEST: 3rd run — added R2-based log upload (robust, independent of nix/attic). Server 639562 created (std-8vcpu), booting. When it exits, log -> r2://jupiter-os-pallene-iso/logs/. Previous 2 runs self-destructed ~3h with 0 paths + no log (attic-based upload also failed).
