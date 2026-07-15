@@ -62,5 +62,20 @@ in
       source = realOrPlaceholder "attic-push-token";
       mode = "0400";
     };
+    # R2 creds for the robust build-log upload (trap in build-server.nix).
+    # Independent of the nix daemon / attic push so a failed run still leaves
+    # a log behind in r2://jupiter-os-pallene-iso/logs/.
+    "jupiter-build-server/r2-account-id" = {
+      source = realOrPlaceholder "r2-account-id";
+      mode = "0400";
+    };
+    "jupiter-build-server/r2-access-key-id" = {
+      source = realOrPlaceholder "r2-access-key-id";
+      mode = "0400";
+    };
+    "jupiter-build-server/r2-secret-access-key" = {
+      source = realOrPlaceholder "r2-secret-access-key";
+      mode = "0400";
+    };
   };
 }
