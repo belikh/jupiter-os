@@ -141,14 +141,22 @@ let
     # remount is what unblocks it). We deliberately do NOT mount the disk over
     # /nix/store: that hides the live ISO's base system (nix/gcc/bash live in
     # the squashfs lower layer of the store overlay) and breaks everything.
-    data_disk="$(lsblk -nbo NAME,TYPE,SIZE 2>/dev/null | awk '$2=="disk" {print $1, $3}' | sort -k2 -n | tail -1 | awk '{print $1}')"
-    if [ -b "/dev/$data_disk" ]; then
-      log "adding /dev/$data_disk as swap (largest non-CD disk)"
-      if mkswap "/dev/$data_disk" >/dev/null 2>&1 && swapon "/dev/$data_disk"; then
-        log "swap online; raising tmpfs size caps so the store + /tmp can spill to it"
-        for m in $(findmnt -nbo TARGET,FSTYPE 2>/dev/null | awk '$2=="tmpfs" {print $1}'); do
-          mount -o remount,size=300G "$m" 2>/dev/null || true
+    # lsblk/mkswap/swapon/findmnt/mount all live in util-linux — reference them
+    # by absolute nix-store path. The systemd service runs with a minimal PATH,
+    # so bare `lsblk`/`mkswap`/`swapon` are silently "command not found" (hidden
+    # by 2>/dev/null) — which is exactly why swap never enabled on the first
+    # attempt. Also log the lsblk output + swapon result so the next run's log
+    # shows the disk layout if this still goes wrong.
+    ul=${pkgs.util-linux}
+    data_disk="$($ul/bin/lsblk -nbo NAME,TYPE,SIZE 2>/dev/null | awk '$2=="disk" {print $1, $3}' | sort -k2 -n | tail -1 | awk '{print $1}')"
+    log "swap setup: largest disk='${data_disk:-<none>}'; lsblk: $($ul/bin/lsblk -nbo NAME,TYPE,SIZE 2>/dev/null | tr '\n' ';')"
+    if [ -n "$data_disk" ] && [ -b "/dev/$data_disk" ]; then
+      if $ul/bin/mkswap "/dev/$data_disk" >/dev/null 2>&1 && $ul/bin/swapon "/dev/$data_disk"; then
+        log "swap online on /dev/$data_disk; raising tmpfs size caps so the store + /tmp can spill to it"
+        for m in $($ul/bin/findmnt -nbo TARGET,FSTYPE 2>/dev/null | awk '$2=="tmpfs" {print $1}'); do
+          $ul/bin/mount -o remount,size=300G "$m" 2>/dev/null || true
         done
+        log "swap now active: $($ul/bin/swapon --show 2>/dev/null | tr '\n' ' ')"
       else
         log "!! mkswap/swapon failed on /dev/$data_disk — build may run out of RAM"
       fi
