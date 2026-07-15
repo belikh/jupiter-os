@@ -63,3 +63,4 @@ tuned closure from `localhost:8080`.
 - 08:41 AEST: ~1h into log-capture run — server 639523 active, building (no push/log yet)
 - 09:41 AEST: ~2h into log-capture run — server 639523 still active (previous run failed at ~3h, so the next hour is the critical window)
 - 12:03 AEST: 3rd run — added R2-based log upload (robust, independent of nix/attic). Server 639562 created (std-8vcpu), booting. When it exits, log -> r2://jupiter-os-pallene-iso/logs/. Previous 2 runs self-destructed ~3h with 0 paths + no log (attic-based upload also failed).
+- 13:05 AEST: 3rd run ~1h — server 639562 active, building; R2 log uploads on exit
