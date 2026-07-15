@@ -60,9 +60,9 @@ let
           ${pkgs.awscli}/bin/aws \
             --endpoint-url "https://$(cat ${cfg.r2AccountIdFile}).r2.cloudflarestorage.com" \
             s3 cp /tmp/jupiter-build.log "s3://${cfg.logBucket}/logs/pallene-$(date -u +%Y%m%d%H%M%S).log" \
-            --region auto >/dev/null 2>&1 \
+            --region auto >/tmp/r2upload.err 2>&1 \
             && log "build log uploaded to R2 (logs/)" \
-            || log "!! failed to upload build log to R2"
+            || log "!! failed to upload build log to R2: $(head -c 200 /tmp/r2upload.err 2>/dev/null)"
         fi
         _logpath="$(${pkgs.nix}/bin/nix store add-path /tmp/jupiter-build.log 2>/dev/null || true)"
         if [ -n "''${_logpath:-}" ]; then
@@ -81,10 +81,16 @@ let
       # since every pallene-run-* is an ephemeral build server meant to be
       # torn down. The trap below fires on ANY exit (success or failure).
       log "self-destruct: finding pallene-run-* servers to destroy..."
-      my_ids="$(${bl}/bin/bl-api GET "/v2/servers" \
-        | ${pkgs.jq}/bin/jq -r '.servers[] | select(.name | test("^pallene-run-")) | .id' 2>/dev/null || true)"
+      my_ids=""
+      for attempt in 1 2 3 4 5; do
+        resp="$(${bl}/bin/bl-api GET "/v2/servers" 2>/dev/null || true)"
+        my_ids="$(printf '%s' "$resp" | ${pkgs.jq}/bin/jq -r '.servers[]? | select(.name | test("^pallene-run-")) | .id' 2>/dev/null || true)"
+        if [ -n "$my_ids" ]; then break; fi
+        log "self-destruct attempt $attempt: no pallene-run-* matched (raw: $(printf '%s' "$resp" | tr '\n' ' ' | head -c 180)); retrying in 10s"
+        sleep 10
+      done
       if [ -z "''${my_ids:-}" ]; then
-        log "!! no pallene-run-* server found via the API — CANNOT self-destruct." >&2
+        log "!! could not find any pallene-run-* server after retries — CANNOT self-destruct." >&2
         log "!! ${cfg.destroyFallbackNote}" >&2
         return 1
       fi
@@ -124,6 +130,30 @@ let
     if ! timeout 120 ${pkgs.attic-client}/bin/attic login jupiter "${cfg.atticServer}" "$(cat "${cfg.atticPushTokenFile}")"; then
       log "!! attic login failed or timed out (network to ${cfg.atticServer}?) — cannot push, aborting" >&2
       exit 1
+    fi
+
+    # --- use the data disk as swap so the build isn't RAM-bound --------------
+    # The live ISO builds into /nix/store + /tmp, both tmpfs (RAM) — a full
+    # btver2 closure build (hundreds of GB) fills RAM and dies "no space left
+    # on device". The 340 GB BinaryLane data disk otherwise sits unused. Add it
+    # as swap AND raise every tmpfs size cap so the tmpfs can actually spill
+    # into the swap (swap alone does NOT raise a tmpfs's size= cap — the
+    # remount is what unblocks it). We deliberately do NOT mount the disk over
+    # /nix/store: that hides the live ISO's base system (nix/gcc/bash live in
+    # the squashfs lower layer of the store overlay) and breaks everything.
+    data_disk="$(lsblk -nbo NAME,TYPE,SIZE 2>/dev/null | awk '$2=="disk" {print $1, $3}' | sort -k2 -n | tail -1 | awk '{print $1}')"
+    if [ -b "/dev/$data_disk" ]; then
+      log "adding /dev/$data_disk as swap (largest non-CD disk)"
+      if mkswap "/dev/$data_disk" >/dev/null 2>&1 && swapon "/dev/$data_disk"; then
+        log "swap online; raising tmpfs size caps so the store + /tmp can spill to it"
+        for m in $(findmnt -nbo TARGET,FSTYPE 2>/dev/null | awk '$2=="tmpfs" {print $1}'); do
+          mount -o remount,size=300G "$m" 2>/dev/null || true
+        done
+      else
+        log "!! mkswap/swapon failed on /dev/$data_disk — build may run out of RAM"
+      fi
+    else
+      log "!! no data disk found — build may run out of RAM"
     fi
 
     # --- rebuild the world, all hosts at once, best-effort --------------------
@@ -348,7 +378,7 @@ in
     systemd.timers.jupiter-build-server-force-destroy = {
       wantedBy = [ "timers.target" ];
       timerConfig = {
-        OnBootSec = "4h";
+        OnBootSec = "6h";
         Unit = "jupiter-build-server-force-destroy.service";
       };
     };
