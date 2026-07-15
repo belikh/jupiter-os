@@ -59,7 +59,7 @@ let
           AWS_SECRET_ACCESS_KEY="$(cat ${cfg.r2SecretAccessKeyFile})" \
           ${pkgs.awscli}/bin/aws \
             --endpoint-url "https://$(cat ${cfg.r2AccountIdFile}).r2.cloudflarestorage.com" \
-            s3 cp /tmp/jupiter-build.log "s3://${cfg.logBucket}/logs/pallene-$(hostname)-$(date -u +%s).log" \
+            s3 cp /tmp/jupiter-build.log "s3://${cfg.logBucket}/logs/pallene-$(date -u +%Y%m%d%H%M%S).log" \
             --region auto >/dev/null 2>&1 \
             && log "build log uploaded to R2 (logs/)" \
             || log "!! failed to upload build log to R2"
@@ -71,17 +71,28 @@ let
             || log "!! failed to upload build log to attic"
         fi
       fi
-      log "self-destruct: looking up this server's id by hostname..."
-      my_id="$(${bl}/bin/bl-api GET "/v2/servers?hostname=$(hostname)" \
-        | ${pkgs.jq}/bin/jq -r '.servers[0].id // empty')"
-      if [ -z "''${my_id:-}" ]; then
-        log "!! could not determine own server id — CANNOT self-destruct." >&2
+      # Self-destruct MUST be reliable — this is the "stop billing" guarantee.
+      # It must NOT depend on the `hostname` command (not on pallene's PATH by
+      # default — its absence silently broke self-destruct and left idle
+      # servers billing for hours) or on the OS hostname matching the
+      # BinaryLane server name (it may not). Instead: list all servers and
+      # destroy every one matching the disposable `pallene-run-*` pattern.
+      # There is normally exactly one (this one); destroying extras is safe,
+      # since every pallene-run-* is an ephemeral build server meant to be
+      # torn down. The trap below fires on ANY exit (success or failure).
+      log "self-destruct: finding pallene-run-* servers to destroy..."
+      my_ids="$(${bl}/bin/bl-api GET "/v2/servers" \
+        | ${pkgs.jq}/bin/jq -r '.servers[] | select(.name | test("^pallene-run-")) | .id' 2>/dev/null || true)"
+      if [ -z "''${my_ids:-}" ]; then
+        log "!! no pallene-run-* server found via the API — CANNOT self-destruct." >&2
         log "!! ${cfg.destroyFallbackNote}" >&2
         return 1
       fi
-      log "destroying server id=$my_id (reason: rebuild-the-world run complete)"
-      ${bl}/bin/bl-api DELETE "/v2/servers/$my_id?reason=rebuild-the-world+run+complete" \
-        || log "!! destroy call failed — ${cfg.destroyFallbackNote}" >&2
+      for my_id in $my_ids; do
+        log "destroying server id=$my_id (reason: rebuild-the-world run complete)"
+        ${bl}/bin/bl-api DELETE "/v2/servers/$my_id?reason=rebuild-the-world+run+complete" \
+          || log "!! destroy call failed for $my_id — ${cfg.destroyFallbackNote}" >&2
+      done
     }
     trap self_destruct EXIT
 
@@ -100,14 +111,20 @@ let
 
     workdir="$(mktemp -d)"
     log "cloning ${cfg.repoUrl} @ $ref into $workdir"
-    if ! ${pkgs.git}/bin/git clone --depth 1 --branch "$ref" "${cfg.repoUrl}" "$workdir/jupiter-os"; then
+    if ! timeout 600 ${pkgs.git}/bin/git clone --depth 1 --branch "$ref" "${cfg.repoUrl}" "$workdir/jupiter-os"; then
       log "!! clone failed, aborting run (self-destruct still fires)" >&2
       exit 1
     fi
     cd "$workdir/jupiter-os"
 
     # --- attic auth -----------------------------------------------------------
-    ${pkgs.attic-client}/bin/attic login jupiter "${cfg.atticServer}" "$(cat "${cfg.atticPushTokenFile}")"
+    # Timeout: if attic.jupiter.au is unreachable from this builder the login
+    # would otherwise hang for hours (0 CPU) until the 4h force-destroy. A
+    # 2-min ceiling turns that into a fast, visible failure → self-destruct.
+    if ! timeout 120 ${pkgs.attic-client}/bin/attic login jupiter "${cfg.atticServer}" "$(cat "${cfg.atticPushTokenFile}")"; then
+      log "!! attic login failed or timed out (network to ${cfg.atticServer}?) — cannot push, aborting" >&2
+      exit 1
+    fi
 
     # --- rebuild the world, all hosts at once, best-effort --------------------
     # Every host's build+push runs as its own background job, all talking to
@@ -288,6 +305,13 @@ in
     # to multithread their own build.
     nix.settings.max-jobs = 8;
     nix.settings.cores = 1;
+
+    # REQUIRED: pallene is mkIsoHost (it skips common.nix), so without this
+    # the runScript's `nix build .#nixosConfigurations…` dies INSTANTLY with
+    # "experimental Nix feature 'nix-command' is disabled" — the run then
+    # does nothing (0 CPU) until self-destruct. common.nix sets this for the
+    # real hosts; pallene needs it here.
+    nix.settings.experimental-features = [ "nix-command" "flakes" ];
 
     # Without this, europa's btver2-tuned build fails deterministically with
     # "missing system features" on the CPU-tuned bootstrap derivations.
