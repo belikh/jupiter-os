@@ -48,10 +48,22 @@ let
     # path (success, build failure, script bug) via the trap below, not just
     # the happy path.
     self_destruct() {
-      # Upload the build log to attic so it survives this self-destruct
-      # (best-effort — never let a log-upload problem block the destroy).
-      # Retrieve from a client with: nix path-info --store <attic> --all | grep jupiter-build-log
+      # Upload the build log so it survives this self-destruct (best-effort —
+      # never let a log-upload problem block the destroy). R2 first (robust:
+      # public-internet path like the build's own source fetches), attic second
+      # (needs the nix daemon + a reachable attic, so it may fail when those
+      # are exactly what failed in the run — which is when we most want a log).
       if [ -f /tmp/jupiter-build.log ]; then
+        if [ -f ${cfg.r2AccessKeyIdFile} ]; then
+          AWS_ACCESS_KEY_ID="$(cat ${cfg.r2AccessKeyIdFile})" \
+          AWS_SECRET_ACCESS_KEY="$(cat ${cfg.r2SecretAccessKeyFile})" \
+          ${pkgs.awscli}/bin/aws \
+            --endpoint-url "https://$(cat ${cfg.r2AccountIdFile}).r2.cloudflarestorage.com" \
+            s3 cp /tmp/jupiter-build.log "s3://${cfg.logBucket}/logs/pallene-$(hostname)-$(date -u +%s).log" \
+            --region auto >/dev/null 2>&1 \
+            && log "build log uploaded to R2 (logs/)" \
+            || log "!! failed to upload build log to R2"
+        fi
         _logpath="$(${pkgs.nix}/bin/nix store add-path /tmp/jupiter-build.log 2>/dev/null || true)"
         if [ -n "''${_logpath:-}" ]; then
           ${pkgs.attic-client}/bin/attic push "${cfg.atticCache}" "$_logpath" >/dev/null 2>&1 \
@@ -209,6 +221,35 @@ in
       '';
     };
 
+    # R2 credentials for the robust build-log upload (see self_destruct in
+    # runScript). The build log is uploaded to r2://{logBucket}/logs/ on exit
+    # so a failed run is still diagnosable — this path uses only curl/aws over
+    # the public internet (like the build's own source fetches), so it works
+    # even when the nix daemon or the attic tunnel is the thing that failed.
+    r2AccountIdFile = lib.mkOption {
+      type = lib.types.path;
+      default = "/etc/jupiter-build-server/r2-account-id";
+      description = "Path to a file containing the Cloudflare account id (for the R2 endpoint host).";
+    };
+
+    r2AccessKeyIdFile = lib.mkOption {
+      type = lib.types.path;
+      default = "/etc/jupiter-build-server/r2-access-key-id";
+      description = "Path to a file containing the R2 access key id.";
+    };
+
+    r2SecretAccessKeyFile = lib.mkOption {
+      type = lib.types.path;
+      default = "/etc/jupiter-build-server/r2-secret-access-key";
+      description = "Path to a file containing the R2 secret access key.";
+    };
+
+    logBucket = lib.mkOption {
+      type = lib.types.str;
+      default = "jupiter-os-pallene-iso";
+      description = "R2 bucket the build log is uploaded to (under logs/).";
+    };
+
     destroyFallbackNote = lib.mkOption {
       type = lib.types.str;
       default = "check the BinaryLane control panel and destroy this server by hand to stop billing.";
@@ -256,6 +297,7 @@ in
       pkgs.git
       pkgs.jq
       pkgs.curl
+      pkgs.awscli
       pkgs.attic-client
     ];
 

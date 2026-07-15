@@ -64,10 +64,13 @@ pallene-iso:
 	@mkdir -p secrets/pallene-secrets
 	sops exec-env secrets/secrets.yaml 'printf "%s" "$$binarylane_api_token" > secrets/pallene-secrets/binarylane-api-token'
 	sops exec-env secrets/secrets.yaml 'printf "%s" "$$attic_push_token" > secrets/pallene-secrets/attic-push-token'
+	sops exec-env secrets/secrets.yaml 'printf "%s" "$$cloudflare_account_id" > secrets/pallene-secrets/r2-account-id'
+	sops exec-env secrets/secrets.yaml 'printf "%s" "$$r2_access_key_id" > secrets/pallene-secrets/r2-access-key-id'
+	sops exec-env secrets/secrets.yaml 'printf "%s" "$$r2_secret_access_key" > secrets/pallene-secrets/r2-secret-access-key'
 	@echo "Building pallene ISO..."
 	nix build .#pallene-iso
 	@echo "Cleaning up plaintext secrets (gitignored — do not commit)..."
-	rm -f secrets/pallene-secrets/binarylane-api-token secrets/pallene-secrets/attic-push-token
+	rm -f secrets/pallene-secrets/binarylane-api-token secrets/pallene-secrets/attic-push-token secrets/pallene-secrets/r2-account-id secrets/pallene-secrets/r2-access-key-id secrets/pallene-secrets/r2-secret-access-key
 
 # Drive one full ephemeral build-server run: build the ISO, upload it to R2,
 # then hand off to scripts/binarylane-build-server.sh to create the
