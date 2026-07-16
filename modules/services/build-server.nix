@@ -382,14 +382,19 @@ in
     # doesn't work, the ref falls back to defaultRef baked above.
     services.cloud-init.enable = true;
 
-    # Tuned for an 8-thread BinaryLane plan. max-jobs=8/cores=1 favors
-    # derivation-level parallelism over per-derivation multithreading: a
-    # "rebuild the world" run has multiple hosts' worth of independent (and
-    # often shared/deduped) derivations in flight at once, which keeps all 8
-    # threads busy far more reliably than a handful of packages each trying
-    # to multithread their own build.
-    nix.settings.max-jobs = 8;
-    nix.settings.cores = 1;
+    # Tuned for an 8-thread BinaryLane plan. max-jobs=4/cores=4 (jobs×cores=16,
+    # ~2x the 8 physical cores) is a deliberate middle ground:
+    #  - The stdenv bootstrap (glibc → gcc's 3 self-stages → final stdenv) is the
+    #    long pole and is DAG-narrow — often only 1-3 derivations ready at once.
+    #    cores=4 lets gcc/glibc run `make -j4`, which is ~3x faster than -j1 and
+    #    is where most of the wall-clock goes. With cores=1 (the old setting)
+    #    gcc built single-threaded and the bootstrap crawled (load ~1.0).
+    #  - Later, when the DAG widens to hundreds of packages, max-jobs=4 keeps
+    #    4 in flight; small derivations don't use all 4 cores, so the 2x
+    #    theoretical oversubscription only bites briefly when 4 big C++ builds
+    #    coincide (~15-25% context-switch overhead, not catastrophic).
+    nix.settings.max-jobs = 4;
+    nix.settings.cores = 4;
 
     # REQUIRED: pallene is mkIsoHost (it skips common.nix), so without this
     # the runScript's `nix build .#nixosConfigurations…` dies INSTANTLY with
