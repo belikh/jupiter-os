@@ -64,6 +64,24 @@ let
             && log "build log uploaded to R2 (logs/)" \
             || log "!! failed to upload build log to R2: $(head -c 200 /tmp/r2upload.err 2>/dev/null)"
         fi
+        # Also upload the per-host nix build logs ($workdir/<host>.log) — these
+        # hold the actual compiler/eval errors. Without them a build failure is
+        # undiagnosable (the box self-destructs and the detail is gone). $workdir
+        # is the main script's mktemp dir, visible here in the same shell.
+        if [ -n "''${workdir:-}" ] && [ -d "$workdir" ]; then
+          for hl in "$workdir"/*.log; do
+            [ -f "$hl" ] || continue
+            _hname="$(basename "$hl" .log)"
+            AWS_ACCESS_KEY_ID="$(cat ${cfg.r2AccessKeyIdFile})" \
+            AWS_SECRET_ACCESS_KEY="$(cat ${cfg.r2SecretAccessKeyFile})" \
+            ${pkgs.awscli}/bin/aws \
+              --endpoint-url "https://$(cat ${cfg.r2AccountIdFile}).r2.cloudflarestorage.com" \
+              s3 cp "$hl" "s3://${cfg.logBucket}/logs/''${_hname}-$(date -u +%Y%m%d%H%M%S).log" \
+              --region auto >/dev/null 2>&1 \
+              && log "host log uploaded to R2 (logs/''${_hname}-)" \
+              || log "!! failed to upload host log ''${_hname} to R2"
+          done
+        fi
         _logpath="$(${pkgs.nix}/bin/nix store add-path /tmp/jupiter-build.log 2>/dev/null || true)"
         if [ -n "''${_logpath:-}" ]; then
           ${pkgs.attic-client}/bin/attic push "${cfg.atticCache}" "$_logpath" >/dev/null 2>&1 \
