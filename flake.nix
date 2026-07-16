@@ -20,6 +20,7 @@
     # Erase-your-darlings root (modules/core/impermanence.nix)
     impermanence = {
       url = "github:nix-community/impermanence";
+      inputs.nixpkgs.follows = "nixpkgs";
     };
 
     # Secrets management (sops + age)
@@ -64,6 +65,23 @@
                 ];
               }
             )
+            # bmake's `deptgt-interrupt` unit test is flaky under load: it sends
+            # SIGINT to a child make and expects exit 130, but under the heavy
+            # oversubscription of a "rebuild the world" run (load 8-21) the
+            # signal sometimes doesn't land in time and the child exits 0 ->
+            # "Failed tests: deptgt-interrupt" -> bmake build fails -> lowdown
+            # (uses bmake) fails -> cascades up to the europa system toplevel.
+            # bmake itself builds fine; only its test suite is the problem, so
+            # skip it. See europa-20260716120909.log in R2 logs/.
+            {
+              nixpkgs.overlays = [
+                (final: prev: {
+                  bmake = prev.bmake.overrideAttrs (_: {
+                    doCheck = false;
+                  });
+                })
+              ];
+            }
             hostPath
           ];
         };
