@@ -38,7 +38,7 @@ ENDPOINT="https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com"
 iso_path="$(find result/iso -maxdepth 1 -name '*.iso' -print -quit 2>/dev/null || true)"
 [ -n "$iso_path" ] || { echo "!! no ISO found under result/iso/ — run 'make pallene-iso' first" >&2; exit 1; }
 
-key="pallene-$(date -u +%Y%m%d%H%M%S).iso"
+key="pallene.iso"
 
 echo ">> uploading $iso_path to r2://$BUCKET/$key..." >&2
 # --region auto is mandatory for R2: without it awscli defaults to a

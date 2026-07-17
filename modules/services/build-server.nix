@@ -262,8 +262,16 @@ let
     for host in ${lib.concatStringsSep " " cfg.hosts}; do
       (
         log "building $host..."
+        # --fallback: the WireGuard mesh back to europa's attic occasionally
+        # corrupts a substituter transfer mid-stream ("Transferred a partial
+        # file") rather than failing cleanly — without --fallback nix treats
+        # that as fatal and aborts the ENTIRE closure build over one flaky
+        # download (observed 2026-07-17: killed a multi-host run in <3min
+        # over a single corrupted compiler-rt-src fetch). --fallback makes
+        # nix rebuild/refetch that one derivation from its original source
+        # instead of aborting when a substitute fails to download intact.
         if ${pkgs.nix}/bin/nix build ".#nixosConfigurations.$host.config.system.build.toplevel" \
-             --no-link --print-out-paths > "$workdir/$host.outpath" 2>"$workdir/$host.log"; then
+             --no-link --print-out-paths --fallback > "$workdir/$host.outpath" 2>"$workdir/$host.log"; then
           outpath="$(cat "$workdir/$host.outpath")"
           log "$host built: $outpath"
           # Final push = a backstop sweep of the toplevel closure. The
