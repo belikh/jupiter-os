@@ -202,6 +202,23 @@ but not yet switched to on the box.)
    server); falls through to `cache.nixos.org` only for anything the tuned
    closure shares with baseline.
 
+**Push-path gotchas (learned 2026-07-17, mid-Stage-4):**
+- The Cloudflare Tunnel 524s on any NAR that takes >100 s to upload, which is
+  why pallene pushes over the UniFi WireGuard mesh (`http://10.1.1.2:8080`).
+- The mesh itself can degrade: ICMP passes both ways but europa→pallene TCP
+  payloads get dropped (established connections wedge with data stuck in
+  Send-Q, new connects time out). If pushes stall while `ping` looks healthy,
+  suspect this — don't debug atticd first.
+- Reliable fallback that bypasses both: a reverse SSH tunnel from europa to
+  pallene's public IP (`ssh -N -R 127.0.0.1:18080:127.0.0.1:8080
+  root@<pallene>`), then point `/root/.config/attic/config.toml` on pallene at
+  `http://127.0.0.1:18080`. Plain outbound TCP, no Cloudflare timeout, no WG.
+- atticd can wedge silently under upload storms (SQLite pool exhaustion; the
+  service stays "active" while serving nothing). The `atticd-watchdog` timer
+  in `modules/services/attic-server.nix` restarts it automatically once the
+  Phase 2 closure is live; until then it runs as a transient
+  `atticd-watchdog-tmp` unit on europa.
+
 **Verify:**
 - `pallene` self-destructed (BinaryLane control panel shows no running server).
 - On europa: `nix path-info .#nixosConfigurations.europa.config.system.build.toplevel`
