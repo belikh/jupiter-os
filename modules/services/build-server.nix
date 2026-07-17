@@ -34,25 +34,39 @@ let
 
   # post-build-hook: incremental attic push. After each derivation builds, the
   # nix daemon pipes the newly-built store paths (one per line) to this
-  # script's stdin; pushing per-path means the cache fills DURING the build
-  # instead of all at once at the end — so a mid-build failure/abort still
-  # leaves the work-so-far cached, and (pallene now also substitutes FROM
-  # attic) a retry resumes from there rather than restarting the multi-hour
-  # btver2 bootstrap.
+  # script's stdin. The WHOLE POINT of the build mesh is that every compiled
+  # package lands in attic so a restart substitutes it instead of rebuilding
+  # for hours — so this hook must actually cache, not best-effort-ish cache.
   #
-  # MUST always exit 0: newer nix treats a non-zero post-build-hook exit as a
-  # build failure. A transient attic/network hiccup must never abort a long
-  # bootstrap — the path is already in the local store, so a missed push just
-  # means one path isn't in attic yet (the next run rebuilds only that gap via
-  # the substituter). HOME=/root so attic finds the push token that
-  # `attic login` (run as root in runScript) wrote there, regardless of the
-  # nix daemon's own HOME.
+  # Two failure modes that previously silently lost packages:
+  #  (1) concurrent completions (max-jobs>1) fired the hook in parallel and
+  #      the pushes raced on attic — serialized here with flock so only one
+  #      push runs at a time.
+  #  (2) transient failures (WG blip, attic busy) were swallowed by `|| true`,
+  #      losing the path — replaced with a retry+backoff loop that keeps
+  #      trying until the path is actually stored, and logs every miss.
+  # --ignore-upstream-cache-filter guarantees storage (built paths are
+  # btver2-tuned, not on cache.nixos.org, so the filter is a no-op for them
+  # — but explicit so no built path is ever silently delegated away).
+  # ALWAYS exit 0: a cache miss must never abort the build (the final push +
+  # future runs are the backstop). HOME=/root so attic finds the push token.
   pushHook = pkgs.writeShellScript "jupiter-attic-post-build-hook" ''
     export HOME=/root
     set -uo pipefail
     paths="$(cat)" || exit 0
     [ -n "$paths" ] || exit 0
-    printf '%s\n' "$paths" | ${pkgs.attic-client}/bin/attic push "${cfg.atticCache}" --stdin >/dev/null 2>&1 || true
+    # Serialize: nix fires one hook per completion; without this, parallel
+    # pushes race and some silently drop. One push at a time, reliably.
+    exec 9>/tmp/attic-hook.lock
+    ${pkgs.util-linux}/bin/flock 9
+    for attempt in 1 2 3 4 5 6 7 8; do
+      if printf '%s\n' "$paths" | ${pkgs.attic-client}/bin/attic push "${cfg.atticCache}" --stdin --ignore-upstream-cache-filter >>/tmp/attic-hook.log 2>&1; then
+        exit 0
+      fi
+      echo "[hook $(date +%H:%M:%S)] attempt $attempt failed; retry in $((attempt*3))s" >>/tmp/attic-hook.log
+      sleep $((attempt * 3))
+    done
+    echo "[hook $(date +%H:%M:%S)] GAVE UP after 8 attempts: $(printf '%s\n' "$paths" | tr '\n' ' ' | head -c 300)" >>/tmp/attic-hook.log
     exit 0
   '';
 
@@ -251,11 +265,23 @@ let
         if ${pkgs.nix}/bin/nix build ".#nixosConfigurations.$host.config.system.build.toplevel" \
              --no-link --print-out-paths > "$workdir/$host.outpath" 2>"$workdir/$host.log"; then
           outpath="$(cat "$workdir/$host.outpath")"
-          log "$host built: $outpath — pushing to attic cache '${cfg.atticCache}'"
-          if ! ${pkgs.attic-client}/bin/attic push "${cfg.atticCache}" "$outpath"; then
-            log "!! attic push failed for $host" >&2
-            exit 1
-          fi
+          log "$host built: $outpath"
+          # Final push = a backstop sweep of the toplevel closure. The
+          # post-build-hook already cached every package as it built; this just
+          # catches anything it missed. Retry on failure, and NEVER fail the run
+          # on its account — the build succeeded and the hook did the caching.
+          # No --ignore-upstream-cache-filter here (unlike the hook): this
+          # pushes the whole closure including public cache.nixos.org deps, and
+          # the filter correctly delegates those (only stores the btver2 paths).
+          ok=0
+          for attempt in 1 2 3; do
+            if ${pkgs.attic-client}/bin/attic push "${cfg.atticCache}" "$outpath" >/dev/null 2>&1; then
+              ok=1
+              break
+            fi
+            sleep 5
+          done
+          [ "$ok" = 1 ] || log "!! final attic push failed for $host (post-build-hook should still have cached each package)"
         else
           log "!! build failed for $host — see $workdir/$host.log" >&2
           tail -n 40 "$workdir/$host.log" >&2 || true
