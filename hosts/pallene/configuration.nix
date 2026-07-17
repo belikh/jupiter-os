@@ -36,6 +36,7 @@ in
   imports = [
     (modulesPath + "/installer/cd-dvd/installation-cd-minimal.nix")
     ../../modules/services/build-server.nix
+    ../../modules/network/wireguard.nix
   ];
 
   networking.hostName = "pallene";
@@ -43,13 +44,44 @@ in
   # Kernel console on the serial port so the boot + the jupiter-build-server
   # service output is visible under QEMU -nographic (and over any serial
   # console BinaryLane exposes). Harmless alongside the VGA console.
-  boot.kernelParams = [ "console=ttyS0" "console=tty0" ];
+  boot.kernelParams = [
+    "console=ttyS0"
+    "console=tty0"
+  ];
 
   jupiter.services.buildServer = {
     enable = true;
-    # europa's atticd (modules/services/attic-server.nix), reached over the
-    # public internet via the Cloudflare Tunnel.
-    atticServer = "https://attic.jupiter.au";
+    # europa's atticd reached DIRECTLY over the UniFi WireGuard mesh, NOT via
+    # the Cloudflare Tunnel — the tunnel returns HTTP 524 on any NAR that takes
+    # >100s to transfer, so gcc/glibc/rustc-class paths can never move through
+    # it. The UDM (UniFi WG server) routes the mesh onto the home LAN, so
+    # pallene reaches europa at its LAN IP. atticd listens on *:8080.
+    atticServer = "http://10.1.1.2:8080";
+  };
+
+  # ---- WireGuard build mesh (UniFi-managed, roaming client peer) ------------
+  # The UDM runs the WG server (UniFi Network → Teleport & VPN → WireGuard,
+  # port 51820, public endpoint neptune.jupiter.au). This peer ("Pallene") was
+  # created in the UniFi UI and exports this private key + the 192.168.5.2/32
+  # address. Split-tunnel: only the home LAN (europa/attic) + WG mesh route
+  # through the tunnel — pallene's build fetches (github, cache.nixos.org, R2,
+  # BinaryLane API) stay on its public interface, not tromboned through home.
+  jupiter.network.wireguard = {
+    enable = true;
+    address = "192.168.5.2/32";
+    privateKeyFile = "/etc/jupiter-build-server/wireguard-private-key";
+    peers = [
+      {
+        # The UDM (UniFi WG server).
+        publicKey = "gw6gm9TpSBFOqifygp8XLfEEDGgebzD4tEFgXCSawE4=";
+        allowedIPs = [
+          "10.1.1.0/24" # home LAN — europa/attic lives here at 10.1.1.2
+          "192.168.5.0/24" # the WG mesh itself
+        ];
+        endpoint = "neptune.jupiter.au:51820";
+        persistentKeepalive = 25;
+      }
+    ];
   };
 
   # SSH for direct investigation: bake the admin key so the box is reachable by
@@ -91,6 +123,13 @@ in
     };
     "jupiter-build-server/r2-secret-access-key" = {
       source = realOrPlaceholder "r2-secret-access-key";
+      mode = "0400";
+    };
+    # WireGuard private key for the build mesh (modules/network/wireguard.nix).
+    # Same bake-at-build-time pattern as the tokens above — pallene has no
+    # persistent host key for sops-nix to decrypt against at runtime.
+    "jupiter-build-server/wireguard-private-key" = {
+      source = realOrPlaceholder "wireguard-private-key";
       mode = "0400";
     };
   };

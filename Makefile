@@ -71,8 +71,9 @@ pallene-iso:
 	sops exec-env secrets/secrets.yaml 'printf "%s" "$$cloudflare_account_id" > secrets/pallene-secrets/r2-account-id'
 	sops exec-env secrets/secrets.yaml 'printf "%s" "$$r2_access_key_id" > secrets/pallene-secrets/r2-access-key-id'
 	sops exec-env secrets/secrets.yaml 'printf "%s" "$$r2_secret_access_key" > secrets/pallene-secrets/r2-secret-access-key'
+	sops exec-env secrets/secrets.yaml 'printf "%s" "$$wireguard_pallene_private_key" > secrets/pallene-secrets/wireguard-private-key'
 	@set -e; \
-	SECS='secrets/pallene-secrets/binarylane-api-token secrets/pallene-secrets/attic-push-token secrets/pallene-secrets/r2-account-id secrets/pallene-secrets/r2-access-key-id secrets/pallene-secrets/r2-secret-access-key'; \
+	SECS='secrets/pallene-secrets/binarylane-api-token secrets/pallene-secrets/attic-push-token secrets/pallene-secrets/r2-account-id secrets/pallene-secrets/r2-access-key-id secrets/pallene-secrets/r2-secret-access-key secrets/pallene-secrets/wireguard-private-key'; \
 	git add -f $$SECS; \
 	trap 'git reset -q $$SECS 2>/dev/null; rm -f $$SECS' EXIT; \
 	echo "Building pallene ISO (real secrets staged so the pure flake build can see them)..."; \
