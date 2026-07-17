@@ -1,6 +1,7 @@
 {
   config,
   lib,
+  pkgs,
   ...
 }:
 
@@ -114,6 +115,33 @@ in
       "d ${cfg.storagePath} 0755 atticd atticd -"
       "d ${cfg.storagePath}/storage 0755 atticd atticd -"
     ];
+
+    # atticd can wedge silently: under a concurrent upload storm its SQLite
+    # connection pool times out and the daemon stops serving — it still
+    # accepts TCP and systemd still reports "active (running)", so nothing
+    # restarts it and the build server pushes into a black hole (observed
+    # 2026-07-16: a 16h zombie while pallene retried against it). Probe an
+    # endpoint that exercises the database and restart when it stops
+    # answering; a healthy atticd answers nix-cache-info in milliseconds
+    # even mid-upload, so a 30s timeout only trips on a real wedge.
+    systemd.services.atticd-watchdog = {
+      description = "restart atticd when it stops answering";
+      serviceConfig.Type = "oneshot";
+      script = ''
+        url="http://localhost:${toString cfg.port}/${cfg.cacheName}/nix-cache-info"
+        if ! ${pkgs.curl}/bin/curl -fsS --max-time 30 "$url" > /dev/null; then
+          echo "atticd unresponsive at $url — restarting"
+          systemctl restart atticd.service
+        fi
+      '';
+    };
+    systemd.timers.atticd-watchdog = {
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnBootSec = "5min";
+        OnUnitActiveSec = "3min";
+      };
+    };
 
     # Allow direct access on the LAN (the Cloudflare Tunnel also reaches in
     # without an open port, once configured).
