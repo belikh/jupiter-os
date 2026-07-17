@@ -32,6 +32,7 @@
     ../../modules/services/smart-monitoring.nix
     ../../modules/services/console-screensaver.nix
     ../../modules/services/cloudflare-tunnel.nix
+    ../../modules/services/pallene-watchdog.nix
   ];
 
   networking.hostName = "europa";
@@ -132,8 +133,15 @@
     tunnelId = "aa1088b8-a0e1-4073-8567-6a9bf5fb4bd7";
   };
 
+  # External backstop for the pallene build server: destroys any BinaryLane
+  # pallene* server still running past 4h, from a different host on a
+  # separately-sourced token — covers the OOM-SIGKILL and stale-ISO-token
+  # gaps the in-VM self-destruct/6h timer in build-server.nix can't.
+  jupiter.services.palleneWatchdog.enable = true;
+
   # ---- sops secrets --------------------------------------------------------
   # attic_server_token_secret: RS256 JWT signing key for atticd.
+  # binarylane_api_token: consumed by jupiter.services.palleneWatchdog.
   # Must be added to secrets/secrets.yaml before first deploy.
   sops.secrets.attic_server_token_secret = { };
 }
