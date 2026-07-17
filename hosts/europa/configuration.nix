@@ -62,7 +62,20 @@
   # which GCC targets as btver2. The BinaryLane build server compiles this
   # host's closure with -march=btver2 and pushes it to the local Attic; see
   # modules/core/build-tuning.nix for the SIGILL/march caveats.
-  jupiter.build.microarch = "btver2";
+  jupiter.build.microarch = "btver2"; # pallene (build server) compiles this host's closure -march=btver2 and pushes to the local Attic
+
+  # ---- nixpkgs overlays ----------------------------------------------------
+  # bmake's `deptgt-interrupt` unit test is timing-sensitive (it asserts a
+  # SIGINT yields exit 130) and flakes non-deterministically under load / when
+  # the closure is microarch-tuned — on the first full btver2 build it failed
+  # (expected 130, got 0), cascading through nix → nixos-system-europa and
+  # sinking the entire run. bmake compiles fine; only its check phase is flaky.
+  # This overlay is in scope when pallene builds .#nixosConfigurations.europa.
+  nixpkgs.overlays = [
+    (_final: prev: {
+      bmake = prev.bmake.overrideAttrs { doCheck = false; };
+    })
+  ];
 
   # ---- Networking ----------------------------------------------------------
   # Static identity below the DHCP pool so iSCSI/NFS clients have a stable

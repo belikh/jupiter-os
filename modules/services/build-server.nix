@@ -32,6 +32,30 @@ let
     ${pkgs.curl}/bin/curl "''${args[@]}"
   '';
 
+  # post-build-hook: incremental attic push. After each derivation builds, the
+  # nix daemon pipes the newly-built store paths (one per line) to this
+  # script's stdin; pushing per-path means the cache fills DURING the build
+  # instead of all at once at the end — so a mid-build failure/abort still
+  # leaves the work-so-far cached, and (pallene now also substitutes FROM
+  # attic) a retry resumes from there rather than restarting the multi-hour
+  # btver2 bootstrap.
+  #
+  # MUST always exit 0: newer nix treats a non-zero post-build-hook exit as a
+  # build failure. A transient attic/network hiccup must never abort a long
+  # bootstrap — the path is already in the local store, so a missed push just
+  # means one path isn't in attic yet (the next run rebuilds only that gap via
+  # the substituter). HOME=/root so attic finds the push token that
+  # `attic login` (run as root in runScript) wrote there, regardless of the
+  # nix daemon's own HOME.
+  pushHook = pkgs.writeShellScript "jupiter-attic-post-build-hook" ''
+    export HOME=/root
+    set -uo pipefail
+    paths="$(cat)" || exit 0
+    [ -n "$paths" ] || exit 0
+    printf '%s\n' "$paths" | ${pkgs.attic-client}/bin/attic push "${cfg.atticCache}" --stdin >/dev/null 2>&1 || true
+    exit 0
+  '';
+
   runScript = pkgs.writeShellScript "jupiter-build-server-run" ''
     set -uo pipefail
 
@@ -94,21 +118,21 @@ let
       # default — its absence silently broke self-destruct and left idle
       # servers billing for hours) or on the OS hostname matching the
       # BinaryLane server name (it may not). Instead: list all servers and
-      # destroy every one matching the disposable `pallene-run-*` pattern.
+      # destroy every one matching the disposable `pallene*` pattern.
       # There is normally exactly one (this one); destroying extras is safe,
-      # since every pallene-run-* is an ephemeral build server meant to be
+      # since every pallene* is an ephemeral build server meant to be
       # torn down. The trap below fires on ANY exit (success or failure).
-      log "self-destruct: finding pallene-run-* servers to destroy..."
+      log "self-destruct: finding pallene* servers to destroy..."
       my_ids=""
       for attempt in 1 2 3 4 5; do
         resp="$(${bl}/bin/bl-api GET "/v2/servers" 2>/dev/null || true)"
-        my_ids="$(printf '%s' "$resp" | ${pkgs.jq}/bin/jq -r '.servers[]? | select(.name | test("^pallene-run-")) | .id' 2>/dev/null || true)"
+        my_ids="$(printf '%s' "$resp" | ${pkgs.jq}/bin/jq -r '.servers[]? | select(.name | test("^pallene")) | .id' 2>/dev/null || true)"
         if [ -n "$my_ids" ]; then break; fi
-        log "self-destruct attempt $attempt: no pallene-run-* matched (raw: $(printf '%s' "$resp" | tr '\n' ' ' | head -c 180)); retrying in 10s"
+        log "self-destruct attempt $attempt: no pallene* matched (raw: $(printf '%s' "$resp" | tr '\n' ' ' | head -c 180)); retrying in 10s"
         sleep 10
       done
       if [ -z "''${my_ids:-}" ]; then
-        log "!! could not find any pallene-run-* server after retries — CANNOT self-destruct." >&2
+        log "!! could not find any pallene* server after retries — CANNOT self-destruct." >&2
         log "!! ${cfg.destroyFallbackNote}" >&2
         return 1
       fi
@@ -314,6 +338,20 @@ in
       description = "Name of the attic cache to push built closures into.";
     };
 
+    atticPublicKey = lib.mkOption {
+      type = lib.types.str;
+      default = "jupiter-os:jd6naJxSxt9xPtYTaOSQDOoeoHil5OsVy8ltpIBs9dQ=";
+      description = ''
+        Public key of the attic cache (a "name:base64..." string), used to
+        verify paths substituted from the attic server. Must match the key
+        minted by `attic cache create` on the attic host (europa) and set in
+        attic-server.nix's publicKey option — keep the two in sync. If this is
+        wrong, nix silently doesn't trust the paths and falls through to
+        cache.nixos.org (harmless: pallene just builds from source, as it did
+        before this substituter was wired).
+      '';
+    };
+
     atticPushTokenFile = lib.mkOption {
       type = lib.types.path;
       default = "/etc/jupiter-build-server/attic-push-token";
@@ -401,11 +439,34 @@ in
     # "experimental Nix feature 'nix-command' is disabled" — the run then
     # does nothing (0 CPU) until self-destruct. common.nix sets this for the
     # real hosts; pallene needs it here.
-    nix.settings.experimental-features = [ "nix-command" "flakes" ];
+    nix.settings.experimental-features = [
+      "nix-command"
+      "flakes"
+    ];
 
     # Without this, europa's btver2-tuned build fails deterministically with
     # "missing system features" on the CPU-tuned bootstrap derivations.
     nix.settings.system-features = lib.mkAfter (map (a: "gccarch-${a}") cfg.microarchs);
+
+    # Pull from our own attic cache ahead of cache.nixos.org. Without this
+    # pallene only knows about cache.nixos.org (the NixOS default), so it
+    # rebuilds the ENTIRE btver2-tuned bootstrap from source on every run —
+    # even a retry where those exact paths already sit in attic from a prior
+    # run. mkBefore PREPENDS attic to the default substituter list (so it's
+    # tried first) while leaving cache.nixos.org as the fallback for the
+    # bootstrap seeds and any path attic doesn't have yet; the attic public
+    # key is appended to trusted-public-keys the same way (no need to
+    # re-hardcode cache.nixos.org's key — NixOS already provides it).
+    nix.settings.substituters = lib.mkBefore [ "${cfg.atticServer}/${cfg.atticCache}" ];
+    nix.settings.trusted-public-keys = [ cfg.atticPublicKey ];
+
+    # Incremental cache push: fire after each derivation builds (see pushHook
+    # in the let block). Replaces the old "build the whole closure, then push
+    # once at the end" behaviour — the cache now fills during the build, so a
+    # run that dies mid-build has still banked everything it completed. The
+    # runScript's final `attic push` is retained as a harmless confirmation
+    # step (it just re-confirms paths the hook already pushed).
+    nix.settings.post-build-hook = "${pushHook}";
 
     environment.systemPackages = [
       pkgs.git
@@ -423,6 +484,20 @@ in
         "cloud-init.target"
       ];
       wants = [ "network-online.target" ];
+      # `path` (not PATH=) puts these on the service's PATH so that `nix build`
+      # can find `git` when it re-locks the flake / uses the git+file fetcher on
+      # the cloned repo — nix invokes git by name internally, and the default
+      # systemd service PATH doesn't include the system profile. Without this
+      # the build dies instantly with `executing "git": No such file or directory`.
+      path = [
+        pkgs.git
+        pkgs.nix
+        pkgs.jq
+        pkgs.awscli
+        pkgs.attic-client
+        pkgs.util-linux
+        pkgs.coreutils
+      ];
       serviceConfig = {
         Type = "oneshot";
         ExecStart = "${runScript}";
@@ -443,11 +518,18 @@ in
       };
     };
     systemd.services.jupiter-build-server-force-destroy = {
-      description = "Force-destroy this build server if the main run is still going after 4h";
+      description = "Force-destroy this build server if the main run is still going after 6h";
       serviceConfig.Type = "oneshot";
+      # Same robust lookup as self_destruct (list all servers, match ^pallene).
+      # The old version used `?hostname=$(hostname)` which never matched the
+      # BinaryLane server name (e.g. "pallene.jupiter.au") and silently left
+      # stranded servers billing — exactly the bug that stranded the first run.
       script = ''
-        my_id="$(${bl}/bin/bl-api GET "/v2/servers?hostname=$(hostname)" | ${pkgs.jq}/bin/jq -r '.servers[0].id // empty')"
-        [ -n "$my_id" ] && ${bl}/bin/bl-api DELETE "/v2/servers/$my_id?reason=force-destroy+4h+safety+net"
+        resp="$(${bl}/bin/bl-api GET "/v2/servers" 2>/dev/null || true)"
+        my_ids="$(printf '%s' "$resp" | ${pkgs.jq}/bin/jq -r '.servers[]? | select(.name | test("^pallene")) | .id' 2>/dev/null || true)"
+        for my_id in $my_ids; do
+          ${bl}/bin/bl-api DELETE "/v2/servers/$my_id?reason=force-destroy+6h+safety+net" || true
+        done
       '';
     };
   };
