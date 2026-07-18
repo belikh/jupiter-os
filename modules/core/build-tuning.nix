@@ -46,5 +46,17 @@ in
       gcc.arch = cfg.microarch;
       gcc.tune = cfg.microarch;
     };
+
+    # Declare this host's own nix-daemon capable of building (not just
+    # substituting) its own gccarch-tagged derivations. Without this, a host
+    # whose tuned closure has any gap in the attic cache (missing OR
+    # corrupted — observed 2026-07-18 on europa) hits a hard "missing system
+    # features" error the moment it needs to build/--fallback on its own,
+    # even though the host's CPU is BY DEFINITION the exact target hardware
+    # and can always correctly build+run its own microarch. This is the safe
+    # case the module-level CAUTION above doesn't apply to — that caution is
+    # about the DISPOSABLE builder (pallene) possibly running on different,
+    # unconfirmed hardware; a tuned host building for itself has no such gap.
+    nix.settings.system-features = lib.mkAfter [ "gccarch-${cfg.microarch}" ];
   };
 }

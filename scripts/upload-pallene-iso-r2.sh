@@ -39,12 +39,28 @@ iso_path="$(find result/iso -maxdepth 1 -name '*.iso' -print -quit 2>/dev/null |
 [ -n "$iso_path" ] || { echo "!! no ISO found under result/iso/ — run 'make pallene-iso' first" >&2; exit 1; }
 
 key="pallene.iso"
+hash_key="pallene.iso.sha256"
 
-echo ">> uploading $iso_path to r2://$BUCKET/$key..." >&2
-# --region auto is mandatory for R2: without it awscli defaults to a
-# SigV2 presigned URL ("AWSAccessKeyId=…") which R2 rejects with 401 (R2 is
-# SigV4-only), so BinaryLane's image-fetch would fail in ~2s. region=auto
-# forces SigV4 ("X-Amz-Algorithm=…"), which R2 serves correctly.
-aws --endpoint-url "$ENDPOINT" s3 cp "$iso_path" "s3://$BUCKET/$key" --region auto >&2
+# Skip the ~1.4GB re-upload if the ISO's content hasn't actually changed.
+# A local ISO derivation being a no-op rebuild (nothing relevant changed)
+# doesn't mean the upload gets skipped too — every prior run still spent
+# 1-2 minutes re-uploading bytes identical to what's already in R2. S3's own
+# ETag isn't reliable here (a file this size uploads multipart, so ETag is a
+# hash-of-part-hashes, not a plain content hash) — instead compare against a
+# small sha256 sidecar object we maintain ourselves.
+local_hash="$(sha256sum "$iso_path" | cut -d' ' -f1)"
+remote_hash="$(aws --endpoint-url "$ENDPOINT" s3 cp "s3://$BUCKET/$hash_key" - --region auto 2>/dev/null || true)"
+
+if [ -n "$remote_hash" ] && [ "$remote_hash" = "$local_hash" ]; then
+  echo ">> ISO unchanged (sha256 $local_hash matches r2://$BUCKET/$key) — skipping upload" >&2
+else
+  echo ">> uploading $iso_path to r2://$BUCKET/$key..." >&2
+  # --region auto is mandatory for R2: without it awscli defaults to a
+  # SigV2 presigned URL ("AWSAccessKeyId=…") which R2 rejects with 401 (R2 is
+  # SigV4-only), so BinaryLane's image-fetch would fail in ~2s. region=auto
+  # forces SigV4 ("X-Amz-Algorithm=…"), which R2 serves correctly.
+  aws --endpoint-url "$ENDPOINT" s3 cp "$iso_path" "s3://$BUCKET/$key" --region auto >&2
+  printf '%s' "$local_hash" | aws --endpoint-url "$ENDPOINT" s3 cp - "s3://$BUCKET/$hash_key" --region auto >&2
+fi
 
 aws --endpoint-url "$ENDPOINT" s3 presign "s3://$BUCKET/$key" --expires-in "$EXPIRES_SECS" --region auto

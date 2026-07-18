@@ -47,45 +47,37 @@ fmt-check:
 	nix run nixpkgs#nixfmt-rfc-style -- --check .
 
 # ---------------------------------------------------------------------------
-# Ephemeral BinaryLane "rebuild the world" build server. See
-# hosts/pallene/configuration.nix + modules/services/build-server.nix.
+# Ephemeral BinaryLane "rebuild the world" build server — a generic, runtime-
+# parameterized builder: which git ref, which hosts, every secret, all
+# arrive via cloud-init user_data at server-create time (see
+# scripts/binarylane-build-server.sh and modules/services/build-server.nix).
+# The ISO itself carries NO secrets and needs rebuilding only when
+# hosts/pallene/configuration.nix, build-server.nix, or wireguard.nix change.
 # Required sops keys (secrets/secrets.yaml): binarylane_api_token,
-# attic_push_token — set real values via `sops secrets/secrets.yaml` before
-# the first real run (committed values are dummy placeholders).
+# attic_push_token, cloudflare_account_id, r2_access_key_id,
+# r2_secret_access_key, wireguard_pallene_private_key — set real values via
+# `sops secrets/secrets.yaml` before the first real run.
 # ---------------------------------------------------------------------------
 
-# Build the pallene ISO with the BinaryLane API + attic push tokens baked in.
-# Materializes plaintext secrets from sops, STAGES them with `git add -f` so the
-# pure flake build can see them (secrets/pallene-secrets/* is gitignored, so the
-# flake's git-source filter hides the on-disk files and the ISO would otherwise
-# bake the dummy .placeholder values — R2 log upload + self-destruct silently
-# broke for exactly this reason on the first real run), builds, then unstages +
-# removes the plaintext on EXIT (trap covers a failed/interrupted build too).
-# Do NOT use plain `nix build .#pallene-iso` for a real run — that bakes in the
-# dummy placeholder tokens; always go through this target.
+# Build the pallene ISO. Nothing secret goes into it anymore — a plain
+# `nix build` is enough (no sops materialization, no git-staging dance).
+# Rebuild only actually needed when the pallene config/modules change; nix
+# no-ops (a few seconds) otherwise.
 pallene-iso:
-	@echo "Materializing pallene build-server secrets from sops..."
-	@mkdir -p secrets/pallene-secrets
-	sops exec-env secrets/secrets.yaml 'printf "%s" "$$binarylane_api_token" > secrets/pallene-secrets/binarylane-api-token'
-	sops exec-env secrets/secrets.yaml 'printf "%s" "$$attic_push_token" > secrets/pallene-secrets/attic-push-token'
-	sops exec-env secrets/secrets.yaml 'printf "%s" "$$cloudflare_account_id" > secrets/pallene-secrets/r2-account-id'
-	sops exec-env secrets/secrets.yaml 'printf "%s" "$$r2_access_key_id" > secrets/pallene-secrets/r2-access-key-id'
-	sops exec-env secrets/secrets.yaml 'printf "%s" "$$r2_secret_access_key" > secrets/pallene-secrets/r2-secret-access-key'
-	sops exec-env secrets/secrets.yaml 'printf "%s" "$$wireguard_pallene_private_key" > secrets/pallene-secrets/wireguard-private-key'
-	@set -e; \
-	SECS='secrets/pallene-secrets/binarylane-api-token secrets/pallene-secrets/attic-push-token secrets/pallene-secrets/r2-account-id secrets/pallene-secrets/r2-access-key-id secrets/pallene-secrets/r2-secret-access-key secrets/pallene-secrets/wireguard-private-key'; \
-	git add -f $$SECS; \
-	trap 'git reset -q $$SECS 2>/dev/null; rm -f $$SECS' EXIT; \
-	echo "Building pallene ISO (real secrets staged so the pure flake build can see them)..."; \
 	nix build .#pallene-iso
 
-# Drive one full ephemeral build-server run: build the ISO, upload it to R2,
-# then hand off to scripts/binarylane-build-server.sh to create the
-# BinaryLane server, boot it from the ISO, and wait for it to rebuild the
-# world and self-destruct. Requires awscli on PATH (for the R2 upload) and
-# real values for the cloudflare_account_id / r2_access_key_id /
-# r2_secret_access_key / binarylane_api_token sops keys. Override the build
-# target git ref with GIT_REF=... (defaults to dashboard-v2).
+# Drive one full ephemeral build-server run: build the ISO (a no-op if
+# unchanged), upload it to R2 (fixed key — overwrites, doesn't accumulate),
+# then hand off to scripts/binarylane-build-server.sh, which builds the
+# cloud-init user_data blob from these same sops secrets, creates the
+# BinaryLane server, boots it from the ISO, and waits for it to rebuild the
+# world and self-destruct.
+#
+# Override at invocation, none require an ISO rebuild:
+#   GIT_REF=<branch/commit>   which ref to build (default: the ISO's baked default)
+#   HOSTS=host1,host2         which nixosConfigurations to build (default: baked default, currently "europa")
+#   TIMEOUT_SECS=<seconds>    external polling ceiling (default 36000 = 10h)
+#   BL_SIZE_SLUG=<slug>       force one exact BinaryLane size, skip the tier fallback
 rebuild-world: pallene-iso
 	sops exec-env secrets/secrets.yaml '\
 		export AWS_ACCESS_KEY_ID="$$r2_access_key_id"; \
@@ -93,4 +85,8 @@ rebuild-world: pallene-iso
 		export R2_ACCOUNT_ID="$$cloudflare_account_id"; \
 		export ISO_URL="$$(./scripts/upload-pallene-iso-r2.sh)"; \
 		export BINARYLANE_API_TOKEN="$$binarylane_api_token"; \
+		export ATTIC_PUSH_TOKEN="$$attic_push_token"; \
+		export WIREGUARD_PRIVATE_KEY="$$wireguard_pallene_private_key"; \
+		export R2_ACCESS_KEY_ID="$$r2_access_key_id"; \
+		export R2_SECRET_ACCESS_KEY="$$r2_secret_access_key"; \
 		./scripts/binarylane-build-server.sh'
