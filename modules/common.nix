@@ -42,6 +42,17 @@
   system.stateVersion = "26.05";
   time.timeZone = "Australia/Brisbane";
 
+  # Passwordless root in the initrd's emergency shell only (never the real
+  # system — root stays locked there). Without this, a boot-time failure
+  # (e.g. a ZFS import that needs manual intervention) drops to a completely
+  # inaccessible "root account is locked" prompt, since the initrd is a
+  # separate minimal environment that never shares the real system's
+  # /etc/shadow — confirmed the hard way bringing up amalthea, where a ZFS
+  # import failure was undebuggable without this. On fleet-wide by default;
+  # flip to `false` here to disable everywhere, or override per-host with a
+  # plain (non-mkDefault) assignment in that host's configuration.nix.
+  boot.initrd.systemd.emergencyAccess = lib.mkDefault true;
+
   # UEFI systemd-boot everywhere by default. (The old tree layered GRUB +
   # branding on some hosts; that returns as an opt-in module later.)
   boot.loader.systemd-boot.enable = lib.mkDefault true;

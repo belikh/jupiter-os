@@ -50,6 +50,14 @@
   # rule-compliant for a ZFS host. europa runs no VMs, so IOMMU isn't needed.
   boot.kernelParams = [ "amd_iommu=off" ];
 
+  # common.nix enables the full redistributable-firmware blob fleet-wide
+  # (broad hardware compat for unknown/varied peripherals — kiosks etc).
+  # europa's hardware is fixed and fully known (AMD Opteron X3216 APU, no
+  # discrete GPU, no wifi): that blob's nvidia/other-GPU/wifi-chipset
+  # firmware can never be used here, just bloats the (already
+  # microarch-tuned, cache-sensitive) closure for nothing.
+  hardware.enableRedistributableFirmware = false;
+
   # ---- Storage profile (OS SSD) --------------------------------------------
   # Stateful root (no impermanence — the NAS needs persistent state).
   jupiter.storage.profile = "stateful";

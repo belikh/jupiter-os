@@ -1,31 +1,25 @@
 {
+  config,
   lib,
   modulesPath,
   ...
 }:
 
-let
-  # secrets/pallene-secrets/*.placeholder are committed dummy files so
-  # `nix flake check` / `nix build` always have something to reference (a Nix
-  # path literal must exist on disk at eval time). `make pallene-iso`
-  # materializes the real (gitignored) plaintext files from sops right before
-  # building and deletes them right after — see that Makefile target.
-  realOrPlaceholder =
-    name:
-    let
-      real = ../../secrets/pallene-secrets + "/${name}";
-      placeholder = ../../secrets/pallene-secrets + "/${name}.placeholder";
-    in
-    if builtins.pathExists real then real else placeholder;
-in
-
-# EPHEMERAL BUILD SERVER. Never a persistent fleet member: BinaryLane boots a
-# disposable VPS from the ISO built from this config (`make pallene-iso`), it
-# automatically rebuilds europa's tuned closure (see
-# modules/services/build-server.nix), pushes the result to the attic cache,
-# then deletes itself. No storage profile, no impermanence, no backup, no
-# branding, no desktop — as minimal as the stock installer media allows, plus
-# the one module that does the actual work.
+# EPHEMERAL, GENERIC BUILD SERVER. Never a persistent fleet member: BinaryLane
+# boots a disposable VPS from this ONE stable ISO (`make pallene-iso` — only
+# needs rebuilding when this file, build-server.nix, or wireguard.nix itself
+# changes), it rebuilds whatever hosts and git ref it's told at server-create
+# time (see modules/services/build-server.nix's runtime-parameters block),
+# pushes the result(s) to the attic cache, then deletes itself. No storage
+# profile, no impermanence, no backup, no branding, no desktop — as minimal
+# as the stock installer media allows, plus the one module that does the
+# actual work.
+#
+# Zero secrets baked into the Nix store: BinaryLane API token, attic push
+# token, R2 credentials, and the WireGuard mesh key all arrive via cloud-init
+# user_data at boot (scripts/binarylane-build-server.sh builds and sends that
+# blob) — this ISO is safe to keep in R2 indefinitely with nothing sensitive
+# in it, and rotating any credential never needs a rebuild.
 #
 # Registered via flake.nix's mkIsoHost (not mkHost) so the common flake-module
 # injection (sops-nix, impermanence, disko, ha-linux-agent) is skipped — this
@@ -69,7 +63,11 @@ in
   jupiter.network.wireguard = {
     enable = true;
     address = "192.168.5.2/32";
-    privateKeyFile = "/etc/jupiter-build-server/wireguard-private-key";
+    # Same runtime-populated path build-server.nix writes WIREGUARD_PRIVATE_KEY
+    # to, if present in cloud-init user-data (see its wireguardPrivateKeyFile
+    # option) — this module's own systemd ordering fix (after=cloud-init)
+    # keeps the interface from racing that write.
+    privateKeyFile = config.jupiter.services.buildServer.wireguardPrivateKeyFile;
     peers = [
       {
         # The UDM (UniFi WG server).
@@ -95,42 +93,4 @@ in
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICGxxtapYd7cY/NJjzTjdRQpuTKCs6jisSmKc5WfypZV forensic-analysis"
   ];
 
-  # There's no persistent host key here for sops-nix to decrypt against at
-  # runtime (this box never survives past one run), so the two secrets the
-  # build-server module needs are instead baked into the ISO's Nix store at
-  # BUILD time. `make pallene-iso` materializes these plaintext files from
-  # sops immediately before the build and deletes them immediately after — do
-  # not run `nix build .#pallene-iso` directly, use the Makefile target.
-  environment.etc = {
-    "jupiter-build-server/binarylane-api-token" = {
-      source = realOrPlaceholder "binarylane-api-token";
-      mode = "0400";
-    };
-    "jupiter-build-server/attic-push-token" = {
-      source = realOrPlaceholder "attic-push-token";
-      mode = "0400";
-    };
-    # R2 creds for the robust build-log upload (trap in build-server.nix).
-    # Independent of the nix daemon / attic push so a failed run still leaves
-    # a log behind in r2://jupiter-os-pallene-iso/logs/.
-    "jupiter-build-server/r2-account-id" = {
-      source = realOrPlaceholder "r2-account-id";
-      mode = "0400";
-    };
-    "jupiter-build-server/r2-access-key-id" = {
-      source = realOrPlaceholder "r2-access-key-id";
-      mode = "0400";
-    };
-    "jupiter-build-server/r2-secret-access-key" = {
-      source = realOrPlaceholder "r2-secret-access-key";
-      mode = "0400";
-    };
-    # WireGuard private key for the build mesh (modules/network/wireguard.nix).
-    # Same bake-at-build-time pattern as the tokens above — pallene has no
-    # persistent host key for sops-nix to decrypt against at runtime.
-    "jupiter-build-server/wireguard-private-key" = {
-      source = realOrPlaceholder "wireguard-private-key";
-      mode = "0400";
-    };
-  };
 }

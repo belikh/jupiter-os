@@ -59,8 +59,9 @@ in
       type = lib.types.path;
       description = ''
         Path to this host's WireGuard private key. On europa this is a sops
-        secret decrypted at activation; on pallene (no persistent host key) it
-        is baked into the ISO via the pallene-secrets materialization.
+        secret decrypted at activation; on pallene (no persistent host key)
+        it's written at boot time from cloud-init user-data — see
+        modules/services/build-server.nix's wireguardPrivateKeyFile option.
       '';
     };
 
@@ -83,5 +84,17 @@ in
 
     # Allow inbound WG handshacks on the server peer (harmless on the client).
     networking.firewall.allowedUDPPorts = [ cfg.listenPort ];
+
+    # NixOS's own wireguard module names the interface's bring-up unit
+    # `wireguard-<name>.service` (nixpkgs nixos/modules/services/networking/
+    # wireguard.nix). It reads privateKeyFile the moment it starts, which by
+    # default is early in boot — before cloud-init has necessarily written
+    # anything, if privateKeyFile happens to point at a runtime-populated
+    # path (as pallene's does). Order explicitly after cloud-init so a host
+    # whose key arrives via cloud-init user-data doesn't race it.
+    systemd.services."wireguard-${cfg.interfaceName}" = {
+      after = [ "cloud-init.service" ];
+      wants = [ "cloud-init.service" ];
+    };
   };
 }
