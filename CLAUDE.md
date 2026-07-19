@@ -66,6 +66,8 @@ it until Stage 4 populates the attic cache).
     the wire are registered and building.
 - sops secrets are read at **activation**, not build time — `nix build`, CI,
   and `nix flake check` work without the age key.
+- **Git:** always `git push` after committing — the user wants every commit
+  pushed to the remote immediately, no holding locally.
 
 ## Common commands
 
