@@ -21,8 +21,12 @@
     ./storage/zfs-profiles.nix
   ];
 
-  jupiter.core.ecc.enable = true;
-  jupiter.core.zed.enable = true;
+  # Dev/agent tooling — default-on for the bootstrap so the admin has them on
+  # the live host (amalthea), but mkDefault so appliance hosts (NAS, kiosks)
+  # that never run interactive dev sessions can opt out per-host.
+  jupiter.core.ecc.enable = lib.mkDefault true;
+  jupiter.core.zed.enable = lib.mkDefault true;
+  jupiter.core.antigravity.enable = lib.mkDefault true;
   jupiter.core.branding.enable = true;
 
   nixpkgs.config.allowUnfree = true;

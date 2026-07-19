@@ -6,6 +6,8 @@
 }:
 
 let
+  cfg = config.jupiter.core.antigravity;
+
   antigravity-cli = pkgs.stdenv.mkDerivation rec {
     pname = "antigravity-cli";
     version = "1.0.16";
@@ -39,7 +41,13 @@ let
   };
 in
 {
-  environment.systemPackages = [
-    antigravity-cli
-  ];
+  options.jupiter.core.antigravity = {
+    enable = lib.mkEnableOption "the Google Antigravity CLI (agy)";
+  };
+
+  config = lib.mkIf cfg.enable {
+    environment.systemPackages = [
+      antigravity-cli
+    ];
+  };
 }
