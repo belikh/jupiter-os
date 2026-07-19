@@ -2,10 +2,11 @@
 
 Context for AI agents working in **jupiter-os** — a declarative, ZFS-backed
 NixOS monorepo for the Jupiter home/lab infrastructure, currently being
-**rebuilt from scratch one machine at a time**. The previous full-fleet tree
-lives on the `master` branch and serves as the design reference; it was never
-buildable end-to-end (see README.md for why). Do not copy code from it
-wholesale — port pieces only when the machine that needs them is brought up.
+**rebuilt from scratch one machine at a time**. `main` is the working trunk.
+The previous full-fleet tree lives on the `archive/full-fleet-reference`
+branch and serves as the design reference; it was never buildable end-to-end
+(see README.md for why). Do not copy code from it wholesale — port pieces
+only when the machine that needs them is brought up.
 
 ## Current state
 
@@ -88,4 +89,5 @@ CI-green, awaiting physical install) → europa (Stage 1 NAS live; **next:
 Stage 4 `make rebuild-world` for the btver2 tuned closure** — see
 `docs/europa-bringup-stages.md`) → ganymede (resolver/services) → callisto
 (diskless PXE) → himalia (laptop) → gaming/branding/terranix/edge layers.
-Port each from `master`, keeping the buildability rules above.
+Port each from `archive/full-fleet-reference`, keeping the buildability rules
+above.
