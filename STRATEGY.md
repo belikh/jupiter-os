@@ -1,6 +1,6 @@
 ---
 name: jupiter-os
-last_updated: 2026-07-13
+last_updated: 2026-07-19
 ---
 
 # jupiter-os Strategy
@@ -23,50 +23,77 @@ The kiosk fleet (4 TCx Wave units) validated this approach end-to-end. europa (t
 
 | Host | Role | Status |
 |------|------|--------|
-| amalthea | kiosk (bedroom) | live |
-| metis | kiosk (kitchen) | live |
-| adrastea | kiosk (office) | live |
-| thebe | kiosk (robbie-room) | live |
-| europa | NAS + data hub | config staged (Phase 1 + Phase 2), awaiting physical install |
-| pallene | build server (ephemeral ISO) | config staged, awaiting first run |
+| amalthea | kiosk (bedroom) + MQTT broker | live |
+| metis | kiosk (kitchen) | registered; awaiting physical install (placeholder disk + sops key) |
+| adrastea | kiosk (office) | registered; awaiting physical install (placeholder disk + sops key) |
+| thebe | kiosk (robbie-room) | registered; awaiting physical install (placeholder disk + sops key) |
+| europa | NAS + data hub | Phase 1 untuned NAS live at `10.1.1.2`; Phase 2 tuned closure in progress (Stage 4) |
+| pallene | build server (ephemeral ISO) | config staged; first end-to-end `rebuild-world` run in progress |
 
 All 6 host configurations pass `make check` (`nix flake check --no-build`) and CI.
 
 ## Key metrics
 
-- **Fleet Bootstrap Progress** - Number of fleet hosts successfully bootstrapped and running jupiter-os. Currently 4/10 live (kiosks); europa is the 5th and the current focus.
+- **Fleet Bootstrap Progress** - Number of fleet hosts successfully bootstrapped and running jupiter-os. Currently 2/10 live (amalthea kiosk + europa untuned NAS); 3 kiosks registered but not yet installed; europa tuned closure (Stage 4) is the current focus.
 - **Requirement Adherence Rate** - Percentage of system requirements (storage profiles, secrets, core services) verified automatically via test VM boots or CI assertions. (Measured in CI/test runs).
 - **LLM First-Pass Edit Success Rate** - Percentage of LLM-generated Nix changes that pass `make check` on the first run without introducing compilation slop. (Measured by git history / CI logs).
 
 ## Tracks
 
-### Kiosk Fleet (complete)
+### Kiosk Fleet (mostly complete)
 
-The 4 TCx Wave dashboard kiosks are live under a shared `tcxwave-kiosk.nix` profile, with the robcoterm native client cutover on amalthea. This track validated the incremental, cache-first approach and the CI flake-check feedback loop. No active work.
+The 4 TCx Wave dashboard kiosks share a `tcxwave-kiosk.nix` profile. amalthea
+is live as the bootstrap host and the fleet MQTT broker (ha-agent on each
+kiosk publishes here). The 3 siblings are registered and CI-green but still
+on placeholder disks and sops keys — physically installing them is a
+mechanical task, not a config one. This track validated the incremental,
+cache-first approach and the CI flake-check feedback loop.
 
-### europa Phase 1 — Untuned NAS Bootstrap
+### europa Phase 1 — Untuned NAS Bootstrap ✅ DONE
 
-Shrink the current Elementary OS partition, install JupiterOS on the OS SSD (stateful ZFS profile), and bring up the NAS untuned from `cache.nixos.org`: ZFS tank import + declarative datasets, Samba/NFS, Sanoid snapshots, Attic server, Syncthing, SMART monitoring.
+Shrank the Elementary OS partition, installed JupiterOS on the OS SSD
+(stateful ZFS profile), and brought up the NAS untuned from
+`cache.nixos.org`: ZFS tank import + declarative datasets, Samba/NFS, Sanoid
+snapshots, Attic server, Syncthing, SMART monitoring.
 
-_Why it serves the approach:_ Gets the NAS running with stock cached packages before anything depends on tuned binaries. Config is staged (PR #15); the physical install waits on the file transfer off the second disk completing.
+_Why it serves the approach:_ Got the NAS running with stock cached packages
+before anything depended on tuned binaries. Europa is live at `10.1.1.2` on
+the Phase 1 closure (commit on `feat/europa-phase2-tuned-closure`).
 
-**Status:** Config complete and CI-green. Blocked on: file transfer (sdc ext4 → tank) finishing, then the physical partition/install.
+### europa Phase 2 — Tuned Closure Pipeline (in progress)
 
-### europa Phase 2 — Tuned Closure Pipeline
+Compile europa's closure targeted at its real CPU (`btver2`, Opteron X3216
+Puma) on the ephemeral BinaryLane build server (`pallene`), push to europa's
+own Attic, and substitute back — the deliberate, mitigated exception to the
+stock-cache rule.
 
-Compile europa's closure targeted at its real CPU (`btver2`, Opteron X3216 Puma) on the ephemeral BinaryLane build server (`pallene`), push to europa's own Attic, and substitute back — the deliberate, mitigated exception to the stock-cache rule.
+_Why it serves the approach:_ Recovers real performance on the weak NAS APU
+without invalidating the cache-first discipline: the private Attic cache
+exists precisely to serve what `cache.nixos.org` cannot once `gcc.arch` is
+set.
 
-_Why it serves the approach:_ Recovers real performance on the weak NAS APU without invalidating the cache-first discipline: the private Attic cache exists precisely to serve what `cache.nixos.org` cannot once `gcc.arch` is set.
-
-**Status:** Config complete and CI-green (PR #16, stacked on #15): `jupiter.build.microarch` option, build-server module, `pallene` ISO host, Cloudflare Tunnel on europa, substituter consumer wiring, `make pallene-iso`/`rebuild-world` targets. First run needs: real Cloudflare tunnel UUID, `attic cache create` to mint the substituter public key, and real BinaryLane/Attic tokens in sops.
+**Status:** Stage 3 prerequisites done (real Cloudflare tunnel UUID, attic
+cache + public key, R2 creds, BinaryLane/Attic tokens all committed). Stage
+4 first end-to-end `rebuild-world` run is in progress: initial attempts
+self-destructed without pushing; root causes found and fixed (nix-command
+flakes experimental feature missing on the mkIsoHost, hostname dep, R2 SigV4
+presign, attic cache visibility, push token scope). The fixed ISO is
+locally validated in QEMU and the next BinaryLane run is de-risked. See
+`docs/europa-stage4-progress.md` for the live log.
 
 ### ZFS Mirror Completion
 
-`tank` is currently a single vdev (one partition on the first 18 TB drive). The second drive is ext4, receiving the file transfer. Once it's empty, wipe it and `zpool attach` as a mirror.
+`tank` is currently a single vdev (one partition on the first 18 TB drive).
+The second drive (`sdc`) is now empty — Stage 0 file transfer is complete —
+and ready for `zpool attach` as a mirror.
 
-_Why it serves the approach:_ Incrementally and safely reaches a redundant ZFS mirror without data loss — no risk to the live single-vdev pool until the second disk is verified empty.
+_Why it serves the approach:_ Incrementally and safely reaches a redundant
+ZFS mirror without data loss — no risk to the live single-vdev pool until
+the second disk is verified empty (now confirmed).
 
-**Status:** Blocked on the file transfer completing. Procedure documented in the europa Phase 1 plan appendix.
+**Status:** Unblocked; schedule independently of Stage 4. Procedure
+documented in the europa bring-up stages runbook (`docs/europa-bringup-stages.md`
+Stage 2).
 
 ### Legacy Pool Integration
 

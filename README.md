@@ -25,44 +25,57 @@ front and was never successfully built end-to-end. The main reasons:
 This tree inverts that: start from the **smallest real machine**, prove it
 builds/boots/deploys, then grow.
 
-## Registered hosts: the 4 dashboard kiosks
+## Registered hosts
 
-Toshiba TCx Wave 6140-E45 dashboard kiosks, one per room: **amalthea**
-(jupiter-bedroom — the bootstrap host and canonical template), **metis**
-(kitchen), **adrastea** (office), **thebe** (robbie-room). Impermanent ZFS
-root (erase-your-darlings), Cage + Chromium kiosk session, stock nixpkgs
-kernel — everything comes from cache.nixos.org. The siblings are clones of
-`hosts/amalthea/configuration.nix` differing only in hostName/hostId/
-dashboard URL/disk.
+Six hosts are wired into the flake today:
+
+- **The 4 TCx Wave dashboard kiosks** (one per room): **amalthea**
+  (jupiter-bedroom — the bootstrap host, canonical template, and fleet MQTT
+  broker), **metis** (kitchen), **adrastea** (office), **thebe** (robbie-room).
+  Impermanent ZFS root (erase-your-darlings), Cage + Chromium kiosk session,
+  stock nixpkgs kernel — everything comes from cache.nixos.org. Only amalthea
+  is physically installed; the siblings are clones of amalthea minus the
+  broker role (different hostName/hostId/dashboard URL/disk), registered and
+  CI-green but awaiting their real install (placeholder disks and sops keys).
+- **europa** (HPE MicroServer Gen10) — the ZFS NAS + data hub. Phase 1
+  untuned closure is live at `10.1.1.2`; Phase 2 (`btver2`-tuned) closure is
+  staged on `feat/europa-phase2-tuned-closure` and is the current focus (see
+  `docs/europa-bringup-stages.md`).
+- **pallene** — the ephemeral BinaryLane build-server ISO host that compiles
+  europa's tuned closure and pushes it to attic. Never a persistent fleet
+  member; built via `make pallene-iso` / `make rebuild-world`.
 
 ```bash
-make check            # nix flake check — builds every registered host
-make build-all        # build all kiosk closures explicitly
-make test-<host>      # build & boot a host in an interactive QEMU VM
+make check              # nix flake check --no-build (eval every registered host)
+make build-all          # build the 4 kiosk closures explicitly
+make test-<host>        # build & boot a host in an interactive QEMU VM
 make boot-smoke-<host>  # headless CI-style boot test
-make fmt              # format all Nix (nixfmt-rfc-style)
+make pallene-iso        # build the disposable build-server ISO
+make rebuild-world      # full ephemeral build-server run: ISO → R2 → BinaryLane → attic
+make fmt                # format all Nix (nixfmt-rfc-style); fmt-check to verify
 ```
 
 ### Installing onto a real unit
 
-(Shown for amalthea; identical for metis/adrastea/thebe.)
+(Worked example for the kiosk siblings, since amalthea is already installed.
+Identical flow was used for amalthea originally.)
 
-1. Set the real OS disk in `hosts/amalthea/configuration.nix`
-   (`jupiter.storage.disk` — currently a REPLACE-ME placeholder; disko will
-   WIPE that device).
+1. Set the real OS disk in `hosts/<name>/configuration.nix`
+   (`jupiter.storage.disk` — currently a `REPLACE-ME` placeholder in the
+   three sibling kiosks; disko will WIPE that device).
 2. Boot the unit from a NixOS installer/rescue image with SSH up, then from
    a machine holding this repo:
 
    ```bash
-   nix run github:nix-community/nixos-anywhere -- --flake .#amalthea root@<installer-ip>
+   nix run github:nix-community/nixos-anywhere -- --flake .#metis root@<installer-ip>
    ```
 
 3. After first boot, derive the host's age key from its SSH host key and
    re-key the secrets so it can decrypt `io_password`:
 
    ```bash
-   ssh amalthea 'cat /etc/ssh/ssh_host_ed25519_key.pub' | nix run nixpkgs#ssh-to-age
-   # replace amalthea's placeholder recipient in .sops.yaml with that key, then:
+   ssh metis 'cat /etc/ssh/ssh_host_ed25519_key.pub' | nix run nixpkgs#ssh-to-age
+   # replace metis's placeholder recipient in .sops.yaml with that key, then:
    sops updatekeys secrets/secrets.yaml
    ```
 
@@ -76,13 +89,15 @@ from `master` and re-adding flake inputs only when a machine actually needs
 them:
 
 1. **amalthea** — proves the flake, storage profiles, impermanence, sops,
-   kiosk stack. ✅ registered
-2. **metis / adrastea / thebe** — clones of amalthea (different
-   hostName/hostId/dashboard URL/disk). ✅ registered
-3. **ganymede** (always-on services: resolver/DNS, PXE, tunnels) — then pin
+   kiosk stack, MQTT broker. ✅ live
+2. **metis / adrastea / thebe** — clones of amalthea minus the broker
+   (different hostName/hostId/dashboard URL/disk). ✅ registered; awaiting
+   physical install
+3. **europa** (NAS + data hub) — Phase 1 untuned closure running at
+   `10.1.1.2`; Phase 2 `btver2`-tuned closure in progress on
+   `feat/europa-phase2-tuned-closure`. See `docs/europa-bringup-stages.md`.
+4. **ganymede** (always-on services: resolver/DNS, PXE, tunnels) — then pin
    `networking.nameservers` back to it in `modules/common.nix`.
-4. **europa** (NAS) — restores the `jupiter.backup` auto-replication wiring
-   that was stripped from `modules/storage/zfs-profiles.nix`.
 5. **callisto** (diskless PXE), **himalia** (laptop, home-manager), gaming/
    branding/terranix/edge-device layers — each restores its own inputs.
 
@@ -91,19 +106,28 @@ Rules that keep this buildable:
 - **No custom kernels on ZFS hosts.** The stock `linuxPackages` default is
   the one ZFS always supports and the cache always has.
 - **No microarch tuning** until a trusted build cache exists and is proven.
+  (europa's `btver2` is the one justified exception — served from its own
+  attic via the pallene build server.)
 - **A new input must be justified by a registered host** that uses it.
-- **Every registered host is a flake check** — `nix flake check` builds it,
-  CI boot-tests it. Don't register scaffolds that can't build.
+- **Every registered host is a flake check** — `make check` evals it, CI
+  boot-tests the kiosks. Don't register scaffolds that can't build.
 
 ## Layout
 
-- `flake.nix` — inputs (nixpkgs, disko, impermanence, sops-nix), `mkHost`,
-  `nixosConfigurations`, checks, formatter, dev shell.
+- `flake.nix` — inputs (nixpkgs, disko, impermanence, sops-nix,
+  ha-linux-agent), `mkHost` / `mkIsoHost`, `nixosConfigurations`, checks,
+  formatter, dev shell.
 - `hosts/<name>/configuration.nix` — per-host config. Hosts are named after
   Jupiter's moons.
 - `modules/` — reusable NixOS modules behind the `jupiter.*` options
   namespace (`jupiter.storage.profile`, `jupiter.core.impermanence`,
-  `jupiter.dashboardKiosk`, …). Hosts opt in via toggles.
+  `jupiter.dashboardKiosk`, `jupiter.build.microarch`, …), organized into
+  `boot/`, `core/`, `desktop/`, `network/`, `services/`, `storage/`.
+  `common.nix` at the modules root is the base layer. Hosts opt in via
+  toggles.
 - `secrets/secrets.yaml` — sops-nix + age (recipients in `.sops.yaml`);
   carried over unchanged from the previous tree.
-- `scripts/boot-smoke.sh` — headless QEMU boot assertion used by CI.
+- `scripts/` — `boot-smoke.sh` (headless QEMU boot assertion used by CI),
+  `binarylane-build-server.sh` + `upload-pallene-iso-r2.sh` (drive the
+  ephemeral build-server cycle), `amt.py` (Intel AMT power control for the
+  kiosks), `tcxwave-touch-wake.py` (touch-screen wake helper).
