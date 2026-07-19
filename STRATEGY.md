@@ -24,11 +24,11 @@ The kiosk fleet (4 TCx Wave units) validated this approach end-to-end. europa (t
 | Host | Role | Status |
 |------|------|--------|
 | amalthea | kiosk (bedroom) + MQTT broker | live |
+| thebe | kiosk (robbie-room) | live |
 | metis | kiosk (kitchen) | registered; awaiting physical install (placeholder disk + sops key) |
 | adrastea | kiosk (office) | registered; awaiting physical install (placeholder disk + sops key) |
-| thebe | kiosk (robbie-room) | registered; awaiting physical install (placeholder disk + sops key) |
-| europa | NAS + data hub | Phase 1 untuned NAS live at `10.1.1.2`; Phase 2 tuned closure in progress (Stage 4) |
-| pallene | build server (ephemeral ISO) | config staged; first end-to-end `rebuild-world` run in progress |
+| europa | NAS + data hub | live at `10.1.1.2`, full Phase 2 `btver2`-tuned closure, substituted from its own Attic |
+| pallene | build server (ephemeral ISO) | proven end-to-end — built and pushed europa's Phase 2 closure via `make rebuild-world` |
 
 All 6 host configurations pass `make check` (`nix flake check --no-build`) and CI.
 
