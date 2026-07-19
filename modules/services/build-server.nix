@@ -179,6 +179,10 @@ let
     ref="${cfg.defaultRef}"
     repo_url="${cfg.repoUrl}"
     runtime_hosts=""
+    wg_peer_public_key="${cfg.wireguardPeerPublicKey}"
+    wg_endpoint="${cfg.wireguardEndpoint}"
+    wg_allowed_ips="${lib.concatStringsSep "," cfg.wireguardAllowedIPs}"
+    wg_address="${cfg.wireguardAddress}"
     runtime_dir=/var/lib/jupiter-build-server
     userdata_file=/var/lib/cloud/instance/user-data.txt
     mkdir -p "$runtime_dir"
@@ -191,6 +195,10 @@ let
       [ -n "''${GIT_REF:-}" ] && ref="$GIT_REF" && log "  git ref: $ref"
       [ -n "''${REPO_URL:-}" ] && repo_url="$REPO_URL" && log "  repo url: $repo_url"
       [ -n "''${HOSTS:-}" ] && runtime_hosts="$HOSTS" && log "  hosts: $runtime_hosts"
+      [ -n "''${WG_PEER_PUBLIC_KEY:-}" ] && wg_peer_public_key="$WG_PEER_PUBLIC_KEY"
+      [ -n "''${WG_ENDPOINT:-}" ] && wg_endpoint="$WG_ENDPOINT"
+      [ -n "''${WG_ALLOWED_IPS:-}" ] && wg_allowed_ips="$WG_ALLOWED_IPS"
+      [ -n "''${WG_ADDRESS:-}" ] && wg_address="$WG_ADDRESS"
       for pair in \
         "BINARYLANE_API_TOKEN ${cfg.apiTokenFile}" \
         "ATTIC_PUSH_TOKEN ${cfg.atticPushTokenFile}" \
@@ -234,6 +242,66 @@ let
       exit 1
     fi
     cd "$workdir/jupiter-os"
+
+    # --- wireguard mesh (if enabled) -------------------------------------------
+    # Configured directly with ip/wg rather than the declarative
+    # networking.wireguard.interfaces module — every piece of this (key,
+    # peer, endpoint, allowed-ips, this host's own address) is runtime data
+    # by the time we get here (from user-data above or the module's own
+    # defaults), so there's no NixOS-build-time option to set it through in
+    # the first place; doing it inline here also means it inherits this
+    # script's own correct ordering (well after cloud-final) for free,
+    # instead of needing a separate systemd-unit dependency to get right.
+    ${lib.optionalString cfg.wireguardEnable ''
+      if [ -z "$wg_peer_public_key" ] || [ -z "$wg_endpoint" ] || [ -z "$wg_allowed_ips" ] || [ -z "$wg_address" ]; then
+        log "!! wireguardEnable is set but peer/endpoint/allowed-ips/address are incomplete (check user-data WG_* keys and the module's defaults) — skipping mesh, attic reachability may fail" >&2
+      elif [ ! -s "${cfg.wireguardPrivateKeyFile}" ]; then
+        log "!! wireguard enabled but no private key at ${cfg.wireguardPrivateKeyFile} — skipping mesh" >&2
+      else
+        log "bringing up wireguard interface ${cfg.wireguardInterfaceName}"
+        ${pkgs.iproute2}/bin/ip link add ${cfg.wireguardInterfaceName} type wireguard
+        ${pkgs.wireguard-tools}/bin/wg set ${cfg.wireguardInterfaceName} \
+          private-key ${cfg.wireguardPrivateKeyFile} \
+          peer "$wg_peer_public_key" \
+          endpoint "$wg_endpoint" \
+          allowed-ips "$wg_allowed_ips" \
+          persistent-keepalive ${toString cfg.wireguardPersistentKeepalive}
+        ${pkgs.iproute2}/bin/ip address add "$wg_address" dev ${cfg.wireguardInterfaceName}
+        ${pkgs.iproute2}/bin/ip link set up dev ${cfg.wireguardInterfaceName}
+        # Install kernel routes for every allowed-ips CIDR. WireGuard's
+        # allowed-ips only controls which packets WG will ENCRYPT for the
+        # peer; the kernel routing table still needs an explicit route per
+        # CIDR to actually send those packets into the interface. With only
+        # `ip address add <addr>/32` (the typical wg_address), the kernel
+        # has no route to any wider CIDR in allowed-ips and falls back to
+        # the default route — which on a BinaryLane VPS goes to a gateway
+        # with no route to RFC1918 space, so the packets black-hole and
+        # every TCP connect times out after 15s.
+        # Concrete failure this fixes (2026-07-19, run 640782): pallene's
+        # wg_address was 192.168.5.2/32 and allowed-ips was
+        # "10.1.1.0/24,192.168.5.0/24" — the kernel had a connected route
+        # to 192.168.5.0/24 but no route at all to 10.1.1.0/24, so every
+        # nix-daemon substitution attempt to europa (10.1.1.2:8080) went
+        # out the public ens3 interface and timed out. `attic login`'s
+        # 120s gate passed because that subcommand only writes the token
+        # locally without contacting the server, so the failure was silent
+        # and pallene spent 1h45m rebuilding paths already in attic before
+        # anyone noticed.
+        IFS=',' read -ra _wg_cidrs <<< "$wg_allowed_ips"
+        for _cidr in "''${_wg_cidrs[@]}"; do
+          # Skip the host's own interface address — `ip address add` already
+          # installed a connected route for that exact prefix.
+          [ "$_cidr" != "$wg_address" ] || continue
+          if ${pkgs.iproute2}/bin/ip route add "$_cidr" dev ${cfg.wireguardInterfaceName} 2>/dev/null; then
+            log "  route added: $_cidr dev ${cfg.wireguardInterfaceName}"
+          else
+            log "  route add skipped for $_cidr (already present or unreachable via this interface)"
+          fi
+        done
+        unset _wg_cidrs _cidr
+        log "wireguard up: $(${pkgs.wireguard-tools}/bin/wg show ${cfg.wireguardInterfaceName} 2>&1 | tr '\n' ' ')"
+      fi
+    ''}
 
     # --- attic auth -----------------------------------------------------------
     # Timeout: if attic.jupiter.au is unreachable from this builder the login
@@ -409,6 +477,54 @@ in
         cache.nixos.org already, so building them here just wastes compute.
         Add hosts here as they adopt jupiter.build.microarch.
       '';
+    };
+
+    # ---- WireGuard build mesh: defaults only, entirely runtime-overridable
+    # via cloud-init user-data (WIREGUARD_PRIVATE_KEY / WG_PEER_PUBLIC_KEY /
+    # WG_ENDPOINT / WG_ALLOWED_IPS / WG_ADDRESS) — see the runScript's
+    # "wireguard mesh" section, which brings the interface up directly with
+    # `ip`/`wg` rather than through the declarative networking.wireguard
+    # module (that module is still right for europa, the server peer whose
+    # key comes from sops at activation time with no boot race; pallene's
+    # whole mesh identity is boot-time cloud-init data instead, so keeping
+    # only ONE piece — the key — as a NixOS-time default while the rest was
+    # fixed at ISO build time was an inconsistent half-measure).
+    wireguardEnable = lib.mkEnableOption "the WireGuard route to attic (bypasses the Cloudflare Tunnel's ~100s NAR-size limit)";
+
+    wireguardInterfaceName = lib.mkOption {
+      type = lib.types.str;
+      default = "jupwg";
+      description = "Name of the WireGuard interface the runScript brings up.";
+    };
+
+    wireguardAddress = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = "This host's WireGuard IPv4/CIDR on the mesh, e.g. \"192.168.5.2/32\".";
+    };
+
+    wireguardPeerPublicKey = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = "Public key of the mesh peer to connect to (e.g. the UDM's WireGuard server).";
+    };
+
+    wireguardEndpoint = lib.mkOption {
+      type = lib.types.str;
+      default = "";
+      description = "host:port of the mesh peer's public WireGuard endpoint.";
+    };
+
+    wireguardAllowedIPs = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      description = "CIDR ranges routed over the WireGuard interface.";
+    };
+
+    wireguardPersistentKeepalive = lib.mkOption {
+      type = lib.types.ints.positive;
+      default = 25;
+      description = "Keepalive interval in seconds — needed since pallene is behind NAT as the roaming client.";
     };
 
     apiTokenFile = lib.mkOption {
