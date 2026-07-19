@@ -3,9 +3,10 @@
 Declarative, ZFS-backed NixOS monorepo for the Jupiter home/lab
 infrastructure — **rebuilt from scratch, one machine at a time**.
 
-The previous iteration of this repo (preserved on the `master` branch, and
-used as the reference for this rebuild) designed the entire 10-host fleet up
-front and was never successfully built end-to-end. The main reasons:
+The previous iteration of this repo (preserved on the
+`archive/full-fleet-reference` branch, and used as the reference for this
+rebuild) designed the entire 10-host fleet up front and was never
+successfully built end-to-end. The main reasons:
 
 - **Microarch-tuned closures** (`nixpkgs.hostPlatform.gcc.arch = "skylake"`)
   invalidated the public binary cache for the whole system — Chromium, the
@@ -85,8 +86,8 @@ Identical flow was used for amalthea originally.)
 ## Growing the fleet
 
 Bring machines back one at a time, in dependency order, porting their config
-from `master` and re-adding flake inputs only when a machine actually needs
-them:
+from `archive/full-fleet-reference` and re-adding flake inputs only when a
+machine actually needs them:
 
 1. **amalthea** — proves the flake, storage profiles, impermanence, sops,
    kiosk stack, MQTT broker. ✅ live
