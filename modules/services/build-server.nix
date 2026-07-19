@@ -915,6 +915,25 @@ in
     nix.settings.substituters = lib.mkBefore [ "${cfg.atticServer}/${cfg.atticCache}" ];
     nix.settings.trusted-public-keys = [ cfg.atticPublicKey ];
 
+    # Large NARs (gcc/binutils/go/llvm-src-class, 100MB+) intermittently stall
+    # mid-transfer even over the direct UDM port-forward (2026-07-19, run
+    # 640866) — "HTTP error 200 (curl error: Timeout was reached)", i.e. the
+    # connection succeeds but throughput drops for a sustained stretch. This
+    # isn't unique to the WireGuard mesh (see atticServer's doc above); it
+    # persisted after switching off it, so it's a genuine throughput/stall
+    # issue somewhere in the path, not just WG software-crypto overhead.
+    # nix's defaults (stalled-download-timeout=300s, download-attempts=5;
+    # confirmed via `nix show-config` on this same nixpkgs) give up on
+    # exactly this kind of large-file blip too readily — the substituter
+    # then gets marked disabled and nix rebuilds from source instead,
+    # burning far more time than a longer wait or a couple more retries
+    # would have. Bumped past the push side's 600s/8 attempts (substitution
+    # failures are cheaper to retry than a push batch, since there's nothing
+    # to re-enqueue) to actually give a blip a chance to clear before
+    # falling back to a from-scratch rebuild.
+    nix.settings.stalled-download-timeout = 900;
+    nix.settings.download-attempts = 8;
+
     # Incremental cache push: fire after each derivation builds (see pushHook
     # in the let block). Replaces the old "build the whole closure, then push
     # once at the end" behaviour — the cache now fills during the build, so a
