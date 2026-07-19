@@ -1,27 +1,29 @@
 # europa Bring-Up Stages
 
-> **START HERE (new session):** Stages 0–3 are **complete**. The next action is
-> **Stage 4 — `make rebuild-world`** (build the `btver2`-tuned closure on the
-> ephemeral BinaryLane `pallene` host, push to attic, switch europa to it).
-> All preconditions are met: europa is running the untuned Phase 1 closure at
-> `10.1.1.2`, atticd is live with cache `jupiter-os` created, and every
-> Stage 3 runtime value (tunnel UUID, R2 creds, tokens, attic public key) is
-> real and committed. Jump to [Stage 4](#stage-4--build--deploy-the-tuned-closure).
+> **START HERE (new session):** Stages 0, 1, 3, and 4 are all **complete**.
+> europa is running its full `btver2`-tuned closure at `10.1.1.2`, substituted
+> from its own Attic (`attic.jupiter.au` / the `neptune.jupiter.au:8080`
+> port-forward). What's left is optional: Stage 2 (ZFS mirror completion) and
+> Stage 5 (deferred items) — neither blocks anything downstream. The europa
+> bring-up itself is done; the roadmap continues with ganymede.
 
 Operational runbook for taking europa (HPE MicroServer Gen10) from bare metal
 through to a fully-tuned JupiterOS NAS. Each stage lists its precondition, the
 actions, how to verify it, and what it unblocks.
 
-**Current status (2026-07-14):**
+**Current status:**
 - **Stage 0** ✅ file transfer complete; `sdc` free to mirror (Stage 2).
-- **Stage 1** ✅ europa installed via nixos-anywhere; running untuned JupiterOS
-  at `10.1.1.2`. ZFS (`rpool` + `tank`, 1.97 TB preserved), Samba, NFS, atticd,
-  syncthing, smartd, ARC capped at 5 GB. `amd_iommu=off` set so the Marvell
-  88SE9230 data drives enumerate. cmatrix screensaver on tty1.
+- **Stage 1** ✅ europa installed via nixos-anywhere; ran untuned JupiterOS at
+  `10.1.1.2` before Stage 4 tuned it. ZFS (`rpool` + `tank`, 1.97 TB
+  preserved), Samba, NFS, atticd, syncthing, smartd, ARC capped at 5 GB.
+  `amd_iommu=off` set so the Marvell 88SE9230 data drives enumerate. cmatrix
+  screensaver on tty1.
 - **Stage 2** ⬜ not started — `zpool attach` the second WD 18 TB. Independent
-  of Stage 4; do whenever convenient.
+  cleanup; do whenever convenient.
 - **Stage 3** ✅ all runtime prerequisites real and committed (see below).
-- **Stage 4** ⬜ **NEXT** — `make rebuild-world`.
+- **Stage 4** ✅ **done** — europa is running its full `btver2`-tuned closure,
+  substituted from its own Attic. See `docs/europa-stage4-progress.md` for the
+  run history.
 - **Stage 5** deferred.
 
 Config for every stage is already staged, CI-green, and committed:
@@ -161,16 +163,17 @@ token; europa needs the real public key to trust the pushed closure).
 
 ---
 
-## Stage 4 — Build + deploy the tuned closure ⬜ NEXT
+## Stage 4 — Build + deploy the tuned closure ✅ DONE
 
 **Goal:** europa switches from the untuned Phase 1 closure to the `btver2`-tuned
 Phase 2 closure, substituted from its own Attic.
 
-**Precondition:** Stage 3 complete. ✅ (europa is on `feat/europa-nas-host`
-Phase 1 closure; Phase 2 config is committed on `main`
-but not yet switched to on the box.)
-
-**You should be on branch `main` for this stage.**
+**Result:** done — europa is running the `btver2`-tuned closure, substituted
+from its own Attic. See `docs/europa-stage4-progress.md` for the run history
+(BinaryLane capacity stockouts, the R2 presign SigV2/SigV4 bug, the
+nix-command/hostname build-server fixes). The actions below are the reusable
+procedure — follow them again for any future rebuild of europa's tuned
+closure (e.g. after a nixpkgs bump).
 
 **Actions:**
 0. **Bring the Phase 2 config live on europa** (tunnel, substituter, real
@@ -189,7 +192,7 @@ but not yet switched to on the box.)
    then drives BinaryLane (`scripts/binarylane-build-server.sh`: create a
    placeholder server → upload the ISO as a backup image from the presigned
    URL → attach as boot media → reboot → wait for self-destruct). Override
-   the build target git ref with `GIT_REF=<ref>` (defaults to `dashboard-v2`).
+   the build target git ref with `GIT_REF=<ref>` (defaults to `main`).
 2. **`pallene` runs unattended** once booted: clones the repo, builds europa's
    `btver2` closure, pushes to `attic.jupiter.au`, then self-destructs via
    the BinaryLane API. The 4 h force-destroy timer is the ceiling.

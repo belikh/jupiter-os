@@ -14,23 +14,23 @@ Registered hosts: the 4 TCx Wave dashboard kiosks — `amalthea`
 (jupiter-bedroom, the bootstrap machine, canonical template, and the fleet's
 MQTT broker), `metis` (kitchen), `adrastea` (office), `thebe` (robbie-room) —
 plus `europa` (HPE MicroServer Gen10, the ZFS NAS + data hub) and `pallene`
-(ephemeral BinaryLane build-server ISO host, phase2 only). Only `amalthea` is
-physically installed today; the 3 kiosk siblings are registered and
-CI-green but still on placeholder disks/sops keys awaiting their real
+(ephemeral BinaryLane build-server ISO host, phase2 only). `amalthea` and
+`thebe` are physically installed today; `metis` and `adrastea` are registered
+and CI-green but still on placeholder disks/sops keys, awaiting their real
 install (see `.sops.yaml`). The siblings are clones of amalthea minus the
 broker role, differing in hostName/hostId/dashboard URL/disk.
 
-**europa bring-up:** Stage 1 (untuned NAS) is **done and running** at
-`10.1.1.2`. Stage 3 runtime prerequisites (tunnel UUID, R2 creds, attic public
-key, build-server tokens) are all real and committed. **Next step = Stage 4**:
-build the `btver2`-tuned closure via `make rebuild-world`. See
-`docs/europa-bringup-stages.md` (on `main`) for the full runbook — start a new
-session there.
+**europa bring-up:** Stage 4 is **done** — europa is running its full
+`btver2`-tuned closure, substituted from its own Attic (`attic.jupiter.au` /
+the `neptune.jupiter.au:8080` port-forward). See `docs/europa-bringup-stages.md`
+for the full runbook and history; remaining stages (2 — ZFS mirror, 5 —
+deferred items) are independent cleanup, not blockers.
 
 Everything must keep building from cache.nixos.org with `nix flake check`
-(note: on the phase2 branch, europa's `btver2` closure won't substitute — use
-`make check`, which runs eval-only; raw `nix flake check` would try to compile
-it until Stage 4 populates the attic cache).
+(note: europa's `btver2` closure substitutes only from europa's own Attic, not
+cache.nixos.org — `nix flake check` still works fleet-wide since it's
+eval-only and doesn't realize derivations; `make check` remains the fast
+no-build path for local iteration).
 
 ## Layout
 
@@ -84,10 +84,9 @@ make fmt                # format all Nix (nixfmt-rfc-style); fmt-check to verify
 
 ## Roadmap (bring-up order)
 
-amalthea (live) → the other 3 kiosks (metis/adrastea/thebe — registered,
-CI-green, awaiting physical install) → europa (Stage 1 NAS live; **next:
-Stage 4 `make rebuild-world` for the btver2 tuned closure** — see
-`docs/europa-bringup-stages.md`) → ganymede (resolver/services) → callisto
-(diskless PXE) → himalia (laptop) → gaming/branding/terranix/edge layers.
-Port each from `archive/full-fleet-reference`, keeping the buildability rules
-above.
+amalthea + thebe (live) → the remaining 2 kiosks (metis/adrastea —
+registered, CI-green, awaiting physical install) → europa (live, full
+`btver2` tuned closure — see `docs/europa-bringup-stages.md`) → ganymede
+(resolver/services) → callisto (diskless PXE) → himalia (laptop) →
+gaming/branding/terranix/edge layers. Port each from
+`archive/full-fleet-reference`, keeping the buildability rules above.
