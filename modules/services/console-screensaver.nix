@@ -62,6 +62,11 @@ in
         # Do NOT vhangup the tty on start — that SIGHUPs the very process we
         # just launched. We've cleared getty above instead.
         TTYVHangup = false;
+        # Lowest CPU priority: this is pure eye-candy, so it must always yield
+        # to real work — especially on a host (e.g. the NAS) where the same
+        # cores serve ZFS/Samba/Attic. nice 19 = schedulable only when nothing
+        # else wants the CPU.
+        Nice = 19;
         # -b  bold (brighter glyphs against the black VT background).
         # Run continuously; to log in, switch to another tty (Ctrl+Alt+F2).
         ExecStart = "${lib.getExe cfg.package} -b";

@@ -25,7 +25,6 @@
     ../../modules/storage/zfs-nas.nix
     ../../modules/storage/sanoid.nix
     ../../modules/storage/zfs-tuning.nix
-    ../../modules/storage/nas-nfs.nix
     ../../modules/network/nas-bond.nix
     ../../modules/services/attic-server.nix
     ../../modules/services/syncthing.nix
@@ -57,6 +56,18 @@
   # firmware can never be used here, just bloats the (already
   # microarch-tuned, cache-sensitive) closure for nothing.
   hardware.enableRedistributableFirmware = false;
+
+  # ---- Dev / agent tooling ------------------------------------------------
+  # Same reasoning as the firmware line above: common.nix defaults zed (GUI
+  # editor), ecc (Node.js agent CLI), and antigravity/agy (Google agent CLI)
+  # on for the bootstrap host, but europa is a headless STORAGE-ONLY NAS with
+  # no display and no interactive dev sessions — all three are pure closure
+  # bloat on a btver2-tuned, cache-sensitive host (and zed even pulls a sops
+  # secret decrypted on every activation for a binary that can't start).
+  # Opt out; the future dev workstation (himalia) opts in.
+  jupiter.core.zed.enable = false;
+  jupiter.core.ecc.enable = false;
+  jupiter.core.antigravity.enable = false;
 
   # ---- Storage profile (OS SSD) --------------------------------------------
   # Stateful root (no impermanence — the NAS needs persistent state).
@@ -126,7 +137,9 @@
   jupiter.storage.smartMonitoring.enable = true;
 
   # Console screensaver — Matrix rain on tty1 for the (rare) moments a
-  # monitor is plugged in. Login stays on tty2 (Ctrl+Alt+F2).
+  # monitor is plugged in. Login stays on tty2 (Ctrl+Alt+F2). The module runs
+  # cmatrix at the lowest CPU priority (Nice=19) so the eye-candy always
+  # yields to real NAS work.
   jupiter.consoleScreensaver.enable = true;
 
   # Cloudflare Tunnel — exposes atticd at attic.jupiter.au so the remote
