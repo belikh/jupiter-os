@@ -40,7 +40,7 @@ Six hosts are wired into the flake today:
   CI-green but awaiting their real install (placeholder disks and sops keys).
 - **europa** (HPE MicroServer Gen10) — the ZFS NAS + data hub. Phase 1
   untuned closure is live at `10.1.1.2`; Phase 2 (`btver2`-tuned) closure is
-  staged on `feat/europa-phase2-tuned-closure` and is the current focus (see
+  staged on `main` and is the current focus (see
   `docs/europa-bringup-stages.md`).
 - **pallene** — the ephemeral BinaryLane build-server ISO host that compiles
   europa's tuned closure and pushes it to attic. Never a persistent fleet
@@ -95,8 +95,8 @@ machine actually needs them:
    (different hostName/hostId/dashboard URL/disk). ✅ registered; awaiting
    physical install
 3. **europa** (NAS + data hub) — Phase 1 untuned closure running at
-   `10.1.1.2`; Phase 2 `btver2`-tuned closure in progress on
-   `feat/europa-phase2-tuned-closure`. See `docs/europa-bringup-stages.md`.
+   `10.1.1.2`; Phase 2 `btver2`-tuned closure in progress on `main`. See
+   `docs/europa-bringup-stages.md`.
 4. **ganymede** (always-on services: resolver/DNS, PXE, tunnels) — then pin
    `networking.nameservers` back to it in `modules/common.nix`.
 5. **callisto** (diskless PXE), **himalia** (laptop, home-manager), gaming/
