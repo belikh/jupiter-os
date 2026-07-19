@@ -595,9 +595,9 @@ in
       type = lib.types.str;
       # Until scripts/binarylane-build-server.sh wires GIT_REF through
       # cloud-init user-data, this default is what pallene actually builds.
-      # dashboard-v2 has no europa host; point at the branch carrying the
-      # hosts in `hosts/` (currently the phase2 branch).
-      default = "feat/europa-phase2-tuned-closure";
+      # main carries the hosts in `hosts/` (the former phase2 branch, now
+      # promoted to trunk).
+      default = "main";
       description = ''
         Git ref to build when cloud-init user-data is absent. Defaults to the
         active development branch; override via BinaryLane user-data at

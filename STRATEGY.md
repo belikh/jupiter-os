@@ -58,7 +58,7 @@ snapshots, Attic server, Syncthing, SMART monitoring.
 
 _Why it serves the approach:_ Got the NAS running with stock cached packages
 before anything depended on tuned binaries. Europa is live at `10.1.1.2` on
-the Phase 1 closure (commit on `feat/europa-phase2-tuned-closure`).
+the Phase 1 closure (commit on `main`).
 
 ### europa Phase 2 — Tuned Closure Pipeline (in progress)
 
@@ -105,4 +105,4 @@ _Why it serves the approach:_ Safe, read-only access to legacy data so the fleet
 
 ## What's next after europa
 
-Following the roadmap (`CLAUDE.md`): **ganymede** (resolver/services) → **callisto** (diskless PXE, consumes iSCSI from europa) → **himalia** (laptop) → gaming/branding/terranix/edge layers. Port each from the `master` design reference, keeping the buildability rules — no custom kernels on ZFS hosts, no microarch without a private cache to serve it.
+Following the roadmap (`CLAUDE.md`): **ganymede** (resolver/services) → **callisto** (diskless PXE, consumes iSCSI from europa) → **himalia** (laptop) → gaming/branding/terranix/edge layers. Port each from the `archive/full-fleet-reference` design reference, keeping the buildability rules — no custom kernels on ZFS hosts, no microarch without a private cache to serve it.

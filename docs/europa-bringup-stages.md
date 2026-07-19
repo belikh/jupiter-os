@@ -167,10 +167,10 @@ token; europa needs the real public key to trust the pushed closure).
 Phase 2 closure, substituted from its own Attic.
 
 **Precondition:** Stage 3 complete. ✅ (europa is on `feat/europa-nas-host`
-Phase 1 closure; Phase 2 config is committed on `feat/europa-phase2-tuned-closure`
+Phase 1 closure; Phase 2 config is committed on `main`
 but not yet switched to on the box.)
 
-**You should be on branch `feat/europa-phase2-tuned-closure` for this stage.**
+**You should be on branch `main` for this stage.**
 
 **Actions:**
 0. **Bring the Phase 2 config live on europa** (tunnel, substituter, real
@@ -243,7 +243,8 @@ These are documented in the plans but not part of getting europa tuned:
 - **Moving cloudflared to ganymede** — europa runs the tunnel itself as a
   Phase 2 expedient; the long-term topology puts it on ganymede (the
   resolver/services host) once that host is registered.
-- **Tuning the kiosks** — they're `skylake` on `master` but stay untuned here
+- **Tuning the kiosks** — they're `skylake` on `archive/full-fleet-reference`
+  but stay untuned here
   until their real CPUs are confirmed and a build-server run is justified.
 - **iSCSI / replication / restic offsite** — depend on callisto and ganymede,
   neither registered yet.

@@ -24,8 +24,8 @@ broker role, differing in hostName/hostId/dashboard URL/disk.
 `10.1.1.2`. Stage 3 runtime prerequisites (tunnel UUID, R2 creds, attic public
 key, build-server tokens) are all real and committed. **Next step = Stage 4**:
 build the `btver2`-tuned closure via `make rebuild-world`. See
-`docs/europa-bringup-stages.md` (on `feat/europa-phase2-tuned-closure`) for the
-full runbook — start a new session there.
+`docs/europa-bringup-stages.md` (on `main`) for the full runbook — start a new
+session there.
 
 Everything must keep building from cache.nixos.org with `nix flake check`
 (note: on the phase2 branch, europa's `btver2` closure won't substitute — use
