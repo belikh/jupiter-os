@@ -8,10 +8,10 @@
 # (modules/services/build-server.nix does that part once it's running).
 #
 # The pallene ISO itself carries NO secrets and NO per-run parameters — it
-# only needs rebuilding when build-server.nix / wireguard.nix / the pallene
-# host config actually change. Every other knob here (which git ref, which
-# hosts, which BinaryLane size tier) is a plain env var to THIS script, no
-# ISO rebuild involved.
+# only needs rebuilding when build-server.nix or the pallene host config
+# actually change. Every other knob here (which git ref, which hosts, which
+# BinaryLane size tier, the whole WireGuard mesh identity) is a plain env
+# var to THIS script, no ISO rebuild involved.
 #
 # BinaryLane has no "create server booting a custom ISO" endpoint — only
 # existing servers can have a backup image attached and rebooted into it
@@ -25,13 +25,15 @@
 # Usage:
 #   BINARYLANE_API_TOKEN=... ATTIC_PUSH_TOKEN=... \
 #   R2_ACCOUNT_ID=... R2_ACCESS_KEY_ID=... R2_SECRET_ACCESS_KEY=... \
-#   [WIREGUARD_PRIVATE_KEY=...] [GIT_REF=...] [HOSTS=host1,host2] \
+#   [WIREGUARD_PRIVATE_KEY=...] [WG_PEER_PUBLIC_KEY=...] [WG_ENDPOINT=...] \
+#   [WG_ALLOWED_IPS=cidr1,cidr2] [WG_ADDRESS=...] \
+#   [GIT_REF=...] [HOSTS=host1,host2] \
 #   ISO_URL=https://... scripts/binarylane-build-server.sh
 #
-# GIT_REF, HOSTS, REPO_URL are optional — omitted, the ISO's own baked
-# defaults apply (see modules/services/build-server.nix's defaultRef/hosts
-# options). WIREGUARD_PRIVATE_KEY is optional too (only needed if the build
-# needs the private mesh route to attic rather than the public tunnel).
+# GIT_REF, HOSTS, REPO_URL, and every WG_*/WIREGUARD_* var are optional —
+# omitted, the ISO's own baked defaults apply (see
+# modules/services/build-server.nix's defaultRef/hosts/wireguard* options,
+# set for pallene in hosts/pallene/configuration.nix).
 set -euo pipefail
 
 : "${BINARYLANE_API_TOKEN:?set BINARYLANE_API_TOKEN}"
@@ -90,6 +92,14 @@ build_user_data() {
   add R2_ACCESS_KEY_ID "$R2_ACCESS_KEY_ID"
   add R2_SECRET_ACCESS_KEY "$R2_SECRET_ACCESS_KEY"
   add WIREGUARD_PRIVATE_KEY "${WIREGUARD_PRIVATE_KEY:-}"
+  # Rest of the mesh identity — not secret (a public key and a hostname),
+  # but override-able for the same reason GIT_REF/HOSTS are: change the mesh
+  # topology without an ISO rebuild. Omitted, the ISO's own baked defaults
+  # (hosts/pallene/configuration.nix) apply — same values as today.
+  add WG_PEER_PUBLIC_KEY "${WG_PEER_PUBLIC_KEY:-}"
+  add WG_ENDPOINT "${WG_ENDPOINT:-}"
+  add WG_ALLOWED_IPS "${WG_ALLOWED_IPS:-}"
+  add WG_ADDRESS "${WG_ADDRESS:-}"
   printf '%s' "$out"
 }
 USER_DATA="$(build_user_data)"

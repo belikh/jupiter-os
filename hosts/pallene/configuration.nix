@@ -1,6 +1,4 @@
 {
-  config,
-  lib,
   modulesPath,
   ...
 }:
@@ -30,7 +28,6 @@
   imports = [
     (modulesPath + "/installer/cd-dvd/installation-cd-minimal.nix")
     ../../modules/services/build-server.nix
-    ../../modules/network/wireguard.nix
   ];
 
   networking.hostName = "pallene";
@@ -43,6 +40,12 @@
     "console=tty0"
   ];
 
+  # WireGuard kernel module still needed even without the declarative
+  # networking.wireguard.interfaces module below — see build-server.nix's
+  # runScript for why pallene doesn't use that module.
+  boot.kernelModules = [ "wireguard" ];
+  networking.firewall.allowedUDPPorts = [ 51820 ];
+
   jupiter.services.buildServer = {
     enable = true;
     # europa's atticd reached DIRECTLY over the UniFi WireGuard mesh, NOT via
@@ -51,34 +54,33 @@
     # it. The UDM (UniFi WG server) routes the mesh onto the home LAN, so
     # pallene reaches europa at its LAN IP. atticd listens on *:8080.
     atticServer = "http://10.1.1.2:8080";
-  };
 
-  # ---- WireGuard build mesh (UniFi-managed, roaming client peer) ------------
-  # The UDM runs the WG server (UniFi Network → Teleport & VPN → WireGuard,
-  # port 51820, public endpoint neptune.jupiter.au). This peer ("Pallene") was
-  # created in the UniFi UI and exports this private key + the 192.168.5.2/32
-  # address. Split-tunnel: only the home LAN (europa/attic) + WG mesh route
-  # through the tunnel — pallene's build fetches (github, cache.nixos.org, R2,
-  # BinaryLane API) stay on its public interface, not tromboned through home.
-  jupiter.network.wireguard = {
-    enable = true;
-    address = "192.168.5.2/32";
-    # Same runtime-populated path build-server.nix writes WIREGUARD_PRIVATE_KEY
-    # to, if present in cloud-init user-data (see its wireguardPrivateKeyFile
-    # option) — this module's own systemd ordering fix (after=cloud-init)
-    # keeps the interface from racing that write.
-    privateKeyFile = config.jupiter.services.buildServer.wireguardPrivateKeyFile;
-    peers = [
-      {
-        # The UDM (UniFi WG server).
-        publicKey = "gw6gm9TpSBFOqifygp8XLfEEDGgebzD4tEFgXCSawE4=";
-        allowedIPs = [
-          "10.1.1.0/24" # home LAN — europa/attic lives here at 10.1.1.2
-          "192.168.5.0/24" # the WG mesh itself
-        ];
-        endpoint = "neptune.jupiter.au:51820";
-        persistentKeepalive = 25;
-      }
+    # ---- WireGuard build mesh: deliberately NOT the shared
+    # jupiter.network.wireguard module (modules/network/wireguard.nix) -------
+    # That module is a fine fit for europa (server side: key from sops at
+    # ACTIVATION time, no boot race) but a bad one for pallene: it declares
+    # peer/endpoint/allowedIPs as NixOS options fixed at ISO BUILD time, while
+    # only the private key came from cloud-init user-data — a half-runtime
+    # design that was inconsistent and, on 2026-07-18, coincided with a run
+    # whose WireGuard interface never came up and whose networking then broke
+    # entirely (undiagnosed — the box went fully unreachable before any log
+    # could be pulled).
+    #
+    # These values are just the DEFAULT mesh identity, baked here same as
+    # before — every one of them is still fully overridable at runtime via
+    # cloud-init user-data (WG_PEER_PUBLIC_KEY / WG_ENDPOINT / WG_ALLOWED_IPS
+    # / WG_ADDRESS), which build-server.nix's runScript configures directly
+    # with `ip`/`wg` right after it loads user-data and secrets — inheriting
+    # that correct ordering for free instead of needing its own systemd-unit
+    # dependency dance. See runScript's "wireguard mesh" section.
+    wireguardEnable = true;
+    wireguardAddress = "192.168.5.2/32";
+    # The UDM (UniFi WG server).
+    wireguardPeerPublicKey = "gw6gm9TpSBFOqifygp8XLfEEDGgebzD4tEFgXCSawE4=";
+    wireguardEndpoint = "neptune.jupiter.au:51820";
+    wireguardAllowedIPs = [
+      "10.1.1.0/24" # home LAN — europa/attic lives here at 10.1.1.2
+      "192.168.5.0/24" # the WG mesh itself
     ];
   };
 

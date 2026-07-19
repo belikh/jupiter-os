@@ -247,3 +247,15 @@ These are documented in the plans but not part of getting europa tuned:
   until their real CPUs are confirmed and a build-server run is justified.
 - **iSCSI / replication / restic offsite** — depend on callisto and ganymede,
   neither registered yet.
+- **Fleet-wide LTO** (`-flto` via a stdenv-level overlay, not `-O3`/`-Ofast` —
+  the latter risks real correctness bugs via `-ffast-math`-style semantic
+  changes, not just instability) — genuine additional tuning headroom on top
+  of `jupiter.build.microarch`, but touches the same global mechanism, so it
+  invalidates the *entire* closure's hashes and forces a full rebuild from
+  bootstrap again, same as microarch tuning did. Also has a real chance some
+  packages fail to build cleanly under forced LTO (well short of every
+  package in a full closure handles it), needing per-package exceptions the
+  same way `bmake`'s flaky check needed one. Deliberately sequenced after —
+  don't stack it onto an unproven pipeline: get one clean, complete pallene
+  run finishing end-to-end on the current fixes first, so a failure under
+  LTO isn't ambiguous between "the build mechanism" and "the new flag."
