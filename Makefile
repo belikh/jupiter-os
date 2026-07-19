@@ -76,8 +76,17 @@ pallene-iso:
 # Override at invocation, none require an ISO rebuild:
 #   GIT_REF=<branch/commit>   which ref to build (default: the ISO's baked default)
 #   HOSTS=host1,host2         which nixosConfigurations to build (default: baked default, currently "europa")
+#   MAX_JOBS=<n|auto>         nix build --max-jobs (default: baked default, "auto" = nproc)
+#   CORES=<n>                 nix build --cores, per concurrent job (default: baked default, 1 — see
+#                             modules/services/build-server.nix's nix.settings.cores comment before raising this)
 #   TIMEOUT_SECS=<seconds>    external polling ceiling (default 36000 = 10h)
 #   BL_SIZE_SLUG=<slug>       force one exact BinaryLane size, skip the tier fallback
+#   ATTIC_SERVER=http://...   attic login/push endpoint (default: baked default, currently
+#                             http://neptune.jupiter.au:8080 — a UDM port-forward straight to
+#                             europa's atticd, NOT the WireGuard mesh; only the attic-client
+#                             login/push path honours this, nix's own substituter is baked
+#                             from the same option at ISO build time and can't be runtime-
+#                             overridden — see atticServer's doc in build-server.nix)
 rebuild-world: pallene-iso
 	sops exec-env secrets/secrets.yaml '\
 		export AWS_ACCESS_KEY_ID="$$r2_access_key_id"; \

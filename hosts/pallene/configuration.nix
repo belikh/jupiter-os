@@ -1,4 +1,5 @@
 {
+  lib,
   modulesPath,
   ...
 }:
@@ -32,6 +33,15 @@
 
   networking.hostName = "pallene";
 
+  # Skip the boot-menu wait — this box boots unattended from BinaryLane's
+  # backup-image attach, nobody is at a console to press a key. NOT 0: for
+  # the isolinux/BIOS side of this dual BIOS+EFI ISO, timeout=0 means
+  # "disable the timeout" i.e. wait forever for input, the opposite of what
+  # we want (see nixpkgs installer/cd-dvd/iso-image.nix's extlinuxTimeout
+  # comment) — grub's EFI side treats 0 as "boot immediately" but isolinux's
+  # 0 does not, so 1 is the smallest value that is unattended-safe on both.
+  boot.loader.timeout = lib.mkForce 1;
+
   # Kernel console on the serial port so the boot + the jupiter-build-server
   # service output is visible under QEMU -nographic (and over any serial
   # console BinaryLane exposes). Harmless alongside the VGA console.
@@ -48,12 +58,29 @@
 
   jupiter.services.buildServer = {
     enable = true;
-    # europa's atticd reached DIRECTLY over the UniFi WireGuard mesh, NOT via
-    # the Cloudflare Tunnel — the tunnel returns HTTP 524 on any NAR that takes
-    # >100s to transfer, so gcc/glibc/rustc-class paths can never move through
-    # it. The UDM (UniFi WG server) routes the mesh onto the home LAN, so
-    # pallene reaches europa at its LAN IP. atticd listens on *:8080.
-    atticServer = "http://10.1.1.2:8080";
+    # europa's atticd reached via a UDM port-forward (WAN:8080 -> 10.1.1.2:8080,
+    # "europa-attic" rule) directly to neptune.jupiter.au, NOT via the
+    # Cloudflare Tunnel and NOT via the WireGuard build mesh (jupwg) below.
+    # Tried both of those first:
+    #   - Cloudflare Tunnel: returns HTTP 524 on any NAR that takes >100s to
+    #     transfer, so gcc/glibc/rustc-class paths can never move through it.
+    #   - jupwg (direct mesh IP, 10.1.1.2): reaches europa's LAN IP fine for
+    #     small requests, but the UDM Pro's software WireGuard implementation
+    #     (no hardware crypto offload) degrades badly under sustained
+    #     bidirectional load — confirmed 2026-07-19 via direct bulk-transfer
+    #     tests (a 20MB curl PUT over the mesh didn't complete in 30s; the same
+    #     test via europa's own localhost was instant) and `ss` showing
+    #     multi-MB Send-Q backlogs on genuinely fresh connections. This caused
+    #     repeated attic-push stalls AND, on the read side, nix's own
+    #     substituter downloads timing out mid-transfer and getting disabled
+    #     for large paths (llvm-src/gcc/binutils-class), forcing wasteful
+    #     rebuilds of things already cached.
+    # The port-forward bypasses jupwg entirely — same public-internet path
+    # class as the build's own git-clone/R2 traffic, no WG software-crypto
+    # bottleneck. ATTIC_SERVER in user-data can override this per-run (see
+    # atticServer's option doc in build-server.nix) without an ISO rebuild —
+    # e.g. to fall back to the mesh IP if the port-forward or DNS ever break.
+    atticServer = "http://neptune.jupiter.au:8080";
 
     # ---- WireGuard build mesh: deliberately NOT the shared
     # jupiter.network.wireguard module (modules/network/wireguard.nix) -------
