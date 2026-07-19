@@ -32,42 +32,124 @@ let
     ${pkgs.curl}/bin/curl "''${args[@]}"
   '';
 
-  # post-build-hook: incremental attic push. After each derivation builds, the
-  # nix daemon pipes the newly-built store paths (one per line) to this
-  # script's stdin. The WHOLE POINT of the build mesh is that every compiled
-  # package lands in attic so a restart substitutes it instead of rebuilding
-  # for hours — so this hook must actually cache, not best-effort-ish cache.
+  # post-build-hook + async pusher: incremental attic push, split into two
+  # pieces so a slow/degraded push can NEVER block the build.
   #
-  # Two failure modes that previously silently lost packages:
-  #  (1) concurrent completions (max-jobs>1) fired the hook in parallel and
-  #      the pushes raced on attic — serialized here with flock so only one
-  #      push runs at a time.
-  #  (2) transient failures (WG blip, attic busy) were swallowed by `|| true`,
-  #      losing the path — replaced with a retry+backoff loop that keeps
-  #      trying until the path is actually stored, and logs every miss.
-  # --ignore-upstream-cache-filter guarantees storage (built paths are
-  # btver2-tuned, not on cache.nixos.org, so the filter is a no-op for them
-  # — but explicit so no built path is ever silently delegated away).
-  # ALWAYS exit 0: a cache miss must never abort the build (the final push +
-  # future runs are the backstop). HOME=/root so attic finds the push token.
+  # `man 5 nix.conf`'s post-build-hook section is explicit: "The hook
+  # executes synchronously, and blocks other builds from progressing while
+  # it runs" and "If the hook fails, the build succeeds but no further
+  # builds execute." A previous version of this hook did its retry+timeout
+  # loop INLINE, synchronously, directly hitting both of those. Concrete
+  # failure this caused (2026-07-19, run 640853): a degraded mesh push could
+  # burn up to ~26 minutes (8 attempts x up to 180s + backoff) with the
+  # daemon unable to schedule a single new derivation the whole time —
+  # visible externally as load average dropping to 0 while `nix build` sat
+  # idle. Worse: killing the stuck hook process to "unblock" it made nix
+  # treat the hook as FAILED, which (per the same man page) stopped the
+  # ENTIRE build from scheduling any further work — aborting the whole
+  # multi-hour run outright, well before the closure finished.
+  #
+  # Fix: pushHook does nothing but append $OUT_PATHS to a queue file under a
+  # brief flock (microseconds, no network) and exit — it can never be the
+  # thing nix is waiting on. `pusherLoop` is a separate, independently
+  # backgrounded process (launched once from runScript, not by nix) that
+  # drains the queue and does the actual attic push with the same
+  # retry+timeout+backoff design as before, fully decoupled from nix's
+  # build scheduling — free to take as long as it needs, or even re-queue a
+  # batch that ran out of retries, without stalling anything.
+  #
+  # HOME=/root so attic finds the push token. --ignore-upstream-cache-filter
+  # guarantees storage (built paths are btver2-tuned, not on cache.nixos.org,
+  # so the filter is a no-op for them — but explicit so no built path is
+  # ever silently delegated away).
+  queueFile = "/tmp/attic-queue.txt";
+  queueLock = "/tmp/attic-queue.lock";
+
   pushHook = pkgs.writeShellScript "jupiter-attic-post-build-hook" ''
     export HOME=/root
     set -uo pipefail
-    paths="$(cat)" || exit 0
-    [ -n "$paths" ] || exit 0
-    # Serialize: nix fires one hook per completion; without this, parallel
-    # pushes race and some silently drop. One push at a time, reliably.
-    exec 9>/tmp/attic-hook.lock
+    log() { echo "[hook $(date -u +%Y-%m-%dT%H:%M:%S%z)] $*" >>/tmp/attic-hook.log; }
+    # Nix passes built outputs via $OUT_PATHS (space-separated), NOT stdin —
+    # see `man 5 nix.conf`'s post-build-hook section. A prior version of this
+    # hook read `paths="$(cat)"` from stdin, which is always empty (nix never
+    # writes there): every single invocation logged "nothing to push" and
+    # exited immediately, even while the build produced real outputs the
+    # whole time. Confirmed empirically on 2026-07-19 (run 640853): 232
+    # consecutive firings, all "empty stdin", while 625+ paths had already
+    # registered as built — the hook had never once actually pushed anything
+    # this entire bring-up; every push so far was a manual backstop.
+    if [ -z "''${OUT_PATHS:-}" ]; then
+      log "invoked with no OUT_PATHS (drv ''${DRV_PATH:-?}, nothing to enqueue), exiting"
+      exit 0
+    fi
+    paths="$(printf '%s' "$OUT_PATHS" | tr ' ' '\n')"
+    n="$(printf '%s\n' "$paths" | wc -l)"
+    # Just enqueue and exit — no network call here, ever. This is the only
+    # thing standing between a build completion and nix scheduling the next
+    # one, so it must always be near-instant regardless of push health.
+    exec 9>${queueLock}
     ${pkgs.util-linux}/bin/flock 9
-    for attempt in 1 2 3 4 5 6 7 8; do
-      if printf '%s\n' "$paths" | ${pkgs.attic-client}/bin/attic push "${cfg.atticCache}" --stdin --ignore-upstream-cache-filter >>/tmp/attic-hook.log 2>&1; then
-        exit 0
-      fi
-      echo "[hook $(date +%H:%M:%S)] attempt $attempt failed; retry in $((attempt*3))s" >>/tmp/attic-hook.log
-      sleep $((attempt * 3))
-    done
-    echo "[hook $(date +%H:%M:%S)] GAVE UP after 8 attempts: $(printf '%s\n' "$paths" | tr '\n' ' ' | head -c 300)" >>/tmp/attic-hook.log
+    printf '%s\n' "$paths" >> ${queueFile}
+    exec 9>&-
+    log "enqueued: drv=''${DRV_PATH:-?} $n path(s): $(printf '%s' "$paths" | tr '\n' ' ' | head -c 300)"
     exit 0
+  '';
+
+  pusherLoop = pkgs.writeShellScript "jupiter-attic-pusher" ''
+    export HOME=/root
+    set -uo pipefail
+    log() { echo "[pusher $(date -u +%Y-%m-%dT%H:%M:%S%z)] $*" >>/tmp/attic-hook.log; }
+    log "pusher loop starting"
+    : > ${queueFile}
+    while true; do
+      batch=""
+      exec 9>${queueLock}
+      ${pkgs.util-linux}/bin/flock 9
+      if [ -s ${queueFile} ]; then
+        batch="$(cat ${queueFile})"
+        : > ${queueFile}
+      fi
+      exec 9>&-
+      if [ -z "$batch" ]; then
+        sleep 3
+        continue
+      fi
+      paths="$(printf '%s\n' "$batch" | sort -u)"
+      n="$(printf '%s\n' "$paths" | grep -c .)"
+      log "draining batch: $n path(s): $(printf '%s' "$paths" | tr '\n' ' ' | head -c 300)"
+      pushed=0
+      # 600s (was 180s in the old synchronous hook): safe to be generous here
+      # now that this loop is off the build-blocking critical path — a large
+      # batch (e.g. llvm-src) that needs more than 180s to transfer over a
+      # degraded link previously could never succeed (retried from scratch
+      # each time, always cut off before finishing); a longer window gives it
+      # an actual chance instead of cycling GAVE UP -> re-queue forever.
+      for attempt in 1 2 3 4 5 6 7 8; do
+        attempt_start=$(date +%s)
+        log "  attempt $attempt: starting (timeout 600s)"
+        if printf '%s\n' "$paths" | ${pkgs.coreutils}/bin/timeout 600 ${pkgs.attic-client}/bin/attic push "${cfg.atticCache}" --stdin --ignore-upstream-cache-filter >>/tmp/attic-hook.log 2>&1; then
+          log "  attempt $attempt: SUCCEEDED in $(( $(date +%s) - attempt_start ))s"
+          pushed=1
+          break
+        fi
+        rc=$?
+        elapsed=$(( $(date +%s) - attempt_start ))
+        if [ "$rc" -eq 124 ]; then
+          log "  attempt $attempt: TIMED OUT after ''${elapsed}s (push hung — likely a wedged connection, not a clean failure); retry in $((attempt*3))s"
+        else
+          log "  attempt $attempt: failed (exit $rc) after ''${elapsed}s; retry in $((attempt*3))s"
+        fi
+        sleep $((attempt * 3))
+      done
+      if [ "$pushed" != 1 ]; then
+        log "!! GAVE UP after 8 attempts on this batch, re-queueing for a later pass: $(printf '%s' "$paths" | tr '\n' ' ' | head -c 300)"
+        exec 9>${queueLock}
+        ${pkgs.util-linux}/bin/flock 9
+        printf '%s\n' "$paths" >> ${queueFile}
+        exec 9>&-
+        sleep 10
+      fi
+    done
   '';
 
   runScript = pkgs.writeShellScript "jupiter-build-server-run" ''
@@ -86,6 +168,16 @@ let
     # path (success, build failure, script bug) via the trap below, not just
     # the happy path.
     self_destruct() {
+      # Best-effort final flush of anything the async pusher (see pusherLoop
+      # above) hadn't gotten to yet — e.g. a batch it was mid-retry on when
+      # the build finished. One bounded attempt only: this must never delay
+      # self-destruct, and the per-host final push below + a future run's
+      # substitution are the real backstop if this also fails.
+      if [ -s ${queueFile} ]; then
+        ${pkgs.coreutils}/bin/timeout 60 ${pkgs.attic-client}/bin/attic push "${cfg.atticCache}" --stdin --ignore-upstream-cache-filter < ${queueFile} >>/tmp/attic-hook.log 2>&1 \
+          && log "final queue flush succeeded" \
+          || log "!! final queue flush failed/timed out (paths already covered by the toplevel backstop push below, if that host's build succeeded)"
+      fi
       # Upload the build log so it survives this self-destruct (best-effort —
       # never let a log-upload problem block the destroy). R2 first (robust:
       # public-internet path like the build's own source fetches), attic second
@@ -126,6 +218,22 @@ let
             && log "build log uploaded to attic: $_logpath" \
             || log "!! failed to upload build log to attic"
         fi
+      fi
+      # The post-build-hook's own log is a SEPARATE file (/tmp/attic-hook.log,
+      # written by pushHook above) — without this it never left the box, so
+      # every past "is the hook even running" question needed a live SSH
+      # session racing self-destruct instead of a log line. R2 only (not
+      # attic — if the hook itself is the thing broken, pushing its own
+      # diagnostic log through the same broken path is pointless).
+      if [ -f /tmp/attic-hook.log ] && [ -f ${cfg.r2AccessKeyIdFile} ]; then
+        AWS_ACCESS_KEY_ID="$(cat ${cfg.r2AccessKeyIdFile})" \
+        AWS_SECRET_ACCESS_KEY="$(cat ${cfg.r2SecretAccessKeyFile})" \
+        ${pkgs.awscli}/bin/aws \
+          --endpoint-url "https://$(cat ${cfg.r2AccountIdFile}).r2.cloudflarestorage.com" \
+          s3 cp /tmp/attic-hook.log "s3://${cfg.logBucket}/logs/pallene-attic-hook-$(date -u +%Y%m%d%H%M%S).log" \
+          --region auto >/dev/null 2>&1 \
+          && log "attic-hook log uploaded to R2 (logs/)" \
+          || log "!! failed to upload attic-hook log to R2"
       fi
       # Self-destruct MUST be reliable — this is the "stop billing" guarantee.
       # It must NOT depend on the `hostname` command (not on pallene's PATH by
@@ -169,16 +277,20 @@ let
     # host config) actually changes.
     #
     # Format: plain `KEY=value` lines (directly `source`-able), one of
-    # GIT_REF / HOSTS / BINARYLANE_API_TOKEN / ATTIC_PUSH_TOKEN /
-    # R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY per line — see
-    # scripts/binarylane-build-server.sh, which builds and sends this blob.
-    # Backward-compatible fallback: if the content has no `=` at all, treat
-    # it as a bare git ref (the pre-runtime-params behaviour), so a server
-    # created by hand from the BinaryLane console with a plain ref still
-    # works using the baked defaults for everything else.
+    # GIT_REF / HOSTS / MAX_JOBS / CORES / BINARYLANE_API_TOKEN /
+    # ATTIC_PUSH_TOKEN / R2_ACCOUNT_ID / R2_ACCESS_KEY_ID /
+    # R2_SECRET_ACCESS_KEY per line — see scripts/binarylane-build-server.sh,
+    # which builds and sends this blob. Backward-compatible fallback: if the
+    # content has no `=` at all, treat it as a bare git ref (the
+    # pre-runtime-params behaviour), so a server created by hand from the
+    # BinaryLane console with a plain ref still works using the baked
+    # defaults for everything else.
     ref="${cfg.defaultRef}"
     repo_url="${cfg.repoUrl}"
     runtime_hosts=""
+    max_jobs="${cfg.defaultMaxJobs}"
+    cores="${toString cfg.defaultCores}"
+    attic_server="${cfg.atticServer}"
     wg_peer_public_key="${cfg.wireguardPeerPublicKey}"
     wg_endpoint="${cfg.wireguardEndpoint}"
     wg_allowed_ips="${lib.concatStringsSep "," cfg.wireguardAllowedIPs}"
@@ -195,6 +307,9 @@ let
       [ -n "''${GIT_REF:-}" ] && ref="$GIT_REF" && log "  git ref: $ref"
       [ -n "''${REPO_URL:-}" ] && repo_url="$REPO_URL" && log "  repo url: $repo_url"
       [ -n "''${HOSTS:-}" ] && runtime_hosts="$HOSTS" && log "  hosts: $runtime_hosts"
+      [ -n "''${MAX_JOBS:-}" ] && max_jobs="$MAX_JOBS" && log "  max-jobs: $max_jobs"
+      [ -n "''${CORES:-}" ] && cores="$CORES" && log "  cores: $cores"
+      [ -n "''${ATTIC_SERVER:-}" ] && attic_server="$ATTIC_SERVER" && log "  attic server: $attic_server"
       [ -n "''${WG_PEER_PUBLIC_KEY:-}" ] && wg_peer_public_key="$WG_PEER_PUBLIC_KEY"
       [ -n "''${WG_ENDPOINT:-}" ] && wg_endpoint="$WG_ENDPOINT"
       [ -n "''${WG_ALLOWED_IPS:-}" ] && wg_allowed_ips="$WG_ALLOWED_IPS"
@@ -304,13 +419,24 @@ let
     ''}
 
     # --- attic auth -----------------------------------------------------------
-    # Timeout: if attic.jupiter.au is unreachable from this builder the login
+    # $attic_server (not ${cfg.atticServer} directly) so ATTIC_SERVER in
+    # user-data can point a run at a different endpoint without an ISO
+    # rebuild — e.g. bypassing a degraded path in favour of a direct
+    # UDM port-forward, same override pattern as MAX_JOBS/CORES/WG_*.
+    # Timeout: if the attic server is unreachable from this builder the login
     # would otherwise hang for hours (0 CPU) until the 4h force-destroy. A
     # 2-min ceiling turns that into a fast, visible failure → self-destruct.
-    if ! timeout 120 ${pkgs.attic-client}/bin/attic login jupiter "${cfg.atticServer}" "$(cat "${cfg.atticPushTokenFile}")"; then
-      log "!! attic login failed or timed out (network to ${cfg.atticServer}?) — cannot push, aborting" >&2
+    if ! timeout 120 ${pkgs.attic-client}/bin/attic login jupiter "$attic_server" "$(cat "${cfg.atticPushTokenFile}")"; then
+      log "!! attic login failed or timed out (network to $attic_server?) — cannot push, aborting" >&2
       exit 1
     fi
+
+    # Launch the async push queue drainer now that login succeeded — see
+    # pusherLoop's comment above for why this must run independently of
+    # nix's post-build-hook rather than inside it.
+    log "launching background attic-push queue drainer"
+    nohup ${pusherLoop} >/dev/null 2>&1 &
+    disown
 
     # --- use the data disk as swap so the build isn't RAM-bound --------------
     # The live ISO builds into /nix/store + /tmp, both tmpfs (RAM) — a full
@@ -393,6 +519,7 @@ let
       host_list="${lib.concatStringsSep " " cfg.hosts}"
     fi
     log "hosts to build: $host_list"
+    log "concurrency: max-jobs=$max_jobs cores=$cores"
     pids=()
     for host in $host_list; do
       (
@@ -405,8 +532,14 @@ let
         # over a single corrupted compiler-rt-src fetch). --fallback makes
         # nix rebuild/refetch that one derivation from its original source
         # instead of aborting when a substitute fails to download intact.
+        # --max-jobs/--cores: explicit CLI flags, not just nix.conf, so the
+        # runtime MAX_JOBS/CORES user-data override (sized to whatever VPS
+        # tier THIS run actually landed on) actually takes effect — nix.conf
+        # only supplies the size-agnostic fallback baked at ISO build time.
         if ${pkgs.nix}/bin/nix build ".#nixosConfigurations.$host.config.system.build.toplevel" \
-             --no-link --print-out-paths --fallback > "$workdir/$host.outpath" 2>"$workdir/$host.log"; then
+             --no-link --print-out-paths --fallback \
+             --max-jobs "$max_jobs" --cores "$cores" \
+             > "$workdir/$host.outpath" 2>"$workdir/$host.log"; then
           outpath="$(cat "$workdir/$host.outpath")"
           log "$host built: $outpath"
           # Final push = a backstop sweep of the toplevel closure. The
@@ -416,9 +549,14 @@ let
           # No --ignore-upstream-cache-filter here (unlike the hook): this
           # pushes the whole closure including public cache.nixos.org deps, and
           # the filter correctly delegates those (only stores the btver2 paths).
+          # timeout: without it, a wedged mesh connection hangs this push
+          # forever — the host job's `wait` (below) never returns, so the
+          # whole run never reaches self_destruct until the 6h force-destroy
+          # safety net. 300s is generous for a whole-closure push even over
+          # a degraded link; a hung attempt gets abandoned and retried fresh.
           ok=0
           for attempt in 1 2 3; do
-            if ${pkgs.attic-client}/bin/attic push "${cfg.atticCache}" "$outpath" >/dev/null 2>&1; then
+            if ${pkgs.coreutils}/bin/timeout 300 ${pkgs.attic-client}/bin/attic push "${cfg.atticCache}" "$outpath" >/dev/null 2>&1; then
               ok=1
               break
             fi
@@ -476,6 +614,32 @@ in
         microarch-tuned on this branch; untuned hosts substitute from
         cache.nixos.org already, so building them here just wastes compute.
         Add hosts here as they adopt jupiter.build.microarch.
+      '';
+    };
+
+    defaultMaxJobs = lib.mkOption {
+      type = lib.types.str;
+      default = "auto";
+      description = ''
+        `nix build --max-jobs` value when cloud-init user-data has no
+        MAX_JOBS override. "auto" resolves to nproc. Override per-run via
+        MAX_JOBS= in BinaryLane user-data — which size/job split is correct
+        depends on which VPS tier THIS run actually landed on, a per-run
+        fact, never one to bake into the ISO.
+      '';
+    };
+
+    defaultCores = lib.mkOption {
+      type = lib.types.ints.positive;
+      default = 1;
+      description = ''
+        `nix build --cores` value when cloud-init user-data has no CORES
+        override. 1 (each concurrent job single-threaded, so max-jobs alone
+        controls parallelism) is the safe default for any vCPU count — see
+        the nix.settings.cores comment below for the oversubscription bug
+        this avoids. Override per-run via CORES= in BinaryLane user-data if a
+        future dependency graph genuinely needs wide per-job parallelism
+        (e.g. one huge monolithic compile) instead of many concurrent jobs.
       '';
     };
 
@@ -548,6 +712,15 @@ in
         Base URL of the attic server this builder pushes to. europa's atticd,
         reached over the public internet via the Cloudflare Tunnel
         (modules/services/cloudflare-tunnel.nix).
+
+        This is the DEFAULT only — runScript's attic-login step reads
+        ATTIC_SERVER from cloud-init user-data first (same override pattern
+        as MAX_JOBS/CORES/WG_*), so a run can point at a different endpoint
+        without an ISO rebuild. NOTE this only affects the attic-client
+        login/push path; nix.settings.substituters below is baked from this
+        same option at ISO BUILD time and can't be runtime-overridden (nix.conf
+        is read once at daemon startup) — keep the two in sync by changing
+        this default when the reliable path changes, not just via user-data.
       '';
     };
 
@@ -689,16 +862,32 @@ in
     # wasted multi-hour run.
     services.cloud-init.enable = true;
 
-    # "auto" lets the nix daemon size itself to whatever this run actually
-    # landed on — max-jobs=auto resolves to nproc, cores=0 means "each job
-    # may use every core it can get". Previously hardcoded to 4/4 for a
-    # specific 8-thread plan; BinaryLane capacity issues already forced a
-    # fallback to a different (32GB/12-thread-class) size tier in practice
-    # (2026-07-17), so a static core count baked at ISO build time is
-    # actively wrong as soon as the size tier that actually gets allocated
-    # differs from whatever was assumed when the ISO was built.
+    # Daemon-level fallback ONLY — a size-agnostic safe default, not a bet on
+    # any particular VPS tier. The value that actually governs a real run is
+    # the runtime MAX_JOBS/CORES user-data pair (see runScript below), passed
+    # as `--max-jobs`/`--cores` flags on the `nix build` invocation itself, on
+    # the same override pattern as GIT_REF/HOSTS — because which core/job
+    # split is correct depends on which size tier THIS run actually landed on
+    # (BinaryLane capacity issues already forced a fallback between
+    # different size classes in practice, 2026-07-17), and that's a per-run
+    # fact, never an ISO-build-time one.
+    #
+    # cores = 1, NOT 0, as the fallback. cores=0 tells EACH of the (up to
+    # nproc) concurrent top-level jobs "use every core you can get", so nproc
+    # jobs each trying to internally -jnproc oversubscribes the box
+    # nproc-fold regardless of the box's actual size. Concrete failure this
+    # fixes (2026-07-19, run 640829): std-8vcpu, load average settled at ~45
+    # against 8 vCPUs, 20GB swapped out of 31GB RAM, and after 45+ minutes of
+    # genuine CPU activity not one derivation had finished building
+    # (confirmed: /tmp/attic-hook.lock, which the post-build-hook creates
+    # unconditionally on its very first invocation, never appeared). cores=1
+    # makes each job single-threaded, so max-jobs=auto (~nproc) concurrent
+    # single-threaded builds gives full utilization without thrashing — the
+    # standard Hydra/build-farm pattern for a dependency graph with many
+    # small-to-medium packages rather than one monolithic multi-core compile,
+    # and it's the right default for ANY vCPU count, not just this run's.
     nix.settings.max-jobs = "auto";
-    nix.settings.cores = 0;
+    nix.settings.cores = 1;
 
     # REQUIRED: pallene is mkIsoHost (it skips common.nix), so without this
     # the runScript's `nix build .#nixosConfigurations…` dies INSTANTLY with

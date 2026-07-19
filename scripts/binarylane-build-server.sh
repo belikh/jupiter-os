@@ -27,11 +27,12 @@
 #   R2_ACCOUNT_ID=... R2_ACCESS_KEY_ID=... R2_SECRET_ACCESS_KEY=... \
 #   [WIREGUARD_PRIVATE_KEY=...] [WG_PEER_PUBLIC_KEY=...] [WG_ENDPOINT=...] \
 #   [WG_ALLOWED_IPS=cidr1,cidr2] [WG_ADDRESS=...] \
-#   [GIT_REF=...] [HOSTS=host1,host2] \
+#   [GIT_REF=...] [HOSTS=host1,host2] [MAX_JOBS=...] [CORES=...] \
+#   [ATTIC_SERVER=http://...] \
 #   ISO_URL=https://... scripts/binarylane-build-server.sh
 #
-# GIT_REF, HOSTS, REPO_URL, and every WG_*/WIREGUARD_* var are optional —
-# omitted, the ISO's own baked defaults apply (see
+# GIT_REF, HOSTS, MAX_JOBS, CORES, REPO_URL, and every WG_*/WIREGUARD_* var
+# are optional — omitted, the ISO's own baked defaults apply (see
 # modules/services/build-server.nix's defaultRef/hosts/wireguard* options,
 # set for pallene in hosts/pallene/configuration.nix).
 set -euo pipefail
@@ -86,6 +87,14 @@ build_user_data() {
   add GIT_REF "${GIT_REF:-}"
   add REPO_URL "${REPO_URL:-}"
   add HOSTS "${HOSTS:-}"
+  # Concurrency: per-run, not per-ISO — the right max-jobs/cores split
+  # depends on which VPS size tier THIS run actually landed on (BinaryLane
+  # capacity issues already forced a fallback between size classes in
+  # practice). Omitted, build-server.nix's own size-agnostic defaults apply
+  # (max-jobs=auto, cores=1).
+  add MAX_JOBS "${MAX_JOBS:-}"
+  add CORES "${CORES:-}"
+  add ATTIC_SERVER "${ATTIC_SERVER:-}"
   add BINARYLANE_API_TOKEN "$BINARYLANE_API_TOKEN"
   add ATTIC_PUSH_TOKEN "$ATTIC_PUSH_TOKEN"
   add R2_ACCOUNT_ID "$R2_ACCOUNT_ID"
@@ -106,7 +115,9 @@ USER_DATA="$(build_user_data)"
 echo ">> runtime parameters prepared: $(printf '%s' "$USER_DATA" | cut -d= -f1 | tr '\n' ' ')"
 
 # Candidate regions, in priority order (lowest-latency-to-home first, then
-# the rest of domestic AU). A cheaper size tier being out of capacity in the
+# the rest of domestic AU). Brisbane preferred (2026-07-19: user-requested,
+# after a bring-up session that repeatedly hit WireGuard-mesh stalls on a
+# Melbourne-region box). A cheaper size tier being out of capacity in the
 # primary region is common (observed 2026-07-17/18) — checking the SAME
 # cheap tier in the other AU regions first, before ever escalating to a
 # pricier tier, is strictly cheaper when it works. Adelaide/Perth are
@@ -121,7 +132,7 @@ elif [ -n "${BL_REGION_SLUGS:-}" ]; then
   REGION_SLUGS="$BL_REGION_SLUGS"
 else
   regions_json="$(api GET /v2/regions)"
-  REGION_SLUGS="$(for name in melbourne brisbane sydney adelaide perth; do
+  REGION_SLUGS="$(for name in brisbane melbourne sydney adelaide perth; do
     jq -r --arg n "$name" '[.regions[] | select(.available) | select(.name | test($n; "i"))][0].slug // empty' <<<"$regions_json"
   done | grep -v '^$')"
 fi
@@ -202,13 +213,14 @@ image_id="$(api GET "/v2/servers/$server_id/backups" | jq -r '.backups[0].id')"
 [ -n "$image_id" ] && [ "$image_id" != "null" ] || { echo "!! could not find uploaded backup image id" >&2; exit 1; }
 echo ">> uploaded image id=$image_id"
 
-echo ">> attaching ISO as boot media and rebooting..."
+# attach_backup itself reboots the server into the attached image (per
+# BinaryLane's AttachBackup docs, "may also be used to boot the server from
+# an ISO image") — a separate explicit reboot action here is redundant and
+# just reboots a second time, adding an extra action-wait for nothing.
+echo ">> attaching ISO as boot media (reboots automatically)..."
 attach_resp="$(api POST "/v2/servers/$server_id/actions" "$(jq -n --argjson image "$image_id" \
   '{type: "attach_backup", image: $image}')")"
 wait_action "$(jq -r '.action.id' <<<"$attach_resp")"
-
-reboot_resp="$(api POST "/v2/servers/$server_id/actions" '{"type": "reboot"}')"
-wait_action "$(jq -r '.action.id' <<<"$reboot_resp")"
 
 echo ">> booted into pallene ISO — build-server.nix's own systemd service takes it"
 echo ">> from here, driven entirely by the user_data sent at create time."
