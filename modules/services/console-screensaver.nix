@@ -18,6 +18,38 @@
 
 let
   cfg = config.jupiter.consoleScreensaver;
+
+  # -l needs `setfont`/`consolechars` support COMPILED IN — cmatrix's
+  # configure.ac probes for those programs at build time (AC_PATH_PROG) and
+  # picks one of three #ifdef branches in cmatrix.c accordingly; if neither
+  # was on PATH inside nixpkgs' (minimal, sandboxed) build environment, the
+  # binary is compiled to unconditionally hit the "Unable to use both
+  # setfont and consolechars" branch, no matter what's on $PATH at runtime.
+  # Fix: rebuild with kbd (which provides setfont) as a build input so
+  # configure finds it and defines HAVE_SETFONT.
+  #
+  # It also needs a console font literally named "matrix" on setfont's own
+  # search path — nixpkgs' build doesn't install the font file cmatrix's own
+  # upstream source ships right alongside the binary (matrix.psf.gz, next to
+  # matrix.fnt). Since cmatrix always calls exactly `system("setfont
+  # matrix")` (cmatrix.c), a PATH-shadowing `setfont` wrapper that redirects
+  # the bare name "matrix" to our extracted font — and passes everything
+  # else straight through to the real setfont — is the minimal fix, no
+  # patching of cmatrix or kbd's compiled-in font directories required.
+  cmatrixWithFontSupport = cfg.package.overrideAttrs (old: {
+    nativeBuildInputs = (old.nativeBuildInputs or [ ]) ++ [ pkgs.kbd ];
+  });
+
+  matrixFont = pkgs.runCommand "cmatrix-matrix-font" { } ''
+    install -Dm444 ${cfg.package.src}/matrix.psf.gz $out/matrix.psf.gz
+  '';
+
+  setfontShim = pkgs.writeShellScriptBin "setfont" ''
+    if [ "$1" = "matrix" ]; then
+      exec ${pkgs.kbd}/bin/setfont ${matrixFont}/matrix.psf.gz
+    fi
+    exec ${pkgs.kbd}/bin/setfont "$@"
+  '';
 in
 {
   options.jupiter.consoleScreensaver = {
@@ -36,7 +68,7 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    environment.systemPackages = [ cfg.package ];
+    environment.systemPackages = [ cmatrixWithFontSupport ];
 
     # Free the VT from getty so cmatrix owns it exclusively. Otherwise getty
     # and cmatrix both hold /dev/ttyN open, cmatrix's stdin reads EOF, and it
@@ -50,6 +82,13 @@ in
 
       # ncurses needs to know it's on the Linux VT, not a generic terminal.
       environment.TERM = "linux";
+
+      # setfontShim first so it shadows the real setfont on PATH for
+      # cmatrix's internal `system("setfont matrix")` call.
+      path = [
+        setfontShim
+        pkgs.kbd
+      ];
 
       serviceConfig = {
         # idle: don't start until other jobs have settled, so boot messages
@@ -68,8 +107,10 @@ in
         # else wants the CPU.
         Nice = 19;
         # -b  bold (brighter glyphs against the black VT background).
+        # -l  Linux console font mode — draws with the "matrix" console font
+        #     (see setfontShim above for why this actually works on NixOS).
         # Run continuously; to log in, switch to another tty (Ctrl+Alt+F2).
-        ExecStart = "${lib.getExe cfg.package} -b";
+        ExecStart = "${lib.getExe cmatrixWithFontSupport} -b -l";
         Restart = "always";
         RestartSec = "3";
       };
