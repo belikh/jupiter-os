@@ -608,12 +608,17 @@ in
 
     hosts = lib.mkOption {
       type = lib.types.listOf lib.types.str;
-      default = [ "europa" ];
+      default = [
+        "europa"
+        "callisto"
+      ];
       description = ''
-        The nixosConfigurations to rebuild and push each run. Only europa is
-        microarch-tuned on this branch; untuned hosts substitute from
-        cache.nixos.org already, so building them here just wastes compute.
-        Add hosts here as they adopt jupiter.build.microarch.
+        The nixosConfigurations to rebuild and push each run. Europa (btver2)
+        and callisto (skylake — added 2026-07-20 once the i5-8500T Coffee Lake
+        was confirmed on the running box) are the microarch-tuned hosts;
+        untuned hosts substitute from cache.nixos.org already, so building
+        them here just wastes compute. Add hosts here as they adopt
+        jupiter.build.microarch.
       '';
     };
 
@@ -805,7 +810,10 @@ in
 
     microarchs = lib.mkOption {
       type = lib.types.listOf lib.types.str;
-      default = [ "btver2" ];
+      default = [
+        "btver2"
+        "skylake"
+      ];
       description = ''
         Every distinct `jupiter.build.microarch` value used by the hosts in
         `hosts`. nixpkgs tags CPU-tuned bootstrap derivations (e.g. the
@@ -820,6 +828,10 @@ in
         override) even runs. Picking a HOSTS value at runtime whose microarch
         isn't declared here just fails that one host fast with "missing
         system features" — cheap, not a wasted multi-hour run.
+
+        Current set: btver2 (europa, Opteron X3216 Puma) + skylake (callisto,
+        i5-8500T Coffee Lake — GCC schedules Coffee Lake identically to
+        Skylake; the kiosks will reuse the same tag once they adopt tuning).
       '';
     };
 

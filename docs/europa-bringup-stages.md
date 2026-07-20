@@ -247,10 +247,23 @@ These are documented in the plans but not part of getting europa tuned:
   Phase 2 expedient; the long-term topology puts it on ganymede (the
   resolver/services host) once that host is registered.
 - **Tuning the kiosks** — they're `skylake` on `archive/full-fleet-reference`
-  but stay untuned here
-  until their real CPUs are confirmed and a build-server run is justified.
-- **iSCSI / replication / restic offsite** — depend on callisto and ganymede,
-  neither registered yet.
+  but stay untuned here until their real CPUs are confirmed and a build-server
+  run is justified. (Callisto's i5-8500T is also Coffee Lake → `skylake` for
+  GCC purposes; `jupiter.build.microarch = "skylake"` is committed on
+  callisto as a roadmap entry only — pallene must build and push the
+  skylake-tagged closure to attic before callisto's next deploy. Once that
+  closure exists in attic, the same `skylake`-tagged bootstrap paths can be
+  reused by any future tuned kiosk without a separate bootstrap rebuild.)
+- **callisto's own skylake closure** — `jupiter.build.microarch = "skylake"`
+  is set in `hosts/callisto/configuration.nix` and callisto is listed in
+  pallene's `hosts` / `microarchs`, but the closure has NOT been built yet.
+  The next `make rebuild-world` run will build it alongside europa's btver2
+  closure. Until then, callisto must NOT be `nixos-rebuild switch`ed against
+  HEAD from itself — diskless + tmpfs /nix/store means a from-scratch
+  skylake bootstrap would OOM the box.
+- **iSCSI / replication / restic offsite** — depend on ganymede (not
+  registered yet); callisto's role is now the shared Nix builder, not the
+  old design's diskless database host.
 - **Fleet-wide LTO** (`-flto` via a stdenv-level overlay, not `-O3`/`-Ofast` —
   the latter risks real correctness bugs via `-ffast-math`-style semantic
   changes, not just instability) — genuine additional tuning headroom on top

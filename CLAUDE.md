@@ -14,31 +14,49 @@ Registered hosts: the 4 TCx Wave dashboard kiosks — `amalthea`
 (jupiter-bedroom, the bootstrap machine, canonical template, and the fleet's
 MQTT broker), `metis` (kitchen), `adrastea` (office), `thebe` (robbie-room) —
 plus `europa` (HPE MicroServer Gen10, the ZFS NAS + data hub), `callisto`
-(diskless netboot compute node, the fleet's shared Nix remote builder — i5,
-64GB RAM), and `pallene` (ephemeral BinaryLane build-server ISO host, phase2
-only). `amalthea` and `thebe` are physically installed today; `metis` and
+(HP EliteDesk 800 G4 DM, diskless netboot compute node, the fleet's shared
+Nix remote builder — i5-8500T Coffee Lake 6c/6t, 64GB RAM), and `pallene`
+(ephemeral BinaryLane build-server ISO host, phase2 only). `amalthea`,
+`thebe`, `europa`, and `callisto` are physically live today; `metis` and
 `adrastea` are registered and CI-green but still on placeholder disks/sops
 keys, awaiting their real install (see `.sops.yaml`). The siblings are clones
 of amalthea minus the broker role, differing in hostName/hostId/dashboard
-URL/disk. `callisto` is registered CI-green only — no physical netboot test
-yet; see `hosts/callisto/configuration.nix` for the deferred runtime-secrets
-gap (diskless means no persistent host key, so sops can't decrypt at runtime
+URL/disk. `callisto` is live at `10.1.1.3` running the diskless kexec-netboot
+closure europa PXE-serves; its `jupiter.build.microarch = "skylake"` is a
+**roadmap entry only** — pallene must build and push the skylake-tagged
+closure to attic before callisto's next `nixos-rebuild` (callisto is
+diskless, so a local from-scratch rebuild would OOM). See
+`hosts/callisto/configuration.nix` for the deferred runtime-secrets gap
+(diskless means no persistent host key, so sops can't decrypt at runtime
 there yet).
 
 **callisto as build server:** every other host delegates eligible builds to
 it via `jupiter.core.buildMachines` (`modules/core/build-machines.nix`,
 default-on) — it advertises `gccarch-btver2`/`gccarch-skylake` so it can
 build europa's and any future tuned-kiosk closures without being tuned
-itself. PXE serving for callisto's netboot lives on europa
-(`modules/network/pxe-server.nix`, wired via `flake.nix`'s `pxeModule`) —
-ganymede's role in the old design, moved here since ganymede isn't
-registered yet, same deviation as `cloudflareTunnel`.
+itself. Its daemon is tuned `cores=6 max-jobs=1` (the opposite of pallene's
+`cores=1 max-jobs=auto`) — callisto's workload is incremental shared builds
+(low concurrency, larger per-package work) rather than pallene's
+full-closure rebuilds (many small packages in parallel). PXE serving for
+callisto's netboot lives on europa (`modules/network/pxe-server.nix`, wired
+via `flake.nix`'s `pxeModule`) — ganymede's role in the old design, moved
+here since ganymede isn't registered yet, same deviation as
+`cloudflareTunnel`.
 
 **europa bring-up:** Stage 4 is **done** — europa is running its full
 `btver2`-tuned closure, substituted from its own Attic (`attic.jupiter.au` /
 the `neptune.jupiter.au:8080` port-forward). See `docs/europa-bringup-stages.md`
 for the full runbook and history; remaining stages (2 — ZFS mirror, 5 —
 deferred items) are independent cleanup, not blockers.
+
+**callisto bring-up:** live at `10.1.1.3` on a kexec-netboot closure
+(nixpkgs `26.11.20260616.567a49d`, HP EliteDesk 800 G4 DM, i5-8500T
+Coffee Lake 6c/6t, 64GB RAM). Tuning for its shared-builder workload
+(`cores=6 max-jobs=1`) is in git; the running closure is stale relative to
+HEAD and needs a deploy to take effect. Microarch roadmap entry
+(`jupiter.build.microarch = "skylake"`) is committed but NOT deployed —
+pallene must build and push the skylake-tagged closure to attic first (same
+sequence europa's btver2 closure followed).
 
 Everything must keep building from cache.nixos.org with `nix flake check`
 (note: europa's `btver2` closure substitutes only from europa's own Attic, not

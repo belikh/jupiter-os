@@ -28,7 +28,7 @@ The kiosk fleet (4 TCx Wave units) validated this approach end-to-end. europa (t
 | metis | kiosk (kitchen) | registered; awaiting physical install (placeholder disk + sops key) |
 | adrastea | kiosk (office) | registered; awaiting physical install (placeholder disk + sops key) |
 | europa | NAS + data hub, PXE server for callisto | live at `10.1.1.2`, full Phase 2 `btver2`-tuned closure, substituted from its own Attic |
-| callisto | diskless netboot, fleet Nix remote builder (i5, 64GB RAM) | registered; awaiting physical netboot test |
+| callisto | diskless netboot, fleet Nix remote builder (HP EliteDesk 800 G4 DM, i5-8500T Coffee Lake 6c/6t, 64GB RAM) | live at `10.1.1.3` on a kexec-netboot closure; daemon tuning (`cores=6 max-jobs=1`) committed, `jupiter.build.microarch = "skylake"` is a roadmap entry awaiting a pallene build/push |
 | pallene | build server (ephemeral ISO) | proven end-to-end — built and pushed europa's Phase 2 closure via `make rebuild-world` |
 
 All 7 host configurations pass `make check` (`nix flake check --no-build`) and CI.
