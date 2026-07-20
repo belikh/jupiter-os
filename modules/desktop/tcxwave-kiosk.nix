@@ -149,5 +149,27 @@ in
     #     evdev:name:*Touch*:* ENV{LIBINPUT_CALIBRATION_MATRIX}="..."
     #   '';
     # Left out until verified on hardware so we don't ship a wrong transform.
+
+    # ---- Idle-time distributed build server ---------------------------------
+    # A kiosk spends ~99.9999% of its life displaying a static dashboard and
+    # idling — let the rest of the fleet borrow its Skylake CPU for builds.
+    # Advertising gccarch-skylake lets it BUILD any other host's
+    # skylake-tagged closure (currently nobody's — callisto's microarch is a
+    # roadmap entry); today the practical value is generic x86_64-linux build
+    # capacity for any host's closure (other than europa's btver2-tuned one).
+    # The CPU itself is Skylake-class but the kiosk's own closure stays
+    # untuned (no jupiter.build.microarch here) — same "can build it without
+    # being it" pattern as callisto (hosts/callisto/configuration.nix).
+    #
+    # The pubkey matches the private half deployed as nix_build_ssh_key sops
+    # secret fleet-wide via modules/core/build-machines.nix.
+    nix.settings.system-features = lib.mkAfter [
+      "gccarch-skylake"
+      "big-parallel"
+    ];
+
+    users.users.root.openssh.authorizedKeys.keys = [
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILv1nEsuHqlA1ykn1p8wZmhhv1Y77cBxhgu2tAO3DhlP jupiter-fleet-nix-build"
+    ];
   };
 }
