@@ -45,6 +45,7 @@
   imports = [
     (modulesPath + "/installer/netboot/netboot-minimal.nix")
     ../../modules/common.nix
+    ../../modules/services/console-screensaver.nix
   ];
 
   networking.hostName = "callisto";
@@ -168,4 +169,11 @@
   # http://10.1.1.2:8080/jupiter-os <toplevel>` from callisto — every path
   # must resolve from attic before `switch`.
   jupiter.build.microarch = "skylake";
+
+  # Console screensaver — Matrix rain on tty1 for the (rare) moments a
+  # monitor is plugged into this diskless box. Same module as europa; Nice=19
+  # is baked into modules/services/console-screensaver.nix itself (not a
+  # per-host override), so the eye-candy always yields to real build work
+  # here too.
+  jupiter.consoleScreensaver.enable = true;
 }
