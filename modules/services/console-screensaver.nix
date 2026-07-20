@@ -68,8 +68,10 @@ in
         # else wants the CPU.
         Nice = 19;
         # -b  bold (brighter glyphs against the black VT background).
+        # -l  Linux console font mode — draws with the VT's matrix-style
+        #     glyphs instead of plain ASCII, closer to the movie's look.
         # Run continuously; to log in, switch to another tty (Ctrl+Alt+F2).
-        ExecStart = "${lib.getExe cfg.package} -b";
+        ExecStart = "${lib.getExe cfg.package} -b -l";
         Restart = "always";
         RestartSec = "3";
       };
