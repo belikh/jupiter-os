@@ -48,6 +48,16 @@ let
       recordsize = "256K";
     }
     {
+      # Persistent state for callisto (diskless netbooted) — SSH host keys,
+      # sops-nix state, /var/log, etc. Exported back to callisto over NFS
+      # (see modules/storage/nas-nfs.nix) and bind-mounted into place on the
+      # build host via impermanence (modules/core/impermanence.nix). Closes
+      # the runtime-secret gap noted in hosts/callisto/configuration.nix.
+      name = "tank/services/callisto";
+      mountpoint = "/tank/services/callisto";
+      recordsize = "128K";
+    }
+    {
       name = "tank/surveillance";
       mountpoint = "/tank/surveillance";
       recordsize = "1M";

@@ -1,6 +1,7 @@
 {
   config,
   lib,
+  pkgs,
   modulesPath,
   ...
 }:
@@ -27,22 +28,19 @@
 # mechanics. PXE now lives on europa instead of ganymede (ganymede isn't
 # registered), matching the cloudflareTunnel-on-europa deviation.
 #
-# KTD: diskless means no persistent /etc/ssh host key, so (a) sops-nix can't
-# derive an age key at runtime — common.nix's `sops.secrets.io_password` is
-# activation-time only (per CLAUDE.md, sops never touches eval/build/CI) so
-# this doesn't block registration, but runtime secret provisioning here is
-# unsolved and must be worked out before any real physical boot; and (b) the
-# SSH host key changes every boot, so the other hosts' build-machine SSH
-# config disables host-key pinning for callisto specifically (see
-# modules/core/build-machines.nix) — there's no stable key to pin.
-#
-# UPDATE 2026-07-20: observation on the running box contradicts (b) — the
-# host key is baked into the read-only squashfs /nix/.ro-store (mtime Jan 1
-# 2017, the squashfs epoch), so it's actually STABLE across reboots as long
-# as the same closure is booted. The StrictHostKeyChecking=no workaround in
-# modules/core/build-machines.nix is still harmless, but pinning the actual
-# key via publicHostKey would now be the correct hardening. Left as-is for
-# now; revisit when the runtime-secret path is properly worked out.
+# ---- Persistent state (NFS-backed) -----------------------------------------
+# Despite being diskless, callisto gets real persistence: europa exports a
+# per-host ZFS dataset (tank/services/callisto, created by
+# modules/storage/zfs-nas.nix) back to callisto over NFS at /persist, and
+# impermanence (modules/core/impermanence.nix) bind-mounts the
+# needed-but-not-all-of-/etc/ssh paths from it. That gives callisto a
+# stable SSH host key across closure changes (so other hosts could
+# eventually pin it via publicHostKey) AND lets sops-nix decrypt runtime
+# secrets normally — closing both gaps the previous "all in RAM" model had.
+# /nix/store itself stays in tmpfs (NFS would be wrong: too slow, and nix
+# db needs transactional consistency). What's persisted: SSH host keys,
+# /etc/machine-id, /var/log, /var/lib/{nixos,sops-nix,systemd/coredump} —
+# the same set the kiosks keep on their local /persist, just over the wire.
 {
   imports = [
     (modulesPath + "/installer/netboot/netboot-minimal.nix")
@@ -62,6 +60,39 @@
 
   # Don't add a build-machine entry pointing at itself.
   jupiter.core.buildMachines.enable = false;
+
+  # ---- NFS-backed /persist (from europa's tank/services/callisto) ----------
+  # `_netdev` makes systemd wait for network before mounting; `noac` trades
+  # a small perf hit for stronger attribute-cache coherency with the NFS
+  # server (matters for /etc/ssh bind-mounts: stale attribute cache has
+  # been observed to make ssh-keygen's "key exists, refusing to overwrite"
+  # check lie). `timeo=14,retrans=5` is the standard tolerant-on-LAN tuning.
+  fileSystems."/persist" = {
+    device = "10.1.1.2:/tank/services/callisto";
+    fsType = "nfs";
+    # neededForBoot is mandatory for any filesystem impermanence bind-mounts
+    # from (NixOS asserts this at eval time).
+    neededForBoot = true;
+    options = [
+      "rw"
+      "_netdev"
+      "noac"
+      "noatime"
+      "timeo=14"
+      "retrans=5"
+    ];
+  };
+
+  # Impermanence bind-mounts the persistent paths (SSH host keys,
+  # /etc/machine-id, /var/log, /var/lib/nixos, /var/lib/sops-nix) out of
+  # /persist. On first boot impermanence copies the squashfs-baked values
+  # into /persist, so the keys it ships with today become the persistent
+  # identity going forward (no separate init/keygen step needed).
+  # persistAdminHome=false: this is an appliance, not an interactive host.
+  jupiter.core.impermanence = {
+    enable = true;
+    persistAdminHome = false;
+  };
 
   # ---- Build daemon tuning for the shared-builder workload ----------------
   # callisto's actual workload is the OPPOSITE of pallene's
