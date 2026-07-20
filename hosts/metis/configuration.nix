@@ -18,6 +18,6 @@
   jupiter.tcxWaveKiosk = {
     enable = true;
     dashboardUrl = "https://iot.jupiter.au/main-floor/main";
-    disk = "/dev/disk/by-id/REPLACE-ME-metis-os-disk"; # set real by-id before install
+    disk = "/dev/disk/by-id/ata-SanDisk_SD8SNAT128G1011_182056422305"; # confirmed via SSH to the live-booted unit, 2026-07-20
   };
 }
