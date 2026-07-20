@@ -45,6 +45,18 @@ let
   # time using whatever cores the kiosk has free, leaving headroom for the
   # dashboard session so builds never visibly stutter the kiosk UI. Real
   # core count TODO if/when we want to push harder.
+  #
+  # gccarch-btver2 (proven manually against europa's closure on 2026-07-20,
+  # dispatched alongside callisto via a one-off --builders flag): the kiosks
+  # aren't themselves btver2-tuned, this only makes them ELIGIBLE to build
+  # btver2-tagged derivations for other hosts (europa) — btver2 is a portable
+  # baseline ISA subset, safe to execute/compile on any modern x86_64 CPU
+  # including these Skylake units. Caveat: each kiosk only has ~7.6GiB RAM
+  # (vs callisto's 64GB) — a large tuned derivation (e.g. clang/llvm) landing
+  # on a kiosk instead of callisto risks swap-thrashing or OOM. Acceptable
+  # for now since callisto's higher speedFactor biases dispatch there first;
+  # revisit (e.g. a kiosk-specific supportedFeatures split, or capping which
+  # derivations may land here) if that actually bites in practice.
   mkKioskBuilder = hostName: {
     inherit hostName;
     system = "x86_64-linux";
@@ -55,6 +67,7 @@ let
     speedFactor = 1;
     supportedFeatures = [
       "gccarch-skylake"
+      "gccarch-btver2"
       "big-parallel"
     ];
     mandatoryFeatures = [ ];
@@ -79,37 +92,36 @@ in
     sops.secrets.nix_build_ssh_key = { };
 
     nix.distributedBuilds = true;
-    nix.buildMachines =
-      [
-        {
-          hostName = "10.1.1.3"; # callisto, DHCP-reserved (see comment above)
-          system = "x86_64-linux";
-          protocol = "ssh-ng";
-          sshUser = "root";
-          sshKey = config.sops.secrets.nix_build_ssh_key.path;
-          # maxJobs mirrors callisto's local nix.settings.max-jobs = 1
-          # (hosts/callisto/configuration.nix): callisto runs ONE derivation
-          # at a time using all 6 cores (cores=6), the right shape for its
-          # incremental shared-builder workload (large packages, low
-          # concurrency) rather than pallene's full-closure-from-scratch
-          # shape (cores=1, many parallel). See hosts/callisto/configuration.nix
-          # for the workload-shape reasoning.
-          maxJobs = 1;
-          # speedFactor=2 (callisto is 2x faster than the requesting host's
-          # own builder) is conservative — vs europa's Opteron X3216 the i5-8500T
-          # is several times faster per core — but with a single builder
-          # registered, dispatch happens regardless; the value only biases
-          # choice once a second builder exists.
-          speedFactor = 2;
-          supportedFeatures = [
-            "gccarch-btver2"
-            "gccarch-skylake"
-            "big-parallel"
-          ];
-          mandatoryFeatures = [ ];
-        }
-      ]
-      ++ kioskBuilders;
+    nix.buildMachines = [
+      {
+        hostName = "10.1.1.3"; # callisto, DHCP-reserved (see comment above)
+        system = "x86_64-linux";
+        protocol = "ssh-ng";
+        sshUser = "root";
+        sshKey = config.sops.secrets.nix_build_ssh_key.path;
+        # maxJobs mirrors callisto's local nix.settings.max-jobs = 1
+        # (hosts/callisto/configuration.nix): callisto runs ONE derivation
+        # at a time using all 6 cores (cores=6), the right shape for its
+        # incremental shared-builder workload (large packages, low
+        # concurrency) rather than pallene's full-closure-from-scratch
+        # shape (cores=1, many parallel). See hosts/callisto/configuration.nix
+        # for the workload-shape reasoning.
+        maxJobs = 1;
+        # speedFactor=2 (callisto is 2x faster than the requesting host's
+        # own builder) is conservative — vs europa's Opteron X3216 the i5-8500T
+        # is several times faster per core — but with a single builder
+        # registered, dispatch happens regardless; the value only biases
+        # choice once a second builder exists.
+        speedFactor = 2;
+        supportedFeatures = [
+          "gccarch-btver2"
+          "gccarch-skylake"
+          "big-parallel"
+        ];
+        mandatoryFeatures = [ ];
+      }
+    ]
+    ++ kioskBuilders;
 
     # callisto's SSH host key regenerates every diskless boot — there's no
     # stable key to pin, so disable host-key checking for it specifically
