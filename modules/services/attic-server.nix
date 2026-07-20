@@ -60,17 +60,9 @@ in
         but untrusted (nix will simply fall through to cache.nixos.org), so
         the host keeps building from the public cache. This is the bootstrap
         gap noted as Q4 in the Phase 2 plan.
-      '';
-    };
 
-    substituterEnable = lib.mkOption {
-      type = lib.types.bool;
-      default = true;
-      description = ''
-        Whether to configure this host to substitute from the local attic
-        ahead of cache.nixos.org. Defaults to true: the NAS hosts its own
-        cache and should prefer it. Set false on a host that runs atticd
-        but should not consume from it (none today).
+        Consumed by modules/core/attic-substituter.nix, which subscribes
+        every fleet host (including this one) to the attic.
       '';
     };
   };
@@ -147,17 +139,8 @@ in
     # without an open port, once configured).
     networking.firewall.allowedTCPPorts = [ cfg.port ];
 
-    # ---- Substituter consumer ----------------------------------------------
-    # This host pulls its own (tuned) closure from the local attic. europa IS
-    # the server, so localhost avoids the tunnel roundtrip. The cache public
-    # key gates whether nix actually trusts these paths — until
-    # `attic cache create` mints the real key, nix falls through to
-    # cache.nixos.org (harmless: the host just keeps building untuned).
-    nix.settings = lib.mkIf cfg.substituterEnable {
-      substituters = [
-        "http://localhost:${toString cfg.port}/${cfg.cacheName}"
-      ];
-      trusted-public-keys = [ cfg.publicKey ];
-    };
+    # Substituter consumer wiring lives in modules/core/attic-substituter.nix,
+    # which subscribes every fleet host — including this one (europa), which
+    # uses localhost — to the attic cache.
   };
 }

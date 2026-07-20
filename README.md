@@ -44,11 +44,14 @@ Seven hosts are wired into the flake today:
   `docs/europa-bringup-stages.md`). Also runs the PXE server callisto
   netboots from (ganymede's role in the old design, moved here since
   ganymede isn't registered).
-- **callisto** — diskless netboot compute node (i5, 64GB RAM; the box
-  destroyed NVMe drives repeatedly, so it runs fully in-RAM instead), and the
-  fleet's shared Nix remote builder — every other host delegates eligible
-  builds to it (`jupiter.core.buildMachines`, default-on). Registered
-  CI-green only; no physical netboot test yet.
+- **callisto** — diskless netboot compute node (HP EliteDesk 800 G4 DM,
+  i5-8500T Coffee Lake 6c/6t, 64GB RAM; the box destroyed NVMe drives
+  repeatedly, so it runs fully in-RAM instead), and the fleet's shared Nix
+  remote builder — every other host delegates eligible builds to it
+  (`jupiter.core.buildMachines`, default-on). Live at `10.1.1.3` on a
+  kexec-netboot closure europa PXE-serves. `jupiter.build.microarch =
+  "skylake"` is committed as a roadmap entry only — pallene must build and
+  push the skylake-tagged closure to attic before callisto's next deploy.
 - **pallene** — the ephemeral BinaryLane build-server ISO host that compiles
   europa's tuned closure and pushes it to attic. Never a persistent fleet
   member; built via `make pallene-iso` / `make rebuild-world`.
@@ -107,8 +110,12 @@ machine actually needs them:
    `10.1.1.2`, substituted from its own Attic. See
    `docs/europa-bringup-stages.md`. Also PXE-serves callisto (ganymede's role
    in the old design; moved here since ganymede isn't registered).
-5. **callisto** (diskless netboot, fleet Nix remote builder — i5, 64GB RAM).
-   ✅ registered; awaiting physical netboot test.
+5. **callisto** (diskless netboot, fleet Nix remote builder — HP EliteDesk
+   800 G4 DM, i5-8500T Coffee Lake 6c/6t, 64GB RAM). ✅ live at `10.1.1.3`
+   on a kexec-netboot closure; daemon tuning (`cores=6 max-jobs=1`) and
+   `jupiter.build.microarch = "skylake"` are committed but the latter is a
+   roadmap entry only (pallene must build/push the skylake closure before
+   callisto's next deploy).
 6. **ganymede** (always-on services: resolver/DNS, tunnels) — then pin
    `networking.nameservers` back to it in `modules/common.nix`.
 7. **himalia** (laptop, home-manager), gaming/branding/terranix/edge-device
