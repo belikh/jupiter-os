@@ -26,6 +26,11 @@
     ../../modules/storage/sanoid.nix
     ../../modules/storage/zfs-tuning.nix
     ../../modules/network/nas-bond.nix
+    # jupiter.pxe itself is enabled in flake.nix's pxeModule, not here — it
+    # needs self.nixosConfigurations.callisto's build outputs, which aren't
+    # reachable from a plain host module (see flake.nix, CLAUDE.md's "avoid
+    # specialArgs" note). This import just brings the option in scope.
+    ../../modules/network/pxe-server.nix
     ../../modules/services/attic-server.nix
     ../../modules/services/syncthing.nix
     ../../modules/services/smart-monitoring.nix
