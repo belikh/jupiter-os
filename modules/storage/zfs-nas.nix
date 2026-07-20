@@ -11,10 +11,12 @@
 # and imported here. Datasets are created idempotently by a oneshot service at
 # boot so new datasets appear without manual `zfs create`.
 #
-# Current state (2026-07-13): tank is a single 8.2T vdev on sdb1 (WD 18TB).
-# The second WD 18TB (sdc) is receiving file transfers — once empty it will be
-# wiped and attached as a mirror via `zpool attach`. See the plan appendix for
-# the procedure.
+# Current state (2026-07-20): tank is a 16.4T two-disk mirror across the WD
+# 18TB drives, using whole-disk vdevs (ZFS-managed GPT — pool members are
+# addressed by-id with no -partN suffix, so `zpool replace` can rebuild the
+# layout on a new disk automatically). autoexpand=on; all OpenZFS 2.4.3
+# feature flags enabled. Built via the attach-then-grow sequence — see
+# docs/europa-bringup-stages.md Stage 2 for the procedure and history.
 
 let
   cfg = config.jupiter.nas;

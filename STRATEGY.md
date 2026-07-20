@@ -82,19 +82,26 @@ presign, attic cache visibility, push token scope). The fixed ISO is
 locally validated in QEMU and the next BinaryLane run is de-risked. See
 `docs/europa-stage4-progress.md` for the live log.
 
-### ZFS Mirror Completion
+### ZFS Mirror Completion ✅
 
-`tank` is currently a single vdev (one partition on the first 18 TB drive).
-The second drive (`sdc`) is now empty — Stage 0 file transfer is complete —
-and ready for `zpool attach` as a mirror.
+`tank` is now a 16.4 T two-disk mirror across the WD 18 TB drives, using
+whole-disk vdevs (ZFS-managed GPT — pool members addressed by-id with no
+`-partN` suffix, so `zpool replace` can rebuild the layout on a fresh disk
+with no manual partitioning). Built 2026-07-20 via the attach-then-grow
+sequence: Phase 1 attached sdc as a whole-disk mirror of the legacy sda1
+partition (which had been hand-created at 8.2 T, wasting half of sda); Phase 2
+detached sda1, wiped sda, and re-attached it as a second whole-disk vdev. The
+migration also doubled the pool's logical capacity (8.17 T → 16.4 T) and
+enabled all OpenZFS 2.4.3 feature flags.
 
-_Why it serves the approach:_ Incrementally and safely reaches a redundant
-ZFS mirror without data loss — no risk to the live single-vdev pool until
-the second disk is verified empty (now confirmed).
+_Why it served the approach:_ Incrementally and safely reached a redundant
+ZFS mirror without data loss — the pool was redundant throughout, except for
+the brief degraded window in Phase 2 between detaching sda1 and re-attaching
+sda as a whole disk (a minute of commands; the just-resilvered sdc held a
+complete, verified copy of the 2 T of data during that window).
 
-**Status:** Unblocked; schedule independently of Stage 4. Procedure
-documented in the europa bring-up stages runbook (`docs/europa-bringup-stages.md`
-Stage 2).
+**Status:** Done. Procedure and history in
+`docs/europa-bringup-stages.md` Stage 2.
 
 ### Legacy Pool Integration
 

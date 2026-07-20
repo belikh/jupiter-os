@@ -2,12 +2,11 @@
 
 # Snapshot policy (sanoid) for the NAS `tank` pool.
 #
-# Redundancy model (tank is currently a single vdev — will become a mirror
-# once the sdc file transfer completes):
-#   - tank mirror (future) -> survives a drive failure
-#   - sanoid snapshots     -> accident / ransomware / "oops rm" recovery
-#   - restic -> cloud      -> offsite copy of the irreplaceable set
-#                             (configured via jupiter.backups.paths in the host)
+# Redundancy model (tank is a two-disk mirror):
+#   - tank mirror           -> survives a drive failure
+#   - sanoid snapshots      -> accident / ransomware / "oops rm" recovery
+#   - restic -> cloud       -> offsite copy of the irreplaceable set
+#                              (configured via jupiter.backups.paths in the host)
 #
 # Bulk/expendable datasets (surveillance, downloads) are intentionally NOT
 # snapshotted — they churn heavily and are disposable.
