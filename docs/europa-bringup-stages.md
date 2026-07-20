@@ -1,10 +1,10 @@
 # europa Bring-Up Stages
 
-> **START HERE (new session):** Stages 0, 1, 3, and 4 are all **complete**.
+> **START HERE (new session):** Stages 0, 1, 2, 3, and 4 are all **complete**.
 > europa is running its full `btver2`-tuned closure at `10.1.1.2`, substituted
 > from its own Attic (`attic.jupiter.au` / the `neptune.jupiter.au:8080`
-> port-forward). What's left is optional: Stage 2 (ZFS mirror completion) and
-> Stage 5 (deferred items) — neither blocks anything downstream. The europa
+> port-forward), and `tank` is a 16.4 T two-disk mirror. What's left is
+> Stage 5 (deferred items) — nothing blocks anything downstream. The europa
 > bring-up itself is done; the roadmap continues with ganymede.
 
 Operational runbook for taking europa (HPE MicroServer Gen10) from bare metal
@@ -18,8 +18,8 @@ actions, how to verify it, and what it unblocks.
   preserved), Samba, NFS, atticd, syncthing, smartd, ARC capped at 5 GB.
   `amd_iommu=off` set so the Marvell 88SE9230 data drives enumerate. cmatrix
   screensaver on tty1.
-- **Stage 2** ⬜ not started — `zpool attach` the second WD 18 TB. Independent
-  cleanup; do whenever convenient.
+- **Stage 2** ✅ done (2026-07-20) — tank is now a 16.4T whole-disk mirror.
+  See [Stage 2](#stage-2--zfs-mirror-completion--done) for the actual procedure.
 - **Stage 3** ✅ all runtime prerequisites real and committed (see below).
 - **Stage 4** ✅ **done** — europa is running its full `btver2`-tuned closure,
   substituted from its own Attic. See `docs/europa-stage4-progress.md` for the
@@ -99,28 +99,61 @@ replaces.
 
 ---
 
-## Stage 2 — ZFS mirror completion ⬜ (independent, do whenever)
+## Stage 2 — ZFS mirror completion ✅ DONE (2026-07-20)
 
 **Goal:** `tank` becomes a two-disk mirror so it survives a drive failure.
 
 **Precondition:** Stage 0 complete — `sdc` is empty. **Do not start until the
 transfer is verified gone**, because this wipes `sdc`.
 
-**Actions** (from the Phase 1 plan appendix):
-1. Confirm `sdc` is empty / data safely on `tank`.
-2. Wipe `sdc`: `wipefs -a /dev/sdc && sgdisk -Z /dev/sdc`.
-3. Partition `sdc` to match `sdb1` (or repartition both disks full-width — a
-   migration-time decision; currently both are 8.2 T partial-disk).
-4. Attach as mirror:
-   `zpool attach tank ata-WDC_WD180EDGZ-11B2DA0_3WJ8904M-part1 ata-WDC_WD180EDGZ-11B2DA0_3WKT2RHK-part1`
-5. Wait for resilver: `zpool status tank` until `state: ONLINE` / no resilver
-   in progress.
+**Decision:** whole-disk vdevs, not hand-managed partitions. ZFS holds the
+disks by-id with no `-partN` suffix, owns the GPT layout (creates a full-width
+`part1` + 8 MB `part9` Solaris reserved internally), and can rebuild that
+layout automatically on `zpool replace`. The original pool was hand-created on
+`sda1` at 8.2 T with `sda2` (8.2 T) wasted, so the migration also doubled the
+pool's logical capacity (8.17 T → 16.4 T) by giving ZFS the full width of both
+disks.
 
-**Verify:** `zpool status tank` shows a `mirror-0` vdev with two online disks.
+**Actions actually taken** (attach-then-grow — keeps the pool redundant
+throughout except for the brief wipe-and-reattach of sda in Phase 2):
+0. `zpool set autoexpand=on tank` — needed so the pool grows when both
+   mirror members are full-width.
+1. **Phase 1 — add sdc as whole-disk mirror of the legacy sda1 partition:**
+   - `nix-shell -p gptfdisk --run 'sgdisk -Z /dev/sdc'` (wipe sdc; ext4
+     signatures and stale GPT gone).
+   - `zpool attach tank ata-WDC_WD180EDGZ-11B2DA0_3WJ8904M-part1 ata-WDC_WD180EDGZ-11B2DA0_3WKT2RHK`
+     (ZFS auto-partitions sdc with a full-width `sdc1` + `sdc9` and adds it as
+     a mirror member; vdev appears without `-partN` suffix since ZFS owns the
+     disk).
+   - Wait for resilver — 2.00 T at ~145 MB/s, took 4h11m, 0 errors.
+2. **Phase 2 — replace the legacy sda1 partition with a whole-disk sda vdev:**
+   - `zpool detach tank ata-WDC_WD180EDGZ-11B2DA0_3WJ8904M-part1` (pool runs
+     on sdc alone — brief degraded window).
+   - `nix-shell -p gptfdisk --run 'sgdisk -Z /dev/sda'` (kills both sda1 and
+     the wasted sda2 in one wipe).
+   - `zpool attach tank ata-WDC_WD180EDGZ-11B2DA0_3WKT2RHK ata-WDC_WD180EDGZ-11B2DA0_3WJ8904M`
+     (ZFS auto-partitions sda to match sdc).
+   - Wait for resilver — 2.00 T, took 5h01m, 0 errors. Pool autoexpanded from
+     8.17 T to 16.4 T once both members were full-width and the second
+     resilver completed.
 
-**Unblocks:** Nothing config-side — this is pure storage redundancy. Can run
-any time after Stage 0; independent of Stage 1 ordering in principle, but
-easiest to reason about once europa is on JupiterOS (Stage 1).
+**Verify:** `zpool status tank` shows `mirror-0` with both `ata-WDC_WD180EDGZ-…`
+members ONLINE, no `-partN` suffix on either vdev; `zpool list -v tank` shows
+both members at 16.4 T and the pool at 16.4 T total. Confirmed 2026-07-20.
+
+**Unblocked:** nothing config-side — pure storage redundancy. The pool now
+survives any single disk failure; `zpool replace` on either member will work
+against a fresh bare disk with no manual partitioning step.
+
+**Notes for next time:**
+- The pool features were `zpool upgrade`d to full OpenZFS 2.4.3 in the same
+  window (accidentally — `zpool upgrade tank` is not a read-only status check,
+  it performs the upgrade). New features enabled include `block_cloning`,
+  `zstd_compress`, `fast_dedup`, `raidz_expansion`, `device_rebuild` (the last
+  gives accurate resilver progress). Pool is now incompatible with older ZFS
+  versions — irrelevant on this single-host fleet.
+- `autoexpand=on` is a permanent pool property; future member swaps that
+  increase capacity will grow the pool automatically.
 
 ---
 
