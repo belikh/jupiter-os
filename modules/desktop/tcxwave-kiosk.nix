@@ -156,15 +156,30 @@ in
     # Advertising gccarch-skylake lets it BUILD any other host's
     # skylake-tagged closure (currently nobody's — callisto's microarch is a
     # roadmap entry); today the practical value is generic x86_64-linux build
-    # capacity for any host's closure (other than europa's btver2-tuned one).
-    # The CPU itself is Skylake-class but the kiosk's own closure stays
-    # untuned (no jupiter.build.microarch here) — same "can build it without
-    # being it" pattern as callisto (hosts/callisto/configuration.nix).
+    # capacity for any host's closure. The CPU itself is Skylake-class but the
+    # kiosk's own closure stays untuned (no jupiter.build.microarch here) —
+    # same "can build it without being it" pattern as callisto
+    # (hosts/callisto/configuration.nix).
+    #
+    # gccarch-btver2 (added 2026-07-20, matching modules/core/build-machines.nix's
+    # kioskBuilders supportedFeatures): makes kiosks eligible to help build
+    # europa's btver2-tuned closure too — btver2 is a portable baseline ISA
+    # subset, safe to compile/execute on any modern x86_64 CPU including
+    # Skylake. This is the REMOTE side of that eligibility — nix's own
+    # daemon here enforces system-features against what a dispatcher
+    # requests, independent of what the dispatcher's --builders string
+    # claims, so both sides need this tag or the remote refuses the job
+    # ("missing system features", confirmed hitting this in practice before
+    # this was added here). Caveat carried over from build-machines.nix: each
+    # kiosk only has ~7.6GiB RAM vs callisto's 64GB — a large tuned
+    # derivation (clang/llvm) landing here instead of callisto risks
+    # swap-thrashing or OOM. Acceptable per that module's reasoning.
     #
     # The pubkey matches the private half deployed as nix_build_ssh_key sops
     # secret fleet-wide via modules/core/build-machines.nix.
     nix.settings.system-features = lib.mkAfter [
       "gccarch-skylake"
+      "gccarch-btver2"
       "big-parallel"
     ];
 
