@@ -25,6 +25,7 @@
     ../../modules/storage/zfs-nas.nix
     ../../modules/storage/sanoid.nix
     ../../modules/storage/zfs-tuning.nix
+    ../../modules/storage/nas-nfs.nix
     ../../modules/network/nas-bond.nix
     # jupiter.pxe itself is enabled in flake.nix's pxeModule, not here — it
     # needs self.nixosConfigurations.callisto's build outputs, which aren't
