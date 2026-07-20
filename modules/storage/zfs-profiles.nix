@@ -56,6 +56,29 @@ let
       };
       "local/nix" = mkDataset "/nix";
       "safe/persist" = mkDataset "/persist";
+      # Real disk-backed swap (today: only the kiosks use "impermanent") —
+      # zram alone isn't enough headroom for an occasional heavy dispatched
+      # build (e.g. mypyc landed here 2026-07-20 and pushed a kiosk to
+      # 168Mi free / actively swapping into zram before intervention). A
+      # zvol is the ZFS-supported way to do swap — a plain swapfile on a
+      # ZFS dataset risks deadlock under memory pressure. disko wires this
+      # content type straight into `swapDevices` automatically. Content
+      # is inherently transient, so it lives under local/ like root/nix,
+      # not safe/. compression=off + sync=always + no cache: standard ZFS
+      # swap-zvol tuning (swap shouldn't be compressed or cached twice).
+      "local/swap" = {
+        type = "zfs_volume";
+        size = "8G";
+        content = {
+          type = "swap";
+        };
+        options = {
+          compression = "off";
+          sync = "always";
+          primarycache = "metadata";
+          secondarycache = "none";
+        };
+      };
     };
     stateful = {
       "root" = mkDataset "/";
