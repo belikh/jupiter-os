@@ -28,7 +28,7 @@ builds/boots/deploys, then grow.
 
 ## Registered hosts
 
-Six hosts are wired into the flake today:
+Seven hosts are wired into the flake today:
 
 - **The 4 TCx Wave dashboard kiosks** (one per room): **amalthea**
   (jupiter-bedroom — the bootstrap host, canonical template, and fleet MQTT
@@ -41,7 +41,14 @@ Six hosts are wired into the flake today:
   and sops keys).
 - **europa** (HPE MicroServer Gen10) — the ZFS NAS + data hub. Running its
   full Phase 2 `btver2`-tuned closure, substituted from its own Attic (see
-  `docs/europa-bringup-stages.md`).
+  `docs/europa-bringup-stages.md`). Also runs the PXE server callisto
+  netboots from (ganymede's role in the old design, moved here since
+  ganymede isn't registered).
+- **callisto** — diskless netboot compute node (i5, 64GB RAM; the box
+  destroyed NVMe drives repeatedly, so it runs fully in-RAM instead), and the
+  fleet's shared Nix remote builder — every other host delegates eligible
+  builds to it (`jupiter.core.buildMachines`, default-on). Registered
+  CI-green only; no physical netboot test yet.
 - **pallene** — the ephemeral BinaryLane build-server ISO host that compiles
   europa's tuned closure and pushes it to attic. Never a persistent fleet
   member; built via `make pallene-iso` / `make rebuild-world`.
@@ -98,11 +105,14 @@ machine actually needs them:
    install
 4. **europa** (NAS + data hub) — full Phase 2 `btver2`-tuned closure live at
    `10.1.1.2`, substituted from its own Attic. See
-   `docs/europa-bringup-stages.md`.
-5. **ganymede** (always-on services: resolver/DNS, PXE, tunnels) — then pin
+   `docs/europa-bringup-stages.md`. Also PXE-serves callisto (ganymede's role
+   in the old design; moved here since ganymede isn't registered).
+5. **callisto** (diskless netboot, fleet Nix remote builder — i5, 64GB RAM).
+   ✅ registered; awaiting physical netboot test.
+6. **ganymede** (always-on services: resolver/DNS, tunnels) — then pin
    `networking.nameservers` back to it in `modules/common.nix`.
-6. **callisto** (diskless PXE), **himalia** (laptop, home-manager), gaming/
-   branding/terranix/edge-device layers — each restores its own inputs.
+7. **himalia** (laptop, home-manager), gaming/branding/terranix/edge-device
+   layers — each restores its own inputs.
 
 Rules that keep this buildable:
 

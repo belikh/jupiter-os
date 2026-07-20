@@ -17,6 +17,7 @@
     ./core/zed.nix
     ./boot/fallout-splash.nix
     ./core/build-tuning.nix
+    ./core/build-machines.nix
     ./core/branding.nix
     ./storage/zfs-profiles.nix
   ];

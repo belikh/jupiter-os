@@ -13,12 +13,26 @@ only when the machine that needs them is brought up.
 Registered hosts: the 4 TCx Wave dashboard kiosks — `amalthea`
 (jupiter-bedroom, the bootstrap machine, canonical template, and the fleet's
 MQTT broker), `metis` (kitchen), `adrastea` (office), `thebe` (robbie-room) —
-plus `europa` (HPE MicroServer Gen10, the ZFS NAS + data hub) and `pallene`
-(ephemeral BinaryLane build-server ISO host, phase2 only). `amalthea` and
-`thebe` are physically installed today; `metis` and `adrastea` are registered
-and CI-green but still on placeholder disks/sops keys, awaiting their real
-install (see `.sops.yaml`). The siblings are clones of amalthea minus the
-broker role, differing in hostName/hostId/dashboard URL/disk.
+plus `europa` (HPE MicroServer Gen10, the ZFS NAS + data hub), `callisto`
+(diskless netboot compute node, the fleet's shared Nix remote builder — i5,
+64GB RAM), and `pallene` (ephemeral BinaryLane build-server ISO host, phase2
+only). `amalthea` and `thebe` are physically installed today; `metis` and
+`adrastea` are registered and CI-green but still on placeholder disks/sops
+keys, awaiting their real install (see `.sops.yaml`). The siblings are clones
+of amalthea minus the broker role, differing in hostName/hostId/dashboard
+URL/disk. `callisto` is registered CI-green only — no physical netboot test
+yet; see `hosts/callisto/configuration.nix` for the deferred runtime-secrets
+gap (diskless means no persistent host key, so sops can't decrypt at runtime
+there yet).
+
+**callisto as build server:** every other host delegates eligible builds to
+it via `jupiter.core.buildMachines` (`modules/core/build-machines.nix`,
+default-on) — it advertises `gccarch-btver2`/`gccarch-skylake` so it can
+build europa's and any future tuned-kiosk closures without being tuned
+itself. PXE serving for callisto's netboot lives on europa
+(`modules/network/pxe-server.nix`, wired via `flake.nix`'s `pxeModule`) —
+ganymede's role in the old design, moved here since ganymede isn't
+registered yet, same deviation as `cloudflareTunnel`.
 
 **europa bring-up:** Stage 4 is **done** — europa is running its full
 `btver2`-tuned closure, substituted from its own Attic (`attic.jupiter.au` /
@@ -86,7 +100,8 @@ make fmt                # format all Nix (nixfmt-rfc-style); fmt-check to verify
 
 amalthea + thebe (live) → the remaining 2 kiosks (metis/adrastea —
 registered, CI-green, awaiting physical install) → europa (live, full
-`btver2` tuned closure — see `docs/europa-bringup-stages.md`) → ganymede
-(resolver/services) → callisto (diskless PXE) → himalia (laptop) →
-gaming/branding/terranix/edge layers. Port each from
-`archive/full-fleet-reference`, keeping the buildability rules above.
+`btver2` tuned closure — see `docs/europa-bringup-stages.md`) → callisto
+(registered CI-green, fleet build server, awaiting physical netboot test) →
+ganymede (resolver/services) → himalia (laptop) → gaming/branding/terranix/
+edge layers. Port each from `archive/full-fleet-reference`, keeping the
+buildability rules above.

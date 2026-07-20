@@ -1,6 +1,6 @@
 ---
 name: jupiter-os
-last_updated: 2026-07-19
+last_updated: 2026-07-20
 ---
 
 # jupiter-os Strategy
@@ -27,10 +27,11 @@ The kiosk fleet (4 TCx Wave units) validated this approach end-to-end. europa (t
 | thebe | kiosk (robbie-room) | live |
 | metis | kiosk (kitchen) | registered; awaiting physical install (placeholder disk + sops key) |
 | adrastea | kiosk (office) | registered; awaiting physical install (placeholder disk + sops key) |
-| europa | NAS + data hub | live at `10.1.1.2`, full Phase 2 `btver2`-tuned closure, substituted from its own Attic |
+| europa | NAS + data hub, PXE server for callisto | live at `10.1.1.2`, full Phase 2 `btver2`-tuned closure, substituted from its own Attic |
+| callisto | diskless netboot, fleet Nix remote builder (i5, 64GB RAM) | registered; awaiting physical netboot test |
 | pallene | build server (ephemeral ISO) | proven end-to-end — built and pushed europa's Phase 2 closure via `make rebuild-world` |
 
-All 6 host configurations pass `make check` (`nix flake check --no-build`) and CI.
+All 7 host configurations pass `make check` (`nix flake check --no-build`) and CI.
 
 ## Key metrics
 
@@ -105,4 +106,4 @@ _Why it serves the approach:_ Safe, read-only access to legacy data so the fleet
 
 ## What's next after europa
 
-Following the roadmap (`CLAUDE.md`): **ganymede** (resolver/services) → **callisto** (diskless PXE, consumes iSCSI from europa) → **himalia** (laptop) → gaming/branding/terranix/edge layers. Port each from the `archive/full-fleet-reference` design reference, keeping the buildability rules — no custom kernels on ZFS hosts, no microarch without a private cache to serve it.
+Following the roadmap (`CLAUDE.md`): **callisto** (diskless netboot, fleet Nix remote builder — registered, awaiting physical netboot test) → **ganymede** (resolver/services) → **himalia** (laptop) → gaming/branding/terranix/edge layers. Port each from the `archive/full-fleet-reference` design reference, keeping the buildability rules — no custom kernels on ZFS hosts, no microarch without a private cache to serve it.

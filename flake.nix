@@ -48,9 +48,12 @@
     }:
     let
       # Inject flake-provided modules via a lexical closure rather than
-      # specialArgs, so host files stay plain NixOS modules.
+      # specialArgs, so host files stay plain NixOS modules. extraModules
+      # lets a specific host pick up something only computable here (e.g.
+      # europa's pxeModule below, which reads another host's build output) —
+      # `[ ]` for every host that doesn't need one.
       mkHost =
-        hostPath:
+        hostPath: extraModules:
         nixpkgs.lib.nixosSystem {
           system = "x86_64-linux";
           modules = [
@@ -83,7 +86,8 @@
               ];
             }
             hostPath
-          ];
+          ]
+          ++ extraModules;
         };
 
       # Ephemeral build-server ISO host (pallene): no common flake-module
@@ -96,6 +100,51 @@
           system = "x86_64-linux";
           modules = [ hostPath ];
         };
+
+      # Wire the PXE server (on europa — see hosts/europa/configuration.nix
+      # for why it's here and not ganymede) directly to callisto's netboot
+      # build products, so the TFTP-served image always matches the flake.
+      # The cmdLine must point the booting kernel at its closure's init.
+      #
+      # Built with the PLAIN untuned nixpkgs.legacyPackages, not europa's own
+      # (gccarch-btver2-tuned) `pkgs` — see modules/network/pxe-server.nix's
+      # comment for why that distinction is load-bearing here.
+      untunedPkgs = nixpkgs.legacyPackages.x86_64-linux;
+      callistoConfig = self.nixosConfigurations.callisto.config;
+      callistoBuild = callistoConfig.system.build;
+      callistoCmdLine = "init=${callistoBuild.toplevel}/init loglevel=4 ${toString callistoConfig.boot.kernelParams}";
+      europaLanIp = "10.1.1.2";
+      ipxeScript = untunedPkgs.writeText "netboot.ipxe" ''
+        #!ipxe
+        kernel tftp://${europaLanIp}/bzImage ${callistoCmdLine}
+        initrd tftp://${europaLanIp}/initrd
+        boot
+      '';
+      ipxeBoot = untunedPkgs.ipxe.override { embedScript = ipxeScript; };
+      pxeTftpRoot = untunedPkgs.linkFarm "pxe-tftproot" [
+        {
+          name = "ipxe.efi";
+          path = "${ipxeBoot}/ipxe.efi";
+        }
+        {
+          name = "undionly.kpxe";
+          path = "${ipxeBoot}/undionly.kpxe";
+        }
+        {
+          name = "bzImage";
+          path = "${callistoBuild.kernel}/bzImage";
+        }
+        {
+          name = "initrd";
+          path = "${callistoBuild.netbootRamdisk}/initrd";
+        }
+      ];
+      pxeModule = { ... }: {
+        jupiter.pxe = {
+          enable = true;
+          root = pxeTftpRoot;
+        };
+      };
     in
     {
       nixosConfigurations = {
@@ -105,15 +154,24 @@
         # modules/services/tcxwave-power-tuning.nix and the shared kiosk
         # session in modules/desktop/dashboard-kiosk.nix. amalthea is the
         # bootstrap host and the canonical template; the others are clones.
-        amalthea = mkHost ./hosts/amalthea/configuration.nix; # jupiter-bedroom
-        metis = mkHost ./hosts/metis/configuration.nix; # kitchen
-        adrastea = mkHost ./hosts/adrastea/configuration.nix; # office
-        thebe = mkHost ./hosts/thebe/configuration.nix; # robbie-room
+        amalthea = mkHost ./hosts/amalthea/configuration.nix [ ]; # jupiter-bedroom
+        metis = mkHost ./hosts/metis/configuration.nix [ ]; # kitchen
+        adrastea = mkHost ./hosts/adrastea/configuration.nix [ ]; # office
+        thebe = mkHost ./hosts/thebe/configuration.nix [ ]; # robbie-room
 
         # HPE MicroServer Gen10 — the ZFS NAS and data hub. Phase 1 untuned
         # bootstrap from cache.nixos.org (stock kernel, no microarch); Phase 2
         # switches to a btver2-tuned closure served from its own Attic cache.
-        europa = mkHost ./hosts/europa/configuration.nix; # NAS + data hub
+        # Also runs the PXE server for callisto (see
+        # hosts/europa/configuration.nix) — ganymede's role in the old design,
+        # moved here since ganymede isn't registered yet.
+        europa = mkHost ./hosts/europa/configuration.nix [ pxeModule ]; # NAS + data hub
+
+        # Diskless netboot compute node, PXE-booted from europa — the fleet's
+        # shared Nix remote builder (i5, 64GB RAM). Registered CI-green only;
+        # no physical netboot test yet (see hosts/callisto/configuration.nix
+        # for the deferred runtime-secrets gap).
+        callisto = mkHost ./hosts/callisto/configuration.nix [ ];
 
         # Ephemeral BinaryLane build server. Never a persistent fleet member —
         # booted from the pallene-iso package, rebuilds europa's tuned closure,
@@ -127,6 +185,12 @@
       # injects the BinaryLane API + attic push tokens the same way
       # `make build-mx4300` injects OpenWrt secrets, then cleans up.
       packages.x86_64-linux.pallene-iso = self.nixosConfigurations.pallene.config.system.build.isoImage;
+
+      # The TFTP root europa serves callisto's netboot chain from — exposed
+      # standalone (built with the untuned nixpkgs, see pxeModule above) so
+      # it's independently checkable without pulling in europa's whole
+      # (gccarch-btver2-tuned) system closure.
+      packages.x86_64-linux.pxe-tftproot = pxeTftpRoot;
 
       # `nix flake check` builds every registered host closure — for a
       # single-host bootstrap that's cheap, and it's the whole point: prove
