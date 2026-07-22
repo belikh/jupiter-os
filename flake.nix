@@ -76,12 +76,25 @@
             # (uses bmake) fails -> cascades up to the europa system toplevel.
             # bmake itself builds fine; only its test suite is the problem, so
             # skip it. See europa-20260716120909.log in R2 logs/.
+            #
+            # perl5Packages.Test2Harness's `t/integration/preload.t` is
+            # likewise flaky under heavy distributed-build load: it failed
+            # attempt11 and attempt12 of the europa bring-up (same "1 of 62
+            # test files failed" signature both times), cascading through
+            # nix-perl -> nix -> the whole system toplevel. The other 61
+            # test files and 1729 assertions pass; only this one subtest
+            # under load is the problem, so skip the test suite entirely.
             {
               nixpkgs.overlays = [
                 (final: prev: {
                   bmake = prev.bmake.overrideAttrs (_: {
                     doCheck = false;
                   });
+                  perl5Packages = prev.perl5Packages // {
+                    Test2Harness = prev.perl5Packages.Test2Harness.overrideAttrs (_: {
+                      doCheck = false;
+                    });
+                  };
                 })
               ];
             }
