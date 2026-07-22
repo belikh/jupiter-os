@@ -168,7 +168,16 @@
   # Verify pre-deploy with `nix path-info --substituters
   # http://10.1.1.2:8080/jupiter-os <toplevel>` from callisto — every path
   # must resolve from attic before `switch`.
-  jupiter.build.microarch = "skylake";
+  #
+  # DISABLED 2026-07-22: this was committed ahead of pallene actually doing
+  # the required build+push. Consequence discovered during europa's PXE
+  # bring-up: europa's netboot.ipxe embeds callisto's system.build.toplevel
+  # path (for the kexec init= cmdline), so ANYTHING that evaluates
+  # nixosConfigurations.callisto — including an unrelated europa rebuild —
+  # was forced to build callisto's *entire* skylake-tagged closure from
+  # scratch, since nothing skylake-tagged exists in attic or cache.nixos.org.
+  # Re-enable only after pallene has actually pushed a skylake closure.
+  # jupiter.build.microarch = "skylake";
 
   # Console screensaver — Matrix rain on tty1 for the (rare) moments a
   # monitor is plugged into this diskless box. Same module as europa; Nice=19
