@@ -58,19 +58,18 @@
 
   # Ensure the netboot image is fully copied to RAM on boot.
   #
-  # console=ttyS0: this host has no monitor attached, and AMT gives us a real
-  # serial line (SOL, :16994) — confirmed 2026-07-23 that AMT_RedirectionService
-  # + amtterm work end-to-end, but the actual kernel had nothing to say on
-  # serial (this real, non-VM kernelParams list never set console=ttyS0; only
-  # virtualisation.vmVariant in common.nix did, for the QEMU boot-smoke path).
-  # `console=tty1` stays first so the VGA/matrix-screensaver console (the
-  # occasional-monitor case the console-screensaver module targets) keeps
-  # working as the primary console; ttyS0 is added, not substituted.
-  boot.kernelParams = [
-    "copytoram"
-    "console=tty1"
-    "console=ttyS0,115200n8"
-  ];
+  # REVERTED 2026-07-23: tried adding console=ttyS0 for AMT SOL visibility
+  # (AMT_RedirectionService + amtterm work fine end-to-end), but it introduced
+  # a genuine new boot hang right after early ACPI/PCI init — confirmed by
+  # comparing against prior boots (without this param) that got much further,
+  # into the initrd's DHCP/mount stage. SOL was also completely silent the
+  # whole time, consistent with this box's BIOS not actually having a working
+  # UART wired up for ttyS0 — forcing the kernel to console= a serial port
+  # with no real hardware backing it appears to hang synchronous console
+  # writes early in boot. Getting SOL boot visibility on this hardware would
+  # need a physical BIOS change (enabling legacy serial / console
+  # redirection), which defeats the point of a remote-recovery channel.
+  boot.kernelParams = [ "copytoram" ];
 
   # The generic netboot-minimal initrd has no hardware scan behind it (no
   # local disk to run nixos-generate-config against), so it doesn't know
