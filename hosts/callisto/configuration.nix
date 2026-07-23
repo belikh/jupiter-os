@@ -57,7 +57,20 @@
   boot.supportedFilesystems.zfs = lib.mkForce false;
 
   # Ensure the netboot image is fully copied to RAM on boot.
-  boot.kernelParams = [ "copytoram" ];
+  #
+  # console=ttyS0: this host has no monitor attached, and AMT gives us a real
+  # serial line (SOL, :16994) — confirmed 2026-07-23 that AMT_RedirectionService
+  # + amtterm work end-to-end, but the actual kernel had nothing to say on
+  # serial (this real, non-VM kernelParams list never set console=ttyS0; only
+  # virtualisation.vmVariant in common.nix did, for the QEMU boot-smoke path).
+  # `console=tty1` stays first so the VGA/matrix-screensaver console (the
+  # occasional-monitor case the console-screensaver module targets) keeps
+  # working as the primary console; ttyS0 is added, not substituted.
+  boot.kernelParams = [
+    "copytoram"
+    "console=tty1"
+    "console=ttyS0,115200n8"
+  ];
 
   # The generic netboot-minimal initrd has no hardware scan behind it (no
   # local disk to run nixos-generate-config against), so it doesn't know
