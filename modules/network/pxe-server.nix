@@ -29,6 +29,20 @@ in
         untuned nixpkgs instance, not this module's own `pkgs`.
       '';
     };
+
+    httpPort = lib.mkOption {
+      type = lib.types.port;
+      default = 8082;
+      description = ''
+        Port serving `root` over plain HTTP, for iPXE's kernel/initrd fetch.
+        TFTP's lockstep ack-per-block design (atftpd here) is fine for the
+        tiny ipxe.efi/undionly.kpxe chainload binary — that's all the NIC's
+        PXE ROM firmware itself can speak — but is badly slow for the actual
+        kernel+initrd (tens of MB). iPXE has a native HTTP client once it's
+        running, so netboot.ipxe fetches those two over HTTP instead
+        (confirmed slow via TFTP bringing callisto up 2026-07-23).
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -37,6 +51,20 @@ in
       root = cfg.root;
     };
 
+    services.nginx = {
+      enable = true;
+      virtualHosts."pxe-assets" = {
+        listen = [
+          {
+            addr = "0.0.0.0";
+            port = cfg.httpPort;
+          }
+        ];
+        root = cfg.root;
+      };
+    };
+
     networking.firewall.allowedUDPPorts = [ 69 ];
+    networking.firewall.allowedTCPPorts = [ cfg.httpPort ];
   };
 }
