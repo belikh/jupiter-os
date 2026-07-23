@@ -84,6 +84,23 @@
     ];
   };
 
+  # neededForBoot means this NFS mount runs in the initrd, before
+  # switch-root — but the default systemd-stage-1 initrd has neither a
+  # configured network nor the nfs-utils mount.nfs helper, so the mount was
+  # silently unmountable from a cold PXE boot (confirmed 2026-07-23: a real
+  # power cycle dropped to the emergency shell with "mount program didn't
+  # pass remote address" — no DHCP lease, no route, no mount.nfs binary at
+  # all). PXE's own firmware-level DHCP that fetches the kernel/initrd does
+  # NOT carry over into Linux; the initrd needs its own DHCP client, and
+  # NixOS doesn't pull one in (or the NFS client helper) just because a
+  # fileSystem entry says fsType = "nfs".
+  boot.initrd.systemd.network.enable = true;
+  boot.initrd.systemd.network.networks."10-dhcp" = {
+    matchConfig.Type = "ether";
+    networkConfig.DHCP = "ipv4";
+  };
+  boot.initrd.systemd.extraBin."mount.nfs" = "${pkgs.nfs-utils}/bin/mount.nfs";
+
   # Impermanence bind-mounts the persistent paths (SSH host keys,
   # /etc/machine-id, /var/log, /var/lib/nixos, /var/lib/sops-nix) out of
   # /persist. On first boot impermanence copies the squashfs-baked values
