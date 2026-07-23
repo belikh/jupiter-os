@@ -24,6 +24,13 @@ Why hand-rolled SOAP instead of wsmancli/amttool:
   - Enabling the port is not enough: the KVM SAP (CIM_KVMRedirectionSAP) must
     be moved to RequestedState=2 (Enabled) before :5900 actually listens.
 
+SOL (Serial-Over-LAN, :16994/:16995) is simpler than KVM: AMT_RedirectionService
+has one ListenerEnabled flag (no separate SAP RequestStateChange dance) — same
+"echo the GET body, mutate in place, PUT" pattern, just one field. This script
+only flips that flag; the actual serial client is `amtterm` (nixpkgs `amtterm`)
+or `gamt`, since driving AMT's SOL wire protocol byte-for-byte isn't worth
+reimplementing here.
+
 Usage:
   export AMT_HOST=10.1.1.165
   export AMT_PASSWORD='...'         # AMT admin password (MEBx/provisioned)
@@ -35,6 +42,8 @@ Usage:
   ./amt.py enable-kvm [RFBPW]       # set RFB pw (default Amt2026!), open :5900
   ./amt.py disable-kvm              # stop KVM SAP + close :5900 (hygiene)
   ./amt.py screenshot [out.png]     # needs vncdotool; grabs the console
+  ./amt.py enable-sol               # turn on the SOL/IDER listener (:16994/16995)
+  ./amt.py disable-sol              # turn it back off (hygiene)
 
 Recovering a kiosk stuck in the initrd emergency shell (ZFS import failed on
 first boot — see modules/common.nix boot.zfs.forceImportRoot):
@@ -44,6 +53,12 @@ first boot — see modules/common.nix boot.zfs.forceImportRoot):
   # forced import, or reinstall with the fixed config. Once the pool imports
   # under the host's own hostId, later boots are fine.
   ./amt.py disable-kvm              # when done
+
+Watching a boot from POST through userspace over serial (no monitor needed):
+  ./amt.py enable-sol
+  ./amt.py reset
+  AMT_PASSWORD=... amtterm -u admin $AMT_HOST   # ^] to escape
+  ./amt.py disable-sol              # when done
 """
 import os, sys, uuid, re, requests
 from requests.auth import HTTPDigestAuth
@@ -61,6 +76,7 @@ XFER = "http://schemas.xmlsoap.org/ws/2004/09/transfer"
 ENUM = "http://schemas.xmlsoap.org/ws/2004/09/enumeration"
 KVMSET = "http://intel.com/wbem/wscim/1/ips-schema/1/IPS_KVMRedirectionSettingData"
 KVMSAP = "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_KVMRedirectionSAP"
+REDIR  = "http://intel.com/wbem/wscim/1/amt-schema/1/AMT_RedirectionService"
 PMSVC  = "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_PowerManagementService"
 PMASSOC= "http://schemas.dmtf.org/wbem/wscim/1/cim-schema/2/CIM_AssociatedPowerManagementService"
 CS_KEY = {  # selectors for the managed computer system power service
@@ -179,12 +195,34 @@ def disable_kvm():
     post(envelope(f"{XFER}/Put", KVMSET, body))
     print(f"KVM disabled on {HOST}")
 
+def _set_redirection_listener(enabled):
+    _, g = get(REDIR)
+    m = re.search(r"(<g:AMT_RedirectionService>.*?</g:AMT_RedirectionService>)", g, re.S)
+    if not m:
+        sys.exit("could not read AMT_RedirectionService settings")
+    body = m.group(1).replace("<g:AMT_RedirectionService>",
+                              f'<g:AMT_RedirectionService xmlns:g="{REDIR}">')
+    body = re.sub(r"<g:ListenerEnabled>[a-z]+</g:ListenerEnabled>",
+                  f"<g:ListenerEnabled>{'true' if enabled else 'false'}</g:ListenerEnabled>", body)
+    c, t = post(envelope(f"{XFER}/Put", REDIR, body))
+    if c != 200:
+        sys.exit(f"AMT_RedirectionService PUT failed: {fault(t)}")
+    return c
+
+def enable_sol():
+    _set_redirection_listener(True)
+    print(f"SOL/IDER listener enabled on {HOST}:16994/16995")
+
+def disable_sol():
+    _set_redirection_listener(False)
+    print(f"SOL/IDER listener disabled on {HOST}")
+
 def info():
     _, ident = post(envelope("http://schemas.dmtf.org/wbem/wsman/identity/1/wsmanidentity.xsd/Get", ""))
     ps = power_state()
     print(f"host        : {HOST}")
     print(f"power state : {ps} {POWER_NAMES.get(ps,'?')}")
-    _, r = get("http://intel.com/wbem/wscim/1/amt-schema/1/AMT_RedirectionService")
+    _, r = get(REDIR)
     le = re.search(r"ListenerEnabled>([a-z]+)<", r)
     print(f"redir listen: {le.group(1) if le else '?'} (SOL/IDER on :16994/16995)")
     _, k = get(KVMSET)
@@ -201,6 +239,8 @@ def main():
         print(f"{cmd}: rv={request_power(POWER_ACTIONS[cmd])} (0=ok)")
     elif cmd == "enable-kvm": enable_kvm(*(sys.argv[2:3] or []))
     elif cmd == "disable-kvm": disable_kvm()
+    elif cmd == "enable-sol": enable_sol()
+    elif cmd == "disable-sol": disable_sol()
     elif cmd == "screenshot":
         out = sys.argv[2] if len(sys.argv) > 2 else "amt-screen.png"
         os.execvp("vncdo", ["vncdo", "-s", f"{HOST}::5900", "-p",
