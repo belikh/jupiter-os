@@ -71,29 +71,39 @@
   # redirection), which defeats the point of a remote-recovery channel.
   boot.kernelParams = [ "copytoram" ];
 
-  # The generic netboot-minimal initrd has no hardware scan behind it (no
-  # local disk to run nixos-generate-config against), so it doesn't know
-  # this box's actual NIC driver — confirmed 2026-07-23: networkctl in the
-  # initrd showed only lo, no physical interface at all, blocking the new
-  # DHCP-in-initrd mount (see the /persist fileSystem entry below). This HP
-  # EliteDesk 800 G4's onboard NIC is an Intel I219-LM, which needs e1000e.
-  boot.initrd.availableKernelModules = [ "e1000e" ];
+  # No boot.initrd networking/NIC-driver config: the initrd doesn't mount
+  # anything over the network anymore (see /persist below), and the netboot
+  # squashfs is already fully in RAM via copytoram by the time the initrd
+  # runs, so it genuinely has no need for a NIC at all. (An e1000e
+  # availableKernelModules entry lived here briefly while /persist was still
+  # neededForBoot; removed as dead weight along with that.) The real system's
+  # e1000e module loads normally in stage 2 via udev, same as any driver.
 
   # Don't add a build-machine entry pointing at itself.
   jupiter.core.buildMachines.enable = false;
 
   # ---- NFS-backed /persist (from europa's tank/services/callisto) ----------
+  # DISABLED as neededForBoot / dropped impermanence entirely 2026-07-24:
+  # chasing this mount through the initrd (missing NIC driver, no DHCP client,
+  # no mount.nfs/mount.nfs4 helper, no rpc.statd, then a console=ttyS0
+  # experiment that hung boot outright) burned an entire session, one fixed
+  # layer revealing the next. callisto is a diskless build coordinator with no
+  # state worth that fragility — persisted SSH host keys/logs were a nice-to-
+  # have, not a requirement. The mount now runs as an ordinary stage-2 NFS
+  # mount (full system networking + nfs-utils already available there, none
+  # of the initrd's minimal-environment gaps apply), so if it's ever slow or
+  # briefly unavailable it just retries as a normal systemd unit — it can
+  # never again block switch-root or hang the kernel.
+  #
   # `_netdev` makes systemd wait for network before mounting; `noac` trades
   # a small perf hit for stronger attribute-cache coherency with the NFS
-  # server (matters for /etc/ssh bind-mounts: stale attribute cache has
-  # been observed to make ssh-keygen's "key exists, refusing to overwrite"
-  # check lie). `timeo=14,retrans=5` is the standard tolerant-on-LAN tuning.
+  # server. `timeo=14,retrans=5` is the standard tolerant-on-LAN tuning;
+  # `nolock` skips NFSv3 lock-recovery (rpc.statd) since this mount is only
+  # ever touched by callisto itself, never concurrently from another client.
   fileSystems."/persist" = {
     device = "10.1.1.2:/tank/services/callisto";
     fsType = "nfs";
-    # neededForBoot is mandatory for any filesystem impermanence bind-mounts
-    # from (NixOS asserts this at eval time).
-    neededForBoot = true;
+    neededForBoot = false;
     options = [
       "rw"
       "_netdev"
@@ -101,50 +111,15 @@
       "noatime"
       "timeo=14"
       "retrans=5"
-      # NFSv3 file locking needs rpc.statd running to register lock-recovery
-      # callbacks — a whole extra daemon the initrd doesn't have (confirmed
-      # 2026-07-23: mount blocked waiting for it). This mount is only ever
-      # touched by callisto itself (SSH host keys, machine-id, logs), never
-      # concurrently from another client, so skipping locking is safe.
       "nolock"
     ];
   };
 
-  # neededForBoot means this NFS mount runs in the initrd, before
-  # switch-root — but the default systemd-stage-1 initrd has neither a
-  # configured network nor the nfs-utils mount.nfs helper, so the mount was
-  # silently unmountable from a cold PXE boot (confirmed 2026-07-23: a real
-  # power cycle dropped to the emergency shell with "mount program didn't
-  # pass remote address" — no DHCP lease, no route, no mount.nfs binary at
-  # all). PXE's own firmware-level DHCP that fetches the kernel/initrd does
-  # NOT carry over into Linux; the initrd needs its own DHCP client, and
-  # NixOS doesn't pull one in (or the NFS client helper) just because a
-  # fileSystem entry says fsType = "nfs".
-  boot.initrd.systemd.network.enable = true;
-  boot.initrd.systemd.network.networks."10-dhcp" = {
-    matchConfig.Type = "ether";
-    networkConfig.DHCP = "ipv4";
-  };
-  boot.initrd.systemd.extraBin = {
-    # mount.nfs is a multi-call binary that dispatches on its invocation name
-    # (nfs-utils ships mount.nfs4 as a plain symlink to mount.nfs) — without
-    # the mount.nfs4 name present too, an NFSv4 negotiation attempt has no
-    # helper to run and the kernel reports "unsupported protocol" (confirmed
-    # 2026-07-23, right after fixing the DHCP/NIC-driver gap).
-    "mount.nfs" = "${pkgs.nfs-utils}/bin/mount.nfs";
-    "mount.nfs4" = "${pkgs.nfs-utils}/bin/mount.nfs4";
-  };
-
-  # Impermanence bind-mounts the persistent paths (SSH host keys,
-  # /etc/machine-id, /var/log, /var/lib/nixos, /var/lib/sops-nix) out of
-  # /persist. On first boot impermanence copies the squashfs-baked values
-  # into /persist, so the keys it ships with today become the persistent
-  # identity going forward (no separate init/keygen step needed).
-  # persistAdminHome=false: this is an appliance, not an interactive host.
-  jupiter.core.impermanence = {
-    enable = true;
-    persistAdminHome = false;
-  };
+  # No impermanence: it requires neededForBoot=true on whatever it binds
+  # from (NixOS asserts this at eval time), which is exactly the initrd
+  # fragility above. Callisto keeps ephemeral SSH host keys / logs / machine-id
+  # across reboots instead — a fresh host key each boot is a minor annoyance
+  # (re-trust it once), not a real cost for a build-coordinator appliance.
 
   # ---- Build daemon tuning for the shared-builder workload ----------------
   # callisto's actual workload is the OPPOSITE of pallene's
