@@ -59,6 +59,14 @@
   # Ensure the netboot image is fully copied to RAM on boot.
   boot.kernelParams = [ "copytoram" ];
 
+  # The generic netboot-minimal initrd has no hardware scan behind it (no
+  # local disk to run nixos-generate-config against), so it doesn't know
+  # this box's actual NIC driver — confirmed 2026-07-23: networkctl in the
+  # initrd showed only lo, no physical interface at all, blocking the new
+  # DHCP-in-initrd mount (see the /persist fileSystem entry below). This HP
+  # EliteDesk 800 G4's onboard NIC is an Intel I219-LM, which needs e1000e.
+  boot.initrd.availableKernelModules = [ "e1000e" ];
+
   # Don't add a build-machine entry pointing at itself.
   jupiter.core.buildMachines.enable = false;
 
