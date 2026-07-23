@@ -113,7 +113,15 @@
     matchConfig.Type = "ether";
     networkConfig.DHCP = "ipv4";
   };
-  boot.initrd.systemd.extraBin."mount.nfs" = "${pkgs.nfs-utils}/bin/mount.nfs";
+  boot.initrd.systemd.extraBin = {
+    # mount.nfs is a multi-call binary that dispatches on its invocation name
+    # (nfs-utils ships mount.nfs4 as a plain symlink to mount.nfs) — without
+    # the mount.nfs4 name present too, an NFSv4 negotiation attempt has no
+    # helper to run and the kernel reports "unsupported protocol" (confirmed
+    # 2026-07-23, right after fixing the DHCP/NIC-driver gap).
+    "mount.nfs" = "${pkgs.nfs-utils}/bin/mount.nfs";
+    "mount.nfs4" = "${pkgs.nfs-utils}/bin/mount.nfs4";
+  };
 
   # Impermanence bind-mounts the persistent paths (SSH host keys,
   # /etc/machine-id, /var/log, /var/lib/nixos, /var/lib/sops-nix) out of
