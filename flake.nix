@@ -127,10 +127,11 @@
       callistoBuild = callistoConfig.system.build;
       callistoCmdLine = "init=${callistoBuild.toplevel}/init loglevel=4 ${toString callistoConfig.boot.kernelParams}";
       europaLanIp = "10.1.1.2";
+      europaPxeHttpPort = 8082; # keep in sync with jupiter.pxe.httpPort default
       ipxeScript = untunedPkgs.writeText "netboot.ipxe" ''
         #!ipxe
-        kernel tftp://${europaLanIp}/bzImage ${callistoCmdLine}
-        initrd tftp://${europaLanIp}/initrd
+        kernel http://${europaLanIp}:${toString europaPxeHttpPort}/bzImage ${callistoCmdLine}
+        initrd http://${europaLanIp}:${toString europaPxeHttpPort}/initrd
         boot
       '';
       ipxeBoot = untunedPkgs.ipxe.override { embedScript = ipxeScript; };
@@ -156,6 +157,7 @@
         jupiter.pxe = {
           enable = true;
           root = pxeTftpRoot;
+          httpPort = europaPxeHttpPort;
         };
       };
     in
