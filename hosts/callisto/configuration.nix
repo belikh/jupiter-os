@@ -89,6 +89,12 @@
       "noatime"
       "timeo=14"
       "retrans=5"
+      # NFSv3 file locking needs rpc.statd running to register lock-recovery
+      # callbacks — a whole extra daemon the initrd doesn't have (confirmed
+      # 2026-07-23: mount blocked waiting for it). This mount is only ever
+      # touched by callisto itself (SSH host keys, machine-id, logs), never
+      # concurrently from another client, so skipping locking is safe.
+      "nolock"
     ];
   };
 
