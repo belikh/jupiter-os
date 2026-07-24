@@ -101,6 +101,14 @@
             # closures substitutable from cache.nixos.org + attic, untouched by
             # a gaming overlay). The `or` guards handle the hosts that don't
             # import console.nix (so `jupiter.gaming` is absent).
+            #
+            # mangohud fixup: jovian's overlay backports two MangoHud patches
+            # (0805396, 2c1dc528) that nixpkgs has SINCE merged upstream, so
+            # applying jovian's overlay to this newer nixpkgs double-applies
+            # them and breaks the build ("Reversed or previously applied
+            # patch"). Restore stock nixpkgs mangohud — the backports aren't
+            # kiosk-critical and stock substitutes from cache.nixos.org. Drop
+            # this once jovian upstream removes the now-redundant backports.
             (
               { config, ... }:
               let
@@ -109,6 +117,11 @@
               {
                 nixpkgs.overlays = nixpkgs.lib.mkIf (gamingConsole.enable or false) [
                   jovian.overlays.default
+                  (
+                    _final: _prev: {
+                      mangohud = nixpkgs.legacyPackages.x86_64-linux.mangohud;
+                    }
+                  )
                 ];
               }
             )
