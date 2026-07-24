@@ -156,6 +156,24 @@ in
     # loser. Appends to cage-tty1's existing conflicts list (NixOS merges).
     systemd.services.cage-tty1.conflicts = [ "jupiter-gaming.service" ];
 
+    # ha-linux-agent runs as an unprivileged systemd --user service (user io),
+    # so starting/stopping these SYSTEM units from the launcher switches needs a
+    # narrowly-scoped polkit rule — io, these two unit names, start+stop only.
+    # (cage's module already pulls polkit in, so security.polkit.enable is on.)
+    security.polkit.extraConfig = ''
+      polkit.addRule(function(action, subject) {
+        if (action.id == "org.freedesktop.systemd1.manage-units" &&
+            subject.user == "io") {
+          var unit = action.lookup("unit");
+          var verb = action.lookup("verb");
+          if ((verb == "start" || verb == "stop") &&
+              (unit == "cage-tty1.service" || unit == "jupiter-gaming.service")) {
+            return polkit.Result.YES;
+          }
+        }
+      });
+    '';
+
     # --- Home Assistant control (ha-linux-agent launcher group) -------------
     # cage-tty1 (the dashboard) and jupiter-gaming share group "session":
     # turning either ON first best-effort-stops the other, so HA's switch is a
