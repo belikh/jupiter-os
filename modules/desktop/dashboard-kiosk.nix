@@ -14,6 +14,33 @@
 let
   cfg = config.jupiter.dashboardKiosk;
 
+  # Chromium has no flag to hide the mouse cursor in kiosk mode — it always
+  # renders one, even on a touch-only display with no pointing device
+  # attached. The standard workaround is an unpacked extension that injects
+  # `cursor: none` CSS into every page; loading it means
+  # --disable-extensions-except (not the blanket --disable-extensions,
+  # which would also block our own).
+  hideCursorExtension = pkgs.runCommand "hide-cursor-extension" { } ''
+    mkdir -p "$out"
+    cat > "$out/manifest.json" <<'EOF'
+    {
+      "manifest_version": 3,
+      "name": "Hide Cursor",
+      "version": "1.0",
+      "content_scripts": [
+        {
+          "matches": ["<all_urls>"],
+          "css": ["hide-cursor.css"],
+          "run_at": "document_start"
+        }
+      ]
+    }
+    EOF
+    cat > "$out/hide-cursor.css" <<'EOF'
+    * { cursor: none !important; }
+    EOF
+  '';
+
   # The extra flags are power/perf, not behavioural: native Wayland (no
   # XWayland probing), VA-API hardware video decode on the HD 520 iGPU
   # (offloads the CPU), and trimming background networking/sync/updates
@@ -29,7 +56,8 @@ let
     "--disable-sync"
     "--disable-translate"
     "--disable-component-update"
-    "--disable-extensions"
+    "--disable-extensions-except=${hideCursorExtension}"
+    "--load-extension=${hideCursorExtension}"
     "--no-first-run"
     "--remote-debugging-port=9222"
     "--remote-allow-origins=*"
