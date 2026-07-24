@@ -129,35 +129,6 @@
       # comment for why that distinction is load-bearing here.
       untunedPkgs = nixpkgs.legacyPackages.x86_64-linux;
 
-      # DMT Console package (Intel/DMTF Device Management Toolkit). Built with
-      # the PLAIN untuned nixpkgs so it substitutes from cache.nixos.org and
-      # never lands in europa's gccarch-btver2 closure. The headless (noui)
-      # build strips the embedded web UI. Consumed by
-      # modules/services/dmt-console.nix (which carries its own identical
-      # buildGoModule call so it is self-contained per-host) — keep the two in
-      # sync. Exposed standalone here so the package builds in isolation via
-      # `nix build .#dmt-console` without pulling in any host closure.
-      dmtConsolePkg = untunedPkgs.buildGoModule {
-        pname = "dmt-console";
-        version = "unstable-2026-07-22";
-        src = untunedPkgs.fetchFromGitHub {
-          owner = "device-management-toolkit";
-          repo = "console";
-          rev = "6bf3e82636ec226a0e7f7eb048c9161a9e93d348";
-          hash = "sha256-CzwIDXpGWWrwIleIoQrCbJ+fquPn9auqLiWD7G0afnM=";
-        };
-        vendorHash = "sha256-3G7FypfAVwcfFWmqu1TX5EDpZ4hhdZ2HyKQYUTTwlmY=";
-        subPackages = [ "cmd/app" ];
-        tags = [ "noui" ];
-        ldflags = [
-          "-s"
-          "-w"
-        ];
-        postInstall = ''
-          mv $out/bin/app $out/bin/console
-        '';
-      };
-
       callistoConfig = self.nixosConfigurations.callisto.config;
       callistoBuild = callistoConfig.system.build;
       # `ip=dhcp`: belt-and-suspenders for the classic (non-systemd) stage-1
@@ -250,9 +221,6 @@
       # it's independently checkable without pulling in europa's whole
       # (gccarch-btver2-tuned) system closure.
       packages.x86_64-linux.pxe-tftproot = pxeTftpRoot;
-
-      # DMT Console — see dmtConsolePkg above.
-      packages.x86_64-linux.dmt-console = dmtConsolePkg;
 
       # `nix flake check` builds every registered host closure — for a
       # single-host bootstrap that's cheap, and it's the whole point: prove

@@ -7,12 +7,12 @@
 
 # Compute node with no local disk — HP EliteDesk 800 G4 DM, i5-8500T
 # (Coffee Lake, 6c/6t, no HT) + 64GB RAM. The box has repeatedly destroyed
-# local NVMe drives, so it has none; root instead lives on a ZFS pool
-# carried over iSCSI from europa's tank/services/callisto-root zvol
-# (modules/services/iscsi-target.nix). PXE (europa, jupiter.pxe) still
+# local NVMe drives, so it has none; root instead lives on an ext4
+# filesystem carried over iSCSI from europa's tank/services/callisto-root
+# zvol (modules/services/iscsi-target.nix). PXE (europa, jupiter.pxe) still
 # hands off the kernel+initrd exactly as before — only what happens after
 # the kernel starts has changed, from "unpack a RAM-resident squashfs" to
-# "iSCSI-login, then mount a real ZFS root over the network".
+# "iSCSI-login, then mount a real ext4 root over the network".
 #
 # Role: the fleet's shared Nix remote builder (jupiter.core.buildMachines,
 # in modules/core/build-machines.nix). Dwarfs every other registered host's
@@ -56,7 +56,11 @@
   ];
 
   networking.hostName = "callisto";
-  networking.hostId = "ca11157c"; # Stable per-host 8-char hex, required for ZFS
+  # Stable per-host 8-char hex. Not currently required — callisto's root is
+  # ext4, not ZFS, so nothing here actually consumes this — kept set anyway
+  # since it's harmless and cheap insurance if a ZFS-backed filesystem is
+  # ever added on this host later.
+  networking.hostId = "ca11157c";
 
   # ---- Root over iSCSI -----------------------------------------------------
   # boot.iscsi-initiator (nixos/modules/services/networking/iscsi/root-initiator.nix)
@@ -141,10 +145,9 @@
   #
   # Risk consideration: 64GB RAM. Worst-case -j6 linker memory for
   # LLVM-class packages is ~12-24GB; the box has 60+GB free in steady
-  # state, so no OOM exposure at this setting. No swap dataset (the
-  # "stateful" profile doesn't have one, unlike "impermanent"'s
-  # local/swap zvol) — root now persists on disk-backed ZFS rather than
-  # tmpfs, but that headroom math was never about tmpfs pressure in the
+  # state, so no OOM exposure at this setting. No swap — root now persists
+  # on a disk-backed ext4 filesystem rather than tmpfs, but that headroom
+  # math was never about tmpfs pressure in the
   # first place, it's about the build's own working set vs. RAM.
   nix.settings.cores = 6;
   nix.settings.max-jobs = 1;
