@@ -32,15 +32,22 @@
 let
   cfg = config.jupiter.dashboardGaming;
 
-  # Launch the gaming session through a PATH that resolves jovian's
-  # cap_sys_nice gamescope wrapper (/run/wrappers/bin/gamescope, set up by
-  # jovian.steam) and the programs.steam wrapper (/run/current-system/sw/bin).
-  # The explicit XDG_RUNTIME_DIR / DBUS / DISPLAY env is needed because a plain
-  # systemd service does NOT inherit the full pam_systemd session env that
-  # jovian's own SDDM-launched gamescope-session gets — without XDG_RUNTIME_DIR
-  # gamescope can't create its Wayland socket and segfaults early on this iGPU.
+  # Launch the gaming session through a PATH that resolves the programs.steam
+  # wrapper (/run/current-system/sw/bin). The explicit XDG_RUNTIME_DIR / DBUS
+  # env is needed because a plain systemd service does NOT inherit the full
+  # pam_systemd session env that jovian's SDDM-launched gamescope-session gets
+  # — without XDG_RUNTIME_DIR gamescope can't create its Wayland socket and
+  # segfaults early on this iGPU.
+  #
+  # NOTE: we deliberately use the PLAIN system gamescope, NOT jovian's
+  # cap_sys_nice wrapper at /run/wrappers/bin/gamescope. Steam's bundled
+  # bubblewrap (pressure-vessel) refuses to start under a process that carries
+  # inherited capabilities ("Unexpected capabilities but not setuid"), so the
+  # cap_sys_nice wrapper — which leaks caps into the steam/bwrap subtree —
+  # prevents Steam from bootstrapping. Plain gamescope loses only scheduling
+  # priority, which is acceptable on this kiosk.
   gamingLauncher = pkgs.writeShellScript "jupiter-gaming-session" ''
-    export PATH=/run/wrappers/bin:/run/current-system/sw/bin:$PATH
+    export PATH=/run/current-system/sw/bin:$PATH
     export XDG_RUNTIME_DIR="/run/user/$(id -u ${cfg.gaming.user})"
     export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
     exec ${cfg.gaming.command}
