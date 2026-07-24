@@ -34,15 +34,19 @@ in
     ./dashboard-kiosk.nix
     ./dashboard-gaming.nix
     # Open-source driver + animation for the integrated customer-facing line
-    # display (0x0f66:0x4500). Imported here so all 4 kiosks get the option;
-    # it defaults to OFF and is bench-unvalidated, so nothing enables it yet.
-    # Flip jupiter.customerDisplay.enable on amalthea to capture the HID
-    # descriptor and bring it live. See the module for the RE rationale.
+    # display (0x0f66:0x4500). Verified live on amalthea 2026-07-25
+    # (tcxwave-cdp-anim.service running against the real hardware). See the
+    # module for the reverse-engineered protocol.
     ../services/customer-display.nix
-    # MSR card-swipe -> MQTT publisher (same 0x0f66:0x4500 IO Control device).
-    # Grabs the reader's keyboard interface so swipes publish to MQTT instead
-    # of leaking into the dashboard. See modules/services/customer-msr.nix.
-    ../services/customer-msr.nix
+    # customer-msr.nix (MSR card-swipe -> MQTT) is deliberately NOT imported
+    # here. Its keyboard-keystroke-grab approach does not work on this
+    # hardware: a live test on amalthea 2026-07-25 (usbmon capture during a
+    # real swipe) showed zero USB traffic on the MSR interface's endpoint
+    # (0x82) for the full capture window — the reader doesn't push swipe
+    # data as keystrokes or unsolicited interrupt reports at all. The real
+    # protocol is still unknown (likely a request/response exchange over
+    # GET_FEATURE, per the module's own "290-byte raw feature-report"
+    # comment) and needs further RE before this is wired back in.
   ];
 
   options.jupiter.tcxWaveKiosk = {
@@ -132,10 +136,6 @@ in
     # modules/services/customer-display.nix for the reverse-engineered protocol
     # and the animation playlist. Per-unit enablement happens at deploy time.
     jupiter.customerDisplay.enable = true;
-
-    # MSR card-swipe -> MQTT. Enabled fleet-wide; the daemon no-ops (rescans)
-    # if a unit has no MSR. See modules/services/customer-msr.nix.
-    jupiter.customerMsr.enable = true;
 
     # Touch-wake: power the panel off after idleTimeout and wake it on touch.
     # Exposes tcxwave-screen-power.service, which ha-agent surfaces as the
