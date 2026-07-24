@@ -33,6 +33,16 @@ in
     ../services/ha-agent.nix
     ./dashboard-kiosk.nix
     ./dashboard-gaming.nix
+    # Open-source driver + animation for the integrated customer-facing line
+    # display (0x0f66:0x4500). Imported here so all 4 kiosks get the option;
+    # it defaults to OFF and is bench-unvalidated, so nothing enables it yet.
+    # Flip jupiter.customerDisplay.enable on amalthea to capture the HID
+    # descriptor and bring it live. See the module for the RE rationale.
+    ../services/customer-display.nix
+    # MSR card-swipe -> MQTT publisher (same 0x0f66:0x4500 IO Control device).
+    # Grabs the reader's keyboard interface so swipes publish to MQTT instead
+    # of leaking into the dashboard. See modules/services/customer-msr.nix.
+    ../services/customer-msr.nix
   ];
 
   options.jupiter.tcxWaveKiosk = {
@@ -115,6 +125,18 @@ in
 
     jupiter.boot.falloutSplash.enable = true;
 
+    # Cool animations on the integrated customer-facing line display (the 2x20
+    # VFD behind 0x0f66:0x4500). Enabled here once for all 4 identical units;
+    # the daemon autodetects the display and no-ops (retries) if absent, so a
+    # unit without the peripheral just logs and waits. See
+    # modules/services/customer-display.nix for the reverse-engineered protocol
+    # and the animation playlist. Per-unit enablement happens at deploy time.
+    jupiter.customerDisplay.enable = true;
+
+    # MSR card-swipe -> MQTT. Enabled fleet-wide; the daemon no-ops (rescans)
+    # if a unit has no MSR. See modules/services/customer-msr.nix.
+    jupiter.customerMsr.enable = true;
+
     # Touch-wake: power the panel off after idleTimeout and wake it on touch.
     # Exposes tcxwave-screen-power.service, which ha-agent surfaces as the
     # "screen-power" HA switch below.
@@ -149,6 +171,16 @@ in
       enable = true;
       networks."${cfg.wifi.network}".psk = cfg.wifi.psk;
     };
+
+    # networking.wireless (wpa_supplicant) and NetworkManager can't both
+    # manage the same interface (hard assertion failure) — NixOS requires
+    # wifi devices marked unmanaged by NM if wpa_supplicant already owns
+    # them. Only matters where both are on: this host's wifi.enable plus
+    # jupiter.gaming.console's gamingMode.enable (which turns on NM for the
+    # Deck UI's network onboarding — see modules/gaming/console.nix). Match
+    # by device type, not interface name, so it doesn't need updating if the
+    # adapter changes.
+    networking.networkmanager.unmanaged = lib.mkIf cfg.wifi.enable [ "type:wifi" ];
 
     # Integrated 15" PCAP touchscreen: NO custom/kernel driver needed. The panel
     # is a USB HID multitouch device handled in-tree by `hid-multitouch`, and

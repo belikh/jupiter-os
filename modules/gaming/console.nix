@@ -269,6 +269,15 @@ in
       decky-loader.enable = cfg.decky.enable;
     };
 
+    # The Deck UI's first-run wizard ("Choose your network") enumerates
+    # NetworkManager connections, not raw interfaces — on a wired-only kiosk
+    # with no NetworkManager it shows "No networks found" and blocks even
+    # though ethernet/DHCP is working fine underneath (confirmed live on
+    # amalthea). This is jovian's own documented requirement (nix flake check
+    # already warns about it); no static IP or custom networking is
+    # configured on these kiosks so NetworkManager taking over DHCP is safe.
+    networking.networkmanager.enable = lib.mkIf cfg.gamingMode.enable true;
+
     # --- Steam, gamescope, gamemode (the always-on core runtime) -------------
     programs.steam = {
       enable = true;
