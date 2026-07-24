@@ -40,17 +40,28 @@ let
   # segfaults early on this iGPU.
   #
   # NOTE: we deliberately use the PLAIN system gamescope, NOT jovian's
-  # cap_sys_nice wrapper at /run/wrappers/bin/gamescope. Steam's bundled
-  # bubblewrap (pressure-vessel) refuses to start under a process that carries
-  # inherited capabilities ("Unexpected capabilities but not setuid"), so the
-  # cap_sys_nice wrapper — which leaks caps into the steam/bwrap subtree —
-  # prevents Steam from bootstrapping. Plain gamescope loses only scheduling
-  # priority, which is acceptable on this kiosk.
+  # cap_sys_nice wrapper at /run/wrappers/bin/gamescope — that wrapper is not
+  # the cause of the bwrap failure below (ruled out: switching to plain
+  # gamescope alone did not fix it, commit 3ce5226), but it also isn't needed
+  # and stripping it keeps one fewer variable in play. Plain gamescope loses
+  # only scheduling priority, which is acceptable on this kiosk.
+  #
+  # capsh --noamb: pam_systemd puts CAP_WAKE_ALARM in this session's
+  # *ambient* capability set for any seat/VT session (confirmed on both
+  # cage-tty1 and jupiter-gaming — systemic, not something our unit config
+  # requests; jupiter-gaming.service's own AmbientCapabilities= is empty).
+  # Ambient capabilities survive every fork/exec down the tree, so Steam's
+  # bundled (non-setuid, non-file-capped) bubblewrap inherits CAP_WAKE_ALARM
+  # and refuses to start ("Unexpected capabilities but not setuid, old file
+  # caps config?" — bwrap treats "has caps but isn't setuid" as a sandbox
+  # escape risk). Clearing the ambient set here, before gamescope/Steam ever
+  # exec, means nothing downstream — including Steam's own bwrap — inherits
+  # it. Chromium (cage) never hits this because it doesn't sandbox with bwrap.
   gamingLauncher = pkgs.writeShellScript "jupiter-gaming-session" ''
     export PATH=/run/current-system/sw/bin:$PATH
     export XDG_RUNTIME_DIR="/run/user/$(id -u ${cfg.gaming.user})"
     export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
-    exec ${cfg.gaming.command}
+    exec ${pkgs.libcap}/bin/capsh --noamb -- -c 'exec ${cfg.gaming.command}'
   '';
 
   # Shared tty1 PAM/logind seat wiring — a start/stoppable system unit that can

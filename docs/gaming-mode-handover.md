@@ -1,10 +1,11 @@
 # Gaming mode — handover (open issues & how to finish)
 
 This doc hands off the **gaming-mode port** to the TCx Wave kiosks. The
-architecture is built, committed, and proven end-to-end on **metis** except
-for **one blocker**: Steam can't bootstrap inside the gaming session (a
-Steam-on-NixOS `bwrap` issue, orthogonal to the switching design). amalthea/
-thebe are deployed-pending that fix.
+architecture is built, committed, and proven end-to-end on **metis**,
+**including** the Steam bootstrap blocker (see "OPEN ISSUE 1" below — now
+**RESOLVED**, root cause was an ambient capability leak, fixed with
+`capsh --noamb`). amalthea/thebe are still pending deployment (not yet
+attempted this round — see "OPEN ISSUE 2").
 
 Read this whole doc before touching anything. It captures hard-won
 operational lessons (build hangs, attic flakiness, cage-stops-on-switch) that
@@ -21,16 +22,31 @@ summarised below.
 
 | Thing | State |
 |---|---|
-| Code | **committed + pushed** (`e63f6b2..3ce5226`, 6 commits on `origin/main`) |
+| Code | committed on top of `3ce5226` — the `capsh --noamb` fix to `dashboard-gaming.nix` |
 | `make check` + `make fmt-check` (touched files) | ✅ clean |
 | metis | ✅ deployed; dashboard + mode-switch work both directions |
-| metis gaming *session* (Steam) | ❌ **blocked** — `bwrap: Unexpected capabilities but not setuid` |
-| attic | ✅ metis gaming closure pushed ( substitutes fast ) |
-| amalthea / thebe | ⏸ **held** — deploy after the bwrap fix (their dashboard is unaffected) |
+| metis gaming *session* (Steam) | ✅ **FIXED** — bwrap bootstraps, Steam UI (`steamwebhelper`) comes up and stays up |
+| attic | gaming closure was pushed pre-fix; **not yet re-pushed** with this fix — amalthea/thebe would build, not substitute, until it is |
+| amalthea / thebe | ⏸ **not yet deployed this round** — dashboard is unaffected, gaming session needs this fix |
 | adrastea | not physically installed — will pick up the config at install time |
 
-**Single biggest open issue = the Steam `bwrap` bug.** Fix that, redeploy
-metis to verify, then push amalthea/thebe. Everything else is done.
+**The Steam `bwrap` bug is fixed.** Root cause: `pam_systemd` puts
+`CAP_WAKE_ALARM` in the *ambient* capability set for any seat/VT session on
+this system (confirmed on both `cage-tty1` and `jupiter-gaming` — systemic,
+not something our unit config requests). Ambient capabilities survive every
+fork/exec, so both the outer nixpkgs FHS-sandbox bwrap **and** Steam's own
+bundled pressure-vessel bwrap inherited it and refused to start (bwrap
+treats "has caps, isn't setuid" as a sandbox-escape risk). Fix: the gaming
+launcher script now runs everything under `capsh --noamb --`, clearing the
+ambient set before gamescope/Steam ever exec. See `dashboard-gaming.nix`'s
+`gamingLauncher` for the full comment and commit history for the diagnostic
+trail (verified via live capability inspection — `/proc/<pid>/status` on the
+gamescope process showed the same `CapAmb` bit as cage's compositor process,
+which ruled out the cap_sys_nice wrapper theory from the prior handover).
+
+**Remaining work:** push the fixed closure to attic, then deploy
+amalthea/thebe (see OPEN ISSUE 2 below — unchanged, still gated on this fix
+which is now in place).
 
 ---
 
@@ -142,7 +158,15 @@ existing launcher mutual-exclusion group (already implemented in
 
 ---
 
-## ❌ OPEN ISSUE 1 — Steam won't bootstrap (THE BLOCKER)
+## ✅ OPEN ISSUE 1 — Steam won't bootstrap (RESOLVED)
+
+**Root cause & fix:** `pam_systemd` ambient-capability leak (`CAP_WAKE_ALARM`)
+into every process in the session tree, which bubblewrap treats as an unsafe
+config when the process isn't setuid. Fixed by clearing the ambient set with
+`capsh --noamb` before exec'ing gamescope/Steam in `dashboard-gaming.nix`'s
+`gamingLauncher`. Full diagnosis below (kept for the trail — the "How to
+debug" / "Likely fixes" sections describe the investigation that led here,
+not remaining work).
 
 ### Symptom
 
@@ -174,71 +198,62 @@ master and renders). It would hit any Steam launch in this environment.
 So: the capabilities bubblewrap complains about are **not** inherited from
 the gamescope wrapper.
 
-### Root cause (best understanding)
+### Root cause (confirmed — the prior "best understanding" below was wrong)
 
-bubblewrap prints *"Unexpected capabilities but not setuid, old file caps
-config?"* when **the bwrap binary it's running has file capabilities set
-(via `setcap`) but is NOT setuid root** — bubblewrap treats that as an unsafe
-config and exits. NixOS's own `/run/wrappers/bin/bwrap` **is** setuid (via
-`security.wrappers`), so if that were the bwrap in use, there'd be no error.
-→ Steam is almost certainly invoking a **bundled bwrap** (from its own
-runtime tarball) that carries file caps but isn't setuid.
+The previous handover guessed this was a **file-capabilities** problem
+(bwrap binary with `setcap` caps but not setuid). That turned out to be a
+dead end: `getcap` on every bwrap-adjacent binary on metis — the nixpkgs
+`bubblewrap` package, the FHS-wrapper's hardcoded bwrap path, everything
+under `/run/wrappers/bin` — came back clean. No file caps anywhere.
 
-### How to debug (ranked)
+The actual mechanism is **ambient capabilities**, not file caps. Live
+inspection (`cat /proc/<pid>/status | grep Cap`) on the running `gamescope`
+process during a gaming-mode flip showed:
 
-Reproduce first, then isolate. SSH to metis, flip to gaming, then read the
-journal:
-
-```bash
-# from a machine with the mqtt pw (sops secret mqtt_homeassistant)
-mosquitto_pub -h 10.1.1.3 -u homeassistant -P "$PW" \
-  -t 'ha-linux-agent/metis/cmd/launcher_gaming' -m ON
-ssh root@metis.localdomain 'journalctl -u jupiter-gaming.service -o cat --since "30s ago" | grep -vE "session opened|Started|Deactivat|Scheduled"'
+```
+CapInh: 0000000800000000   CapPrm: 0000000800000000
+CapEff: 0000000800000000   CapAmb: 0000000800000000
 ```
 
-Then rank these hypotheses:
+Bit 35 = `CAP_WAKE_ALARM`. The systemd unit's own `AmbientCapabilities=` is
+empty (checked via `systemctl show jupiter-gaming.service -p
+AmbientCapabilities`), so this isn't something our config requests. Checking
+`cage-tty1`'s compositor process for comparison showed **the identical
+ambient `CAP_WAKE_ALARM` bit** — proving it's `pam_systemd` doing this for
+*any* seat/VT session on this system (both `cage` and `jupiter-gaming` use
+the same `PAMName` + `session ... pam_systemd.so` pattern), not something
+specific to gaming. Chromium (cage's payload) never notices because it
+doesn't sandbox with bwrap; Steam's bundled bubblewrap does, and refuses to
+run non-setuid with any inherited capability — hence "Unexpected
+capabilities but not setuid, old file caps config?".
 
-1. **Which bwrap is failing?** It's almost certainly Steam's bundled one, but
-   confirm. As `gamer`, trace a launch:
-   ```bash
-   ssh root@metis.localdomain 'sudo -u gamer -i XDG_RUNTIME_DIR=/run/user/1002 \
-     strace -f -e execve -o /tmp/bwrap.trace steam -gamepadui' 2>&1 | tail
-   grep -i bwrap /tmp/bwrap.trace
-   ```
-   Find the exact bwrap path + check `getcap <path>` and `ls -la <path>`.
-2. **System bwrap setuid sanity**: `ls -la /run/wrappers/bin/bwrap` (should
-   be setuid root), `getcap $(readlink -f $(which bwrap))`. Confirm
-   `security.wrappers.bwrap`/bubblewrap is in the closure.
-3. **unprivileged user namespaces**: `sysctl kernel.unprivileged_userns_clone`
-   (expect 1). If 0, bwrap falls back to needing setuid.
-4. **Can Steam run at all outside gamescope?** Quick isolation: temporarily
-   run steam directly (not via the jupiter-gaming service / gamescope), e.g.
-   `sudo -u gamer -i steam` inside an existing Cage session or a `machinectl
-   shell`. If it fails the same way, the bug is Steam-on-NixOS, not our
-   service.
-5. **Check the steam wrapper for caps**: `getcap` on the `programs.steam`
-   wrapper binary. Steam's own wrapper could be the caps source.
-6. **Search upstream**: nixpkgs issues + NixOS discourse for
-   `"bwrap: Unexpected capabilities"` + steam/pressure-vessel. This is a
-   known friction area; there may be a `programs.steam` option or a
-   recommended `security.wrappers`/bubblewrap fix.
+Ambient capabilities survive every fork/exec down the process tree, so this
+one `CAP_WAKE_ALARM` bit reached **both** bwrap invocations in the chain:
+the outer nixpkgs FHS-sandbox bwrap (`.../bubblewrap-0.11.2/bin/bwrap`,
+wraps the whole Steam FHS env) and, once that layer was passed, Steam's own
+bundled `srt-bwrap` (pressure-vessel, extracted from its runtime tarball at
+first launch) — which is why dropping the cap_sys_nice gamescope wrapper
+(commit `3ce5226`) didn't fix it: that wrapper was never the source.
 
-### Likely fixes to try (in order)
+### The fix
 
-a. **Force Steam to use the system setuid bwrap** — e.g. via
-   `security.wrappers.bwrap` (ensure it exists) and/or a Steam env var
-   (`STEAM_RUNTIME`/pressure-vessel config) that points at the system bwrap.
-b. **Strip file caps from Steam's bundled bwrap** at install (a
-   `programs.steam`/steam derivation overlay) — heavier.
-c. If it turns out to be the **steam wrapper** carrying caps, rebuild the
-   wrapper without them.
-d. As a last resort, disable Steam's sandbox
-   (`pressure-vessel`/`STEAM_RUNTIME`) — loses containerisation but proves
-   the path; not a real fix.
+Clear the process's own ambient capability set before it execs
+gamescope/Steam, so nothing downstream inherits anything. `libcap`'s `capsh
+--noamb` does exactly this (verified standalone first: `sudo -u gamer capsh
+--noamb -- -c 'cat /proc/self/status'` shows all-zero Cap* lines). Wired into
+`dashboard-gaming.nix`'s `gamingLauncher`:
 
-**When you fix it:** verify the full flow on metis (gamescope stable, Steam
-bootstraps — `~/.local/share/Steam` populates, a steam UI process stays up),
-flip to dashboard and back, **then** proceed to amalthea/thebe.
+```
+exec ${pkgs.libcap}/bin/capsh --noamb -- -c 'exec ${cfg.gaming.command}'
+```
+
+Verified on metis: no `bwrap: Unexpected capabilities` in the journal for
+the post-fix service invocation; `srt-bwrap` (pressure-vessel) and
+`steamwebhelper` (Steam's actual UI, several CEF child processes) came up
+and stayed up; `~/.local/share/Steam` populated (bootstrap.tar.xz downloaded
+and extracted, ~430MB). Flipped dashboard→gaming→dashboard twice, both
+directions clean, cage recovered fine after the switch-triggered restart
+(gotcha #3 below, unrelated to this fix).
 
 ---
 
@@ -396,12 +411,17 @@ rather than `$?` alone.
 
 ## Suggested finish line
 
-1. Reproduce the bwrap error on metis, run the ranked diagnostics, land a
-   fix (system setuid bwrap / force system bwrap on Steam is the prime
-   suspect).
-2. Verify on metis: gamescope stable, Steam bootstraps (`~/.local/share/Steam`
-   populates, a steam UI process persists), flip dashboard↔gaming twice.
-3. Deploy amalthea, verify; deploy thebe, verify (substitutes from attic).
+1. ~~Reproduce the bwrap error on metis, diagnose, land a fix.~~ **Done** —
+   `capsh --noamb` fix, see OPEN ISSUE 1 above.
+2. ~~Verify on metis: gamescope stable, Steam bootstraps, flip
+   dashboard↔gaming twice.~~ **Done** — verified both directions, Steam UI
+   stayed up, cage recovered.
+3. **Next:** push the fixed gaming closure to attic (LAN endpoint,
+   `http://10.1.1.2:8080/jupiter-os` — see gotcha #4 for the one-pusher-at-a-
+   time / retry-on-InternalServerError caveats), then deploy amalthea,
+   verify; deploy thebe, verify (should substitute, not build, once attic has
+   the new closure).
 4. Consider the follow-up: drop the self-build feedback from
-   `modules/core/build-machines.nix` (gotcha #1).
+   `modules/core/build-machines.nix` (gotcha #1) — still open, unrelated to
+   this fix.
 5. Commit each fix, `git push origin main` immediately (repo convention).
