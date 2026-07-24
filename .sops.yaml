@@ -4,11 +4,15 @@ keys:
   - &europa age19cucywtpf6fa0sy9ghnwwwn7nc4nqxwzeq6jlp73wsnlhaqvxuss4m23x0
   - &himalia age1mz3axkge52zt06vmetwhdf805kk458k0a7ysqk3wjtwvncuf9g4s2ywp0f
   - &callisto age1ss3a2y2swk003cpczd7qvdzy3raftxa9nemwhcaukw7dtutz2u5s940g82
-  # Dashboard kiosks (metis/adrastea/amalthea/thebe) aren't installed yet —
-  # these are throwaway placeholder keys, not derived from any real SSH host
-  # key. Replace each with the unit's real SSH-derived age key at install
-  # time (see docs/07-secrets-management.md §4), then `sops updatekeys`.
-  - &metis age1s28zyd8mp332wshqdev65at3np4yx6yaf4x6r9jnnlvlyq90hensurt5uk
+  # adrastea isn't installed yet — still a throwaway placeholder key, not
+  # derived from any real SSH host key. Replace it with the unit's real
+  # SSH-derived age key at install time (see docs/07-secrets-management.md
+  # §4), then `sops updatekeys`.
+  # metis: real key, captured 2026-07-24 from its live SSH host key
+  # (ssh root@metis.localdomain 'cat /etc/ssh/ssh_host_ed25519_key.pub' |
+  # nix run nixpkgs#ssh-to-age) — the box was installed 2026-07-20 but this
+  # placeholder was never swapped in until now.
+  - &metis age1vw4tdhg72smv6lyv647j5pkd4jk767y5azwfssl68f2amxadeayqyczcjk
   - &adrastea age1jwmtfvu74fhk7trvr0mpmzzlg4u8074l7pqt29a6r5yghewjy32sg4afq5
   - &amalthea age1lqpnh7ne6f09ac5hmnc6s839h5fp4d2rw3uj5zmpn80fh7t2m5yslgw4qn
   - &thebe age1y87tgg2sxnx0r2dne7r4ws0wm0256t6htw6a83dc0vxa8dd729dsc7v387
