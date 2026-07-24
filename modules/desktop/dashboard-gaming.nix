@@ -35,8 +35,14 @@ let
   # Launch the gaming session through a PATH that resolves jovian's
   # cap_sys_nice gamescope wrapper (/run/wrappers/bin/gamescope, set up by
   # jovian.steam) and the programs.steam wrapper (/run/current-system/sw/bin).
+  # The explicit XDG_RUNTIME_DIR / DBUS / DISPLAY env is needed because a plain
+  # systemd service does NOT inherit the full pam_systemd session env that
+  # jovian's own SDDM-launched gamescope-session gets — without XDG_RUNTIME_DIR
+  # gamescope can't create its Wayland socket and segfaults early on this iGPU.
   gamingLauncher = pkgs.writeShellScript "jupiter-gaming-session" ''
     export PATH=/run/wrappers/bin:/run/current-system/sw/bin:$PATH
+    export XDG_RUNTIME_DIR="/run/user/$(id -u ${cfg.gaming.user})"
+    export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
     exec ${cfg.gaming.command}
   '';
 
