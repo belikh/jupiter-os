@@ -35,14 +35,9 @@ Seven hosts are wired into the flake today:
   (kitchen), **adrastea** (office), **thebe** (robbie-room). Impermanent ZFS
   root (erase-your-darlings), Cage + Chromium kiosk session, stock nixpkgs
   kernel — everything comes from cache.nixos.org. amalthea, thebe, and metis
-  are physically installed and live; metis's `.sops.yaml` entry is still the
-  install-time placeholder age key (real key captured 2026-07-24:
-  `age1vw4tdhg72smv6lyv647j5pkd4jk767y5azwfssl68f2amxadeayqyczcjk`, not yet
-  swapped in), so secrets don't decrypt there yet — `ha-linux-agent` is
-  crash-looping on the missing MQTT password file until that's fixed with
-  `sops updatekeys` per the install steps below. adrastea shares the same
-  kiosk profile (its own hostName/hostId/dashboard URL/disk), registered and
-  CI-green but awaiting its real install (placeholder disk and sops key).
+  are physically installed and live. adrastea shares the same kiosk profile
+  (its own hostName/hostId/dashboard URL/disk), registered and CI-green but
+  awaiting its real install (placeholder disk and sops key).
 - **europa** (HPE MicroServer Gen10) — the ZFS NAS + data hub. Running its
   full Phase 2 `btver2`-tuned closure, substituted from its own Attic (see
   `docs/europa-bringup-stages.md`). Also runs the PXE server callisto
@@ -110,9 +105,7 @@ machine actually needs them:
 2. **thebe** — shares the kiosk profile (its own hostName/hostId/dashboard
    URL/disk, plus USB Wi-Fi). ✅ live
 3. **metis** — shares the kiosk profile (its own hostName/hostId/dashboard
-   URL/disk). ✅ physically live, but still on its install-time placeholder
-   `.sops.yaml` age key — secrets don't decrypt there yet (`sops updatekeys`
-   pending).
+   URL/disk). ✅ live
 4. **adrastea** — shares the kiosk profile. registered; awaiting physical
    install
 5. **europa** (NAS + data hub) — full Phase 2 `btver2`-tuned closure live at
