@@ -53,6 +53,7 @@
   imports = [
     ../../modules/common.nix
     ../../modules/services/console-screensaver.nix
+    ../../modules/services/mqtt.nix
   ];
 
   networking.hostName = "callisto";
@@ -212,4 +213,38 @@
   # per-host override), so the eye-candy always yields to real build work
   # here too.
   jupiter.consoleScreensaver.enable = true;
+
+  # ---- MQTT broker (moved from amalthea 2026-07-24) -----------------------
+  # The fleet's mosquitto broker: every kiosk's ha-agent publishes here, and
+  # an external Home Assistant instance subscribes as the `homeassistant`
+  # user. It used to run on amalthea, coupling fleet infrastructure to a
+  # kiosk's impermanent/appliance lifecycle; callisto is a better home now
+  # that it has a persistent root (see the iSCSI comment above sops can
+  # decrypt at activation here too). Kiosks reach it at the static
+  # 10.1.1.3 DHCP reservation (modules/desktop/tcxwave-kiosk.nix's
+  # mqttHost default) — same address build-machines.nix already dials, since
+  # callisto has no DNS/mDNS resolution yet.
+  #
+  # NOT auto-covered by anything imported above: unlike the kiosks (which
+  # get mqtt_ha_linux_agent via tcxwave-kiosk.nix), callisto needs both
+  # secrets declared explicitly here.
+  sops.secrets.mqtt_homeassistant = { };
+  sops.secrets.mqtt_ha_linux_agent = { };
+
+  jupiter.services.mqtt = {
+    enable = true;
+    users = {
+      homeassistant = {
+        passwordFile = config.sops.secrets.mqtt_homeassistant.path;
+        acl = [ "readwrite #" ];
+      };
+      ha-linux-agent = {
+        passwordFile = config.sops.secrets.mqtt_ha_linux_agent.path;
+        acl = [
+          "readwrite homeassistant/#"
+          "readwrite ha-linux-agent/#"
+        ];
+      };
+    };
+  };
 }

@@ -31,27 +31,28 @@ builds/boots/deploys, then grow.
 Seven hosts are wired into the flake today:
 
 - **The 4 TCx Wave dashboard kiosks** (one per room): **amalthea**
-  (jupiter-bedroom — the bootstrap host, canonical template, and fleet MQTT
-  broker), **metis** (kitchen), **adrastea** (office), **thebe** (robbie-room).
-  Impermanent ZFS root (erase-your-darlings), Cage + Chromium kiosk session,
-  stock nixpkgs kernel — everything comes from cache.nixos.org. amalthea and
-  thebe are physically installed; metis and adrastea are clones of amalthea
-  minus the broker role (different hostName/hostId/dashboard URL/disk),
-  registered and CI-green but awaiting their real install (placeholder disks
-  and sops keys).
+  (jupiter-bedroom — the bootstrap host and canonical template), **metis**
+  (kitchen), **adrastea** (office), **thebe** (robbie-room). Impermanent ZFS
+  root (erase-your-darlings), Cage + Chromium kiosk session, stock nixpkgs
+  kernel — everything comes from cache.nixos.org. amalthea and thebe are
+  physically installed; metis and adrastea are clones of amalthea (different
+  hostName/hostId/dashboard URL/disk), registered and CI-green but awaiting
+  their real install (placeholder disks and sops keys).
 - **europa** (HPE MicroServer Gen10) — the ZFS NAS + data hub. Running its
   full Phase 2 `btver2`-tuned closure, substituted from its own Attic (see
   `docs/europa-bringup-stages.md`). Also runs the PXE server callisto
   netboots from (ganymede's role in the old design, moved here since
   ganymede isn't registered).
-- **callisto** — diskless netboot compute node (HP EliteDesk 800 G4 DM,
-  i5-8500T Coffee Lake 6c/6t, 64GB RAM; the box destroyed NVMe drives
-  repeatedly, so it runs fully in-RAM instead), and the fleet's shared Nix
-  remote builder — every other host delegates eligible builds to it
-  (`jupiter.core.buildMachines`, default-on). Live at `10.1.1.3` on a
-  kexec-netboot closure europa PXE-serves. `jupiter.build.microarch =
-  "skylake"` is committed as a roadmap entry only — pallene must build and
-  push the skylake-tagged closure to attic before callisto's next deploy.
+- **callisto** — netboot compute node (HP EliteDesk 800 G4 DM, i5-8500T
+  Coffee Lake 6c/6t, 64GB RAM; the box destroyed NVMe drives repeatedly, so
+  root lives on ext4-over-iSCSI instead of local disk), the fleet's shared
+  Nix remote builder — every other host delegates eligible builds to it
+  (`jupiter.core.buildMachines`, default-on) — and the fleet's MQTT broker
+  (every kiosk's ha-agent publishes here, moved from amalthea 2026-07-24).
+  Live at `10.1.1.3` on a kexec-netboot closure europa PXE-serves.
+  `jupiter.build.microarch = "skylake"` is committed as a roadmap entry only
+  — pallene must build and push the skylake-tagged closure to attic before
+  callisto's next deploy.
 - **pallene** — the ephemeral BinaryLane build-server ISO host that compiles
   europa's tuned closure and pushes it to attic. Never a persistent fleet
   member; built via `make pallene-iso` / `make rebuild-world`.
@@ -100,22 +101,23 @@ from `archive/full-fleet-reference` and re-adding flake inputs only when a
 machine actually needs them:
 
 1. **amalthea** — proves the flake, storage profiles, impermanence, sops,
-   kiosk stack, MQTT broker. ✅ live
-2. **thebe** — clone of amalthea minus the broker (its own
-   hostName/hostId/dashboard URL/disk, plus USB Wi-Fi). ✅ live
-3. **metis / adrastea** — clones of amalthea minus the broker (different
+   kiosk stack. ✅ live
+2. **thebe** — clone of amalthea (its own hostName/hostId/dashboard
+   URL/disk, plus USB Wi-Fi). ✅ live
+3. **metis / adrastea** — clones of amalthea (different
    hostName/hostId/dashboard URL/disk). ✅ registered; awaiting physical
    install
 4. **europa** (NAS + data hub) — full Phase 2 `btver2`-tuned closure live at
    `10.1.1.2`, substituted from its own Attic. See
    `docs/europa-bringup-stages.md`. Also PXE-serves callisto (ganymede's role
    in the old design; moved here since ganymede isn't registered).
-5. **callisto** (diskless netboot, fleet Nix remote builder — HP EliteDesk
-   800 G4 DM, i5-8500T Coffee Lake 6c/6t, 64GB RAM). ✅ live at `10.1.1.3`
-   on a kexec-netboot closure; daemon tuning (`cores=6 max-jobs=1`) and
-   `jupiter.build.microarch = "skylake"` are committed but the latter is a
-   roadmap entry only (pallene must build/push the skylake closure before
-   callisto's next deploy).
+5. **callisto** (netboot, fleet Nix remote builder and MQTT broker — HP
+   EliteDesk 800 G4 DM, i5-8500T Coffee Lake 6c/6t, 64GB RAM). ✅ live at
+   `10.1.1.3` on a kexec-netboot closure, root over ext4-iSCSI; daemon
+   tuning (`cores=6 max-jobs=1`) and `jupiter.build.microarch = "skylake"`
+   are committed but the latter is a roadmap entry only (pallene must
+   build/push the skylake closure before callisto's next deploy). MQTT
+   broker moved here from amalthea 2026-07-24.
 6. **ganymede** (always-on services: resolver/DNS, tunnels) — then pin
    `networking.nameservers` back to it in `modules/common.nix`.
 7. **himalia** (laptop, home-manager), gaming/branding/terranix/edge-device
