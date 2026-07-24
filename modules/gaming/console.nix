@@ -1,21 +1,21 @@
 # Bazzite-style gaming stack for NixOS.
 #
 # A reusable, opt-in profile that reproduces the modern (2026) Bazzite gaming
-# experience using the two upstream projects that map onto it on NixOS:
+# experience on NixOS, built on Jovian-NixOS (the SteamOS "gaming mode"
+# gamescope session, Steam Deck quirks, gamescope cap_sys_nice wrapper, and the
+# gamescope/Steam software stack).
 #
-#   * Jovian-NixOS  -> the SteamOS "gaming mode" gamescope session, Steam Deck
-#                      hardware quirks, and Decky Loader.
-#   * chaotic-nyx   -> the CachyOS kernel, bleeding-edge Mesa (mesa-git), the
-#                      sched-ext (scx) schedulers, and gamescope_git.
+# chaotic-nyx was evaluated and deliberately NOT pulled in: forcing it to follow
+# this flake's nixpkgs (the repo convention) caused patch skew that broke the
+# build (mangohud double-patch). Jovian alone covers everything the fleet needs;
+# the cachyOsKernel / mesaGit toggles stay in the interface for documentation but
+# are inert here (kept off on ZFS hosts regardless, per CLAUDE.md).
 #
 # Attach it to ANY host by flipping `jupiter.gaming.console.enable = true;`.
 # jovian's nixos module is imported for every host in flake.nix (inert until
-# used), and jovian's + chaotic's overlays are applied only on hosts that
-# enable this profile (also in flake.nix), so the options resolve everywhere
-# but the packages never perturb a non-gaming host's closure. The CachyOS
-# kernel is opt-in (cachyOsKernel, default false on ZFS hosts), and its sched-ext
-# scheduler is a general per-host choice left out of this minimal repo — this
-# module only nudges it when the (off-by-default-here) cachyOsKernel is on.
+# used), and jovian's overlay is applied only on hosts that enable this profile
+# (also in flake.nix), so the options resolve everywhere but jovian's packages
+# never perturb a non-gaming host's closure.
 #
 # Two ideas are borrowed from GLF-OS (the French gaming NixOS distro):
 #   * `apps.<name>` — a data-driven per-application toggle catalogue (see
@@ -90,13 +90,13 @@ let
       ];
     };
     pcsx2 = {
-      description = "PCSX2 (chaotic-nyx git build) — PS2 emulator";
-      packages = with pkgs; [ pcsx2_git ];
+      description = "PCSX2 — PS2 emulator";
+      packages = with pkgs; [ pcsx2 ];
       default = false;
     };
     shadps4 = {
-      description = "shadPS4 (chaotic-nyx git build) — PS4 emulator";
-      packages = with pkgs; [ shadps4_git ];
+      description = "shadPS4 — PS4 emulator";
+      packages = with pkgs; [ shadps4 ];
       default = false;
     };
   };
@@ -275,20 +275,19 @@ in
       gamescopeSession.enable = true;
       remotePlay.openFirewall = true;
       dedicatedServer.openFirewall = true;
-      # CachyOS-patched Proton (chaotic-nyx), pairing with the cachyOsKernel /
-      # scx scheduler choice above for a consistent CachyOS-stack story.
-      extraCompatPackages = [ pkgs.proton-cachyos ];
+      # No extraCompatPackages here: proton-cachyos (chaotic-nyx) was dropped to
+      # keep the closure on a single nixpkgs (chaotic's overlay caused patch
+      # skew). Steam ships its own Proton; add proton-ge-bin per-user if wanted.
     };
 
     # gamescope: jovian.steam already installs a cap_sys_nice wrapper for
     # gamescope (modules/steam/steam.nix), so when the Jovian gaming-mode
     # session is on we DON'T also enable programs.gamescope — the two would
-    # conflict on security.wrappers.gamescope.source (jovian's gamescope vs
-    # the package we pick here). When gamingMode is off (desktop-only gaming,
-    # no jovian session), programs.gamescope provides the wrapper itself.
+    # conflict on security.wrappers.gamescope.source. When gamingMode is off
+    # (desktop-only gaming, no jovian session), programs.gamescope provides the
+    # wrapper itself.
     programs.gamescope = lib.mkIf (!cfg.gamingMode.enable) {
       enable = true;
-      package = pkgs.gamescope_git;
       capSysNice = true;
     };
 
@@ -380,8 +379,7 @@ in
     hardware.opentabletdriver.enable = lib.mkIf cfg.peripherals.drawingTablet true;
     services.hardware.openrgb = lib.mkIf cfg.peripherals.openrgb {
       enable = true;
-      # chaotic-nyx git build — tracks new device support faster than nixpkgs.
-      package = pkgs.openrgb_git;
+      package = pkgs.openrgb;
     };
 
     # --- The gaming app stack (catalogue toggles + peripheral userland) ------
