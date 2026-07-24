@@ -32,6 +32,7 @@ in
     ../services/tcxwave-touch-wake.nix
     ../services/ha-agent.nix
     ./dashboard-kiosk.nix
+    ./dashboard-gaming.nix
   ];
 
   options.jupiter.tcxWaveKiosk = {
@@ -104,6 +105,13 @@ in
       enable = true;
       url = cfg.dashboardUrl;
     };
+
+    # Dashboard ↔ gaming mode, switchable from Home Assistant. Adds a
+    # jupiter-gaming.service on a shared tty1 and two HA switches (group
+    # "session") that flip between the Cage dashboard and a gamescope/Steam
+    # gaming session. Enabled here once so all 4 kiosks get it identically — do
+    # NOT re-add per-host, or the fleet drifts (see header comment).
+    jupiter.dashboardGaming.enable = true;
 
     jupiter.boot.falloutSplash.enable = true;
 

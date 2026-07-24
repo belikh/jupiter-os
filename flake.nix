@@ -34,6 +34,26 @@
       url = "github:belikh/ha-linux-agent";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # SteamOS-style gaming stack (gamescope "gaming mode" session, Steam Deck
+    # quirks, gamescope cap_sys_nice wrapper). Pulled in by the TCx Wave kiosks'
+    # dashboard-gaming mode (modules/gaming/console.nix). Its nixos module is
+    # imported fleet-wide (inert until jovian.steam.* is enabled); its overlay
+    # is applied only on hosts that enable jupiter.gaming.console, so the
+    # jovian-provided packages don't perturb europa/callisto's closures.
+    jovian = {
+      url = "github:Jovian-Experiments/Jovian-NixOS";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
+    # Bleeding-edge packages referenced by the gaming stack (gamescope_git,
+    # proton-cachyos). Its overlay is applied only on gaming hosts (NOT its
+    # nixos module — that would auto-add chaotic's overlay + cache fleet-wide,
+    # which CLAUDE.md's buildability rules forbid for europa/callisto).
+    chaotic = {
+      url = "github:chaotic-cx/nyx";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -44,6 +64,8 @@
       impermanence,
       sops-nix,
       ha-linux-agent,
+      jovian,
+      chaotic,
       ...
     }:
     let
@@ -65,6 +87,31 @@
                   impermanence.nixosModules.impermanence
                   disko.nixosModules.disko
                   ha-linux-agent.nixosModules.default
+                  # jovian's nixos module is inert unless jovian.steam.* is
+                  # enabled, so importing it fleet-wide is free (just option
+                  # definitions). The jovian + chaotic OVERLAYS, by contrast,
+                  # would perturb every host's pkgs — they're applied only on
+                  # hosts that opt into the gaming stack below.
+                  jovian.nixosModules.default
+                ];
+              }
+            )
+            # On hosts that enable jupiter.gaming.console, make jovian's and
+            # chaotic's packages resolvable (gamescope-session, steamos-manager,
+            # gamescope_git, proton-cachyos, …) by applying their overlays to
+            # this host's pkgs. Gated so europa/callisto/pallene never see them
+            # (buildability: keep their closures substitutable from cache.nixos.org
+            # + attic, untouched by a gaming overlay). The `or` guards handle the
+            # hosts that don't import console.nix (so `jupiter.gaming` is absent).
+            (
+              { config, ... }:
+              let
+                gamingConsole = (config.jupiter.gaming or { }).console or { };
+              in
+              {
+                nixpkgs.overlays = nixpkgs.lib.mkIf (gamingConsole.enable or false) [
+                  jovian.overlays.default
+                  chaotic.overlays.default
                 ];
               }
             )
