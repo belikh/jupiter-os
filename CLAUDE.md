@@ -19,10 +19,11 @@ the fleet's MQTT broker — i5-8500T Coffee Lake 6c/6t, 64GB RAM), and
 `pallene` (ephemeral BinaryLane build-server ISO host, phase2 only).
 `amalthea`, `thebe`, `europa`, `callisto`, and `metis` are physically live
 today; `adrastea` is registered and CI-green but still on a placeholder
-disk/sops key, awaiting its real install (see `.sops.yaml`). The siblings
-are clones of amalthea, differing in hostName/hostId/dashboard URL/disk.
-`metis` was installed 2026-07-20 with a real disk, but its `.sops.yaml`
-recipient is still the install-time placeholder age key (real key captured
+disk/sops key, awaiting its real install (see `.sops.yaml`). All 4 kiosks
+share the `modules/desktop/tcxwave-kiosk.nix` profile, each with its own
+hostName/hostId/dashboard URL/disk. `metis` was installed 2026-07-20 with a
+real disk, but its `.sops.yaml` recipient is still the install-time
+placeholder age key (real key captured
 2026-07-24: `age1vw4tdhg72smv6lyv647j5pkd4jk767y5azwfssl68f2amxadeayqyczcjk`)
 — secrets don't decrypt there, so `ha-linux-agent` crash-loops on the
 missing MQTT password file until someone swaps the key in and runs `sops

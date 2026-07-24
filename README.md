@@ -40,8 +40,8 @@ Seven hosts are wired into the flake today:
   `age1vw4tdhg72smv6lyv647j5pkd4jk767y5azwfssl68f2amxadeayqyczcjk`, not yet
   swapped in), so secrets don't decrypt there yet — `ha-linux-agent` is
   crash-looping on the missing MQTT password file until that's fixed with
-  `sops updatekeys` per the install steps below. adrastea remains a clone of
-  amalthea (different hostName/hostId/dashboard URL/disk), registered and
+  `sops updatekeys` per the install steps below. adrastea shares the same
+  kiosk profile (its own hostName/hostId/dashboard URL/disk), registered and
   CI-green but awaiting its real install (placeholder disk and sops key).
 - **europa** (HPE MicroServer Gen10) — the ZFS NAS + data hub. Running its
   full Phase 2 `btver2`-tuned closure, substituted from its own Attic (see
@@ -107,27 +107,28 @@ machine actually needs them:
 
 1. **amalthea** — proves the flake, storage profiles, impermanence, sops,
    kiosk stack. ✅ live
-2. **thebe** — clone of amalthea (its own hostName/hostId/dashboard
+2. **thebe** — shares the kiosk profile (its own hostName/hostId/dashboard
    URL/disk, plus USB Wi-Fi). ✅ live
-3. **metis** — clone of amalthea (different hostName/hostId/dashboard
+3. **metis** — shares the kiosk profile (its own hostName/hostId/dashboard
    URL/disk). ✅ physically live, but still on its install-time placeholder
    `.sops.yaml` age key — secrets don't decrypt there yet (`sops updatekeys`
-   pending). **adrastea** — same clone, ✅ registered; awaiting physical
+   pending).
+4. **adrastea** — shares the kiosk profile. registered; awaiting physical
    install
-4. **europa** (NAS + data hub) — full Phase 2 `btver2`-tuned closure live at
+5. **europa** (NAS + data hub) — full Phase 2 `btver2`-tuned closure live at
    `10.1.1.2`, substituted from its own Attic. See
    `docs/europa-bringup-stages.md`. Also PXE-serves callisto (ganymede's role
    in the old design; moved here since ganymede isn't registered).
-5. **callisto** (netboot, fleet Nix remote builder and MQTT broker — HP
+6. **callisto** (netboot, fleet Nix remote builder and MQTT broker — HP
    EliteDesk 800 G4 DM, i5-8500T Coffee Lake 6c/6t, 64GB RAM). ✅ live at
    `10.1.1.3` on a kexec-netboot closure, root over ext4-iSCSI; daemon
    tuning (`cores=6 max-jobs=1`) and `jupiter.build.microarch = "skylake"`
    are committed but the latter is a roadmap entry only (pallene must
    build/push the skylake closure before callisto's next deploy). MQTT
    broker moved here from amalthea 2026-07-24.
-6. **ganymede** (always-on services: resolver/DNS, tunnels) — then pin
+7. **ganymede** (always-on services: resolver/DNS, tunnels) — then pin
    `networking.nameservers` back to it in `modules/common.nix`.
-7. **himalia** (laptop, home-manager), gaming/branding/terranix/edge-device
+8. **himalia** (laptop, home-manager), gaming/branding/terranix/edge-device
    layers — each restores its own inputs.
 
 Rules that keep this buildable:
