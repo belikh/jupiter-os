@@ -115,17 +115,59 @@
         };
 
       # Wire the PXE server (on europa — see hosts/europa/configuration.nix
-      # for why it's here and not ganymede) directly to callisto's netboot
-      # build products, so the TFTP-served image always matches the flake.
-      # The cmdLine must point the booting kernel at its closure's init.
+      # for why it's here and not ganymede) directly to callisto's build
+      # products, so the TFTP-served image always matches the flake. The
+      # cmdLine's `init=` points the booting kernel at its closure's init —
+      # this is the standard switch_root target on every NixOS boot path
+      # (disk, netboot, or iSCSI-root alike), not a kexec-specific trick:
+      # once stage-1 finds and mounts the real root (over iSCSI now, see
+      # hosts/callisto/configuration.nix), it switch_roots into whatever
+      # init= names.
       #
       # Built with the PLAIN untuned nixpkgs.legacyPackages, not europa's own
       # (gccarch-btver2-tuned) `pkgs` — see modules/network/pxe-server.nix's
       # comment for why that distinction is load-bearing here.
       untunedPkgs = nixpkgs.legacyPackages.x86_64-linux;
+
+      # DMT Console package (Intel/DMTF Device Management Toolkit). Built with
+      # the PLAIN untuned nixpkgs so it substitutes from cache.nixos.org and
+      # never lands in europa's gccarch-btver2 closure. The headless (noui)
+      # build strips the embedded web UI. Consumed by
+      # modules/services/dmt-console.nix (which carries its own identical
+      # buildGoModule call so it is self-contained per-host) — keep the two in
+      # sync. Exposed standalone here so the package builds in isolation via
+      # `nix build .#dmt-console` without pulling in any host closure.
+      dmtConsolePkg = untunedPkgs.buildGoModule {
+        pname = "dmt-console";
+        version = "unstable-2026-07-22";
+        src = untunedPkgs.fetchFromGitHub {
+          owner = "device-management-toolkit";
+          repo = "console";
+          rev = "6bf3e82636ec226a0e7f7eb048c9161a9e93d348";
+          hash = "sha256-CzwIDXpGWWrwIleIoQrCbJ+fquPn9auqLiWD7G0afnM=";
+        };
+        vendorHash = "sha256-3G7FypfAVwcfFWmqu1TX5EDpZ4hhdZ2HyKQYUTTwlmY=";
+        subPackages = [ "cmd/app" ];
+        tags = [ "noui" ];
+        ldflags = [
+          "-s"
+          "-w"
+        ];
+        postInstall = ''
+          mv $out/bin/app $out/bin/console
+        '';
+      };
+
       callistoConfig = self.nixosConfigurations.callisto.config;
       callistoBuild = callistoConfig.system.build;
-      callistoCmdLine = "init=${callistoBuild.toplevel}/init loglevel=4 ${toString callistoConfig.boot.kernelParams}";
+      # `ip=dhcp`: belt-and-suspenders for the classic (non-systemd) stage-1
+      # initrd's DHCP client — boot.iscsi-initiator forces
+      # boot.initrd.network.enable = true (see hosts/callisto/configuration.nix),
+      # which brings up initrd networking generically, but doesn't itself
+      # guarantee DHCP fires with no explicit `ip=` kernel param. iSCSI
+      # login can't reach the portal without an address first, so this is
+      # cheap insurance rather than an assumption.
+      callistoCmdLine = "init=${callistoBuild.toplevel}/init loglevel=4 ip=dhcp ${toString callistoConfig.boot.kernelParams}";
       europaLanIp = "10.1.1.2";
       europaPxeHttpPort = 8082; # keep in sync with jupiter.pxe.httpPort default
       ipxeScript = untunedPkgs.writeText "netboot.ipxe" ''
@@ -150,7 +192,7 @@
         }
         {
           name = "initrd";
-          path = "${callistoBuild.netbootRamdisk}/initrd";
+          path = "${callistoBuild.initialRamdisk}/initrd";
         }
       ];
       pxeModule = { ... }: {
@@ -182,10 +224,12 @@
         # moved here since ganymede isn't registered yet.
         europa = mkHost ./hosts/europa/configuration.nix [ pxeModule ]; # NAS + data hub
 
-        # Diskless netboot compute node, PXE-booted from europa — the fleet's
-        # shared Nix remote builder (i5, 64GB RAM). Registered CI-green only;
-        # no physical netboot test yet (see hosts/callisto/configuration.nix
-        # for the deferred runtime-secrets gap).
+        # No-local-disk compute node, PXE-booted from europa with root over
+        # iSCSI (europa's tank/services/callisto-root zvol) — the fleet's
+        # shared Nix remote builder (i5, 64GB RAM). See
+        # hosts/callisto/configuration.nix and
+        # docs/callisto-iscsi-root-provisioning.md; not yet physically
+        # provisioned/booted on this design.
         callisto = mkHost ./hosts/callisto/configuration.nix [ ];
 
         # Ephemeral BinaryLane build server. Never a persistent fleet member —
@@ -206,6 +250,9 @@
       # it's independently checkable without pulling in europa's whole
       # (gccarch-btver2-tuned) system closure.
       packages.x86_64-linux.pxe-tftproot = pxeTftpRoot;
+
+      # DMT Console — see dmtConsolePkg above.
+      packages.x86_64-linux.dmt-console = dmtConsolePkg;
 
       # `nix flake check` builds every registered host closure — for a
       # single-host bootstrap that's cheap, and it's the whole point: prove

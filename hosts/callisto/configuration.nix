@@ -2,124 +2,124 @@
   config,
   lib,
   pkgs,
-  modulesPath,
   ...
 }:
 
-# Diskless netboot compute node — PXE-booted from europa (jupiter.pxe). No
-# local disk: the box has repeatedly destroyed NVMe drives, so it's run
-# fully diskless/in-RAM instead (64GB RAM gives plenty of headroom for a
-# tmpfs-backed store overlay).
+# Compute node with no local disk — HP EliteDesk 800 G4 DM, i5-8500T
+# (Coffee Lake, 6c/6t, no HT) + 64GB RAM. The box has repeatedly destroyed
+# local NVMe drives, so it has none; root instead lives on a ZFS pool
+# carried over iSCSI from europa's tank/services/callisto-root zvol
+# (modules/services/iscsi-target.nix). PXE (europa, jupiter.pxe) still
+# hands off the kernel+initrd exactly as before — only what happens after
+# the kernel starts has changed, from "unpack a RAM-resident squashfs" to
+# "iSCSI-login, then mount a real ZFS root over the network".
 #
 # Role: the fleet's shared Nix remote builder (jupiter.core.buildMachines,
-# in modules/core/build-machines.nix). HP EliteDesk 800 G4 DM with an
-# i5-8500T (Coffee Lake, 6c/6t, no HT) + 64GB RAM — dwarfs every other
-# registered host's hardware, so every host delegates eligible builds here
-# instead of building locally.
+# in modules/core/build-machines.nix). Dwarfs every other registered host's
+# hardware, so every host delegates eligible builds here instead of
+# building locally.
 #
-# Live at 10.1.1.3 (UniFi DHCP reservation, MAC c4:65:16:b8:76:03 —
-# see modules/core/build-machines.nix). Booted kexec-style from the PXE
-# chain europa serves (flake.nix's pxeModule); the running toplevel carries
-# a "jupiter-kexec" suffix and /proc/cmdline shows root=fstab.
+# Live at 10.1.1.3 (UniFi DHCP reservation, MAC c4:65:16:b8:76:03 — see
+# modules/core/build-machines.nix).
 #
 # The old design's callisto (diskless Postgres/Loki server for n8n + the HA
 # recorder, PXE-served from ganymede) is NOT what this host is — different
-# hardware, different role, reusing only the name and the diskless-netboot
-# mechanics. PXE now lives on europa instead of ganymede (ganymede isn't
-# registered), matching the cloudflareTunnel-on-europa deviation.
+# hardware, different role, reusing only the name.
 #
-# ---- Persistent state (NFS-backed) -----------------------------------------
-# Despite being diskless, callisto gets real persistence: europa exports a
-# per-host ZFS dataset (tank/services/callisto, created by
-# modules/storage/zfs-nas.nix) back to callisto over NFS at /persist, and
-# impermanence (modules/core/impermanence.nix) bind-mounts the
-# needed-but-not-all-of-/etc/ssh paths from it. That gives callisto a
-# stable SSH host key across closure changes (so other hosts could
-# eventually pin it via publicHostKey) AND lets sops-nix decrypt runtime
-# secrets normally — closing both gaps the previous "all in RAM" model had.
-# /nix/store itself stays in tmpfs (NFS would be wrong: too slow, and nix
-# db needs transactional consistency). What's persisted: SSH host keys,
-# /etc/machine-id, /var/log, /var/lib/{nixos,sops-nix,systemd/coredump} —
-# the same set the kiosks keep on their local /persist, just over the wire.
+# ---- Why iSCSI, not NFS (2026-07-24) ---------------------------------------
+# This host previously kept a small NFS-backed /persist for just SSH host
+# keys/logs, and even THAT burned a full session chasing initrd fragility
+# (missing NIC driver, no DHCP client, no mount.nfs helper, no rpc.statd —
+# see git history on this file) before being reverted to a plain,
+# non-neededForBoot stage-2 mount. Root itself was never going anywhere near
+# that path. iSCSI root uses a different, purpose-built NixOS mechanism
+# instead (boot.iscsi-initiator, nixos/modules/services/networking/iscsi/
+# root-initiator.nix) that nixpkgs ships specifically for booting / and /nix
+# over iSCSI — not a hand-rolled mount. Its one hard requirement is the
+# CLASSIC (non-systemd) stage-1 initrd: it asserts
+# `!boot.initrd.systemd.enable`, because systemd-stage-1 doesn't support
+# iSCSI yet. That's a real trade (this host loses systemd-stage-1's
+# tooling), but it's the same initrd implementation every ordinary
+# disk-based NixOS install has used for years — not the newer, thinner
+# netboot-minimal environment that had "no hardware scan behind it" and
+# caused the earlier pain.
+#
+# A useful side effect: since root is now a real persistent filesystem
+# instead of a tmpfs squashfs overlay, sops-nix can decrypt secrets at
+# activation like on any other host. The "sops can't decrypt at runtime
+# here" gap this host used to carry is closed by this change, not worked
+# around — no impermanence/NFS-persist plumbing needed at all anymore.
 {
   imports = [
-    (modulesPath + "/installer/netboot/netboot-minimal.nix")
     ../../modules/common.nix
     ../../modules/services/console-screensaver.nix
   ];
 
   networking.hostName = "callisto";
+  networking.hostId = "ca11157c"; # Stable per-host 8-char hex, required for ZFS
 
-  # Diskless: no ZFS use at all, so don't build the zfs kernel module for
-  # this kernel. common.nix's storage profile stays at its "none" default
-  # (no disko, no ZFS root) — this override is belt-and-suspenders should
-  # anything else default it on.
-  boot.supportedFilesystems.zfs = lib.mkForce false;
+  # ---- Root over iSCSI -----------------------------------------------------
+  # boot.iscsi-initiator (nixos/modules/services/networking/iscsi/root-initiator.nix)
+  # HARD-asserts `!boot.initrd.systemd.enable` — it uses preLVMCommands/
+  # extraUtilsCommands, which the systemd-stage-1 initrd doesn't implement
+  # at all ("systemd stage 1 does not support iscsi yet" is its own literal
+  # assertion message). This is the one non-optional trade of this whole
+  # design: callisto loses systemd-stage-1's tooling in exchange for a
+  # working iSCSI root, on this one host only.
+  boot.initrd.systemd.enable = false;
 
-  # Ensure the netboot image is fully copied to RAM on boot.
+  # The module also forces networking.useNetworkd = true and
+  # networking.useDHCP = false itself (unconditional assignments, not
+  # mkDefault) — don't set those separately here, they'd conflict. It adds
+  # the iscsi_tcp kernel module, the iscsid/iscsiadm binaries, and
+  # boot.initrd.network.enable = true (generic initrd DHCP, the classic-initrd
+  # equivalent of what systemd-stage-1's network.enable does) on its own.
+  # The only thing left to us is the NIC driver, which (unlike
+  # netboot-minimal's RAM-resident environment, which had "no hardware scan
+  # behind it") this classic initrd can autoload via udev the normal way —
+  # same mechanism every disk-based NixOS install already relies on.
+  boot.initrd.availableKernelModules = [ "e1000e" ]; # onboard Intel I219-LM
+  boot.iscsi-initiator = {
+    name = "iqn.2026-07.au.jupiter:callisto";
+    discoverPortal = "10.1.1.2:3260";
+    target = "iqn.2026-07.au.jupiter:europa:callisto-root";
+  };
+
+  # Root over iSCSI: a plain ext4 filesystem on the whole LUN. NO ZFS layer
+  # — europa already runs ZFS on the backing tank, and stacking ZFS on a
+  # network block device is both redundant and fragile (ZFS expects direct
+  # disk access and deadlocked the boot when tried). ext4 on the LUN is the
+  # simple, correct design: the LUN is a block device, mkfs.ext4 it, mount
+  # it. No pool, no pool-name collision with europa's own rpool, no rescue
+  # rename step. The LUN is used whole (no GPT partition) so by-path exposes
+  # only the single lun-0 device to mount.
   #
-  # REVERTED 2026-07-23: tried adding console=ttyS0 for AMT SOL visibility
-  # (AMT_RedirectionService + amtterm work fine end-to-end), but it introduced
-  # a genuine new boot hang right after early ACPI/PCI init — confirmed by
-  # comparing against prior boots (without this param) that got much further,
-  # into the initrd's DHCP/mount stage. SOL was also completely silent the
-  # whole time, consistent with this box's BIOS not actually having a working
-  # UART wired up for ttyS0 — forcing the kernel to console= a serial port
-  # with no real hardware backing it appears to hang synchronous console
-  # writes early in boot. Getting SOL boot visibility on this hardware would
-  # need a physical BIOS change (enabling legacy serial / console
-  # redirection), which defeats the point of a remote-recovery channel.
-  boot.kernelParams = [ "copytoram" ];
+  # Same by-path device format as before — systemd-udevd's path_id
+  # (handle_scsi_iscsi()) generates ip-<addr>:<port>-iscsi-<iqn>-lun-<N>
+  # for the iSCSI SCSI device, deterministic from the portal/target above.
+  fileSystems."/" = {
+    device = "/dev/disk/by-path/ip-10.1.1.2:3260-iscsi-iqn.2026-07.au.jupiter:europa:callisto-root-lun-0";
+    fsType = "ext4";
+    options = [ "relatime" ];
+  };
 
-  # No boot.initrd networking/NIC-driver config: the initrd doesn't mount
-  # anything over the network anymore (see /persist below), and the netboot
-  # squashfs is already fully in RAM via copytoram by the time the initrd
-  # runs, so it genuinely has no need for a NIC at all. (An e1000e
-  # availableKernelModules entry lived here briefly while /persist was still
-  # neededForBoot; removed as dead weight along with that.) The real system's
-  # e1000e module loads normally in stage 2 via udev, same as any driver.
+  # PXE (europa's jupiter.pxe) hands off the kernel+initrd directly — this
+  # host's own firmware boot menu / EFI NVRAM is never consulted, so
+  # systemd-boot's *files* landing on the ESP are inert (harmless, just
+  # unused). The provisioning install must therefore run with
+  # `nixos-install --no-bootloader` (see docs/callisto-iscsi-root-provisioning.md
+  # Stage 2): systemd-boot's installer runs `check-mountpoints`, which HARD-fails
+  # when /boot isn't a mounted ESP, and the iSCSI LUN is a bare zvol with no
+  # ESP — so the bootloader step must be skipped, not run. Actually touching
+  # EFI NVRAM is the dangerous part regardless: the provisioning install runs
+  # FROM europa against the zvol as a local block device, and EFI NVRAM belongs
+  # to whichever physical machine runs the install (europa), not to the target
+  # disk — leaving canTouchEfiVariables at common.nix's default would try to
+  # rewrite EUROPA's own boot entries during that cross-machine install.
+  boot.loader.efi.canTouchEfiVariables = lib.mkForce false;
 
   # Don't add a build-machine entry pointing at itself.
   jupiter.core.buildMachines.enable = false;
-
-  # ---- NFS-backed /persist (from europa's tank/services/callisto) ----------
-  # DISABLED as neededForBoot / dropped impermanence entirely 2026-07-24:
-  # chasing this mount through the initrd (missing NIC driver, no DHCP client,
-  # no mount.nfs/mount.nfs4 helper, no rpc.statd, then a console=ttyS0
-  # experiment that hung boot outright) burned an entire session, one fixed
-  # layer revealing the next. callisto is a diskless build coordinator with no
-  # state worth that fragility — persisted SSH host keys/logs were a nice-to-
-  # have, not a requirement. The mount now runs as an ordinary stage-2 NFS
-  # mount (full system networking + nfs-utils already available there, none
-  # of the initrd's minimal-environment gaps apply), so if it's ever slow or
-  # briefly unavailable it just retries as a normal systemd unit — it can
-  # never again block switch-root or hang the kernel.
-  #
-  # `_netdev` makes systemd wait for network before mounting; `noac` trades
-  # a small perf hit for stronger attribute-cache coherency with the NFS
-  # server. `timeo=14,retrans=5` is the standard tolerant-on-LAN tuning;
-  # `nolock` skips NFSv3 lock-recovery (rpc.statd) since this mount is only
-  # ever touched by callisto itself, never concurrently from another client.
-  fileSystems."/persist" = {
-    device = "10.1.1.2:/tank/services/callisto";
-    fsType = "nfs";
-    neededForBoot = false;
-    options = [
-      "rw"
-      "_netdev"
-      "noac"
-      "noatime"
-      "timeo=14"
-      "retrans=5"
-      "nolock"
-    ];
-  };
-
-  # No impermanence: it requires neededForBoot=true on whatever it binds
-  # from (NixOS asserts this at eval time), which is exactly the initrd
-  # fragility above. Callisto keeps ephemeral SSH host keys / logs / machine-id
-  # across reboots instead — a fresh host key each boot is a minor annoyance
-  # (re-trust it once), not a real cost for a build-coordinator appliance.
 
   # ---- Build daemon tuning for the shared-builder workload ----------------
   # callisto's actual workload is the OPPOSITE of pallene's
@@ -139,14 +139,13 @@
   # single-threaded while the other 5 cores sit idle waiting for the next
   # dispatch.
   #
-  # Risk consideration: 64GB RAM, no swap (diskless, tmpfs /nix/store).
-  # Worst-case -j6 linker memory for LLVM-class packages is ~12-24GB; the
-  # box has 60+GB free in steady state, so no OOM exposure at this setting.
-  # If a future workload ever runs concurrent multi-host dispatches that
-  # genuinely need cross-package parallelism instead, raise max-jobs and
-  # lower cores in lockstep (and mirror the change in
-  # modules/core/build-machines.nix's maxJobs, which tells dispatchers how
-  # much concurrent work callisto will accept).
+  # Risk consideration: 64GB RAM. Worst-case -j6 linker memory for
+  # LLVM-class packages is ~12-24GB; the box has 60+GB free in steady
+  # state, so no OOM exposure at this setting. No swap dataset (the
+  # "stateful" profile doesn't have one, unlike "impermanent"'s
+  # local/swap zvol) — root now persists on disk-backed ZFS rather than
+  # tmpfs, but that headroom math was never about tmpfs pressure in the
+  # first place, it's about the build's own working set vs. RAM.
   nix.settings.cores = 6;
   nix.settings.max-jobs = 1;
 
@@ -182,15 +181,14 @@
   # pipeline model; `-march=skylake` produces code that's both correct on
   # and optimally scheduled for this part).
   #
-  # ROADMAP ENTRY ONLY — DO NOT REBUILD CALLISTO LOCALLY BEFORE PALLEN:
+  # ROADMAP ENTRY ONLY — DO NOT REBUILD CALLISTO LOCALLY BEFORE PALLENE:
   # setting this option tags every derivation in callisto's closure with
   # requiredSystemFeatures=["gccarch-skylake"], which invalidates
   # cache.nixos.org for it. Pallene (modules/services/build-server.nix,
   # which now lists callisto in `hosts` and "skylake" in `microarchs`) must
   # build and push this closure to attic FIRST. Only then can callisto
   # safely `nixos-rebuild` — and even then, only if attic already has the
-  # paths (callisto is diskless: tmpfs /nix/store with no swap, so a local
-  # from-scratch rebuild of even a medium package would OOM the box).
+  # paths.
   # Verify pre-deploy with `nix path-info --substituters
   # http://10.1.1.2:8080/jupiter-os <toplevel>` from callisto — every path
   # must resolve from attic before `switch`.
@@ -206,8 +204,8 @@
   # jupiter.build.microarch = "skylake";
 
   # Console screensaver — Matrix rain on tty1 for the (rare) moments a
-  # monitor is plugged into this diskless box. Same module as europa; Nice=19
-  # is baked into modules/services/console-screensaver.nix itself (not a
+  # monitor is plugged into this host. Same module as europa; Nice=19 is
+  # baked into modules/services/console-screensaver.nix itself (not a
   # per-host override), so the eye-candy always yields to real build work
   # here too.
   jupiter.consoleScreensaver.enable = true;
