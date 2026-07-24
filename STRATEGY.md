@@ -23,12 +23,12 @@ The kiosk fleet (4 TCx Wave units) validated this approach end-to-end. europa (t
 
 | Host | Role | Status |
 |------|------|--------|
-| amalthea | kiosk (bedroom) + MQTT broker | live |
+| amalthea | kiosk (bedroom) | live |
 | thebe | kiosk (robbie-room) | live |
 | metis | kiosk (kitchen) | registered; awaiting physical install (placeholder disk + sops key) |
 | adrastea | kiosk (office) | registered; awaiting physical install (placeholder disk + sops key) |
 | europa | NAS + data hub, PXE server for callisto | live at `10.1.1.2`, full Phase 2 `btver2`-tuned closure, substituted from its own Attic |
-| callisto | diskless netboot, fleet Nix remote builder (HP EliteDesk 800 G4 DM, i5-8500T Coffee Lake 6c/6t, 64GB RAM) | live at `10.1.1.3` on a kexec-netboot closure; daemon tuning (`cores=6 max-jobs=1`) committed, `jupiter.build.microarch = "skylake"` is a roadmap entry awaiting a pallene build/push |
+| callisto | diskless netboot, fleet Nix remote builder + MQTT broker (HP EliteDesk 800 G4 DM, i5-8500T Coffee Lake 6c/6t, 64GB RAM) | live at `10.1.1.3` on a kexec-netboot closure; daemon tuning (`cores=6 max-jobs=1`) committed, `jupiter.build.microarch = "skylake"` is a roadmap entry awaiting a pallene build/push |
 | pallene | build server (ephemeral ISO) | proven end-to-end — built and pushed europa's Phase 2 closure via `make rebuild-world` |
 
 All 7 host configurations pass `make check` (`nix flake check --no-build`) and CI.
@@ -44,11 +44,12 @@ All 7 host configurations pass `make check` (`nix flake check --no-build`) and C
 ### Kiosk Fleet (mostly complete)
 
 The 4 TCx Wave dashboard kiosks share a `tcxwave-kiosk.nix` profile. amalthea
-is live as the bootstrap host and the fleet MQTT broker (ha-agent on each
-kiosk publishes here). The 3 siblings are registered and CI-green but still
-on placeholder disks and sops keys — physically installing them is a
-mechanical task, not a config one. This track validated the incremental,
-cache-first approach and the CI flake-check feedback loop.
+is live as the bootstrap host (each kiosk's ha-agent publishes to the fleet
+MQTT broker, which now runs on callisto rather than amalthea). The 3
+siblings are registered and CI-green but still on placeholder disks and sops
+keys — physically installing them is a mechanical task, not a config one.
+This track validated the incremental, cache-first approach and the CI
+flake-check feedback loop.
 
 ### europa Phase 1 — Untuned NAS Bootstrap ✅ DONE
 

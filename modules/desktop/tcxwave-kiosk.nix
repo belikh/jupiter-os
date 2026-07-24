@@ -14,11 +14,14 @@
 # fleet will drift again — that is exactly how thebe lost touch-wake and the
 # ha-agent launcherApps while amalthea kept them.
 #
-# The one intentional fleet asymmetry: amalthea also runs the mosquitto broker
-# (modules/services/mqtt.nix) and overrides ha-agent's mqttHost to localhost;
-# the other three are broker clients pointed at amalthea.localdomain. The
-# broker is infrastructure, not a dashboard feature, so it stays in amalthea's
-# host file rather than being pulled in here.
+# The mosquitto broker (modules/services/mqtt.nix) runs on callisto, not on
+# any kiosk — all 4 kiosks are equally broker clients, pointed at callisto's
+# static DHCP-reserved IP (10.1.1.3; callisto has no DNS/mDNS resolution yet,
+# same reason build-machines.nix dials it by IP). The broker is
+# infrastructure, not a dashboard feature, so it stays in callisto's host
+# file rather than being pulled in here. (It used to run on amalthea; moved
+# 2026-07-24 so the broker isn't coupled to a kiosk's impermanent/appliance
+# lifecycle.)
 
 let
   cfg = config.jupiter.tcxWaveKiosk;
@@ -116,11 +119,11 @@ in
 
     # ha-agent publishes CPU/governor/EPP sensors to the broker and exposes
     # the touch-wake screen-power unit as a Home Assistant switch. mqttHost
-    # defaults to the amalthea broker; amalthea itself overrides it to
-    # localhost since the broker runs there.
+    # defaults to callisto's broker, addressed by static IP (see the module
+    # header comment for why not by hostname).
     jupiter.services.haAgent = {
       enable = true;
-      mqttHost = lib.mkDefault "amalthea.localdomain";
+      mqttHost = lib.mkDefault "10.1.1.3";
       launcherApps = [
         {
           id = "screen-power";

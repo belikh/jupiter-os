@@ -29,10 +29,9 @@
 #
 # Kiosks are targeted by mDNS hostname (amalthea.localdomain etc.) rather
 # than static IP: they're on dynamic DHCP (no UniFi reservation yet), so a
-# hostname follows the host across reboots but an IP wouldn't. The same
-# *.localdomain convention the kiosks already use for their ha-agent MQTT
-# broker (modules/desktop/tcxwave-kiosk.nix). A static IP per kiosk is the
-# future cleanup (one less avahi-dependent hop); mDNS works today.
+# hostname follows the host across reboots but an IP wouldn't. A static IP
+# per kiosk is the future cleanup (one less avahi-dependent hop); mDNS works
+# today.
 #
 # maxJobs = 1 mirrors callisto's local `nix.settings.max-jobs = 1`
 # (hosts/callisto/configuration.nix): callisto is tuned for low-concurrency

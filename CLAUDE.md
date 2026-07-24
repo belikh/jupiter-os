@@ -11,16 +11,16 @@ only when the machine that needs them is brought up.
 ## Current state
 
 Registered hosts: the 4 TCx Wave dashboard kiosks — `amalthea`
-(jupiter-bedroom, the bootstrap machine, canonical template, and the fleet's
-MQTT broker), `metis` (kitchen), `adrastea` (office), `thebe` (robbie-room) —
-plus `europa` (HPE MicroServer Gen10, the ZFS NAS + data hub), `callisto`
-(HP EliteDesk 800 G4 DM, diskless netboot compute node, the fleet's shared
-Nix remote builder — i5-8500T Coffee Lake 6c/6t, 64GB RAM), and `pallene`
-(ephemeral BinaryLane build-server ISO host, phase2 only). `amalthea`,
-`thebe`, `europa`, and `callisto` are physically live today; `metis` and
-`adrastea` are registered and CI-green but still on placeholder disks/sops
-keys, awaiting their real install (see `.sops.yaml`). The siblings are clones
-of amalthea minus the broker role, differing in hostName/hostId/dashboard
+(jupiter-bedroom, the bootstrap machine and canonical template), `metis`
+(kitchen), `adrastea` (office), `thebe` (robbie-room) — plus `europa` (HPE
+MicroServer Gen10, the ZFS NAS + data hub), `callisto` (HP EliteDesk 800 G4
+DM, diskless netboot compute node, the fleet's shared Nix remote builder AND
+the fleet's MQTT broker — i5-8500T Coffee Lake 6c/6t, 64GB RAM), and
+`pallene` (ephemeral BinaryLane build-server ISO host, phase2 only).
+`amalthea`, `thebe`, `europa`, and `callisto` are physically live today;
+`metis` and `adrastea` are registered and CI-green but still on placeholder
+disks/sops keys, awaiting their real install (see `.sops.yaml`). The
+siblings are clones of amalthea, differing in hostName/hostId/dashboard
 URL/disk. `callisto` is live at `10.1.1.3` running the diskless kexec-netboot
 closure europa PXE-serves; its `jupiter.build.microarch = "skylake"` is a
 **roadmap entry only** — pallene must build and push the skylake-tagged
@@ -29,6 +29,15 @@ diskless, so a local from-scratch rebuild would OOM). See
 `hosts/callisto/configuration.nix` for the deferred runtime-secrets gap
 (diskless means no persistent host key, so sops can't decrypt at runtime
 there yet).
+
+**callisto as MQTT broker:** every kiosk's ha-agent, plus the external Home
+Assistant instance, publishes to mosquitto on callisto
+(`modules/services/mqtt.nix`, wired in `hosts/callisto/configuration.nix`).
+Moved here from amalthea 2026-07-24 so the broker isn't coupled to a kiosk's
+impermanent/appliance lifecycle. Kiosks address it by the static
+`10.1.1.3` reservation (`modules/desktop/tcxwave-kiosk.nix`'s `mqttHost`
+default) since callisto has no DNS/mDNS resolution yet — same reason
+`jupiter.core.buildMachines` also dials it by IP.
 
 **callisto as build server:** every other host delegates eligible builds to
 it via `jupiter.core.buildMachines` (`modules/core/build-machines.nix`,
