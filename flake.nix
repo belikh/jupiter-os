@@ -117,11 +117,9 @@
               {
                 nixpkgs.overlays = nixpkgs.lib.mkIf (gamingConsole.enable or false) [
                   jovian.overlays.default
-                  (
-                    _final: _prev: {
-                      mangohud = nixpkgs.legacyPackages.x86_64-linux.mangohud;
-                    }
-                  )
+                  (_final: _prev: {
+                    mangohud = nixpkgs.legacyPackages.x86_64-linux.mangohud;
+                  })
                 ];
               }
             )
