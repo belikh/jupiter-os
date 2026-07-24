@@ -17,18 +17,25 @@ MicroServer Gen10, the ZFS NAS + data hub), `callisto` (HP EliteDesk 800 G4
 DM, diskless netboot compute node, the fleet's shared Nix remote builder AND
 the fleet's MQTT broker — i5-8500T Coffee Lake 6c/6t, 64GB RAM), and
 `pallene` (ephemeral BinaryLane build-server ISO host, phase2 only).
-`amalthea`, `thebe`, `europa`, and `callisto` are physically live today;
-`metis` and `adrastea` are registered and CI-green but still on placeholder
-disks/sops keys, awaiting their real install (see `.sops.yaml`). The
-siblings are clones of amalthea, differing in hostName/hostId/dashboard
-URL/disk. `callisto` is live at `10.1.1.3` running the diskless kexec-netboot
-closure europa PXE-serves; its `jupiter.build.microarch = "skylake"` is a
-**roadmap entry only** — pallene must build and push the skylake-tagged
-closure to attic before callisto's next `nixos-rebuild` (callisto is
-diskless, so a local from-scratch rebuild would OOM). See
-`hosts/callisto/configuration.nix` for the deferred runtime-secrets gap
-(diskless means no persistent host key, so sops can't decrypt at runtime
-there yet).
+`amalthea`, `thebe`, `europa`, `callisto`, and `metis` are physically live
+today; `adrastea` is registered and CI-green but still on a placeholder
+disk/sops key, awaiting its real install (see `.sops.yaml`). The siblings
+are clones of amalthea, differing in hostName/hostId/dashboard URL/disk.
+`metis` was installed 2026-07-20 with a real disk, but its `.sops.yaml`
+recipient is still the install-time placeholder age key (real key captured
+2026-07-24: `age1vw4tdhg72smv6lyv647j5pkd4jk767y5azwfssl68f2amxadeayqyczcjk`)
+— secrets don't decrypt there, so `ha-linux-agent` crash-loops on the
+missing MQTT password file until someone swaps the key in and runs `sops
+updatekeys`. `callisto` is live at `10.1.1.3` running the diskless
+kexec-netboot closure europa PXE-serves; its `jupiter.build.microarch =
+"skylake"` is a **roadmap entry only** — pallene must build and push the
+skylake-tagged closure to attic before callisto's next `nixos-rebuild`
+(callisto is diskless, so a local from-scratch rebuild would OOM). callisto
+now has a persistent root over iSCSI (see `hosts/callisto/configuration.nix`)
+and sops decrypts fine there at activation — confirmed live 2026-07-24
+deploying the MQTT broker move below; the older "diskless, no persistent
+host key, sops can't decrypt" framing predates that change and no longer
+holds.
 
 **callisto as MQTT broker:** every kiosk's ha-agent, plus the external Home
 Assistant instance, publishes to mosquitto on callisto

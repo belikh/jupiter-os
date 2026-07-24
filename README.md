@@ -34,10 +34,15 @@ Seven hosts are wired into the flake today:
   (jupiter-bedroom — the bootstrap host and canonical template), **metis**
   (kitchen), **adrastea** (office), **thebe** (robbie-room). Impermanent ZFS
   root (erase-your-darlings), Cage + Chromium kiosk session, stock nixpkgs
-  kernel — everything comes from cache.nixos.org. amalthea and thebe are
-  physically installed; metis and adrastea are clones of amalthea (different
-  hostName/hostId/dashboard URL/disk), registered and CI-green but awaiting
-  their real install (placeholder disks and sops keys).
+  kernel — everything comes from cache.nixos.org. amalthea, thebe, and metis
+  are physically installed and live; metis's `.sops.yaml` entry is still the
+  install-time placeholder age key (real key captured 2026-07-24:
+  `age1vw4tdhg72smv6lyv647j5pkd4jk767y5azwfssl68f2amxadeayqyczcjk`, not yet
+  swapped in), so secrets don't decrypt there yet — `ha-linux-agent` is
+  crash-looping on the missing MQTT password file until that's fixed with
+  `sops updatekeys` per the install steps below. adrastea remains a clone of
+  amalthea (different hostName/hostId/dashboard URL/disk), registered and
+  CI-green but awaiting its real install (placeholder disk and sops key).
 - **europa** (HPE MicroServer Gen10) — the ZFS NAS + data hub. Running its
   full Phase 2 `btver2`-tuned closure, substituted from its own Attic (see
   `docs/europa-bringup-stages.md`). Also runs the PXE server callisto
@@ -104,8 +109,10 @@ machine actually needs them:
    kiosk stack. ✅ live
 2. **thebe** — clone of amalthea (its own hostName/hostId/dashboard
    URL/disk, plus USB Wi-Fi). ✅ live
-3. **metis / adrastea** — clones of amalthea (different
-   hostName/hostId/dashboard URL/disk). ✅ registered; awaiting physical
+3. **metis** — clone of amalthea (different hostName/hostId/dashboard
+   URL/disk). ✅ physically live, but still on its install-time placeholder
+   `.sops.yaml` age key — secrets don't decrypt there yet (`sops updatekeys`
+   pending). **adrastea** — same clone, ✅ registered; awaiting physical
    install
 4. **europa** (NAS + data hub) — full Phase 2 `btver2`-tuned closure live at
    `10.1.1.2`, substituted from its own Attic. See

@@ -25,7 +25,7 @@ The kiosk fleet (4 TCx Wave units) validated this approach end-to-end. europa (t
 |------|------|--------|
 | amalthea | kiosk (bedroom) | live |
 | thebe | kiosk (robbie-room) | live |
-| metis | kiosk (kitchen) | registered; awaiting physical install (placeholder disk + sops key) |
+| metis | kiosk (kitchen) | live, but `.sops.yaml` still has its install-time placeholder age key — secrets don't decrypt (`sops updatekeys` pending), so `ha-linux-agent` is crash-looping on the missing MQTT password file |
 | adrastea | kiosk (office) | registered; awaiting physical install (placeholder disk + sops key) |
 | europa | NAS + data hub, PXE server for callisto | live at `10.1.1.2`, full Phase 2 `btver2`-tuned closure, substituted from its own Attic |
 | callisto | diskless netboot, fleet Nix remote builder + MQTT broker (HP EliteDesk 800 G4 DM, i5-8500T Coffee Lake 6c/6t, 64GB RAM) | live at `10.1.1.3` on a kexec-netboot closure; daemon tuning (`cores=6 max-jobs=1`) committed, `jupiter.build.microarch = "skylake"` is a roadmap entry awaiting a pallene build/push |
@@ -43,12 +43,14 @@ All 7 host configurations pass `make check` (`nix flake check --no-build`) and C
 
 ### Kiosk Fleet (mostly complete)
 
-The 4 TCx Wave dashboard kiosks share a `tcxwave-kiosk.nix` profile. amalthea
-is live as the bootstrap host (each kiosk's ha-agent publishes to the fleet
-MQTT broker, which now runs on callisto rather than amalthea). The 3
-siblings are registered and CI-green but still on placeholder disks and sops
-keys — physically installing them is a mechanical task, not a config one.
-This track validated the incremental, cache-first approach and the CI
+The 4 TCx Wave dashboard kiosks share a `tcxwave-kiosk.nix` profile. amalthea,
+thebe, and metis are physically live (each kiosk's ha-agent publishes to the
+fleet MQTT broker, which now runs on callisto rather than amalthea). metis's
+`.sops.yaml` recipient is still the install-time placeholder age key,
+though, so its secrets don't decrypt yet — a `sops updatekeys` swap-in is
+pending. adrastea is registered and CI-green but still on a placeholder disk
+and sops key — physically installing it is a mechanical task, not a config
+one. This track validated the incremental, cache-first approach and the CI
 flake-check feedback loop.
 
 ### europa Phase 1 — Untuned NAS Bootstrap ✅ DONE
