@@ -38,6 +38,7 @@
     ../../modules/services/console-screensaver.nix
     ../../modules/services/cloudflare-tunnel.nix
     ../../modules/services/pallene-watchdog.nix
+    ../../modules/services/iscsi-target.nix
   ];
 
   networking.hostName = "europa";
@@ -165,6 +166,16 @@
   # separately-sourced token — covers the OOM-SIGKILL and stale-ISO-token
   # gaps the in-VM self-destruct/6h timer in build-server.nix can't.
   jupiter.services.palleneWatchdog.enable = true;
+
+  # iSCSI target backing callisto's root filesystem (replaces the old
+  # NFS-backed /persist — see hosts/callisto/configuration.nix). ACL-scoped
+  # to callisto's initiator IQN only, no CHAP (see
+  # modules/services/iscsi-target.nix for why that's a supported shape).
+  jupiter.services.iscsiTarget = {
+    enable = true;
+    targetIqn = "iqn.2026-07.au.jupiter:europa:callisto-root";
+    initiatorIqn = "iqn.2026-07.au.jupiter:callisto";
+  };
 
   # ---- sops secrets --------------------------------------------------------
   # attic_server_token_secret: RS256 JWT signing key for atticd.

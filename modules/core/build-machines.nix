@@ -9,10 +9,16 @@
 # 4 idle dashboard kiosks as a shared pool of remote Nix builders,
 # fleet-wide by default.
 #
-# callisto is diskless/netboot (see hosts/callisto/configuration.nix), so its
-# SSH host key is regenerated every boot — there's no stable key to pin via
-# publicHostKey, so host-key checking is disabled for that one Host entry
-# instead. Authenticates as root using a dedicated keypair (not the admin's
+# callisto's SSH host key checking is disabled for its one Host entry below
+# rather than pinned via publicHostKey. This was written when callisto was
+# diskless/RAM-resident (regenerating its host key every boot, so there was
+# no stable key to pin). It now has a persistent root over iSCSI (see
+# hosts/callisto/configuration.nix) and a stable key going forward — but
+# that key doesn't exist yet before first boot/provisioning, so this is
+# left as-is rather than guessed at. TODO once callisto is actually
+# provisioned: capture its real host key and switch this to publicHostKey
+# pinning like every other build machine would normally get.
+# Authenticates as root using a dedicated keypair (not the admin's
 # own): the private half is the nix_build_ssh_key sops secret, deployed
 # fleet-wide; the public half is baked into callisto's own and every kiosk's
 # users.users.root.openssh.authorizedKeys.keys.
@@ -127,10 +133,44 @@ in
     # stable key to pin, so disable host-key checking for it specifically
     # (other build machines, including the kiosks, keep the default strict
     # checking). The kiosks have stable SSH host keys (persistent root disk).
+    #
+    # Keyed on the literal 10.1.1.3, not "callisto": nix.buildMachines dials
+    # callisto by IP (see hostName above), and ssh_config Host patterns match
+    # the literal argument passed to ssh, not a resolved/aliased name — a
+    # `Host callisto` block here never matched that connection. Confirmed
+    # live 2026-07-24: distributed builds failed outright ("Host key
+    # verification failed") until this was corrected to match by IP.
+    #
+    # TODO: callisto now has a persistent root over iSCSI and a stable host
+    # key (captured 2026-07-24: ssh-ed25519
+    # AAAAC3NzaC1lZDI1NTE5AAAAIINKUMgEPCzZRq74JtvkMmfmT6gOmZWGGq8G9lNqqKsU) —
+    # switch this to a pinned knownHosts entry like the kiosks below once
+    # that key has proven stable across a couple of reboots.
     programs.ssh.extraConfig = ''
-      Host callisto
+      Host 10.1.1.3
         StrictHostKeyChecking no
         UserKnownHostsFile /dev/null
     '';
+
+    # Kiosk host keys, pinned declaratively instead of relying on an
+    # imperative /etc/ssh/ssh_known_hosts edit (which doesn't survive a
+    # rebuild — that file is a plain Nix store symlink). Captured via
+    # ssh-keyscan 2026-07-24, cross-checked against the admin's own
+    # known_hosts. adrastea omitted: not installed yet (hostname
+    # unresolvable), add its key here once it's provisioned.
+    programs.ssh.knownHosts = {
+      amalthea = {
+        hostNames = [ "amalthea.localdomain" ];
+        publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGQV+BzJbBfN+T3WKEUo4CzwJHS1B2bsnH5vglHmbP+Y";
+      };
+      thebe = {
+        hostNames = [ "thebe.localdomain" ];
+        publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOjnMhsh8PxlRW1tXYR4GjjDNa4J8os/4URkbD777JMg";
+      };
+      metis = {
+        hostNames = [ "metis.localdomain" ];
+        publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAB6bFJpQteERsDDg7otkc42JOWXDZUA9WprQ/gnEiAK";
+      };
+    };
   };
 }

@@ -3,7 +3,7 @@ keys:
   - &ganymede age1p8c8ylcp27yd4a69akgs4wxh4t70zyun9e7t3h344jp6ug227epq6x3cg8
   - &europa age19cucywtpf6fa0sy9ghnwwwn7nc4nqxwzeq6jlp73wsnlhaqvxuss4m23x0
   - &himalia age1mz3axkge52zt06vmetwhdf805kk458k0a7ysqk3wjtwvncuf9g4s2ywp0f
-  - &callisto age1ywucpcl3mvk249vu663knxgm06nl749j95mu2kupdawpa4v5l46sw7jexf
+  - &callisto age1ss3a2y2swk003cpczd7qvdzy3raftxa9nemwhcaukw7dtutz2u5s940g82
   # Dashboard kiosks (metis/adrastea/amalthea/thebe) aren't installed yet —
   # these are throwaway placeholder keys, not derived from any real SSH host
   # key. Replace each with the unit's real SSH-derived age key at install
