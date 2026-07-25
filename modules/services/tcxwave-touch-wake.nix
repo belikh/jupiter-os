@@ -160,15 +160,32 @@ in
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
+        # wlr-randr --off only disables the DRM mode/CRTC; it does not touch
+        # the panel backlight (confirmed live on amalthea 2026-07-25: after
+        # --off, /sys/class/backlight/*/brightness stayed at max and the
+        # panel stayed visibly lit — the compositor's own state was "off"
+        # while the physical screen was not). Drive the backlight directly
+        # too, on whatever backlight device the kernel exposes (varies by
+        # driver — acpi_video0 here — so iterate rather than hardcode it).
         ExecStart = "${pkgs.writeShellScript "tcxwave-screen-on" ''
           export XDG_RUNTIME_DIR=/run/user/1001
           export WAYLAND_DISPLAY=wayland-0
           ${pkgs.wlr-randr}/bin/wlr-randr --output eDP-1 --on
+          for bl in /sys/class/backlight/*; do
+            [ -d "$bl" ] || continue
+            cat "$bl/max_brightness" > "$bl/brightness" 2>/dev/null || true
+            echo 0 > "$bl/bl_power" 2>/dev/null || true
+          done
         ''}";
         ExecStop = "${pkgs.writeShellScript "tcxwave-screen-off" ''
           export XDG_RUNTIME_DIR=/run/user/1001
           export WAYLAND_DISPLAY=wayland-0
           ${pkgs.wlr-randr}/bin/wlr-randr --output eDP-1 --off
+          for bl in /sys/class/backlight/*; do
+            [ -d "$bl" ] || continue
+            echo 0 > "$bl/brightness" 2>/dev/null || true
+            echo 4 > "$bl/bl_power" 2>/dev/null || true
+          done
         ''}";
         User = "root";
       };
