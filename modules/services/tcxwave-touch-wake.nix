@@ -164,9 +164,19 @@ in
         # the panel backlight (confirmed live on amalthea 2026-07-25: after
         # --off, /sys/class/backlight/*/brightness stayed at max and the
         # panel stayed visibly lit — the compositor's own state was "off"
-        # while the physical screen was not). Drive the backlight directly
-        # too, on whatever backlight device the kernel exposes (varies by
-        # driver — acpi_video0 here — so iterate rather than hardcode it).
+        # while the physical screen was not). Drive the backlight brightness
+        # directly too, on whatever backlight device the kernel exposes
+        # (varies by driver — acpi_video0 here — so iterate rather than
+        # hardcode it).
+        #
+        # Deliberately brightness only, NOT bl_power: this panel assembly's
+        # touch digitizer (a separate USB device) shares a power rail with
+        # the backlight, and bl_power=4 cuts that rail — confirmed live: with
+        # bl_power=4 a real touch produced zero events anywhere in the input
+        # subsystem (evdev, raw hidraw, usbmon all silent); restoring
+        # bl_power to 0 while leaving brightness at 0 (still visibly dark)
+        # brought touch events back immediately. brightness=0 alone gives
+        # the correct dark appearance without that side effect.
         ExecStart = "${pkgs.writeShellScript "tcxwave-screen-on" ''
           export XDG_RUNTIME_DIR=/run/user/1001
           export WAYLAND_DISPLAY=wayland-0
@@ -174,7 +184,6 @@ in
           for bl in /sys/class/backlight/*; do
             [ -d "$bl" ] || continue
             cat "$bl/max_brightness" > "$bl/brightness" 2>/dev/null || true
-            echo 0 > "$bl/bl_power" 2>/dev/null || true
           done
         ''}";
         ExecStop = "${pkgs.writeShellScript "tcxwave-screen-off" ''
@@ -184,7 +193,6 @@ in
           for bl in /sys/class/backlight/*; do
             [ -d "$bl" ] || continue
             echo 0 > "$bl/brightness" 2>/dev/null || true
-            echo 4 > "$bl/bl_power" 2>/dev/null || true
           done
         ''}";
         User = "root";
