@@ -53,14 +53,31 @@ in
               default = null;
               description = "Optional mdi icon override.";
             };
+            backlight = lib.mkOption {
+              type = lib.types.nullOr lib.types.str;
+              default = null;
+              description = ''
+                Set to expose this profile as a dimmable HA `light` (JSON
+                schema, brightness + on/off) instead of a plain `switch`.
+                On/off still goes through this profile's `unit`
+                (start/stop); brightness reads/writes
+                `/sys/class/backlight/<value>/brightness` directly. Empty
+                string ("") auto-detects the first backlight device.
+                Mutually exclusive with `group` — a dimmable screen and a
+                mutually-exclusive session switch are different enough
+                concerns that jupiter-os never needs both on one profile.
+              '';
+            };
           };
         }
       );
       default = [ ];
       description = ''
-        Remote-controllable systemd units, exposed as HA switches via
-        ha-linux-agent's `backend-launcher` (see its ROADMAP.md "Layer 1 —
-        session switch" for the design).
+        Remote-controllable systemd units, exposed as HA switches (or, with
+        `backlight` set, one dimmable light) via ha-linux-agent's
+        `backend-launcher` (see its ROADMAP.md "Layer 1 — session switch"
+        for the design). Profiles sharing a `group` collapse into one HA
+        `select` instead of independent switches.
       '';
     };
   };
@@ -114,6 +131,7 @@ in
           }
           // lib.optionalAttrs (app.group != null) { inherit (app) group; }
           // lib.optionalAttrs (app.icon != null) { inherit (app) icon; }
+          // lib.optionalAttrs (app.backlight != null) { inherit (app) backlight; }
         ) cfg.launcherApps;
       };
     };

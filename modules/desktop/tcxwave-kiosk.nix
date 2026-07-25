@@ -150,9 +150,14 @@ in
     sops.secrets.mqtt_ha_linux_agent = { };
 
     # ha-agent publishes CPU/governor/EPP sensors to the broker and exposes
-    # the touch-wake screen-power unit as a Home Assistant switch. mqttHost
-    # defaults to callisto's broker, addressed by static IP (see the module
-    # header comment for why not by hostname).
+    # the touch-wake screen-power unit as a Home Assistant light (dimmable,
+    # on/off) rather than a plain switch — a single widget instead of a
+    # switch-plus-brightness-slider pair. On/off still goes through
+    # tcxwave-screen-power.service (the same unit touch-wake drives), so
+    # both stay in sync; brightness writes go straight to the backlight
+    # ha-linux-agent already has 0666 permission on. mqttHost defaults to
+    # callisto's broker, addressed by static IP (see the module header
+    # comment for why not by hostname).
     jupiter.services.haAgent = {
       enable = true;
       mqttHost = lib.mkDefault "10.1.1.3";
@@ -163,6 +168,7 @@ in
           unit = "tcxwave-screen-power.service";
           scope = "system";
           icon = "mdi:monitor";
+          backlight = "";
         }
       ];
     };
