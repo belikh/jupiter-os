@@ -33,6 +33,37 @@ let
   # See scripts/exo-launch.sh for the full eXo layout explanation.
   exoLauncher = pkgs.writeShellScriptBin "exo-launch" (builtins.readFile ../../scripts/exo-launch.sh);
 
+  # Privileged extraction helper. The overlay's merged view requires write
+  # permission on BOTH upper and lower for creates in directories that exist
+  # in both layers. The NFS lower's mode bits are inconsistent (some 705/755/
+  # 775) and the europa pool is import-level read-only, so non-root users get
+  # EACCES on first-run extraction. This helper runs as root (via the setuid
+  # wrapper registered in security.wrappers below), unzips the game, then
+  # chowns the extracted files back to the calling user so dosbox (running
+  # unprivileged) can write saves into the per-game dir — which by then exists
+  # only in the upper, so further writes only check upper perms.
+  exoExtractScript = pkgs.writeShellScript "exo-extract" ''
+    #!${pkgs.runtimeShell}
+    # Invoked as root via /run/wrappers/bin/exo-extract. Args:
+    #   $1 = zip path
+    #   $2 = target parent dir (where the zip's top-level entry gets created)
+    #   $3 = expected top-level dir name (for the post-extract chown)
+    #   $4 = chown-to user
+    #   $5 = chown-to group
+    set -eu
+    ZIP=$1
+    TARGET_PARENT=$2
+    TARGET_NAME=$3
+    CHOWN_USER=$4
+    CHOWN_GROUP=$5
+    if [ ! -f "$ZIP" ]; then
+      echo "exo-extract: zip not found: $ZIP" >&2
+      exit 1
+    fi
+    "${pkgs.unzip}/bin/unzip" -q -o "$ZIP" -d "$TARGET_PARENT"
+    "${pkgs.coreutils}/bin/chown" -R "$CHOWN_USER:$CHOWN_GROUP" "$TARGET_PARENT/$TARGET_NAME"
+  '';
+
   # Session launcher: seeds the gamer user's Pegasus game_dirs.txt on first
   # launch (then preserves user edits via impermanence), then execs pegasus-fe.
   # Required because Pegasus shows "no games" until game_dirs.txt tells it
@@ -141,6 +172,18 @@ in
     # root wipe.
     jupiter.core.impermanence.extraDirectories = [ "/var/lib/exo-overlay" ];
 
+    # Setuid helper for first-run extraction — see exoExtractScript above for
+    # why root is required. Registered as a security wrapper so the setuid bit
+    # is applied by NixOS activation (the kernel ignores setuid on plain
+    # scripts; NixOS wraps it in a compiled binary that does the setuid+exec).
+    security.wrappers.exo-extract = {
+      source = "${exoExtractScript}";
+      owner = "root";
+      group = "root";
+      setuid = true;
+      permissions = "u+rx,g+rx,o+rx";
+    };
+
     systemd.tmpfiles.rules = [
       "d /var/lib/exo-overlay 0755 root root -"
       # upper + work must be writable by the session user — exo-launch runs
@@ -218,12 +261,6 @@ in
         # europa is reflected on the next session entry.
       };
       unitConfig.RequiresMountsFor = "${cfg.mergeMount}";
-      # Fix ownership of overlay upper + work if a previous deploy left them
-      # root-owned (tmpfiles `d` only sets owner/mode at creation time, not on
-      # existing dirs). Idempotent and cheap; safe to run every session start.
-      serviceConfig.ExecStartPre = [
-        "${pkgs.coreutils}/bin/chown -R ${cfg.sessionUser}:users ${cfg.overlayUpper} ${cfg.overlayWork}"
-      ];
       script = ''
         set -e
         ${pkgs.python3.interpreter} ${../../scripts/exo-to-pegasus.py} \
