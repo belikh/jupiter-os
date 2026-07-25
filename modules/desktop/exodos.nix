@@ -143,9 +143,13 @@ in
 
     systemd.tmpfiles.rules = [
       "d /var/lib/exo-overlay 0755 root root -"
-      "d ${cfg.overlayUpper} 0755 root root -"
-      "d ${cfg.overlayWork} 0755 root root -"
-      # Pegasus config dir; settings.txt is seeded on first session launch by
+      # upper + work must be writable by the session user — exo-launch runs
+      # `unzip` (writing the first-run extraction) and dosbox (writing saves)
+      # as `gamer`, not root. Root-owned upper = every launch dies with
+      # "Permission denied" at the unzip step.
+      "d ${cfg.overlayUpper} 0755 ${cfg.sessionUser} users -"
+      "d ${cfg.overlayWork} 0755 ${cfg.sessionUser} users -"
+      # Pegasus config dir; game_dirs.txt is seeded on first session launch by
       # exoPegasusSession (not here — see the wrapper's comment for why).
       "d /home/${cfg.sessionUser}/.config/pegasus-frontend 0755 ${cfg.sessionUser} users -"
     ];
@@ -214,6 +218,12 @@ in
         # europa is reflected on the next session entry.
       };
       unitConfig.RequiresMountsFor = "${cfg.mergeMount}";
+      # Fix ownership of overlay upper + work if a previous deploy left them
+      # root-owned (tmpfiles `d` only sets owner/mode at creation time, not on
+      # existing dirs). Idempotent and cheap; safe to run every session start.
+      serviceConfig.ExecStartPre = [
+        "${pkgs.coreutils}/bin/chown -R ${cfg.sessionUser}:users ${cfg.overlayUpper} ${cfg.overlayWork}"
+      ];
       script = ''
         set -e
         ${pkgs.python3.interpreter} ${../../scripts/exo-to-pegasus.py} \
