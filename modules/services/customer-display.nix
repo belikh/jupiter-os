@@ -31,6 +31,14 @@
 # ASCII density ramp (` .:-=+*#%@`), which renders cleanly and looks great.
 #
 # Verified live on amalthea 2026-07-25.
+#
+# On/off: the VFD has no documented power/brightness command (see the
+# protocol note above — only clear/write/query), so "off" is "blanked and
+# not being redrawn", achieved by stopping this systemd unit — SIGTERM
+# clears the display and closes the hidraw fd before exiting. Expose this as
+# an HA switch by adding a `jupiter.services.haAgent.launcherApps` profile
+# for `tcxwave-cdp-anim.service` (system scope) on hosts that want manual/
+# scheduled control from Home Assistant — see modules/desktop/tcxwave-kiosk.nix.
 
 let
   cfg = config.jupiter.customerDisplay;
@@ -56,6 +64,7 @@ let
         import os
         import random
         import select
+        import signal
         import socket
         import struct
         import sys
@@ -483,9 +492,27 @@ let
                 ('mandelbrot', Mandelbrot()),
             ]
 
+            # `systemctl stop` sends SIGTERM by default, and Python installs
+            # no handler for it (unlike SIGINT -> KeyboardInterrupt), so
+            # without this the process previously died mid-frame and left
+            # whatever was last written on the glass. Both signals now just
+            # flip a flag the render loop below checks every tick (12fps, so
+            # sub-100ms shutdown latency), and a `finally` guarantees the
+            # display gets cleared exactly once regardless of which signal
+            # (or loop exit) got us there -- turning the VFD "off" from HA's
+            # perspective is exactly "stop this systemd unit" this way, with
+            # no separate power protocol needed.
+            shutdown = {'flag': False}
+
+            def _request_shutdown(signum, frame):
+                shutdown['flag'] = True
+
+            signal.signal(signal.SIGTERM, _request_shutdown)
+            signal.signal(signal.SIGINT, _request_shutdown)
+
             disp = None
             if args.backend == 'hidraw':
-                while True:
+                while not shutdown['flag']:
                     p = find_display()
                     if p:
                         disp = Display(p)
@@ -493,39 +520,47 @@ let
                     print('customer display not found; retrying...',
                           file=sys.stderr)
                     time.sleep(5)
-                disp.clear()
-                print('tcxwave-cdp-anim: dev=%s' % disp.path, file=sys.stderr)
-
-            idx = 0
-            name, effect = playlist[0]
-            spent = 0.0
-            off = 0
-            last = time.time()
-            print('effect: %s' % name, file=sys.stderr)
-            while True:
-                now = time.time()
-                dt = min(now - last, 0.25)
-                last = now
-                top, bot = effect.step(dt, now)
-                live, n1, n2, mode = notif.snapshot()
-                if live:
-                    top = fit_line(n1 or "", off, mode)
-                    bot = (fit_line(n2, off, 'auto') if n2 is not None
-                           else (host + '  ' + time.strftime('%H:%M'))[:WIDTH])
                 if disp:
-                    disp.rows(top, bot)
-                else:
-                    render_simulate(top, bot)
-                off += 1
-                spent += dt
-                if spent >= args.per_effect and not live:
-                    spent = 0.0
-                    idx = (idx + 1) % len(playlist)
-                    name, effect = playlist[idx]
+                    disp.clear()
+                    print('tcxwave-cdp-anim: dev=%s' % disp.path, file=sys.stderr)
+
+            try:
+                idx = 0
+                name, effect = playlist[0]
+                spent = 0.0
+                off = 0
+                last = time.time()
+                print('effect: %s' % name, file=sys.stderr)
+                while not shutdown['flag']:
+                    now = time.time()
+                    dt = min(now - last, 0.25)
+                    last = now
+                    top, bot = effect.step(dt, now)
+                    live, n1, n2, mode = notif.snapshot()
+                    if live:
+                        top = fit_line(n1 or "", off, mode)
+                        bot = (fit_line(n2, off, 'auto') if n2 is not None
+                               else (host + '  ' + time.strftime('%H:%M'))[:WIDTH])
                     if disp:
-                        disp.clear()
-                    print('effect: %s' % name, file=sys.stderr)
-                time.sleep(delay)
+                        disp.rows(top, bot)
+                    else:
+                        render_simulate(top, bot)
+                    off += 1
+                    spent += dt
+                    if spent >= args.per_effect and not live:
+                        spent = 0.0
+                        idx = (idx + 1) % len(playlist)
+                        name, effect = playlist[idx]
+                        if disp:
+                            disp.clear()
+                        print('effect: %s' % name, file=sys.stderr)
+                    time.sleep(delay)
+            finally:
+                if disp:
+                    disp.clear()
+                    disp.close()
+                    print('tcxwave-cdp-anim: shutting down, display blanked',
+                          file=sys.stderr)
 
 
         if __name__ == '__main__':

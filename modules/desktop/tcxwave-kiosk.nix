@@ -192,6 +192,19 @@ in
           icon = "mdi:monitor";
           backlight = "";
         }
+        {
+          # The 2x20 VFD customer-facing line display (0x0f66:0x4500), not
+          # the main screen above. No power/brightness command exists in its
+          # protocol (see modules/services/customer-display.nix), so "off"
+          # is this unit stopped — the daemon blanks the glass on SIGTERM
+          # before exiting. "on" restarts it and it re-finds the display and
+          # resumes the animation playlist. io: "it's very bright at night".
+          id = "customer-display";
+          name = "${config.networking.hostName} customer display";
+          unit = "tcxwave-cdp-anim.service";
+          scope = "system";
+          icon = "mdi:message-text-outline";
+        }
       ];
     };
 
