@@ -129,6 +129,35 @@ let
             return "".join(c for c in s if c.isdigit())
 
 
+        def publish_discovery(client, base, host):
+            # Home Assistant MQTT discovery: a retained config payload at
+            # homeassistant/sensor/<node_id>/<object_id>/config makes HA
+            # auto-create the entity, no manual YAML/UI sensor needed.
+            # Re-published on every (re)connect so it survives an HA
+            # restart clearing its discovery cache.
+            node_id = 'tcxwave_%s' % host
+            state_topic = '%s/%s' % (base, host)
+            config = {
+                'name': 'Card Swipe',
+                'unique_id': '%s_msr' % node_id,
+                'state_topic': state_topic,
+                'value_template': '{{ value_json.card }}',
+                'json_attributes_topic': state_topic,
+                'availability_topic': '%s/%s/state' % (base, host),
+                'payload_available': 'online',
+                'payload_not_available': 'offline',
+                'icon': 'mdi:credit-card-scan',
+                'device': {
+                    'identifiers': [node_id],
+                    'name': 'TCxWave %s' % host,
+                    'manufacturer': 'Toshiba',
+                    'model': 'TCxWave IO Control',
+                },
+            }
+            client.publish('homeassistant/sensor/%s/msr/config' % node_id,
+                            payload=json.dumps(config), qos=1, retain=True)
+
+
         def connect_mqtt(broker, port, username, password, base, host):
             import paho.mqtt.client as mqtt
 
@@ -149,6 +178,7 @@ let
                 if rc == 0:
                     c.publish('%s/%s/state' % (base, host),
                               payload='online', retain=True)
+                    publish_discovery(c, base, host)
                 else:
                     print('mqtt connect rc=%s' % rc, file=sys.stderr)
 
@@ -305,6 +335,11 @@ in
           Topic root. Each swipe publishes JSON `{host, card, raw, ts}` to
           `<topic>/<host>` (QoS 1, not retained — swipes are events). `card`
           is the digits-only card number; `raw` includes track sentinels.
+          The daemon also self-registers as a Home Assistant MQTT-discovery
+          sensor (`homeassistant/sensor/tcxwave_<host>/msr/config`, retained)
+          on every connect, so no manual HA-side sensor config is needed —
+          the ACL for this ("readwrite homeassistant/#") already exists on
+          the `ha-linux-agent` MQTT user (modules/services/mqtt.nix).
         '';
       };
     };
