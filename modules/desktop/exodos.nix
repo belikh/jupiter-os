@@ -33,33 +33,37 @@ let
   # See scripts/exo-launch.sh for the full eXo layout explanation.
   exoLauncher = pkgs.writeShellScriptBin "exo-launch" (builtins.readFile ../../scripts/exo-launch.sh);
 
-  # Session launcher: seeds the gamer user's Pegasus settings.txt on first
+  # Session launcher: seeds the gamer user's Pegasus game_dirs.txt on first
   # launch (then preserves user edits via impermanence), then execs pegasus-fe.
-  # Required because Pegasus shows "no games" until settings.txt's
-  # `directories:` line tells it where the collection lives. Done at session
-  # start rather than via tmpfiles because tmpfiles `f` doesn't seed from a
-  # Nix store path source on every systemd version, and because we want the
-  # user's later UI edits (theme, favorites) preserved across reboots.
+  # Required because Pegasus shows "no games" until game_dirs.txt tells it
+  # where the collection lives. Done at session start rather than via tmpfiles
+  # because tmpfiles `f` doesn't seed from a Nix store path source on every
+  # systemd version, and because we want the user's later UI edits (theme,
+  # favorites) preserved across reboots.
   exoPegasusSession = pkgs.writeShellScriptBin "exo-pegasus-session" ''
     #!${pkgs.runtimeShell}
     set -eu
     CONFIG_DIR="''${XDG_CONFIG_HOME:-$HOME/.config}/pegasus-frontend"
-    SETTINGS="$CONFIG_DIR/settings.txt"
-    if [ ! -f "$SETTINGS" ]; then
+    GAME_DIRS="$CONFIG_DIR/game_dirs.txt"
+    if [ ! -f "$GAME_DIRS" ]; then
       mkdir -p "$CONFIG_DIR"
-      install -m 0644 ${pegasusSettingsFile} "$SETTINGS"
+      install -m 0644 ${pegasusGameDirsFile} "$GAME_DIRS"
     fi
     exec ${pkgs.pegasus-frontend}/bin/pegasus-fe "$@"
   '';
 
-  # Minimum Pegasus settings: just point at the two merged collection dirs.
-  # Pegasus auto-discovers metadata.pegasus.txt under each. Seeded into the
-  # gamer user's home by exoPegasusSession above; edits persist via
-  # impermanence so favorites/theme choices survive kiosk reboots.
-  pegasusSettingsFile = pkgs.writeText "pegasus-settings.txt" ''
-    # Seeded by modules/desktop/exodos.nix. Safe to edit; changes persist via
-    # impermanence. Pegasus auto-discovers metadata.pegasus.txt in each.
-    directories: ${cfg.mergeMount}/eXoDOS, ${cfg.mergeMount}/eXoWin3x
+  # Pegasus reads the collection directories from game_dirs.txt (one path per
+  # line, `#` comments) — NOT from settings.txt. settings.txt holds theme and
+  # other UI state; game_dirs.txt is the game-directories source of truth.
+  # Seeded into the gamer user's home by exoPegasusSession above; edits persist
+  # via impermanence so a user adding/removing dirs from Pegasus's Settings
+  # menu survives kiosk reboots.
+  pegasusGameDirsFile = pkgs.writeText "pegasus-game_dirs.txt" ''
+    # Seeded by modules/desktop/exodos.nix. One directory per line; Pegasus
+    # auto-discovers metadata.pegasus.txt in each. Safe to edit — changes
+    # persist via impermanence.
+    ${cfg.mergeMount}/eXoDOS
+    ${cfg.mergeMount}/eXoWin3x
   '';
 in
 {
