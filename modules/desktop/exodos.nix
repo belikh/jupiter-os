@@ -33,9 +33,28 @@ let
   # See scripts/exo-launch.sh for the full eXo layout explanation.
   exoLauncher = pkgs.writeShellScriptBin "exo-launch" (builtins.readFile ../../scripts/exo-launch.sh);
 
+  # Session launcher: seeds the gamer user's Pegasus settings.txt on first
+  # launch (then preserves user edits via impermanence), then execs pegasus-fe.
+  # Required because Pegasus shows "no games" until settings.txt's
+  # `directories:` line tells it where the collection lives. Done at session
+  # start rather than via tmpfiles because tmpfiles `f` doesn't seed from a
+  # Nix store path source on every systemd version, and because we want the
+  # user's later UI edits (theme, favorites) preserved across reboots.
+  exoPegasusSession = pkgs.writeShellScriptBin "exo-pegasus-session" ''
+    #!${pkgs.runtimeShell}
+    set -eu
+    CONFIG_DIR="''${XDG_CONFIG_HOME:-$HOME/.config}/pegasus-frontend"
+    SETTINGS="$CONFIG_DIR/settings.txt"
+    if [ ! -f "$SETTINGS" ]; then
+      mkdir -p "$CONFIG_DIR"
+      install -m 0644 ${pegasusSettingsFile} "$SETTINGS"
+    fi
+    exec ${pkgs.pegasus-frontend}/bin/pegasus-fe "$@"
+  '';
+
   # Minimum Pegasus settings: just point at the two merged collection dirs.
   # Pegasus auto-discovers metadata.pegasus.txt under each. Seeded into the
-  # gamer user's home once (see tmpfiles rule below); edits persist via
+  # gamer user's home by exoPegasusSession above; edits persist via
   # impermanence so favorites/theme choices survive kiosk reboots.
   pegasusSettingsFile = pkgs.writeText "pegasus-settings.txt" ''
     # Seeded by modules/desktop/exodos.nix. Safe to edit; changes persist via
@@ -122,11 +141,9 @@ in
       "d /var/lib/exo-overlay 0755 root root -"
       "d ${cfg.overlayUpper} 0755 root root -"
       "d ${cfg.overlayWork} 0755 root root -"
-      # Seed the gamer user's Pegasus config dir + settings.txt on first boot.
-      # `f` creates-if-missing only, so user edits to settings.txt (favorites,
-      # theme choice, etc.) persist across reboots via impermanence.
+      # Pegasus config dir; settings.txt is seeded on first session launch by
+      # exoPegasusSession (not here — see the wrapper's comment for why).
       "d /home/${cfg.sessionUser}/.config/pegasus-frontend 0755 ${cfg.sessionUser} users -"
-      "f /home/${cfg.sessionUser}/.config/pegasus-frontend/settings.txt 0644 ${cfg.sessionUser} users - ${pegasusSettingsFile}"
     ];
 
     # --- RO NFS mount of europa's eXo collection ----------------------------
@@ -171,6 +188,7 @@ in
     # self-contained if a host ever opts into just exodos without the rest.
     environment.systemPackages = [
       exoLauncher
+      exoPegasusSession
       pkgs.pegasus-frontend
       pkgs.unzip
       pkgs.dosbox-staging

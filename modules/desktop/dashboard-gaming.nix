@@ -155,14 +155,16 @@ let
     # Pegasus over the eXoDOS + eXoWin3x collection. Everything around the
     # session (NFS mount of europa, overlayfs, metadata generator, exo-launch
     # wrapper) is wired in modules/desktop/exodos.nix and pulled in by
-    # tcxwave-kiosk.nix. pegasus-fe is the binary name (not `pegasus`).
-    # Persisted dirs cover Pegasus config + the per-kiosk first-run extraction
-    # cache under the gamer home (overlay upper lives at /var/lib/exo-overlay
-    # instead and is persisted via impermanence.extraDirectories from
-    # exodos.nix directly).
+    # tcxwave-kiosk.nix. The command runs exo-pegasus-session (also from
+    # exodos.nix) instead of bare pegasus-fe so settings.txt's `directories:`
+    # line is seeded into the gamer user's home on first launch — without it
+    # Pegasus shows "no games". pegasus-fe is the binary name (not `pegasus`).
+    # Persisted dirs cover Pegasus config + cache (overlay upper lives at
+    # /var/lib/exo-overlay instead and is persisted via impermanence's
+    # extraDirectories from exodos.nix directly).
     exodos = {
       enableDefault = false;
-      command = "gamescope -f -- pegasus-fe";
+      command = "gamescope -f -- exo-pegasus-session";
       description = "gamescope/eXo (DOS + Win3.x) session (tty1)";
       icon = "mdi:controller-classic";
       persist = [
