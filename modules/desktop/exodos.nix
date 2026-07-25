@@ -61,6 +61,15 @@ let
       echo "exo-extract-helper: zip not found: $ZIP" >&2
       exit 1
     fi
+    # Drop kernel dentry+inode caches before extraction. Overlayfs over NFS
+    # accumulates stale positive dentries when an extraction is interrupted
+    # (or when dosbox mounts a target that doesn't exist on the lower) — the
+    # phantom entries make `[ -d ]` see a populated dir, and unzip -o tries
+    # to unlink them as "old" files, getting ENOENT, erroring out (exit 50)
+    # and leaving the game unlaunchable. drop_caches=2 clears dentries+inodes
+    # only (pagecache stays); ~5s of cold-cache cost is acceptable for a
+    # once-per-game extraction on a kiosk.
+    echo 2 > /proc/sys/vm/drop_caches
     "${pkgs.unzip}/bin/unzip" -q -o "$ZIP" -d "$TARGET_PARENT"
     "${pkgs.coreutils}/bin/chown" -R "$CHOWN_USER:$CHOWN_GROUP" "$TARGET_PARENT/$TARGET_NAME"
     # TCx Wave kiosk touch panel is 1024x768 native. The eXoWin3x collection
