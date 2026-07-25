@@ -57,15 +57,11 @@ esac
 # is named the same way, so derive the zip name from it. install.bat is the
 # only other .bat in these dirs and is excluded.
 #
-# Extraction goes through a setuid-root helper (exo-extract, installed by
-# modules/desktop/exodos.nix via security.wrappers) because the overlay's
-# merged view requires write permission on BOTH upper and lower for creates
-# in directories that exist in both layers — and the NFS lower's mode bits
-# are inconsistent (some 705/755/775) while the europa pool is import-level
-# read-only, so we can't chmod them. Root bypasses the check; the helper
-# chowns the extracted files back to the calling user so dosbox (running
-# unprivileged) can later write saves into the per-game dir, which by then
-# exists only in the upper.
+# The session runs as root (see modules/desktop/exodos.nix) so this `unzip`
+# bypasses overlayfs's lower-layer permission check on the merged view.
+# Extracted files stay root-owned, but the next session reads them back fine,
+# and dosbox writes new saves into the per-game dir — by then in the upper
+# only, so no further lower-perm issue.
 if [ ! -d "$TARGET" ]; then
     BAT=$(
         cd "$GAME_CONFDIR" || exit 4
@@ -86,13 +82,12 @@ if [ ! -d "$TARGET" ]; then
         echo "exo-launch: game zip not found at $ZIP" >&2
         exit 6
     fi
-    if ! command -v exo-extract >/dev/null 2>&1; then
-        echo "exo-launch: exo-extract setuid wrapper not on PATH" >&2
+    if ! command -v unzip >/dev/null 2>&1; then
+        echo "exo-launch: unzip not on PATH" >&2
         exit 7
     fi
-    CALLING_USER=$(id -un)
-    CALLING_GROUP=$(id -gn)
-    exo-extract "$ZIP" "$ZIP_DIR" "$GAMEDIR" "$CALLING_USER" "$CALLING_GROUP"
+    # -q quiet, -o overwrite without prompting (safe on the per-kiosk overlay).
+    unzip -q -o "$ZIP" -d "$ZIP_DIR"
 fi
 
 # dosbox's CWD must be eXo/ so the per-game conf's relative mounts/paths
