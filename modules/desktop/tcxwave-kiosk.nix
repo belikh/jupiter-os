@@ -33,6 +33,10 @@ in
     ../services/ha-agent.nix
     ./dashboard-kiosk.nix
     ./dashboard-gaming.nix
+    # eXoDOS + eXoWin3x launcher (Pegasus over NFS + per-kiosk overlayfs).
+    # Pulled in here so all 4 kiosks get it identically; the actual mode toggle
+    # is below in jupiter.dashboardGaming.modes.exodos.enable.
+    ./exodos.nix
     # Open-source driver + animation for the integrated customer-facing line
     # display (0x0f66:0x4500). Verified live on amalthea 2026-07-25
     # (tcxwave-cdp-anim.service running against the real hardware). See the
@@ -122,14 +126,21 @@ in
     # jupiter-<mode>.service per enabled mode on a shared tty1; all session
     # modes plus the Cage dashboard collapse into one HA `select` (launcher
     # group "session"). `steam` is on by default (the debugged Deck-UI session);
-    # heroic + lutris are opted in here so all 4 kiosks get the same set of
-    # modes. Enabled here once so the fleet stays identical — do NOT re-add
-    # per-host, or the fleet drifts (see header comment).
+    # heroic + lutris + exodos are opted in here so all 4 kiosks get the same
+    # set of modes. Enabled here once so the fleet stays identical — do NOT
+    # re-add per-host, or the fleet drifts (see header comment).
     jupiter.dashboardGaming = {
       enable = true;
       modes.heroic.enable = true;
       modes.lutris.enable = true;
+      modes.exodos.enable = true;
     };
+
+    # eXoDOS + eXoWin3x collection wiring (NFS mount of europa's read-only
+    # eXo dataset, per-kiosk overlayfs for saves + first-run extraction,
+    # Pegasus metadata regenerator). Defaults match europa's static IP and
+    # the layout of /mnt/europa/games — override only if those change.
+    jupiter.exodos.enable = true;
 
     jupiter.boot.falloutSplash.enable = true;
 

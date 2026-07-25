@@ -152,6 +152,24 @@ let
         ".local/share/lutris"
       ];
     };
+    # Pegasus over the eXoDOS + eXoWin3x collection. Everything around the
+    # session (NFS mount of europa, overlayfs, metadata generator, exo-launch
+    # wrapper) is wired in modules/desktop/exodos.nix and pulled in by
+    # tcxwave-kiosk.nix. pegasus-fe is the binary name (not `pegasus`).
+    # Persisted dirs cover Pegasus config + the per-kiosk first-run extraction
+    # cache under the gamer home (overlay upper lives at /var/lib/exo-overlay
+    # instead and is persisted via impermanence.extraDirectories from
+    # exodos.nix directly).
+    exodos = {
+      enableDefault = false;
+      command = "gamescope -f -- pegasus-fe";
+      description = "gamescope/eXo (DOS + Win3.x) session (tty1)";
+      icon = "mdi:controller-classic";
+      persist = [
+        ".config/pegasus-frontend"
+        ".cache/pegasus-frontend"
+      ];
+    };
   };
 
   # The modes this host has enabled, in catalogue declaration order.
@@ -241,18 +259,20 @@ in
       (builtins.listToAttrs (
         map (
           m:
-          lib.nameValuePair "jupiter-${m}" (lib.mkMerge [
-            sessionOnTty1
-            {
-              description = modeSpecs.${m}.description;
-              conflicts = siblings m;
-              serviceConfig = {
-                ExecStart = "${mkLauncher m cfg.modes.${m}.command}";
-                User = cfg.sessionUser;
-                PAMName = "jupiter-${m}";
-              };
-            }
-          ])
+          lib.nameValuePair "jupiter-${m}" (
+            lib.mkMerge [
+              sessionOnTty1
+              {
+                description = modeSpecs.${m}.description;
+                conflicts = siblings m;
+                serviceConfig = {
+                  ExecStart = "${mkLauncher m cfg.modes.${m}.command}";
+                  User = cfg.sessionUser;
+                  PAMName = "jupiter-${m}";
+                };
+              }
+            ]
+          )
         ) enabledModes
       ))
       # Backstop mutual exclusion at the unit level: cage-tty1 conflicts every

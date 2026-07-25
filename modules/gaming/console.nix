@@ -99,6 +99,16 @@ let
       packages = with pkgs; [ shadps4 ];
       default = false;
     };
+    dosbox = {
+      description = "DOSBox Staging + DOSBox-X (DOS / Win3.x emulation for the eXo collections)";
+      packages = with pkgs; [
+        dosbox-staging
+        dosbox-x
+      ];
+      # dosbox-staging exposes the `dosbox` binary via a wrapper; dosbox-x
+      # exposes `dosbox-x`. modules/desktop/exodos.nix launches DOS games
+      # under staging and Win3.x under dosbox-x (best-in-class Win3x support).
+    };
   };
 
   # Packages for every app whose toggle is on.
