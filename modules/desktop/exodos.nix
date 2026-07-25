@@ -263,6 +263,49 @@ in
       pkgs.dosbox-x
     ];
 
+    # Per-emulator override confs, passed to dosbox AFTER the per-game conf
+    # so our values win. See scripts/exo-launch.sh.
+    # The TCx Wave panel is 1024x768 native (gamescope selects that mode).
+    # eXo's per-game dosbox.conf ships with fullscreen=false and a huge
+    # windowresolution (e.g. 2560x1920), which in dosbox-x shows a menu bar
+    # that eats vertical space and squeezes the game into the remaining area
+    # with ugly scaling. fullscreen=true hides the menu bar AND fills the
+    # panel at native res — touch maps 1:1.
+    environment.etc = {
+      "exo/dosbox-override.conf".source = pkgs.writeText "dosbox-override.conf" ''
+        [sdl]
+        fullscreen=true
+        fullresolution=1024x768
+        windowresolution=1024x768
+        output=openglnb
+        autolock=true
+
+        [render]
+        aspect=true
+      '';
+      # Win3.x (dosbox-x) override also tries integration-mode mouse: dosbox-x
+      # has a built-in "integration device" that can provide absolute-position
+      # mouse events to a guest OS, which is what a touchscreen needs. If the
+      # Win3.x mouse driver doesn't pick it up we'll need to install VBMOUSE
+      # in each Win3.x image (planned follow-up); this is the cheap first try.
+      "exo/dosbox-x-override.conf".source = pkgs.writeText "dosbox-x-override.conf" ''
+        [sdl]
+        fullscreen=true
+        fullresolution=1024x768
+        windowresolution=1024x768
+        output=openglnb
+        autolock=true
+        mouse_emulation=integration
+        usesystemcursor=true
+
+        [cpu]
+        integration device=true
+
+        [render]
+        aspect=true
+      '';
+    };
+
     # --- Metadata regenerator (runs once per session start) -----------------
     # Idempotent: scripts/exo-to-pegasus.py skips writing when its output is
     # newer than the source XML. Runs before the Pegasus session so Pegasus

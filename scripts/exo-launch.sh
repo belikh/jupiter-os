@@ -119,4 +119,25 @@ fi
 # (.\eXoDOS\<gamedir>, .\mt32, .\dosbox\..., etc.) resolve the way eXo's
 # original Windows launcher set them up.
 cd "$EXO_DIR"
-exec "$EMULATOR" -conf "$CONF" -noconsole -c exit
+# Pass our kiosk override conf AFTER the per-game conf so our settings win.
+# dosbox-staging and dosbox-x both honor multiple -conf flags in order. The
+# override forces fullscreen at the panel's native 1024x768 (which hides
+# dosbox-x's menu bar — without it, the menu bar eats vertical space and the
+# 1024x768 game gets squeezed into the remaining area with ugly scaling), and
+# for dosbox-x (Win3.x) also tries integration-mode mouse for absolute touch.
+case "$EMULATOR" in
+    dosbox-x)
+        OVERRIDE=/etc/exo/dosbox-x-override.conf
+        ;;
+    dosbox)
+        OVERRIDE=/etc/exo/dosbox-override.conf
+        ;;
+    *)
+        OVERRIDE=
+        ;;
+esac
+if [ -n "$OVERRIDE" ] && [ -f "$OVERRIDE" ]; then
+    exec "$EMULATOR" -conf "$CONF" -conf "$OVERRIDE" -noconsole -c exit
+else
+    exec "$EMULATOR" -conf "$CONF" -noconsole -c exit
+fi
