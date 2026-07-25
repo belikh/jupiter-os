@@ -85,10 +85,16 @@ if [ ! -d "$TARGET" ]; then
         echo "exo-launch: game zip not found at $ZIP" >&2
         exit 6
     fi
-    if ! command -v sudo >/dev/null 2>&1; then
-        echo "exo-launch: sudo not on PATH" >&2
+    # Use the NixOS setuid sudo wrapper directly. The session's PATH (set by
+    # dashboard-gaming.nix's mkLauncher) puts /run/current-system/sw/bin first,
+    # where the NON-setuid Nix-store sudo lives — that one refuses to run with
+    # "must be owned by uid 0 and have the setuid bit set". /run/wrappers/bin
+    # is the canonical location for setuid wrappers on NixOS.
+    SUDO=/run/wrappers/bin/sudo
+    [ -x "$SUDO" ] || {
+        echo "exo-launch: $SUDO not executable" >&2
         exit 7
-    fi
+    }
     # Resolve the helper's full canonical path so sudo can match it against
     # the NOPASSWD rule (which is keyed on the absolute Nix-store path; sudo
     # does NOT resolve the /run/current-system/sw/bin symlink itself).
@@ -99,7 +105,7 @@ if [ ! -d "$TARGET" ]; then
     CALLING_USER=$(id -un)
     CALLING_GROUP=$(id -gn)
     # -n: non-interactive (fail if a password would be needed)
-    sudo -n "$HELPER" "$ZIP" "$ZIP_DIR" "$GAMEDIR" "$CALLING_USER" "$CALLING_GROUP"
+    "$SUDO" -n "$HELPER" "$ZIP" "$ZIP_DIR" "$GAMEDIR" "$CALLING_USER" "$CALLING_GROUP"
 fi
 
 # dosbox's CWD must be eXo/ so the per-game conf's relative mounts/paths

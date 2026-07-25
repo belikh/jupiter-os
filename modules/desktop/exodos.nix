@@ -49,7 +49,8 @@ let
   # gamer) can later write saves into the per-game dir — by then upper-only.
   exoExtractHelper = pkgs.writeShellScriptBin "exo-extract-helper" ''
     #!${pkgs.runtimeShell}
-    # Invoked as root via: sudo -n exo-extract-helper <zip> <target-parent> <target-name> <chown-user> <chown-group>
+    # Invoked as root via: /run/wrappers/bin/sudo -n exo-extract-helper \
+    #   <zip> <target-parent> <target-name> <chown-user> <chown-group>
     set -eu
     ZIP=$1
     TARGET_PARENT=$2
@@ -62,6 +63,19 @@ let
     fi
     "${pkgs.unzip}/bin/unzip" -q -o "$ZIP" -d "$TARGET_PARENT"
     "${pkgs.coreutils}/bin/chown" -R "$CHOWN_USER:$CHOWN_GROUP" "$TARGET_PARENT/$TARGET_NAME"
+    # TCx Wave kiosk touch panel is 1024x768 native. The eXoWin3x collection
+    # ships with Win3.x configured for screen-size=640 (640x480), which makes
+    # the Win3.x desktop smaller than the panel — dosbox scales it up and the
+    # touch coordinates don't map 1:1. The bundled S3 driver supports up to
+    # 1600x1200; bumping screen-size to 1024 (1024x768 256-color) makes the
+    # desktop fill the panel and touch land where your finger does. Idempotent
+    # sed — only edits the [DISPLAY] screen-size line, only if SYSTEM.INI
+    # exists (so DOS extractions, which have no WINDOWS/SYSTEM.INI, are
+    # untouched). Color depth (color-format=8) stays at 256.
+    SYSINI="$TARGET_PARENT/$TARGET_NAME/WINDOWS/SYSTEM.INI"
+    if [ -f "$SYSINI" ]; then
+      "${pkgs.gnused}/bin/sed" -i 's/^screen-size=.*/screen-size=1024/' "$SYSINI"
+    fi
   '';
 
   # Session launcher: seeds the gamer user's Pegasus game_dirs.txt on first
