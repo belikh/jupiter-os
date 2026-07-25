@@ -89,10 +89,17 @@ if [ ! -d "$TARGET" ]; then
         echo "exo-launch: sudo not on PATH" >&2
         exit 7
     fi
+    # Resolve the helper's full path so sudo can match it against the NOPASSWD
+    # rule (which is keyed on the absolute Nix-store path; sudo follows the
+    # /run/current-system/sw/bin symlink to get there).
+    HELPER=$(command -v exo-extract-helper) || {
+        echo "exo-launch: exo-extract-helper not on PATH" >&2
+        exit 7
+    }
     CALLING_USER=$(id -un)
     CALLING_GROUP=$(id -gn)
     # -n: non-interactive (fail if a password would be needed)
-    sudo -n exo-extract-helper "$ZIP" "$ZIP_DIR" "$GAMEDIR" "$CALLING_USER" "$CALLING_GROUP"
+    sudo -n "$HELPER" "$ZIP" "$ZIP_DIR" "$GAMEDIR" "$CALLING_USER" "$CALLING_GROUP"
 fi
 
 # dosbox's CWD must be eXo/ so the per-game conf's relative mounts/paths
