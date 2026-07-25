@@ -1,5 +1,13 @@
 # Gaming mode — handover (open issues & how to finish)
 
+> **Historical note (2026-07-25).** Since this handover, the `jupiter-gaming`
+> session was renamed **`jupiter-steam`** and joined by **`jupiter-heroic`** and
+> **`jupiter-lutris`** modes (data-driven `modes` catalogue in
+> `modules/desktop/dashboard-gaming.nix`). Every reference to `jupiter-gaming.service`
+> below is historical — it is now `jupiter-steam.service` with the same Steam
+> Deck-UI command. The `capsh --noamb` fix documented here is unchanged and now
+> also covers Heroic/Lutris (verified live on amalthea).
+
 This doc hands off the **gaming-mode port** to the TCx Wave kiosks. The
 architecture is built, committed, and proven end-to-end on **metis**,
 **including** the Steam bootstrap blocker (see "OPEN ISSUE 1" below — now

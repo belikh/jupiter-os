@@ -118,12 +118,18 @@ in
       url = cfg.dashboardUrl;
     };
 
-    # Dashboard ↔ gaming mode, switchable from Home Assistant. Adds a
-    # jupiter-gaming.service on a shared tty1 and two HA switches (group
-    # "session") that flip between the Cage dashboard and a gamescope/Steam
-    # gaming session. Enabled here once so all 4 kiosks get it identically — do
-    # NOT re-add per-host, or the fleet drifts (see header comment).
-    jupiter.dashboardGaming.enable = true;
+    # Dashboard ↔ gaming modes, switchable from Home Assistant. Adds a
+    # jupiter-<mode>.service per enabled mode on a shared tty1; all session
+    # modes plus the Cage dashboard collapse into one HA `select` (launcher
+    # group "session"). `steam` is on by default (the debugged Deck-UI session);
+    # heroic + lutris are opted in here so all 4 kiosks get the same set of
+    # modes. Enabled here once so the fleet stays identical — do NOT re-add
+    # per-host, or the fleet drifts (see header comment).
+    jupiter.dashboardGaming = {
+      enable = true;
+      modes.heroic.enable = true;
+      modes.lutris.enable = true;
+    };
 
     jupiter.boot.falloutSplash.enable = true;
 
