@@ -161,6 +161,11 @@ in
     jupiter.services.haAgent = {
       enable = true;
       mqttHost = lib.mkDefault "10.1.1.3";
+      # 1s poll so the screen light's on/off + brightness track physical
+      # button/touch changes in HA without a noticeable lag (io: "i want
+      # updates every second"). Applies to every sensor this agent exposes
+      # fleet-wide (CPU/session/etc too), not just the screen.
+      pollIntervalSecs = 1;
       launcherApps = [
         {
           id = "screen-power";

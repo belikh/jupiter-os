@@ -19,6 +19,16 @@ in
       description = "Mosquitto broker to publish sensors/commands to.";
     };
 
+    pollIntervalSecs = lib.mkOption {
+      type = lib.types.nullOr lib.types.ints.positive;
+      default = null;
+      description = ''
+        Seconds between sensor polls/state publishes (applies fleet-wide to
+        every sensor this agent exposes, not just launcher profiles).
+        Defaults to ha-linux-agent's own default (30s) when unset.
+      '';
+    };
+
     launcherApps = lib.mkOption {
       type = lib.types.listOf (
         lib.types.submodule {
@@ -113,6 +123,9 @@ in
           host = cfg.mqttHost;
           username = "ha-linux-agent";
           password_file = config.sops.secrets.mqtt_ha_linux_agent.path;
+        }
+        // lib.optionalAttrs (cfg.pollIntervalSecs != null) {
+          poll_interval_secs = cfg.pollIntervalSecs;
         };
         backends.hardware = {
           enable = true;
