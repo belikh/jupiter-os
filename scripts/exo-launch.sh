@@ -89,10 +89,10 @@ if [ ! -d "$TARGET" ]; then
         echo "exo-launch: sudo not on PATH" >&2
         exit 7
     fi
-    # Resolve the helper's full path so sudo can match it against the NOPASSWD
-    # rule (which is keyed on the absolute Nix-store path; sudo follows the
-    # /run/current-system/sw/bin symlink to get there).
-    HELPER=$(command -v exo-extract-helper) || {
+    # Resolve the helper's full canonical path so sudo can match it against
+    # the NOPASSWD rule (which is keyed on the absolute Nix-store path; sudo
+    # does NOT resolve the /run/current-system/sw/bin symlink itself).
+    HELPER=$(readlink -f "$(command -v exo-extract-helper)") || {
         echo "exo-launch: exo-extract-helper not on PATH" >&2
         exit 7
     }
