@@ -47,9 +47,9 @@ let
   # logind/DRM/seat access).
   # The script unzips then chowns back to the calling user so dosbox (as
   # gamer) can later write saves into the per-game dir — by then upper-only.
-  exoExtractHelper = pkgs.writeShellScript "exo-extract-helper" ''
+  exoExtractHelper = pkgs.writeShellScriptBin "exo-extract-helper" ''
     #!${pkgs.runtimeShell}
-    # Invoked as root via: sudo -n <this-script> <zip> <target-parent> <target-name> <chown-user> <chown-group>
+    # Invoked as root via: sudo -n exo-extract-helper <zip> <target-parent> <target-name> <chown-user> <chown-group>
     set -eu
     ZIP=$1
     TARGET_PARENT=$2
@@ -192,7 +192,7 @@ in
         runAs = "root";
         commands = [
           {
-            command = "${exoExtractHelper}";
+            command = "${lib.getExe exoExtractHelper}";
             options = [ "NOPASSWD" ];
           }
         ];
@@ -242,6 +242,7 @@ in
     environment.systemPackages = [
       exoLauncher
       exoPegasusSession
+      exoExtractHelper
       pkgs.pegasus-frontend
       pkgs.unzip
       pkgs.dosbox-staging
