@@ -57,11 +57,14 @@ esac
 # is named the same way, so derive the zip name from it. install.bat is the
 # only other .bat in these dirs and is excluded.
 #
-# The session runs as root (see modules/desktop/exodos.nix) so this `unzip`
-# bypasses overlayfs's lower-layer permission check on the merged view.
-# Extracted files stay root-owned, but the next session reads them back fine,
-# and dosbox writes new saves into the per-game dir — by then in the upper
-# only, so no further lower-perm issue.
+# Extraction runs via `sudo -n exo-extract-helper` (installed by
+# modules/desktop/exodos.nix with a NOPASSWD sudoers rule). overlayfs's
+# ovl_permission checks write on BOTH upper and lower for creates in dirs that
+# exist in both layers; the NFS lower's mode bits are inconsistent and europa
+# is import-level read-only, so a non-root unzip dies with EACCES. The helper
+# unzips as root then chowns the result back to the calling user, so dosbox
+# (running as that user) can later write saves into the per-game dir — by then
+# in the upper only, so no further lower-perm check.
 if [ ! -d "$TARGET" ]; then
     BAT=$(
         cd "$GAME_CONFDIR" || exit 4
@@ -82,12 +85,14 @@ if [ ! -d "$TARGET" ]; then
         echo "exo-launch: game zip not found at $ZIP" >&2
         exit 6
     fi
-    if ! command -v unzip >/dev/null 2>&1; then
-        echo "exo-launch: unzip not on PATH" >&2
+    if ! command -v sudo >/dev/null 2>&1; then
+        echo "exo-launch: sudo not on PATH" >&2
         exit 7
     fi
-    # -q quiet, -o overwrite without prompting (safe on the per-kiosk overlay).
-    unzip -q -o "$ZIP" -d "$ZIP_DIR"
+    CALLING_USER=$(id -un)
+    CALLING_GROUP=$(id -gn)
+    # -n: non-interactive (fail if a password would be needed)
+    sudo -n exo-extract-helper "$ZIP" "$ZIP_DIR" "$GAMEDIR" "$CALLING_USER" "$CALLING_GROUP"
 fi
 
 # dosbox's CWD must be eXo/ so the per-game conf's relative mounts/paths
