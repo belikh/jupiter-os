@@ -108,8 +108,6 @@ no-build path for local iteration).
 - **Buildability rules (the reason this rebuild exists):**
   - No custom kernels on ZFS hosts — the stock `linuxPackages` default is
     the one ZFS always supports and cache.nixos.org always has built.
-  - No microarch tuning (`nixpkgs.hostPlatform.gcc.arch`) — it invalidates
-    the binary cache for the entire closure.
   - A new flake input must be justified by a registered host that uses it.
   - No cross-host closure wiring (PXE, backup-hub scans) until both ends of
     the wire are registered and building.
