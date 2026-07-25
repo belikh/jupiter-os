@@ -11,6 +11,7 @@ let
   touchWakeScript = pkgs.writers.writePython3Bin "tcxwave-touch-wake" { } ''
     import sys
     import os
+    import fcntl
     import select
     import time
     import subprocess
@@ -18,6 +19,19 @@ let
 
     # Inactivity timeout in seconds (configured via NixOS options)
     IDLE_TIMEOUT = ${toString cfg.idleTimeout}
+
+    # EVIOCGBIT(EV_ABS, len): _IOC_READ, 'E', 0x20+EV_ABS(3), len -- lets us
+    # ask a candidate event node "do you actually report ABS_MT_POSITION_X",
+    # rather than trusting /proc/bus/input/devices parse order.
+    EV_ABS = 3
+    ABS_MT_POSITION_X = 0x35
+
+
+    def _ioc(d, t, nr, sz):
+        return (d << 30) | (sz << 16) | (ord(t) << 8) | nr
+
+
+    EVIOCGBIT_ABS = _ioc(2, 'E', 0x20 + EV_ABS, 8)
 
 
     def run_systemctl(args):
@@ -33,8 +47,35 @@ let
             print(f"Error running systemctl {args}: {e}", file=sys.stderr)
 
 
+    def _reports_multitouch(dev_path):
+        """True iff this event node's EV_ABS bitmap has ABS_MT_POSITION_X set.
+
+        The Atmel touch controller is a composite USB device exposing THREE
+        separate "Atmel maXTouch Digitizer+Mouse" event nodes (confirmed live
+        on amalthea 2026-07-25) -- only one of them carries real multitouch
+        coordinates; the others are near-empty legacy mouse-emulation
+        collections that never fire on an actual finger touch. Picking the
+        first name match (the old approach) grabbed one of the empty ones,
+        which is why touch-wake never saw a real touch to begin with.
+        """
+        try:
+            fd = os.open(dev_path, os.O_RDONLY | os.O_NONBLOCK)
+        except OSError:
+            return False
+        try:
+            buf = bytearray(8)
+            fcntl.ioctl(fd, EVIOCGBIT_ABS, buf, True)
+            byte_i, bit_i = ABS_MT_POSITION_X // 8, ABS_MT_POSITION_X % 8
+            return bool(buf[byte_i] & (1 << bit_i))
+        except OSError:
+            return False
+        finally:
+            os.close(fd)
+
+
     def get_touchscreen_device():
-        """Scans devices to find the Atmel maXTouch event device path."""
+        """Finds the Atmel maXTouch event node that actually reports
+        multitouch, not just the first name match."""
         try:
             with open("/proc/bus/input/devices", "r") as f:
                 content = f.read()
@@ -46,11 +87,11 @@ let
         for dev in devices:
             if "Atmel maXTouch Digitizer+Mouse" in dev:
                 match = re.search(r"Handlers=.*?event(\d+)", dev)
-                if match:
-                    event_num = match.group(1)
-                    dev_path = f"/dev/input/event{event_num}"
-                    if os.path.exists(dev_path):
-                        return dev_path
+                if not match:
+                    continue
+                dev_path = f"/dev/input/event{match.group(1)}"
+                if os.path.exists(dev_path) and _reports_multitouch(dev_path):
+                    return dev_path
         return None
 
 
