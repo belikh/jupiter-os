@@ -184,8 +184,20 @@ in
       # compositor, but without bindsTo's "forcibly stop if the bound unit is
       # re-evaluated" semantic — which killed the daemon on every nixos-rebuild
       # switch (Restart=always does not override a binding-initiated stop).
+      #
+      # partOf only propagates cage's STOPS down to this unit, never its
+      # STARTS back up — so the very first time cage-tty1 stopped (a
+      # nixos-rebuild switch, a dashboard<->gaming toggle) this daemon went
+      # down and nothing ever started it again; Restart=always only fires on
+      # an unexpected exit, not a deliberate propagated stop. Confirmed dead
+      # on all 4 kiosks 2026-07-25. Also wanting cage-tty1.service (not just
+      # multi-user.target) closes the loop: starting cage now also starts
+      # this, matching partOf's stop-together half with a start-together half.
       partOf = [ "cage-tty1.service" ];
-      wantedBy = [ "multi-user.target" ];
+      wantedBy = [
+        "multi-user.target"
+        "cage-tty1.service"
+      ];
       serviceConfig = {
         ExecStart = "${touchWakeScript}/bin/tcxwave-touch-wake";
         Restart = "always";
