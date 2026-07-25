@@ -691,5 +691,23 @@ in
         Nice = 19;
       };
     };
+
+    # ha-linux-agent (the "customer-display" backend-launcher profile, see
+    # tcxwave-kiosk.nix) runs as plain `io`, not root, and start/stop this
+    # unit to give HA a real on/off. Without this rule that call is rejected
+    # by polkit with no visible error on the HA side — the switch just
+    # silently does nothing (io: "pressing to turn off the customer display
+    # in homeassistant, does nothing" — found live 2026-07-26, the exact gap
+    # tcxwave-touch-wake.nix's matching rule for tcxwave-screen-power.service
+    # already closed for that unit).
+    security.polkit.extraConfig = ''
+      polkit.addRule(function(action, subject) {
+        if (action.id == "org.freedesktop.systemd1.manage-units" &&
+            action.lookup("unit") == "tcxwave-cdp-anim.service" &&
+            subject.user == "io") {
+          return polkit.Result.YES;
+        }
+      });
+    '';
   };
 }
