@@ -57,6 +57,13 @@ esac
 # is named the same way, so derive the zip name from it. install.bat is the
 # only other .bat in these dirs and is excluded.
 #
+# Existence check is "dir exists AND is non-empty" — a plain `[ ! -d ]` gets
+# fooled by stale overlay dentries: an interrupted extraction (or a dosbox
+# mount that created the target) leaves an empty dir that the kernel's dentry
+# cache keeps reporting as existing forever, so dosbox-x runs into nothing.
+# Re-extracting when the dir is empty is harmless (unzip -o overwrites) and
+# recovers the kiosk from any half-extracted state without a reboot.
+#
 # Extraction runs via `sudo -n exo-extract-helper` (installed by
 # modules/desktop/exodos.nix with a NOPASSWD sudoers rule). overlayfs's
 # ovl_permission checks write on BOTH upper and lower for creates in dirs that
@@ -65,7 +72,7 @@ esac
 # unzips as root then chowns the result back to the calling user, so dosbox
 # (running as that user) can later write saves into the per-game dir — by then
 # in the upper only, so no further lower-perm check.
-if [ ! -d "$TARGET" ]; then
+if [ ! -d "$TARGET" ] || [ -z "$(ls -A "$TARGET" 2>/dev/null)" ]; then
     BAT=$(
         cd "$GAME_CONFDIR" || exit 4
         for f in *.bat; do
