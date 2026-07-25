@@ -118,6 +118,14 @@ in
           enable = true;
           cpu_governor = true;
           cpu_epp = true;
+          # This module is only enabled by TCx Wave kiosks, all of which now
+          # expose their backlight via a launcherApps `light` profile
+          # (jupiter.services.haAgent.launcherApps' screen-power entry) —
+          # leaving this at its true default would publish a second,
+          # independent brightness control for the exact same backlight
+          # device (confirmed live on amalthea 2026-07-25: io still saw a
+          # separate slider alongside the new light).
+          backlight = false;
         };
         backends.launcher.apps = map (
           app:
