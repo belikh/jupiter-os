@@ -236,22 +236,38 @@ in
         RemainAfterExit = true;
       };
       script = ''
-        if [ -f /run/secrets/wifi_psk ]; then
-          PSK=$(cat /run/secrets/wifi_psk | tr -d '\n')
-          # Give wpa_supplicant time to start
-          for i in $(seq 1 10); do
-            if wpa_cli -p /run/wpa_supplicant ping > /dev/null 2>&1; then
-              break
-            fi
-            sleep 1
-          done
-          # Set network config with PSK
-          wpa_cli -p /run/wpa_supplicant add_network > /dev/null 2>&1 || true
-          wpa_cli -p /run/wpa_supplicant set_network 0 ssid "\"${cfg.wifi.network}\""
-          wpa_cli -p /run/wpa_supplicant set_network 0 psk "\"$PSK\""
-          wpa_cli -p /run/wpa_supplicant enable_network 0
-          wpa_cli -p /run/wpa_supplicant save_config || true
+        if [ ! -f /run/secrets/wifi_psk ]; then
+          exit 0
         fi
+
+        PSK=$(cat /run/secrets/wifi_psk | tr -d '\n')
+        SSID="${cfg.wifi.network}"
+
+        # Give wpa_supplicant time to start
+        for i in $(seq 1 15); do
+          if wpa_cli -p /run/wpa_supplicant ping > /dev/null 2>&1; then
+            break
+          fi
+          sleep 1
+        done
+
+        # Find network ID for this SSID (should already exist from networking.wireless)
+        NETID=$(wpa_cli -p /run/wpa_supplicant list_networks 2>/dev/null | grep "^[0-9]" | grep "$SSID" | cut -f1)
+
+        if [ -z "$NETID" ]; then
+          # Network doesn't exist, add it
+          NETID=$(wpa_cli -p /run/wpa_supplicant add_network 2>/dev/null)
+          if [ -z "$NETID" ]; then
+            echo "Failed to add wifi network"
+            exit 1
+          fi
+          wpa_cli -p /run/wpa_supplicant set_network "$NETID" ssid "\"$SSID\"" > /dev/null 2>&1
+        fi
+
+        # Set/update PSK on the network
+        wpa_cli -p /run/wpa_supplicant set_network "$NETID" psk "\"$PSK\"" > /dev/null 2>&1
+        wpa_cli -p /run/wpa_supplicant enable_network "$NETID" > /dev/null 2>&1
+        wpa_cli -p /run/wpa_supplicant save_config > /dev/null 2>&1
       '';
     };
 
