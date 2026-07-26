@@ -286,6 +286,7 @@ in
 
     services.pipewire = {
       enable = true;
+      systemWide = true; # System-wide daemon for Bluetooth audio profiles
       pulse.enable = true; # PulseAudio compatibility layer
       alsa.enable = true;
     };
