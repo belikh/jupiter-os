@@ -162,8 +162,18 @@
                 # crush (modules/core/crush.nix) alone floats on
                 # nixpkgs-unstable's current HEAD instead of this flake's
                 # pinned nixpkgs commit — see the input comment for why.
+                # legacyPackages is a fresh instantiation with its own
+                # (default, unfree-disallowed) config, so allowUnfree here
+                # has to be set explicitly — common.nix's allowUnfree only
+                # applies to this host's own (pinned-nixpkgs) `pkgs`. Needed
+                # because crush is currently licensed FSL-1.1 (nixpkgs
+                # treats it as unfree until its MIT-conversion date lands).
                 (final: prev: {
-                  crush = nixpkgs-unstable.legacyPackages.${prev.stdenv.hostPlatform.system}.crush;
+                  crush =
+                    (import nixpkgs-unstable {
+                      system = prev.stdenv.hostPlatform.system;
+                      config.allowUnfree = true;
+                    }).crush;
                 })
               ];
             }
