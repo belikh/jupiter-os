@@ -213,11 +213,46 @@ in
     };
 
     # USB Wi-Fi adapter (NetGear A6210 / MediaTek MT7612U). Only thebe has one;
-    # the wired kiosks leave wifi.enable at its false default.
+    # the wired kiosks leave wifi.enable at its false default. PSK is applied
+    # by wifi-psk-apply.service after sops decrypts the secret at runtime.
     sops.secrets.wifi_psk = lib.mkIf cfg.wifi.enable { };
     networking.wireless = lib.mkIf cfg.wifi.enable {
       enable = true;
-      networks."${cfg.wifi.network}".psk = cfg.wifi.psk;
+      networks."${cfg.wifi.network}" = {
+        hidden = false;
+      };
+    };
+
+    # Apply wifi PSK from sops at activation time via wpa_cli. wpa_supplicant
+    # can't read the PSK at eval time, so we apply it after boot via a service
+    # that runs after sops-install-secrets.service decrypts the secrets.
+    systemd.services.wifi-psk-apply = lib.mkIf cfg.wifi.enable {
+      description = "Apply wifi PSK from sops secrets";
+      after = [ "sops-install-secrets.service" "wpa_supplicant.service" ];
+      before = [ "network-online.target" ];
+      wantedBy = [ "multi-user.target" ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+      };
+      script = ''
+        if [ -f /run/secrets/wifi_psk ]; then
+          PSK=$(cat /run/secrets/wifi_psk | tr -d '\n')
+          # Give wpa_supplicant time to start
+          for i in $(seq 1 10); do
+            if wpa_cli -p /run/wpa_supplicant ping > /dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+          # Set network config with PSK
+          wpa_cli -p /run/wpa_supplicant add_network > /dev/null 2>&1 || true
+          wpa_cli -p /run/wpa_supplicant set_network 0 ssid "\"${cfg.wifi.network}\""
+          wpa_cli -p /run/wpa_supplicant set_network 0 psk "\"$PSK\""
+          wpa_cli -p /run/wpa_supplicant enable_network 0
+          wpa_cli -p /run/wpa_supplicant save_config || true
+        fi
+      '';
     };
 
     # networking.wireless (wpa_supplicant) and NetworkManager can't both
