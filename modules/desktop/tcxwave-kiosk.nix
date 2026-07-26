@@ -88,8 +88,11 @@ in
 
       psk = lib.mkOption {
         type = lib.types.str;
-        default = "REDACTED";
-        description = "WPA PSK for the SSID.";
+        default = "";
+        description = ''
+          WPA PSK for the SSID. Must be set via sops secrets for deployed hosts.
+          See secrets/secrets.yaml for the encrypted value.
+        '';
       };
     };
   };

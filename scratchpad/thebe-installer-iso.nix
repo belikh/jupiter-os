@@ -26,7 +26,7 @@ let
             enable = true;
             networks = {
               "jupiter.au" = {
-                psk = "REDACTED";
+                psk = "REPLACE-ME-WITH-ACTUAL-PSK";
               };
             };
           };
