@@ -129,10 +129,13 @@ let
   '';
 
   # settings.txt seed: pins our custom theme so first-launch lands in
-  # "jupiterOS arcade" instead of the default "Pegasus Grid".
+  # "jupiterOS arcade" instead of the default "Pegasus Grid". The `theme`
+  # option lives under the [general] category (see Pegasus's SettingsFile.cpp:
+  # str_to_general_opt).
   pegasusSettingsFile = pkgs.writeText "pegasus-settings.txt" ''
     # Seeded by modules/desktop/exodos.nix. Safe to edit; changes persist via
     # impermanence.
+    [general]
     theme: jupiteros-arcade
   '';
 
