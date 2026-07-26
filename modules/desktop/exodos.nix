@@ -182,7 +182,7 @@ let
     src = pkgs.fetchzip {
       url = "https://github.com/y-muller/retromega-sleipnir/archive/master.zip";
       stripRoot = false;
-      hash = "sha256-dVr8HCGkMF1xp/L3n8VdUMxVl7wH8cPIkKp4GN/AO6s=";
+      hash = "sha256-5A5o7EgmDUM/XdORa2E8aARluWkL1MTwL4sshLc+RKM=";
     };
     installPhase = ''
       runHook preInstall
@@ -199,7 +199,7 @@ let
     src = pkgs.fetchzip {
       url = "https://github.com/plaidman/retromega-next/archive/master.zip";
       stripRoot = false;
-      hash = "sha256-PqnflCNWrIzPn+E3LCCVoGp3k2a/zWJqVqVNKEe3Vp0=";
+      hash = "sha256-MvkGoKEQo4ld9qSgnTZUSBEVHEUakdjW0bOx9+QaCdg=";
     };
     installPhase = ''
       runHook preInstall
