@@ -159,21 +159,15 @@
                     });
                   };
                 })
-                # crush (modules/core/crush.nix) alone floats on
-                # nixpkgs-unstable's current HEAD instead of this flake's
-                # pinned nixpkgs commit — see the input comment for why.
-                # legacyPackages is a fresh instantiation with its own
-                # (default, unfree-disallowed) config, so allowUnfree here
-                # has to be set explicitly — common.nix's allowUnfree only
-                # applies to this host's own (pinned-nixpkgs) `pkgs`. Needed
-                # because crush is currently licensed FSL-1.1 (nixpkgs
-                # treats it as unfree until its MIT-conversion date lands).
+                # modules/core/crush.nix packages crush itself, pinned
+                # straight to a GitHub release tag (nixpkgs' own crush
+                # derivation lags upstream releases too much) — but its
+                # go.mod requires a newer Go toolchain than this flake's
+                # pinned nixpkgs ships. Expose nixpkgs-unstable's `go` alone
+                # (not the whole package set) so crush.nix can build against
+                # it without floating anything else in the closure.
                 (final: prev: {
-                  crush =
-                    (import nixpkgs-unstable {
-                      system = prev.stdenv.hostPlatform.system;
-                      config.allowUnfree = true;
-                    }).crush;
+                  crush-go = nixpkgs-unstable.legacyPackages.${prev.stdenv.hostPlatform.system}.go;
                 })
               ];
             }
