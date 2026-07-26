@@ -286,10 +286,7 @@ in
 
     services.pulseaudio = {
       enable = true;
-      systemWide = true;
-      daemon.config = {
-        resample-method = "speex-float-5";
-      };
+      systemWide = false; # Per-user mode, running as the gamer user
     };
   };
 }
