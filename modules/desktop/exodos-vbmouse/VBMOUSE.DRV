@@ -1,0 +1,8 @@
+# VBMOUSE.DRV — Windows 3.x absolute mouse driver for DOSBox-X integration
+# Source: https://depot.javispedro.com/vbox/vbados/vbados.zip (VBMOUSE.DRV)
+# Project: https://git.javispedro.com/cgit/vbados.git/about/
+# License: GPLv2 (see https://git.javispedro.com/cgit/vbados.git/plain/COPYING)
+# This file is the Windows 3.x absolute mouse driver (VBMOUSE.DRV) from the
+# vbados project. It works with DOSBox-X's built-in absolute int33 mouse
+# API extension, providing 1:1 touch-to-cursor mapping in Windows 3.x.
+# (VBMOUSE.EXE TSR is NOT required — DOSBox-X provides absolute int33 events.)

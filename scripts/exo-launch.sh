@@ -115,6 +115,19 @@ if [ ! -d "$TARGET" ] || [ -z "$(ls -A "$TARGET" 2>/dev/null)" ]; then
     "$SUDO" -n "$HELPER" "$ZIP" "$ZIP_DIR" "$GAMEDIR" "$CALLING_USER" "$CALLING_GROUP"
 fi
 
+# Install VBMOUSE.DRV for Win3.x games so touch works 1:1 (not relative PS/2).
+# dosbox-x natively provides absolute int33 coordinates; VBMOUSE.DRV is the
+# Win3.x driver that translates those absolute coordinates for Windows 3.x.
+# The per-game image is extracted to $TARGET; we overwrite MOUSE.DRV there
+# (idempotent: only if missing or different).
+VBMOUSE_DRV=/etc/exo/VBMOUSE.DRV
+if [ "$PLATFORM_DIR" = "!win3x" ] && [ -f "$VBMOUSE_DRV" ]; then
+    MOUSE_DRV="$TARGET/WINDOWS/SYSTEM/MOUSE.DRV"
+    if [ ! -f "$MOUSE_DRV" ] || ! cmp -s "$MOUSE_DRV" "$VBMOUSE_DRV"; then
+        cp "$VBMOUSE_DRV" "$MOUSE_DRV"
+    fi
+fi
+
 # dosbox's CWD must be eXo/ so the per-game conf's relative mounts/paths
 # (.\eXoDOS\<gamedir>, .\mt32, .\dosbox\..., etc.) resolve the way eXo's
 # original Windows launcher set them up.

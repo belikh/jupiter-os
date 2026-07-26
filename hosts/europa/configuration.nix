@@ -68,11 +68,12 @@
   # Same reasoning as the firmware line above: common.nix defaults zed (GUI
   # editor), ecc (Node.js agent CLI), and antigravity/agy (Google agent CLI)
   # on for the bootstrap host, but europa is a headless STORAGE-ONLY NAS with
-  # no display and no interactive dev sessions — all three are pure closure
-  # bloat on a btver2-tuned, cache-sensitive host (and zed even pulls a sops
-  # secret decrypted on every activation for a binary that can't start).
+  # no display and no interactive dev sessions — all four are pure closure
+  # bloat on a btver2-tuned, cache-sensitive host (and zed/crush even pull a
+  # sops secret decrypted on every activation for binaries that can't start).
   # Opt out; the future dev workstation (himalia) opts in.
   jupiter.core.zed.enable = false;
+  jupiter.core.crush.enable = false;
   jupiter.core.ecc.enable = false;
   jupiter.core.antigravity.enable = false;
 

@@ -15,6 +15,7 @@
     ./core/antigravity-cli.nix
     ./core/ecc.nix
     ./core/zed.nix
+    ./core/crush.nix
     ./boot/fallout-splash.nix
     ./core/build-tuning.nix
     ./core/build-machines.nix
@@ -28,6 +29,7 @@
   # that never run interactive dev sessions can opt out per-host.
   jupiter.core.ecc.enable = lib.mkDefault true;
   jupiter.core.zed.enable = lib.mkDefault true;
+  jupiter.core.crush.enable = lib.mkDefault true;
   jupiter.core.antigravity.enable = lib.mkDefault true;
   jupiter.core.branding.enable = true;
 

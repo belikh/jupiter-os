@@ -114,6 +114,23 @@ let
     exec ${pkgs.pegasus-frontend}/bin/pegasus-fe "$@"
   '';
 
+  # VBMOUSE.DRV — Win3.x absolute mouse driver (javispedro/vbados, GPLv2).
+  # dosbox-x implements VBMOUSE's int33 absolute-coordinate extension natively,
+  # so installing this as MOUSE.DRV in each Win3.x image makes Win3.x read
+  # absolute coordinates from the host — i.e. your finger on the touchscreen
+  # maps 1:1 to the Windows cursor, no more "cursor drifts randomly" PS/2
+  # relative-mode behavior. We don't need VBMOUSE.EXE (the DOS TSR); the .DRV
+  # alone works against dosbox-x's builtin int33 absolute API.
+  # Prebuilt fetched from upstream (compilation needs OpenWatcom and is more
+  # hassle than it's worth for a 2.7KB binary we don't change).
+  vbadosZip = pkgs.fetchurl {
+    url = "https://depot.javispedro.com/vbox/vbados/vbados.zip";
+    hash = "sha256-gk10cx1xn/TIynkU9vk+VUgS/KOp74xEMXwdpygYTSc=";
+  };
+  vbmouseDrv = pkgs.runCommand "vbmouse.drv" { preferLocalBuild = true; } ''
+    ${pkgs.unzip}/bin/unzip -p ${vbadosZip} VBMOUSE.DRV > $out
+  '';
+
   # Pegasus reads the collection directories from game_dirs.txt (one path per
   # line, `#` comments) — NOT from settings.txt. settings.txt holds theme and
   # other UI state; game_dirs.txt is the game-directories source of truth.
@@ -333,11 +350,8 @@ in
         [render]
         aspect=true
       '';
-      # Win3.x (dosbox-x) override also tries integration-mode mouse: dosbox-x
-      # has a built-in "integration device" that can provide absolute-position
-      # mouse events to a guest OS, which is what a touchscreen needs. If the
-      # Win3.x mouse driver doesn't pick it up we'll need to install VBMOUSE
-      # in each Win3.x image (planned follow-up); this is the cheap first try.
+      # Win3.x (dosbox-x) override. fullscreen at native res hides the dosbox-x
+      # menu bar (which otherwise eats vertical space and squeezes the game).
       "exo/dosbox-x-override.conf".source = pkgs.writeText "dosbox-x-override.conf" ''
         [sdl]
         fullscreen=true
@@ -345,15 +359,14 @@ in
         windowresolution=1024x768
         output=openglnb
         autolock=true
-        mouse_emulation=integration
-        usesystemcursor=true
-
-        [cpu]
-        integration device=true
 
         [render]
         aspect=true
       '';
+      # VBMOUSE.DRV — Win3.x absolute mouse driver. exo-launch.sh copies this
+      # over MOUSE.DRV in each Win3.x game before launch so the cursor tracks
+      # the touchscreen 1:1 instead of drifting randomly (PS/2 relative mode).
+      "exo/VBMOUSE.DRV".source = vbmouseDrv;
     };
 
     # --- Metadata regenerator (runs once per session start) -----------------
