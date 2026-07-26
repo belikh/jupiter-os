@@ -87,21 +87,29 @@ let
     fi
   '';
 
-  # Session launcher: seeds the gamer user's Pegasus game_dirs.txt on first
-  # launch (then preserves user edits via impermanence), then execs pegasus-fe.
-  # Required because Pegasus shows "no games" until game_dirs.txt tells it
-  # where the collection lives. Done at session start rather than via tmpfiles
-  # because tmpfiles `f` doesn't seed from a Nix store path source on every
-  # systemd version, and because we want the user's later UI edits (theme,
-  # favorites) preserved across reboots.
+  # Session launcher: seeds the gamer user's Pegasus config (game_dirs.txt +
+  # settings.txt with our theme) on first launch (then preserves user edits via
+  # impermanence), then execs pegasus-fe. Required because Pegasus shows "no
+  # games" until game_dirs.txt tells it where the collection lives, and shows
+  # the default "Pegasus Grid" theme until settings.txt points at ours. Done at
+  # session start rather than via tmpfiles because tmpfiles `f` doesn't seed
+  # from a Nix store path source on every systemd version, and because we want
+  # the user's later UI edits preserved across reboots.
   exoPegasusSession = pkgs.writeShellScriptBin "exo-pegasus-session" ''
     #!${pkgs.runtimeShell}
     set -eu
     CONFIG_DIR="''${XDG_CONFIG_HOME:-$HOME/.config}/pegasus-frontend"
+    mkdir -p "$CONFIG_DIR"
+    # game_dirs.txt: where to find the collections.
     GAME_DIRS="$CONFIG_DIR/game_dirs.txt"
     if [ ! -f "$GAME_DIRS" ]; then
-      mkdir -p "$CONFIG_DIR"
       install -m 0644 ${pegasusGameDirsFile} "$GAME_DIRS"
+    fi
+    # settings.txt: misc Pegasus settings. We seed only the theme; Pegasus
+    # will append its own keys on first run (and we won't overwrite them).
+    SETTINGS="$CONFIG_DIR/settings.txt"
+    if [ ! -f "$SETTINGS" ]; then
+      install -m 0644 ${pegasusSettingsFile} "$SETTINGS"
     fi
     exec ${pkgs.pegasus-frontend}/bin/pegasus-fe "$@"
   '';
@@ -119,6 +127,31 @@ let
     ${cfg.mergeMount}/eXoDOS
     ${cfg.mergeMount}/eXoWin3x
   '';
+
+  # settings.txt seed: pins our custom theme so first-launch lands in
+  # "jupiterOS arcade" instead of the default "Pegasus Grid".
+  pegasusSettingsFile = pkgs.writeText "pegasus-settings.txt" ''
+    # Seeded by modules/desktop/exodos.nix. Safe to edit; changes persist via
+    # impermanence.
+    theme: jupiteros-arcade
+  '';
+
+  # Custom Pegasus theme: "jupiterOS arcade". Functional minimalism — header
+  # with our branding, horizontal platform bar (eXoDOS / eXoWin3x / Steam /
+  # etc.), game grid below. Touch-friendly (large tap targets, no hover).
+  # Pegasus themes are full QML apps; this one is intentionally simple so it's
+  # easy to iterate on. Files live in the Nix store and are symlinked into
+  # the gamer user's themes dir via tmpfiles.
+  jupiterArcadeTheme = pkgs.stdenv.mkDerivation {
+    name = "jupiteros-arcade-theme";
+    src = ./jupiteros-arcade-theme;
+    installPhase = ''
+      runHook preInstall
+      mkdir -p $out
+      cp -r ./. $out/
+      runHook postInstall
+    '';
+  };
 in
 {
   options.jupiter.exodos = {
@@ -197,14 +230,16 @@ in
 
     systemd.tmpfiles.rules = [
       "d /var/lib/exo-overlay 0755 root root -"
-      # upper + work owned by the session user — after the privileged extract
-      # + chown, per-game dirs are gamer-owned and dosbox (as gamer) writes
-      # saves into them via the upper-only path (no lower-perm check).
       "d ${cfg.overlayUpper} 0755 ${cfg.sessionUser} users -"
       "d ${cfg.overlayWork} 0755 ${cfg.sessionUser} users -"
-      # Pegasus config dir; game_dirs.txt is seeded on first session launch by
-      # exoPegasusSession (not here — see the wrapper's comment for why).
+      # Pegasus config dir; game_dirs.txt + settings.txt seeded on first
+      # session launch by exoPegasusSession.
       "d /home/${cfg.sessionUser}/.config/pegasus-frontend 0755 ${cfg.sessionUser} users -"
+      # Install the jupiterOS arcade theme as a symlink into the user themes
+      # dir. L+ forces (re)create so a theme change in a future deploy
+      # propagates without needing to wipe the user dir.
+      "d /home/${cfg.sessionUser}/.config/pegasus-frontend/themes 0755 ${cfg.sessionUser} users -"
+      "L+ /home/${cfg.sessionUser}/.config/pegasus-frontend/themes/jupiteros-arcade - - - - ${jupiterArcadeTheme}"
     ];
 
     # Allow the session user to run only the extraction helper as root with no
