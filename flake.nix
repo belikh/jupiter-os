@@ -11,6 +11,13 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
 
+    # Deliberately NOT `inputs.nixpkgs.follows`-ed to the pin above — this
+    # tracks nixos-unstable's own moving HEAD so modules/core/crush.nix can
+    # take crush from here (fast-moving upstream, want current releases)
+    # while every other package stays on the fleet's single pinned nixpkgs
+    # commit. Update independently with `nix flake update nixpkgs-unstable`.
+    nixpkgs-unstable.url = "github:nixos/nixpkgs/nixos-unstable";
+
     # Declarative partitioning (ZFS-on-root layouts in modules/storage/zfs-profiles.nix)
     disko = {
       url = "github:nix-community/disko";
@@ -59,6 +66,7 @@
     {
       self,
       nixpkgs,
+      nixpkgs-unstable,
       disko,
       impermanence,
       sops-nix,
@@ -150,6 +158,12 @@
                       doCheck = false;
                     });
                   };
+                })
+                # crush (modules/core/crush.nix) alone floats on
+                # nixpkgs-unstable's current HEAD instead of this flake's
+                # pinned nixpkgs commit — see the input comment for why.
+                (final: prev: {
+                  crush = nixpkgs-unstable.legacyPackages.${prev.stdenv.hostPlatform.system}.crush;
                 })
               ];
             }
