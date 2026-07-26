@@ -278,12 +278,15 @@ in
     hardware.bluetooth = {
       enable = true;
       powerOnBoot = true;
-      settings.General.ControllerMode = "dual"; # Both legacy and LE (better compatibility)
+      settings.General = {
+        ControllerMode = "dual"; # Both legacy and LE (better compatibility)
+        Enable = "Source,Sink,Media,Socket";
+      };
     };
 
     services.pulseaudio = {
       enable = true;
-      systemWide = false; # per-user, as the kiosk user
+      systemWide = true; # system-wide daemon for stable Bluetooth audio routing
     };
   };
 }
