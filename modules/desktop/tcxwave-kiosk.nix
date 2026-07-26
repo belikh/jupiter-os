@@ -284,9 +284,10 @@ in
       };
     };
 
-    services.pulseaudio = {
+    services.pipewire = {
       enable = true;
-      systemWide = true; # system-wide daemon for stable Bluetooth audio routing
+      pulse.enable = true; # PulseAudio compatibility layer
+      alsa.enable = true;
     };
   };
 }
