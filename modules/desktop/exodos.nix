@@ -145,18 +145,17 @@ let
     ${cfg.mergeMount}/eXoWin3x
   '';
 
-  # settings.txt seed: pins our custom theme so first-launch lands in
-  # "jupiterOS arcade" instead of the default "Pegasus Grid". Format is
-  # Pegasus's metadata syntax with dotted keys (`<category>.<option>: value`)
-  # — NOT INI [section]/key=value. The theme value is a PATH relative to the
-  # config dir (NOT the theme name) — verified via AppSettings.h:
-  # DEFAULT_THEME is `":/themes/pegasus-theme-grid/"`, a path; and Pegasus's
-  # log says "Requested theme `<config-dir>/<value>` not found" when the path
-  # is wrong. Our theme is at themes/jupiteros-arcade/ under the config dir.
+  # settings.txt seed: pins the configured theme so first-launch uses it
+  # instead of the default "Pegasus Grid". Format is Pegasus's metadata
+  # syntax with dotted keys (`<category>.<option>: value`) — NOT INI
+  # [section]/key=value. The theme value is a PATH relative to the config dir
+  # (NOT the theme name) — verified via AppSettings.h: DEFAULT_THEME is
+  # `":/themes/pegasus-theme-grid/"`, a path; and Pegasus's log says
+  # "Requested theme `<config-dir>/<value>` not found" when the path is wrong.
   pegasusSettingsFile = pkgs.writeText "pegasus-settings.txt" ''
     # Seeded by modules/desktop/exodos.nix. Safe to edit; changes persist via
     # impermanence.
-    general.theme: themes/jupiteros-arcade
+    general.theme: themes/${cfg.theme}
   '';
 
   # Custom Pegasus theme: "jupiterOS arcade". Functional minimalism — header
@@ -172,6 +171,40 @@ let
       runHook preInstall
       mkdir -p $out
       cp -r ./. $out/
+      runHook postInstall
+    '';
+  };
+
+  # Retro Mega Sleipnir theme: clean and modern theme designed for handheld
+  # devices with large screens. Fetched from GitHub.
+  retroMegaSleipnirTheme = pkgs.stdenv.mkDerivation {
+    name = "retromega-sleipnir-theme";
+    src = pkgs.fetchzip {
+      url = "https://github.com/y-muller/retromega-sleipnir/archive/master.zip";
+      stripRoot = false;
+      hash = "sha256-dVr8HCGkMF1xp/L3n8VdUMxVl7wH8cPIkKp4GN/AO6s=";
+    };
+    installPhase = ''
+      runHook preInstall
+      mkdir -p $out
+      cp -r retromega-sleipnir-main/* $out/
+      runHook postInstall
+    '';
+  };
+
+  # Retro Mega Next theme: clean and modern theme for handheld devices.
+  # Fetched from GitHub.
+  retroMegaNextTheme = pkgs.stdenv.mkDerivation {
+    name = "retromega-next-theme";
+    src = pkgs.fetchzip {
+      url = "https://github.com/plaidman/retromega-next/archive/master.zip";
+      stripRoot = false;
+      hash = "sha256-PqnflCNWrIzPn+E3LCCVoGp3k2a/zWJqVqVNKEe3Vp0=";
+    };
+    installPhase = ''
+      runHook preInstall
+      mkdir -p $out
+      cp -r retromega-next-main/* $out/
       runHook postInstall
     '';
   };
@@ -241,6 +274,15 @@ in
         sessionUser.
       '';
     };
+
+    theme = lib.mkOption {
+      type = lib.types.str;
+      default = "jupiteros-arcade";
+      description = ''
+        Name of the Pegasus theme to use. Available themes: jupiteros-arcade,
+        retromega-sleipnir, retromega-next.
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -258,11 +300,13 @@ in
       # Pegasus config dir; game_dirs.txt + settings.txt seeded on first
       # session launch by exoPegasusSession.
       "d /home/${cfg.sessionUser}/.config/pegasus-frontend 0755 ${cfg.sessionUser} users -"
-      # Install the jupiterOS arcade theme as a symlink into the user themes
-      # dir. L+ forces (re)create so a theme change in a future deploy
-      # propagates without needing to wipe the user dir.
+      # Install all available themes as symlinks into the user themes dir.
+      # L+ forces (re)create so a theme change in a future deploy propagates
+      # without needing to wipe the user dir.
       "d /home/${cfg.sessionUser}/.config/pegasus-frontend/themes 0755 ${cfg.sessionUser} users -"
       "L+ /home/${cfg.sessionUser}/.config/pegasus-frontend/themes/jupiteros-arcade - - - - ${jupiterArcadeTheme}"
+      "L+ /home/${cfg.sessionUser}/.config/pegasus-frontend/themes/retromega-sleipnir - - - - ${retroMegaSleipnirTheme}"
+      "L+ /home/${cfg.sessionUser}/.config/pegasus-frontend/themes/retromega-next - - - - ${retroMegaNextTheme}"
     ];
 
     # Allow the session user to run only the extraction helper as root with no

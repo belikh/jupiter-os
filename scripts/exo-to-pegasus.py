@@ -36,6 +36,18 @@ def game_dir_from_application_path(application_path: str, rewrites: list) -> str
     return os.path.dirname(posix_path)
 
 
+def image_path_relative(image_path: str, rewrites: list) -> str:
+    # LaunchBox stores Windows-style image paths (Images\Screenshot\game.png).
+    # Convert to POSIX, apply rewrites for case normalization, and return as-is
+    # (relative to the collection root). Empty string if no path.
+    if not image_path:
+        return ""
+    posix_path = image_path.replace("\\", "/")
+    for old, new in rewrites:
+        posix_path = posix_path.replace(old, new)
+    return posix_path
+
+
 def text_or_empty(parent: ET.Element, tag: str) -> str:
     el = parent.find(tag)
     if el is None or el.text is None:
@@ -99,6 +111,10 @@ def render_entry(
     favorite: bool,
     lb_id: str,
     manual_rel: str,
+    screenshot_rel: str = "",
+    boxfront_rel: str = "",
+    wheel_rel: str = "",
+    marquee_rel: str = "",
 ) -> list:
     lines = [f"game: {escape_value(title)}"]
     if file_rel:
@@ -115,6 +131,14 @@ def render_entry(
         lines.append(f"summary: {escape_value(summary)}")
     if rating:
         lines.append(f"rating: {rating}")
+    if screenshot_rel:
+        lines.append(f"screenshot: {escape_value(screenshot_rel)}")
+    if boxfront_rel:
+        lines.append(f"image: {escape_value(boxfront_rel)}")
+    if wheel_rel:
+        lines.append(f"logo: {escape_value(wheel_rel)}")
+    if marquee_rel:
+        lines.append(f"marquee: {escape_value(marquee_rel)}")
     if favorite:
         lines.append("x-favorite: true")
     if lb_id:
@@ -184,6 +208,10 @@ def convert(xml_path: str, root: str, collection: str, shortname: str, emulator:
                 favorite=bool_field(game, "Favorite"),
                 lb_id=text_or_empty(game, "ID"),
                 manual_rel=text_or_empty(game, "ManualPath"),
+                screenshot_rel=image_path_relative(text_or_empty(game, "ImagePath"), rewrites),
+                boxfront_rel=image_path_relative(text_or_empty(game, "BoxFrontImagePath"), rewrites),
+                wheel_rel=image_path_relative(text_or_empty(game, "WheelImagePath"), rewrites),
+                marquee_rel=image_path_relative(text_or_empty(game, "MarqueeImagePath"), rewrites),
             )
         )
         emitted += 1
