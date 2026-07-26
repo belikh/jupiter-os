@@ -213,12 +213,11 @@ in
     };
 
     # USB Wi-Fi adapter (NetGear A6210 / MediaTek MT7612U). Only thebe has one;
-    # the wired kiosks leave wifi.enable at its false default. PSK is read from
-    # sops secrets at runtime.
+    # the wired kiosks leave wifi.enable at its false default.
     sops.secrets.wifi_psk = lib.mkIf cfg.wifi.enable { };
     networking.wireless = lib.mkIf cfg.wifi.enable {
       enable = true;
-      networks."${cfg.wifi.network}".psk = builtins.readFile config.sops.secrets.wifi_psk.path;
+      networks."${cfg.wifi.network}".psk = cfg.wifi.psk;
     };
 
     # networking.wireless (wpa_supplicant) and NetworkManager can't both
