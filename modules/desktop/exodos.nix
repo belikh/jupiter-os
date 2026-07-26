@@ -182,7 +182,7 @@ let
     src = pkgs.fetchzip {
       url = "https://github.com/y-muller/retromega-sleipnir/archive/master.zip";
       stripRoot = false;
-      hash = "sha256-5A5o7EgmDUM/XdORa2E8aARluWkL1MTwL4sshLc+RKM=";
+      hash = "sha256-F3vH0yXlX+1g83S9qjWc04y+dFw9Kv192IheIijrUhc=";
     };
     installPhase = ''
       runHook preInstall
