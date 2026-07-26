@@ -349,6 +349,11 @@ in
 
         [render]
         aspect=true
+
+        [mixer]
+        nosound=false
+        rate=44100
+        prebuffer=20
       '';
       # Win3.x (dosbox-x) override. fullscreen at native res hides the dosbox-x
       # menu bar (which otherwise eats vertical space and squeezes the game).
@@ -362,6 +367,11 @@ in
 
         [render]
         aspect=true
+
+        [mixer]
+        nosound=false
+        rate=44100
+        prebuffer=20
       '';
       # VBMOUSE.DRV — Win3.x absolute mouse driver. exo-launch.sh copies this
       # over MOUSE.DRV in each Win3.x game before launch so the cursor tracks
