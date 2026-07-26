@@ -272,5 +272,18 @@ in
     users.users.root.openssh.authorizedKeys.keys = [
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILv1nEsuHqlA1ykn1p8wZmhhv1Y77cBxhgu2tAO3DhlP jupiter-fleet-nix-build"
     ];
+
+    # Bluetooth + audio for the kiosk displays. Useful for connecting wireless
+    # speakers/soundbars; started by default but no cost if no BT device is present.
+    hardware.bluetooth = {
+      enable = true;
+      powerOnBoot = true;
+      settings.General.ControllerMode = "dual"; # Both legacy and LE (better compatibility)
+    };
+
+    services.pulseaudio = {
+      enable = true;
+      systemWide = false; # per-user, as the kiosk user
+    };
   };
 }
