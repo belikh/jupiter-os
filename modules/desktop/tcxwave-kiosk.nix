@@ -139,6 +139,13 @@ in
       modes.exodos.enable = true;
     };
 
+    # Wi-Fi PSK from sops secrets (for thebe's USB adapter)
+    sops.secrets.wifi_psk = lib.mkIf cfg.wifi.enable { };
+    networking.wireless.networks."${cfg.wifi.network}".psk =
+      lib.mkIf cfg.wifi.enable (lib.mkDefault (
+        builtins.readFile config.sops.secrets.wifi_psk.path
+      ));
+
     # eXoDOS + eXoWin3x collection wiring (NFS mount of europa's read-only
     # eXo dataset, per-kiosk overlayfs for saves + first-run extraction,
     # Pegasus metadata regenerator). Defaults match europa's static IP and
