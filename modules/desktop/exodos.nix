@@ -199,7 +199,7 @@ let
     src = pkgs.fetchzip {
       url = "https://github.com/plaidman/retromega-next/archive/master.zip";
       stripRoot = false;
-      hash = "sha256-MvkGoKEQo4ld9qSgnTZUSBEVHEUakdjW0bOx9+QaCdg=";
+      hash = "sha256-uGahi8SClERt+Luy0+rd/oJpr9jPhLixHTi5Iy0cqVw=";
     };
     installPhase = ''
       runHook preInstall
