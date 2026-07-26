@@ -12,14 +12,28 @@
 //   │  ...                                    │
 //   └─────────────────────────────────────────┘
 //
-// Tap a platform to switch; tap a game to launch it. The Pegasus API is
-// https://pegasus-frontend.org/docs/themes/api/ — we use the global `api`
-// object (collections, currentCollection, currentGame, launchGame).
+// Tap a platform to switch; tap a game to select; double-tap to launch.
+//
+// Pegasus API (verified against the default theme + Api.h):
+//   - api.collections is an ObjectListModel* of all collections
+//   - api.collections.get(i) returns a collection with .name, .games, etc.
+//   - .games is itself an ObjectListModel* of Game objects
+//   - Game objects have .title, .developer, .launch(), etc.
+//   - There is NO api.currentCollection / api.currentGame — the theme tracks
+//     selection itself (that's what the default theme's PlatformBar does).
 import QtQuick 2.15
 
 FocusScope {
     id: root
     focus: true
+
+    // Track the currently-selected collection internally. Pegasus's API has
+    // no api.currentCollection; themes own this state. Defaults to 0 (the
+    // first collection, which Pegasus sets up as eXoDOS).
+    property int currentCollectionIndex: 0
+    readonly property var currentCollection: api.collections.count
+        ? api.collections.get(currentCollectionIndex)
+        : null
 
     // Background
     Rectangle {
@@ -52,7 +66,7 @@ FocusScope {
             anchors.right: parent.right
             anchors.rightMargin: 24
             anchors.verticalCenter: parent.verticalCenter
-            text: api.allGames.length + " games"
+            text: api.allGames.count + " games"
             color: "#6b7280"
             font.pixelSize: 14
         }
@@ -69,29 +83,31 @@ FocusScope {
         model: api.collections
         spacing: 8
         clip: true
+        currentIndex: root.currentCollectionIndex
+        onCurrentIndexChanged: root.currentCollectionIndex = currentIndex
 
         delegate: Rectangle {
             width: platformLabel.width + 48
             height: 44
             anchors.verticalCenter: parent.verticalCenter
             radius: 6
-            color: modelData === api.currentCollection ? "#3b82f6" : "#1f242f"
-            border.color: modelData === api.currentCollection ? "#60a5fa" : "#2a2f3a"
+            color: ListView.isCurrentItem ? "#3b82f6" : "#1f242f"
+            border.color: ListView.isCurrentItem ? "#60a5fa" : "#2a2f3a"
             border.width: 1
 
             Text {
                 id: platformLabel
                 anchors.centerIn: parent
                 text: modelData.name
-                color: modelData === api.currentCollection ? "#ffffff" : "#9ca3af"
+                color: ListView.isCurrentItem ? "#ffffff" : "#9ca3af"
                 font.pixelSize: 18
-                font.bold: modelData === api.currentCollection
+                font.bold: ListView.isCurrentItem
             }
 
             MouseArea {
                 anchors.fill: parent
                 onClicked: {
-                    api.currentCollectionIndex = index;
+                    platformBar.currentIndex = index;
                     gameGrid.positionViewAtBeginning();
                 }
             }
@@ -108,7 +124,7 @@ FocusScope {
         color: "#2a2f3a"
     }
 
-    // Game grid
+    // Game grid — model bound to the current collection's games
     GridView {
         id: gameGrid
         anchors.top: separator.bottom
@@ -119,7 +135,7 @@ FocusScope {
         clip: true
         cacheBuffer: 1200
 
-        model: api.currentCollection.games
+        model: root.currentCollection ? root.currentCollection.games : null
         cellWidth: 192
         cellHeight: 192
 
@@ -131,23 +147,23 @@ FocusScope {
                 anchors.fill: parent
                 anchors.margins: 4
                 radius: 8
-                color: modelData === api.currentGame ? "#1e3a8a" : "#161a23"
-                border.color: modelData === api.currentGame ? "#60a5fa" : "#2a2f3a"
-                border.width: modelData === api.currentGame ? 2 : 1
+                color: GridView.isCurrentItem ? "#1e3a8a" : "#161a23"
+                border.color: GridView.isCurrentItem ? "#60a5fa" : "#2a2f3a"
+                border.width: GridView.isCurrentItem ? 2 : 1
 
                 Text {
                     anchors.fill: parent
                     anchors.margins: 12
                     text: modelData.title
-                    color: modelData === api.currentGame ? "#ffffff" : "#d1d5db"
+                    color: GridView.isCurrentItem ? "#ffffff" : "#d1d5db"
                     font.pixelSize: 14
-                    font.bold: modelData === api.currentGame
+                    font.bold: GridView.isCurrentItem
                     wrapMode: Text.Wrap
                     horizontalAlignment: Text.AlignHCenter
                     verticalAlignment: Text.AlignVCenter
                 }
 
-                // Developer/year subtitle if available
+                // Developer subtitle if available
                 Text {
                     anchors.bottom: parent.bottom
                     anchors.left: parent.left
@@ -165,11 +181,11 @@ FocusScope {
             MouseArea {
                 anchors.fill: parent
                 onClicked: {
-                    api.currentGameIndex = index;
+                    gameGrid.currentIndex = index;
                 }
                 onDoubleClicked: {
-                    api.currentGameIndex = index;
-                    api.launchGame(modelData);
+                    gameGrid.currentIndex = index;
+                    modelData.launch();
                 }
             }
         }
@@ -187,21 +203,23 @@ FocusScope {
 
     // Keyboard navigation: arrow keys to move, Enter to launch
     Keys.onLeftPressed: {
-        if (api.currentGameIndex > 0) api.currentGameIndex--;
+        if (gameGrid.currentIndex > 0) gameGrid.currentIndex--;
     }
     Keys.onRightPressed: {
-        if (api.currentGameIndex < api.currentCollection.games.length - 1) api.currentGameIndex++;
+        if (gameGrid.currentIndex < gameGrid.count - 1) gameGrid.currentIndex++;
     }
     Keys.onUpPressed: {
-        if (api.currentGameIndex >= 4) api.currentGameIndex -= 4;
+        if (gameGrid.currentIndex >= 4) gameGrid.currentIndex -= 4;
     }
     Keys.onDownPressed: {
-        if (api.currentGameIndex < api.currentCollection.games.length - 4) api.currentGameIndex += 4;
+        if (gameGrid.currentIndex < gameGrid.count - 4) gameGrid.currentIndex += 4;
     }
     Keys.onReturnPressed: {
-        if (api.currentGame) api.launchGame(api.currentGame);
-    }
-    Keys.onEscapePressed: {
-        if (api.currentCollectionIndex > 0) api.currentCollectionIndex--;
+        if (gameGrid.currentItem) {
+            // Re-fetch the model entry — GridView's currentItem is the delegate,
+            // not the model data. Use the index to look up via the model.
+            const game = root.currentCollection.games.get(gameGrid.currentIndex);
+            if (game) game.launch();
+        }
     }
 }
