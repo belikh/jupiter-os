@@ -131,12 +131,15 @@ let
   # settings.txt seed: pins our custom theme so first-launch lands in
   # "jupiterOS arcade" instead of the default "Pegasus Grid". Format is
   # Pegasus's metadata syntax with dotted keys (`<category>.<option>: value`)
-  # — NOT INI [section]/key=value, and not bare `theme:`. See Pegasus's
-  # SettingsFile.cpp: LINE_TEMPLATE = "%1.%2: %3\n".
+  # — NOT INI [section]/key=value. The theme value is a PATH relative to the
+  # config dir (NOT the theme name) — verified via AppSettings.h:
+  # DEFAULT_THEME is `":/themes/pegasus-theme-grid/"`, a path; and Pegasus's
+  # log says "Requested theme `<config-dir>/<value>` not found" when the path
+  # is wrong. Our theme is at themes/jupiteros-arcade/ under the config dir.
   pegasusSettingsFile = pkgs.writeText "pegasus-settings.txt" ''
     # Seeded by modules/desktop/exodos.nix. Safe to edit; changes persist via
     # impermanence.
-    general.theme: jupiteros-arcade
+    general.theme: themes/jupiteros-arcade
   '';
 
   # Custom Pegasus theme: "jupiterOS arcade". Functional minimalism — header
