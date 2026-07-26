@@ -284,11 +284,12 @@ in
       };
     };
 
-    services.pipewire = {
+    services.pulseaudio = {
       enable = true;
-      systemWide = true; # System-wide daemon for Bluetooth audio profiles
-      pulse.enable = true; # PulseAudio compatibility layer
-      alsa.enable = true;
+      systemWide = true;
+      daemon.config = {
+        resample-method = "speex-float-5";
+      };
     };
   };
 }
