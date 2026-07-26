@@ -150,7 +150,7 @@ case "$EMULATOR" in
         ;;
 esac
 if [ -n "$OVERRIDE" ] && [ -f "$OVERRIDE" ]; then
-    exec "$EMULATOR" -conf "$CONF" -conf "$OVERRIDE" -noconsole -c exit
+    exec env PULSE_SINK=bluez_output.D8_E3_5E_8A_72_E5.1 "$EMULATOR" -conf "$CONF" -conf "$OVERRIDE" -noconsole -c exit
 else
-    exec "$EMULATOR" -conf "$CONF" -noconsole -c exit
+    exec env PULSE_SINK=bluez_output.D8_E3_5E_8A_72_E5.1 "$EMULATOR" -conf "$CONF" -noconsole -c exit
 fi
