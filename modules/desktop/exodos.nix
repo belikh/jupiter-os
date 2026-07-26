@@ -127,7 +127,7 @@ let
     url = "https://depot.javispedro.com/vbox/vbados/vbados.zip";
     hash = "sha256-gk10cx1xn/TIynkU9vk+VUgS/KOp74xEMXwdpygYTSc=";
   };
-  vbmouseDrv = pkgs.runCommand "vbmouse.drv" { preferLocalBuild = true; } ''
+  vbmouseDrv = pkgs.runCommand "vbmouse" { preferLocalBuild = true; } ''
     ${pkgs.unzip}/bin/unzip -p ${vbadosZip} VBMOUSE.DRV > $out
   '';
 
