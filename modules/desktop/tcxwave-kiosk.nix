@@ -139,12 +139,6 @@ in
       modes.exodos.enable = true;
     };
 
-    # Wi-Fi PSK from sops secrets (for thebe's USB adapter)
-    sops.secrets.wifi_psk = lib.mkIf cfg.wifi.enable { };
-    networking.wireless.networks."${cfg.wifi.network}".psk =
-      lib.mkIf cfg.wifi.enable (lib.mkDefault (
-        builtins.readFile config.sops.secrets.wifi_psk.path
-      ));
 
     # eXoDOS + eXoWin3x collection wiring (NFS mount of europa's read-only
     # eXo dataset, per-kiosk overlayfs for saves + first-run extraction,
@@ -219,10 +213,12 @@ in
     };
 
     # USB Wi-Fi adapter (NetGear A6210 / MediaTek MT7612U). Only thebe has one;
-    # the wired kiosks leave wifi.enable at its false default.
+    # the wired kiosks leave wifi.enable at its false default. PSK is read from
+    # sops secrets at runtime.
+    sops.secrets.wifi_psk = lib.mkIf cfg.wifi.enable { };
     networking.wireless = lib.mkIf cfg.wifi.enable {
       enable = true;
-      networks."${cfg.wifi.network}".psk = cfg.wifi.psk;
+      networks."${cfg.wifi.network}".psk = builtins.readFile config.sops.secrets.wifi_psk.path;
     };
 
     # networking.wireless (wpa_supplicant) and NetworkManager can't both
