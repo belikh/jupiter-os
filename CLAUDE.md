@@ -1,138 +1,231 @@
-# CLAUDE.md
+# jupiter-os Arcade Architecture (Branch: arcade-pegasus-architecture)
 
-Context for AI agents working in **jupiter-os** — a declarative, ZFS-backed
-NixOS monorepo for the Jupiter home/lab infrastructure, currently being
-**rebuilt from scratch one machine at a time**. `main` is the working trunk.
-The previous full-fleet tree lives on the `archive/full-fleet-reference`
-branch and serves as the design reference; it was never buildable end-to-end
-(see README.md for why). Do not copy code from it wholesale — port pieces
-only when the machine that needs them is brought up.
+## Overview
+This branch implements the jupiterOS Arcade system per GitHub issue #30: **Pegasus frontend with on-demand ROM loading via NFS + Myrient mirrors**, using a Bubble Tea TUI for progress display.
 
-## Current state
+**Key principle:** Kiosks are consumers only. No API server, no timers, no DAT processing on kiosks. Europa NAS serves NFS; kiosks mount + launch.
 
-Registered hosts: the 4 TCx Wave dashboard kiosks — `amalthea`
-(jupiter-bedroom, the bootstrap machine and canonical template), `metis`
-(kitchen), `adrastea` (office), `thebe` (robbie-room) — plus `europa` (HPE
-MicroServer Gen10, the ZFS NAS + data hub + PXE server), `callisto` (HP
-EliteDesk 800 G4 DM, fleet's shared Nix remote builder AND MQTT broker,
-i5-8500T Coffee Lake 6c/6t, 64GB RAM, **persistent iSCSI root on europa's
-zvol**), and `pallene` (ephemeral BinaryLane build-server ISO host, phase 2
-only). `amalthea`, `thebe`, `europa`, `callisto`, and `metis` are physically
-live today; `adrastea` is registered and CI-green but still on a placeholder
-disk (`REPLACE-ME` diskId) and a placeholder sops age key (not derived from
-its real SSH host key), awaiting physical install (see `.sops.yaml`). All 4
-kiosks share the `modules/desktop/tcxwave-kiosk.nix` profile, each with its
-own hostName/hostId/dashboard URL/disk. `metis` was installed 2026-07-20 with
-a real disk; its `.sops.yaml` recipient was the install-time placeholder age
-key until 2026-07-24 (secrets never decrypted there until then,
-`ha-linux-agent` crash-looping on the missing MQTT password file) — fixed by
-swapping in its real key and running `sops updatekeys`. `callisto` is live at
-`10.1.1.3` with a persistent ext4 root over iSCSI (on europa's zvol, see
-`hosts/callisto/configuration.nix`); sops decrypts fine at activation —
-confirmed live 2026-07-24 deploying the MQTT broker move. Its
-`jupiter.build.microarch = "skylake"` remains a **roadmap entry only** —
-pallene must build and push the skylake-tagged closure to attic before
-callisto's next `nixos-rebuild`. **Note:** `.sops.yaml` also contains age
-keys for `ganymede` and `himalia` (roadmap hosts), but they are **not yet
-registered in `flake.nix`**.
+---
 
-**callisto as MQTT broker:** every kiosk's ha-agent, plus the external Home
-Assistant instance, publishes to mosquitto on callisto
-(`modules/services/mqtt.nix`, wired in `hosts/callisto/configuration.nix`).
-Moved here from amalthea 2026-07-24 so the broker isn't coupled to a kiosk's
-impermanent/appliance lifecycle. Kiosks address it by the static
-`10.1.1.3` reservation (`modules/desktop/tcxwave-kiosk.nix`'s `mqttHost`
-default) since callisto has no DNS/mDNS resolution yet — same reason
-`jupiter.core.buildMachines` also dials it by IP.
+## Architecture
 
-**callisto as build server:** every other host delegates eligible builds to
-it via `jupiter.core.buildMachines` (`modules/core/build-machines.nix`,
-default-on) — it advertises `gccarch-btver2`/`gccarch-skylake` so it can
-build europa's and any future tuned-kiosk closures without being tuned
-itself. Its daemon is tuned `cores=6 max-jobs=1` (the opposite of pallene's
-`cores=1 max-jobs=auto`) — callisto's workload is incremental shared builds
-(low concurrency, larger per-package work) rather than pallene's
-full-closure rebuilds (many small packages in parallel). PXE serving for
-callisto's netboot lives on europa (`modules/network/pxe-server.nix`, wired
-via `flake.nix`'s `pxeModule`) — ganymede's role in the old design, moved
-here since ganymede isn't registered yet, same deviation as
-`cloudflareTunnel`.
-
-**europa bring-up:** Stage 4 is **done** — europa is running its full
-`btver2`-tuned closure, substituted from its own Attic (`attic.jupiter.au` /
-the `neptune.jupiter.au:8080` port-forward). See `docs/europa-bringup-stages.md`
-for the full runbook and history; remaining stages (2 — ZFS mirror, 5 —
-deferred items) are independent cleanup, not blockers.
-
-**callisto bring-up:** live at `10.1.1.3` on a persistent iSCSI-root closure
-(nixpkgs `26.11.20260616.567a49d`, HP EliteDesk 800 G4 DM, i5-8500T
-Coffee Lake 6c/6t, 64GB RAM, ext4 root on europa's zvol). Tuning for its
-shared-builder workload (`cores=6 max-jobs=1`) is in git; the running closure
-is stale relative to HEAD and needs a deploy to take effect. Microarch roadmap
-entry (`jupiter.build.microarch = "skylake"`) is committed but NOT deployed —
-pallene must build and push the skylake-tagged closure to attic first (same
-sequence europa's btver2 closure followed).
-
-Everything must keep building from cache.nixos.org with `nix flake check`
-(note: europa's `btver2` closure substitutes only from europa's own Attic, not
-cache.nixos.org — `nix flake check` still works fleet-wide since it's
-eval-only and doesn't realize derivations; `make check` remains the fast
-no-build path for local iteration).
-
-## Layout
-
-- `flake.nix` — entry point. Inputs are deliberately minimal (nixpkgs, disko,
-  impermanence, sops-nix, ha-linux-agent). `mkHost` injects flake modules via
-  a lexical closure — avoid `specialArgs`. Every host in
-  `nixosConfigurations` is also a flake check.
-- `hosts/<name>/` — per-host config (`configuration.nix`). Hosts are named
-  after Jupiter's moons.
-- `modules/` — reusable NixOS modules behind a `jupiter.*` options namespace,
-  organized into category subdirs (`boot/`, `core/`, `desktop/`, `network/`,
-  `services/`, `storage/`). `common.nix` at the `modules/` root is the base
-  layer.
-- `secrets/secrets.yaml` — sops-nix + age. Recipients (one age key per host
-  plus the admin key) are listed in `.sops.yaml`. Carried over unchanged from
-  the previous tree.
-
-## Conventions
-
-- New cross-host functionality goes in a `modules/<category>/` file gated by
-  a `jupiter.*` option; hosts opt in via toggles rather than inlining config.
-- **Module style:** explicit `lib.mkOption` / `lib.mkIf` / `lib.types`, never
-  `with lib;`; argument order `{ config, lib, pkgs, ... }`; structure each
-  module as `options.jupiter.<…> = { … }` then
-  `config = lib.mkIf cfg.enable { … }` with `cfg = config.jupiter.<…>` bound
-  in a `let`.
-- **Buildability rules (the reason this rebuild exists):**
-  - No custom kernels on ZFS hosts — the stock `linuxPackages` default is
-    the one ZFS always supports and cache.nixos.org always has built.
-  - A new flake input must be justified by a registered host that uses it.
-  - No cross-host closure wiring (PXE, backup-hub scans) until both ends of
-    the wire are registered and building.
-- sops secrets are read at **activation**, not build time — `nix build`, CI,
-  and `nix flake check` work without the age key.
-- **Git:** always `git push` after committing — the user wants every commit
-  pushed to the remote immediately, no holding locally.
-
-## Common commands
-
-```bash
-make check              # nix flake check --no-build (eval every registered host)
-make build-all          # build the 4 kiosk closures (the untuned hosts)
-make test-<host>        # build & boot a host in a QEMU VM
-make boot-smoke-<host>  # headless CI-style boot test
-make pallene-iso        # build the disposable build-server ISO
-make rebuild-world      # full ephemeral build-server run: ISO → R2 → BinaryLane → attic
-make fmt                # format all Nix (nixfmt-rfc-style); fmt-check to verify
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ EUROPA (10.1.1.2) — NAS/ZFS                                                 │
+│   /tank/archive/retro/                                                      │
+│   ├── games/                                                                │
+│   │   ├── curated/        ← eXoDOS, eXoWin3x, C64 Dreams, OneLoad64, etc.  │
+│   │   │   ├── exo-dos/    (ZIPs, LaunchBox XML)                            │
+│   │   │   ├── exo-win3x/  (ZIPs, LaunchBox XML)                            │
+│   │   │   ├── c64-dreams/ (extracted + LaunchBox)                          │
+│   │   │   ├── oneload64/  (.CRT cartridge images)                          │
+│   │   │   └── ...                                                        │
+│   │   ├── 1g1r/           ← DAT metadata only (No-Intro, Redump, TOSEC)    │
+│   │   │   ├── nointro-nes.dat                                              │
+│   │   │   ├── nointro-snes.dat                                             │
+│   │   │   ├── redump-ps1.dat                                               │
+│   │   │   └── ...                                                          │
+│   │   └── pegasus/         ← Generated Pegasus collections + assets        │
+│   │       ├── collections/  (metadata.pegasus.txt per collection)          │
+│   │       └── assets/       (boxart/, screenshots/, logos/)                │
+│   └── (served via NFS, read-only, to 10.1.1.0/24)                         │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │ NFS (ro,soft,intr,automount)
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ TCxWave KIOSKS ×4 (amalthea, metis, adrastea, thebe)                        │
+│   /tank/archive          ← NFS mount (ro)                                   │
+│   /tmp/pegasus-cache/    ← Ephemeral extraction cache (tmpfs, cleared reboot)│
+│   /var/cache/pegasus-roms/← Persistent download cache (impermanence)        │
+│                                                                             │
+│   SERVICES:                                                                 │
+│   ├── pegasus-frontend     ← Reads collections from NFS                    │
+│   ├── pegasus-rom-launch   ← Dispatcher: cache → NFS extract → Myrient DL      │
+│   └── bubbletea-game-loader← Go TUI: extract/download progress + cancel    │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Roadmap (bring-up order)
+---
 
-amalthea + thebe (live) → the remaining 2 kiosks (metis/adrastea —
-registered, CI-green, awaiting physical install) → europa (live, full
-`btver2` tuned closure — see `docs/europa-bringup-stages.md`) → callisto
-(registered CI-green, **live with iSCSI root**, fleet build server) →
-ganymede (resolver/services) → himalia (laptop) → gaming/branding/terranix/
-edge layers. Port each from `archive/full-fleet-reference`, keeping the
-buildability rules above.
+## Module Structure
+
+| File | Purpose |
+|------|---------|
+| `modules/desktop/arcade.nix` | Main arcade module: NFS mount, caches, Pegasus config, packages |
+| `modules/desktop/dashboard-gaming.nix` | Gaming modes — **only `dashboard` + `arcade` enabled** |
+| `modules/desktop/tcxwave-kiosk.nix` | Kiosk profile — imports arcade, enables arcade mode |
+| `modules/storage/nas-nfs.nix` | NFS exports for `/tank/archive/retro` |
+| `modules/storage/zfs-nas.nix` | ZFS datasets for `tank/archive/retro/*` |
+| `scripts/bubbletea-game-loader/` | Go TUI for extract/download with Catppuccin Mocha theme |
+| `scripts/pegasus-rom-launch` | Bash dispatcher: cache → NFS extract → Myrient download |
+| `scripts/generate-arcade-metadata.py` | Generates Pegasus collections from NFS sources |
+
+---
+
+## Collections (Curated + 1G1R)
+
+### Curated (NFS-resident, extract on first play)
+- **eXoDOS** — 7,200+ DOS games (LaunchBox XML + ZIPs)
+- **eXoWin3x** — 1,140+ Win3.x games (LaunchBox XML + ZIPs)
+- **C64 Dreams** — 3,500+ C64 games (extracted + LaunchBox)
+- **OneLoad64** — 2,000+ C64 .CRT cartridge images
+- **eXoScummVM** — 800+ adventure games (ScummVM-ready)
+- **eXoAppleIIGS** — Apple IIGS library
+- **eXoIF** — Interactive Fiction (text adventures)
+- **eXoDemoScene** — PC demoscene productions
+- **eXoWin9x** — Win95/98 games (PCem/DOSBox-X)
+- **Mega-AGS / AmigaVision** — Amiga WHDLoad sets
+- **TOSEC** — Microcomputer preservation sets (Tier 1 systems)
+
+### 1G1R (DAT on NFS, ROMs from Myrient mirrors)
+- **No-Intro** — NES, SNES, Genesis, GB/GBC/GBA, N64, DS, etc.
+- **Redump** — PS1, PS2, PSP, Saturn, Dreamcast, GC, Wii, Xbox
+- **TOSEC** — Optical/disc sets where applicable
+
+---
+
+## Runtime Flow
+
+### Curated Game (e.g., eXoDOS ZIP on NFS)
+```
+User selects "Commander Keen" in Pegasus
+    ↓
+pegasus-rom-launch "curated/exo-dos/Commander Keen.zip"
+    ↓
+Check /tmp/pegasus-cache/Commander Keen/ → MISS
+Check /var/cache/pegasus-roms/Commander Keen/ → MISS
+    ↓
+NFS path exists? YES → curated
+    ↓
+bubbletea-game-loader --src "curated/exo-dos/Commander Keen.zip" \
+                       --dst "/tmp/pegasus-cache/Commander Keen" \
+                       --operation extract \
+                       --title "Commander Keen"
+    ↓
+[TUI: 🎮 Loading: Commander Keen ████████░░ 40% Extracting... Press 'q' to cancel]
+    ↓
+Extract ZIP to /tmp/pegasus-cache/Commander Keen/ (via sudo exo-extract-helper)
+    ↓
+Launch dosbox-staging with /tmp/pegasus-cache/Commander Keen/dosbox.conf
+    ↓
+Next play: Cache HIT → instant launch (no TUI)
+```
+
+### 1G1R Game (e.g., NES from Myrient)
+```
+User selects "Super Mario Bros." in Pegasus
+    ↓
+pegasus-rom-launch "1g1r-nointro-nes/Super Mario Bros.nes"
+    ↓
+Check /tmp/pegasus-cache/... → MISS
+Check /var/cache/pegasus-roms/Super Mario Bros.nes → MISS
+    ↓
+NFS path exists? NO → 1G1R
+    ↓
+bubbletea-game-loader --src "1g1r-nointro-nes/Super Mario Bros.nes" \
+                       --dst "/var/cache/pegasus-roms/Super Mario Bros.nes" \
+                       --operation download \
+                       --title "Super Mario Bros."
+    ↓
+[TUI: 🎮 Loading: Super Mario Bros. ████████████░░ 58% Downloading • 15.2 MB/s • ETA: 3s]
+    ↓
+Download from Myrient mirror (https://myrient.erista.me/files/No-Intro/NES/...)
+    ↓
+Launch retroarch with /var/cache/pegasus-roms/Super Mario Bros.nes
+    ↓
+Next play: Cache HIT → instant launch (no TUI)
+```
+
+---
+
+## Key Scripts
+
+### `scripts/pegasus-rom-launch` (Bash Dispatcher)
+- Input: `collection/relative/path` (e.g., `curated/exo-dos/keen1.zip` or `1g1r-nointro-nes/mario.nes`)
+- Checks: `/tmp/pegasus-cache/` → `/var/cache/pegasus-roms/` → NFS
+- Curated ZIP → extract to `/tmp/pegasus-cache/` via `bubbletea-game-loader --operation extract`
+- 1G1R → download to `/var/cache/pegasus-roms/` via `bubbletea-game-loader --operation download`
+- Execs emulator with cache path
+
+### `scripts/bubbletea-game-loader` (Go TUI)
+- Single binary: handles both extract (unzip) and download (HTTP with resume)
+- Catppuccin Mocha theme
+- Real-time progress bar, speed, ETA
+- 'q' key cancels → cleans up partial files
+- Mirror fallback (tries mirrors in order)
+
+### `scripts/generate-arcade-metadata.py`
+- Runs on europa (or at build time) to generate Pegasus collections
+- Inputs:
+  - LaunchBox XML (eXoDOS, eXoWin3x, C64 Dreams, etc.)
+  - DAT files (No-Intro, Redump) → 1G1R entries with Myrient URLs
+  - Directory scans (OneLoad64, TOSEC)
+- Output: `/tank/archive/retro/metadata/pegasus/collections/*.txt`
+- Assets symlinked from collection sources
+
+---
+
+## Dashboard-Gaming Integration
+
+`modules/desktop/dashboard-gaming.nix` modeSpecs now has **only two modes**:
+1. `dashboard` — Cage + Chromium (Home Assistant)
+2. `arcade` — gamescope + pegasus-frontend
+
+Removed: `steam`, `heroic`, `lutris`, `exodos` (replaced by `arcade`)
+
+Session switching via HA `select` entity (group: "session").
+
+---
+
+## Deployment Checklist
+
+- [ ] Europa: ZFS datasets created (`tank/archive/retro/*`)
+- [ ] Europa: NFS exports configured (`/tank/archive/retro`)
+- [ ] Europa: Curated collections populated on disk
+- [ ] Europa: 1G1R DAT files placed in `/tank/archive/retro/games/1g1r/`
+- [ ] Europa: Run `generate-arcade-metadata.py` → Pegasus collections on NFS
+- [ ] Kiosks: `make check` passes
+- [ ] Kiosks: Deploy arcade mode (`jupiter.dashboardGaming.modes.arcade.enable = true`)
+- [ ] Kiosks: Verify Pegasus shows all collections
+- [ ] Test: First play curated game → TUI extract → launch
+- [ ] Test: First play 1G1R game → TUI download → launch
+- [ ] Test: Second play → instant (<1s)
+
+---
+
+## Build Commands
+
+```bash
+# Check flake evaluates
+make check
+
+# Build single kiosk
+make build-amalthea
+
+# Build all kiosks
+make build-all
+
+# Format Nix code
+make fmt
+
+# Build bubbletea-game-loader manually (for testing)
+cd scripts/bubbletea-game-loader && go build -o bubbletea-game-loader .
+```
+
+---
+
+## Notes
+
+- **No custom kernels** — stock nixpkgs kernel (ZFS compatibility)
+- **No API server** — launcher directly fetches from Myrient mirrors
+- **No timers on kiosks** — all processing on europa or at build time
+- **Catppuccin Mocha** — consistent with kiosk aesthetic
+- **Impermanence** — `/var/cache/pegasus-roms` persists via `extraDirectories`
+- **sudo helper** — extraction uses `exo-extract-helper` (from exodos.nix pattern) for overlayfs permission issues
+
+---
+
+## Related Issues
+
+- #30 — Architecture (this implementation)
+- #19-#32 — Individual collection archives (source data for europa)
