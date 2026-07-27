@@ -130,11 +130,16 @@ in
 
     # callisto now has a persistent iSCSI root with a stable host key
     # (captured 2026-07-24 onwards). Pin it here and enable strict checking
-    # like the kiosks.
+    # like the kiosks. Configure SSH to use the build key for nix-copy-closure.
     #
     # Keyed on the literal 10.1.1.3 (not "callisto"): nix.buildMachines dials
     # callisto by IP (see hostName above), and ssh_config Host patterns match
     # the literal argument passed to ssh, not a resolved/aliased name.
+    programs.ssh.extraConfig = ''
+      Host 10.1.1.3
+        IdentityFile ${config.sops.secrets.nix_build_ssh_key.path}
+        IdentitiesOnly yes
+    '';
 
     # Kiosk + callisto host keys, pinned declaratively instead of relying on an
     # imperative /etc/ssh/ssh_known_hosts edit (which doesn't survive a
