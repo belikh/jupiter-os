@@ -213,73 +213,59 @@ in
     };
 
     # USB Wi-Fi adapter (NetGear A6210 / MediaTek MT7612U). Only thebe has one;
-    # the wired kiosks leave wifi.enable at its false default. PSK is applied
-    # by wifi-psk-apply.service after sops decrypts the secret at runtime.
+    # the wired kiosks leave wifi.enable at its false default. NetworkManager
+    # manages the connection declaratively via ensureProfiles with PSK from sops.
     sops.secrets.wifi_psk = lib.mkIf cfg.wifi.enable { };
-    networking.wireless = lib.mkIf cfg.wifi.enable {
-      enable = true;
-      networks."${cfg.wifi.network}" = {
-        hidden = false;
+
+    # Declarative NetworkManager profile for wifi. The PSK from sops is injected
+    # at activation via an environment file. NetworkManager persists the connection
+    # to /etc/NetworkManager/system-connections, which survives erase-your-darlings
+    # because it's regenerated declaratively every activation.
+    networking.networkmanager.ensureProfiles = lib.mkIf cfg.wifi.enable {
+      environmentFiles = [ "/run/secrets/wifi_psk_env" ];
+      profiles."${cfg.wifi.network}" = {
+        connection = {
+          id = cfg.wifi.network;
+          type = "wifi";
+          autoconnect = true;
+        };
+        wifi = {
+          ssid = cfg.wifi.network;
+          hidden = false;
+        };
+        wifi-security = {
+          key-mgmt = "wpa-psk";
+          psk = "\${WIFI_PSK}";
+        };
+        ipv4 = {
+          method = "auto";
+        };
+        ipv6 = {
+          method = "auto";
+          addr-gen-mode = "stable-privacy";
+        };
       };
     };
 
-    # Apply wifi PSK from sops at activation time via wpa_cli. wpa_supplicant
-    # can't read the PSK at eval time, so we apply it after boot via a service
-    # that runs after sops-install-secrets.service decrypts the secrets.
-    systemd.services.wifi-psk-apply = lib.mkIf cfg.wifi.enable {
-      description = "Apply wifi PSK from sops secrets";
-      after = [ "sops-install-secrets.service" "wpa_supplicant.service" ];
-      before = [ "network-online.target" ];
+    # Generate environment file with PSK for NetworkManager to substitute into
+    # the profile. Runs after sops decrypts wifi_psk secret.
+    systemd.services.nm-wifi-psk-env = lib.mkIf cfg.wifi.enable {
+      description = "Generate NetworkManager wifi PSK environment file";
+      after = [ "sops-install-secrets.service" ];
+      before = [ "NetworkManager.service" ];
       wantedBy = [ "multi-user.target" ];
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
       };
       script = ''
-        if [ ! -f /run/secrets/wifi_psk ]; then
-          exit 0
+        if [ -f /run/secrets/wifi_psk ]; then
+          PSK=$(cat /run/secrets/wifi_psk | tr -d '\n')
+          echo "WIFI_PSK=$PSK" > /run/secrets/wifi_psk_env
+          chmod 600 /run/secrets/wifi_psk_env
         fi
-
-        PSK=$(cat /run/secrets/wifi_psk | tr -d '\n')
-        SSID="${cfg.wifi.network}"
-
-        # Give wpa_supplicant time to start
-        for i in $(seq 1 15); do
-          if wpa_cli -p /run/wpa_supplicant ping > /dev/null 2>&1; then
-            break
-          fi
-          sleep 1
-        done
-
-        # Find network ID for this SSID (should already exist from networking.wireless)
-        NETID=$(wpa_cli -p /run/wpa_supplicant list_networks 2>/dev/null | grep "^[0-9]" | grep "$SSID" | cut -f1)
-
-        if [ -z "$NETID" ]; then
-          # Network doesn't exist, add it
-          NETID=$(wpa_cli -p /run/wpa_supplicant add_network 2>/dev/null)
-          if [ -z "$NETID" ]; then
-            echo "Failed to add wifi network"
-            exit 1
-          fi
-          wpa_cli -p /run/wpa_supplicant set_network "$NETID" ssid "\"$SSID\"" > /dev/null 2>&1
-        fi
-
-        # Set/update PSK on the network
-        wpa_cli -p /run/wpa_supplicant set_network "$NETID" psk "\"$PSK\"" > /dev/null 2>&1
-        wpa_cli -p /run/wpa_supplicant enable_network "$NETID" > /dev/null 2>&1
-        wpa_cli -p /run/wpa_supplicant save_config > /dev/null 2>&1
       '';
     };
-
-    # networking.wireless (wpa_supplicant) and NetworkManager can't both
-    # manage the same interface (hard assertion failure) — NixOS requires
-    # wifi devices marked unmanaged by NM if wpa_supplicant already owns
-    # them. Only matters where both are on: this host's wifi.enable plus
-    # jupiter.gaming.console's gamingMode.enable (which turns on NM for the
-    # Deck UI's network onboarding — see modules/gaming/console.nix). Match
-    # by device type, not interface name, so it doesn't need updating if the
-    # adapter changes.
-    networking.networkmanager.unmanaged = lib.mkIf cfg.wifi.enable [ "type:wifi" ];
 
     # Integrated 15" PCAP touchscreen: NO custom/kernel driver needed. The panel
     # is a USB HID multitouch device handled in-tree by `hid-multitouch`, and
