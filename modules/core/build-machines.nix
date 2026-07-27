@@ -128,36 +128,25 @@ in
     ]
     ++ kioskBuilders;
 
-    # callisto's SSH host key regenerates every diskless boot — there's no
-    # stable key to pin, so disable host-key checking for it specifically
-    # (other build machines, including the kiosks, keep the default strict
-    # checking). The kiosks have stable SSH host keys (persistent root disk).
+    # callisto now has a persistent iSCSI root with a stable host key
+    # (captured 2026-07-24 onwards). Pin it here and enable strict checking
+    # like the kiosks.
     #
-    # Keyed on the literal 10.1.1.3, not "callisto": nix.buildMachines dials
+    # Keyed on the literal 10.1.1.3 (not "callisto"): nix.buildMachines dials
     # callisto by IP (see hostName above), and ssh_config Host patterns match
-    # the literal argument passed to ssh, not a resolved/aliased name — a
-    # `Host callisto` block here never matched that connection. Confirmed
-    # live 2026-07-24: distributed builds failed outright ("Host key
-    # verification failed") until this was corrected to match by IP.
-    #
-    # TODO: callisto now has a persistent root over iSCSI and a stable host
-    # key (captured 2026-07-24: ssh-ed25519
-    # AAAAC3NzaC1lZDI1NTE5AAAAIINKUMgEPCzZRq74JtvkMmfmT6gOmZWGGq8G9lNqqKsU) —
-    # switch this to a pinned knownHosts entry like the kiosks below once
-    # that key has proven stable across a couple of reboots.
-    programs.ssh.extraConfig = ''
-      Host 10.1.1.3
-        StrictHostKeyChecking no
-        UserKnownHostsFile /dev/null
-    '';
+    # the literal argument passed to ssh, not a resolved/aliased name.
 
-    # Kiosk host keys, pinned declaratively instead of relying on an
+    # Kiosk + callisto host keys, pinned declaratively instead of relying on an
     # imperative /etc/ssh/ssh_known_hosts edit (which doesn't survive a
     # rebuild — that file is a plain Nix store symlink). Captured via
     # ssh-keyscan 2026-07-24, cross-checked against the admin's own
     # known_hosts. adrastea omitted: not installed yet (hostname
     # unresolvable), add its key here once it's provisioned.
     programs.ssh.knownHosts = {
+      callisto = {
+        hostNames = [ "10.1.1.3" ];
+        publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIINKUMgEPCzZRq74JtvkMmfmT6gOmZWGGq8G9lNqqKsU";
+      };
       amalthea = {
         hostNames = [ "amalthea.localdomain" ];
         publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGQV+BzJbBfN+T3WKEUo4CzwJHS1B2bsnH5vglHmbP+Y";

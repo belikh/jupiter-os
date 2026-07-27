@@ -184,6 +184,8 @@
   # ---- sops secrets --------------------------------------------------------
   # attic_server_token_secret: RS256 JWT signing key for atticd.
   # binarylane_api_token: consumed by jupiter.services.palleneWatchdog.
+  # nix_build_ssh_key: SSH private key for Nix distributed builds (auth to callisto).
   # Must be added to secrets/secrets.yaml before first deploy.
   sops.secrets.attic_server_token_secret = { };
+  sops.secrets.nix_build_ssh_key = { };
 }
