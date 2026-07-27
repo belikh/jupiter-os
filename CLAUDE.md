@@ -13,29 +13,28 @@ only when the machine that needs them is brought up.
 Registered hosts: the 4 TCx Wave dashboard kiosks — `amalthea`
 (jupiter-bedroom, the bootstrap machine and canonical template), `metis`
 (kitchen), `adrastea` (office), `thebe` (robbie-room) — plus `europa` (HPE
-MicroServer Gen10, the ZFS NAS + data hub), `callisto` (HP EliteDesk 800 G4
-DM, diskless netboot compute node, the fleet's shared Nix remote builder AND
-the fleet's MQTT broker — i5-8500T Coffee Lake 6c/6t, 64GB RAM), and
-`pallene` (ephemeral BinaryLane build-server ISO host, phase2 only).
-`amalthea`, `thebe`, `europa`, `callisto`, and `metis` are physically live
-today; `adrastea` is registered and CI-green but still on a placeholder
-disk/sops key, awaiting its real install (see `.sops.yaml`). All 4 kiosks
-share the `modules/desktop/tcxwave-kiosk.nix` profile, each with its own
-hostName/hostId/dashboard URL/disk. `metis` was installed 2026-07-20 with a
-real disk; its `.sops.yaml` recipient was still the install-time placeholder
-age key until 2026-07-24 (secrets never decrypted there until then,
+MicroServer Gen10, the ZFS NAS + data hub + PXE server), `callisto` (HP
+EliteDesk 800 G4 DM, fleet's shared Nix remote builder AND MQTT broker,
+i5-8500T Coffee Lake 6c/6t, 64GB RAM, **persistent iSCSI root on europa's
+zvol**), and `pallene` (ephemeral BinaryLane build-server ISO host, phase 2
+only). `amalthea`, `thebe`, `europa`, `callisto`, and `metis` are physically
+live today; `adrastea` is registered and CI-green but still on a placeholder
+disk (`REPLACE-ME` diskId) and a placeholder sops age key (not derived from
+its real SSH host key), awaiting physical install (see `.sops.yaml`). All 4
+kiosks share the `modules/desktop/tcxwave-kiosk.nix` profile, each with its
+own hostName/hostId/dashboard URL/disk. `metis` was installed 2026-07-20 with
+a real disk; its `.sops.yaml` recipient was the install-time placeholder age
+key until 2026-07-24 (secrets never decrypted there until then,
 `ha-linux-agent` crash-looping on the missing MQTT password file) — fixed by
-swapping in its real key and running `sops updatekeys`. `callisto` is live
-at `10.1.1.3` running the diskless
-kexec-netboot closure europa PXE-serves; its `jupiter.build.microarch =
-"skylake"` is a **roadmap entry only** — pallene must build and push the
-skylake-tagged closure to attic before callisto's next `nixos-rebuild`
-(callisto is diskless, so a local from-scratch rebuild would OOM). callisto
-now has a persistent root over iSCSI (see `hosts/callisto/configuration.nix`)
-and sops decrypts fine there at activation — confirmed live 2026-07-24
-deploying the MQTT broker move below; the older "diskless, no persistent
-host key, sops can't decrypt" framing predates that change and no longer
-holds.
+swapping in its real key and running `sops updatekeys`. `callisto` is live at
+`10.1.1.3` with a persistent ext4 root over iSCSI (on europa's zvol, see
+`hosts/callisto/configuration.nix`); sops decrypts fine at activation —
+confirmed live 2026-07-24 deploying the MQTT broker move. Its
+`jupiter.build.microarch = "skylake"` remains a **roadmap entry only** —
+pallene must build and push the skylake-tagged closure to attic before
+callisto's next `nixos-rebuild`. **Note:** `.sops.yaml` also contains age
+keys for `ganymede` and `himalia` (roadmap hosts), but they are **not yet
+registered in `flake.nix`**.
 
 **callisto as MQTT broker:** every kiosk's ha-agent, plus the external Home
 Assistant instance, publishes to mosquitto on callisto
@@ -65,12 +64,12 @@ the `neptune.jupiter.au:8080` port-forward). See `docs/europa-bringup-stages.md`
 for the full runbook and history; remaining stages (2 — ZFS mirror, 5 —
 deferred items) are independent cleanup, not blockers.
 
-**callisto bring-up:** live at `10.1.1.3` on a kexec-netboot closure
+**callisto bring-up:** live at `10.1.1.3` on a persistent iSCSI-root closure
 (nixpkgs `26.11.20260616.567a49d`, HP EliteDesk 800 G4 DM, i5-8500T
-Coffee Lake 6c/6t, 64GB RAM). Tuning for its shared-builder workload
-(`cores=6 max-jobs=1`) is in git; the running closure is stale relative to
-HEAD and needs a deploy to take effect. Microarch roadmap entry
-(`jupiter.build.microarch = "skylake"`) is committed but NOT deployed —
+Coffee Lake 6c/6t, 64GB RAM, ext4 root on europa's zvol). Tuning for its
+shared-builder workload (`cores=6 max-jobs=1`) is in git; the running closure
+is stale relative to HEAD and needs a deploy to take effect. Microarch roadmap
+entry (`jupiter.build.microarch = "skylake"`) is committed but NOT deployed —
 pallene must build and push the skylake-tagged closure to attic first (same
 sequence europa's btver2 closure followed).
 
@@ -133,7 +132,7 @@ make fmt                # format all Nix (nixfmt-rfc-style); fmt-check to verify
 amalthea + thebe (live) → the remaining 2 kiosks (metis/adrastea —
 registered, CI-green, awaiting physical install) → europa (live, full
 `btver2` tuned closure — see `docs/europa-bringup-stages.md`) → callisto
-(registered CI-green, fleet build server, awaiting physical netboot test) →
+(registered CI-green, **live with iSCSI root**, fleet build server) →
 ganymede (resolver/services) → himalia (laptop) → gaming/branding/terranix/
 edge layers. Port each from `archive/full-fleet-reference`, keeping the
 buildability rules above.
