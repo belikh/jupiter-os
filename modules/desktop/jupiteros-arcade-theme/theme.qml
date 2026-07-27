@@ -151,16 +151,36 @@ FocusScope {
                 border.color: GridView.isCurrentItem ? "#60a5fa" : "#2a2f3a"
                 border.width: GridView.isCurrentItem ? 2 : 1
 
+                // Box art image (from Pegasus Game.image property)
+                Image {
+                    id: boxArt
+                    anchors.top: parent.top
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.topMargin: 8
+                    height: parent.height * 0.7
+                    fillMode: Image.PreserveAspectFit
+                    source: modelData.image
+                    visible: modelData.image !== undefined && modelData.image !== ""
+                    asynchronous: true
+                    cache: true
+                }
+
+                // Title (shown below image, or centered if no image)
                 Text {
-                    anchors.fill: parent
-                    anchors.margins: 12
+                    anchors.top: boxArt.visible ? boxArt.bottom : parent.top
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.topMargin: boxArt.visible ? 4 : 12
+                    anchors.margins: boxArt.visible ? 4 : 12
                     text: modelData.title
                     color: GridView.isCurrentItem ? "#ffffff" : "#d1d5db"
                     font.pixelSize: 14
                     font.bold: GridView.isCurrentItem
                     wrapMode: Text.Wrap
                     horizontalAlignment: Text.AlignHCenter
-                    verticalAlignment: Text.AlignVCenter
+                    verticalAlignment: Text.AlignTop
+                    elide: Text.ElideRight
                 }
 
                 // Developer subtitle if available

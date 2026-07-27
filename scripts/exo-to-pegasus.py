@@ -40,12 +40,14 @@ def image_path_relative(image_path: str, rewrites: list) -> str:
     # LaunchBox stores Windows-style image paths (Images\Screenshot\game.png).
     # Convert to POSIX, apply rewrites for case normalization, and return as-is
     # (relative to the collection root). Empty string if no path.
+    # The eXo collection on Linux uses lowercase directories (images/boxfront/),
+    # so we also lowercase the path after rewrites.
     if not image_path:
         return ""
     posix_path = image_path.replace("\\", "/")
     for old, new in rewrites:
         posix_path = posix_path.replace(old, new)
-    return posix_path
+    return posix_path.lower()
 
 
 def text_or_empty(parent: ET.Element, tag: str) -> str:

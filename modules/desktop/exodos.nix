@@ -445,14 +445,24 @@ in
           --root ${cfg.mergeMount}/eXoDOS \
           --collection eXoDOS \
           --shortname dos \
-          --emulator dosbox
+          --emulator dosbox \
+          --rewrite Images:images \
+          --rewrite BoxFront:boxfront \
+          --rewrite Screenshot:screenshot \
+          --rewrite Wheel:wheel \
+          --rewrite Marquee:marquee
         ${pkgs.python3.interpreter} ${../../scripts/exo-to-pegasus.py} \
           --xml '${cfg.mergeMount}/eXoWin3x/xml/Windows 3x.xml' \
           --root ${cfg.mergeMount}/eXoWin3x \
           --collection eXoWin3x \
           --shortname win3x \
           --emulator dosbox-x \
-          --rewrite eXoWin3X:eXoWin3x
+          --rewrite eXoWin3X:eXoWin3x \
+          --rewrite Images:images \
+          --rewrite BoxFront:boxfront \
+          --rewrite Screenshot:screenshot \
+          --rewrite Wheel:wheel \
+          --rewrite Marquee:marquee
       '';
     };
 

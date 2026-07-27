@@ -139,7 +139,6 @@ in
       modes.exodos.enable = true;
     };
 
-
     # eXoDOS + eXoWin3x collection wiring (NFS mount of europa's read-only
     # eXo dataset, per-kiosk overlayfs for saves + first-run extraction,
     # Pegasus metadata regenerator). Defaults match europa's static IP and
