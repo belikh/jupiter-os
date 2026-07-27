@@ -39,6 +39,9 @@
     ../../modules/services/cloudflare-tunnel.nix
     ../../modules/services/pallene-watchdog.nix
     ../../modules/services/iscsi-target.nix
+    # jupiterOS Arcade metadata generator — runs on europa to generate
+    # Pegasus collections from curated collections + 1G1R DATs
+    ../../modules/services/arcade-metadata-generator.nix
   ];
 
   networking.hostName = "europa";
