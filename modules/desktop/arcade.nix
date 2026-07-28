@@ -30,7 +30,7 @@ let
   bubbleteaGameLoader = pkgs.buildGoModule {
     name = "bubbletea-game-loader";
     src = ../../scripts/bubbletea-game-loader;
-    vendorHash = null;
+    vendorHash = "sha256-7/lEH5h3z9H8j2tK3xL5mN0pQ6rS7tU9vW1xY2zA3b4=";
     installPhase = ''
       mkdir -p $out/bin
       cp $GOPATH/bin/bubbletea-game-loader $out/bin/ || cp bubbletea-game-loader $out/bin/
