@@ -197,7 +197,7 @@ in
       dolphin-emu
       ryubing
       xterm
-      transmission
+      transmission_4
     ];
 
     # --- Pegasus configuration (seeded into gamer user's home) ----------------
