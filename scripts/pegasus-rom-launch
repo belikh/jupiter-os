@@ -154,7 +154,7 @@ if [[ -e "${NFS_PATH}" ]]; then
 
         script -q -c "/usr/local/bin/bubbletea-game-loader --src \"${ROM_PATH}\" --dst \"${CACHE_DIR}\" --operation extract --nfs-mount \"${NFS_MOUNT}\" --title \"${GAME_NAME}\"" /dev/null
 
-        exec launch-emulator "${CACHE_DIR}" "${ROM_PATH}"
+        launch-emulator "${CACHE_DIR}" "${ROM_PATH}"
     else
         # Direct ROM on NFS → launch directly
         log "Direct ROM on NFS, launching from ${NFS_PATH}"
