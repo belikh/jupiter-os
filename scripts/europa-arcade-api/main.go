@@ -41,10 +41,8 @@ func normalizeFilePath(file string) string {
 }
 
 func main() {
-	// Ensure transmission daemon is running
-	ensureTransmission()
-
-	// Ensure Minerva torrent is added
+	// Transmission daemon is managed by systemd service, runs 24/7 to seed Minerva
+	// Just ensure the Minerva torrent is added to transmission
 	ensureMinervaTorrent()
 
 	http.HandleFunc("/api/download", handleDownload)
@@ -125,22 +123,6 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(status)
 }
 
-func ensureTransmission() {
-	cmd := exec.Command("transmission-daemon",
-		"--download-dir", torrentsDir,
-		"-w", torrentsDir)
-
-	// Check if already running
-	if err := exec.Command("transmission-remote", "--list").Run(); err == nil {
-		return // Already running
-	}
-
-	// Start daemon
-	cmd.Start()
-	time.Sleep(2 * time.Second)
-	log.Printf("Started transmission daemon")
-}
-
 func ensureMinervaTorrent() {
 	// Check if Minerva torrent is already added
 	output, err := exec.Command("transmission-remote", "--list").Output()
@@ -154,12 +136,44 @@ func ensureMinervaTorrent() {
 }
 
 func getTransmissionStatus() DownloadStatus {
-	// Get Minerva torrent info
-	output, err := exec.Command("transmission-remote", "-t", "1", "--info").Output()
+	// List torrents to find Minerva_Myrient
+	listOutput, err := exec.Command("transmission-remote", "--list").Output()
 	if err != nil {
 		return DownloadStatus{
 			Status: "error",
 			Error:  "transmission not responding",
+		}
+	}
+
+	// Find the Minerva torrent ID
+	var minervaID string
+	lines := strings.Split(string(listOutput), "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "Minerva_Myrient") {
+			parts := strings.Fields(line)
+			if len(parts) > 0 {
+				minervaID = strings.TrimSpace(parts[0])
+				break
+			}
+		}
+	}
+
+	if minervaID == "" {
+		// Minerva torrent not found, might still be seeding but not listed
+		return DownloadStatus{
+			Status: "downloading",
+			Percent: 0.0,
+			Speed:   "seeding",
+			ETA:     "indefinite",
+		}
+	}
+
+	// Get info for Minerva torrent
+	output, err := exec.Command("transmission-remote", "-t", minervaID, "--info").Output()
+	if err != nil {
+		return DownloadStatus{
+			Status: "error",
+			Error:  "could not query torrent status",
 		}
 	}
 

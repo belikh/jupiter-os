@@ -32,7 +32,7 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    # Ensure transmission daemon is installed and available
+    # Ensure transmission daemon is installed
     environment.systemPackages = [ pkgs.transmission_4 ];
 
     # Create cache directory
@@ -40,11 +40,36 @@ in
       "d ${cfg.cacheDir} 0755 root root - -"
     ];
 
-    # Systemd service for the arcade API
-    systemd.services.arcade-api = {
-      description = "Jupiter OS Arcade API Server";
+    # Transmission daemon runs 24/7 to seed Minerva_Myrient back to the community
+    systemd.services.transmission-daemon = {
+      description = "Transmission Torrent Daemon (Minerva seeding)";
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
+      wantedBy = [ "multi-user.target" ];
+
+      serviceConfig = {
+        Type = "simple";
+        ExecStart = "${pkgs.transmission_4}/bin/transmission-daemon --download-dir ${cfg.cacheDir} -w ${cfg.cacheDir}";
+        Restart = "always";
+        RestartSec = "10s";
+        User = "root";
+        Group = "root";
+        StandardOutput = "journal";
+        StandardError = "journal";
+        SyslogIdentifier = "transmission";
+      };
+
+      preStart = ''
+        mkdir -p ${cfg.cacheDir}
+      '';
+    };
+
+    # Systemd service for the arcade API (depends on transmission)
+    systemd.services.arcade-api = {
+      description = "Jupiter OS Arcade API Server";
+      after = [ "network-online.target" "transmission-daemon.service" ];
+      wants = [ "network-online.target" ];
+      requires = [ "transmission-daemon.service" ];
       wantedBy = [ "multi-user.target" ];
 
       serviceConfig = {
