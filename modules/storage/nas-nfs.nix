@@ -9,6 +9,16 @@
 {
   services.nfs.server = {
     enable = true;
+    # Remove legacy /etc/exports.d/zfs.exports to prevent export shadowing.
+    # This file is auto-generated from a previous system state and contains
+    # /mnt/europa/* exports that conflict with our tank/* exports below.
+    statdPort = 662;
+  };
+
+  system.activationScripts.cleanupNfsExports = {
+    text = ''
+      rm -f /etc/exports.d/zfs.exports /etc/exports.d/zfs.exports.lock
+    '';
   };
 
   services.nfs.server.exports = ''
