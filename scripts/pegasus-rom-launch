@@ -143,13 +143,13 @@ launch-emulator() {
 # 1. Check ephemeral cache first
 if [[ -e "${TMP_CACHE}/${GAME_NAME_SAFE}" ]]; then
     log "Cache HIT (ephemeral): ${GAME_NAME}"
-    exec launch-emulator "${TMP_CACHE}/${GAME_NAME_SAFE}" "${ROM_PATH}"
+    launch-emulator "${TMP_CACHE}/${GAME_NAME_SAFE}" "${ROM_PATH}"
 fi
 
 # 2. Check persistent cache
 if [[ -e "${PERSISTENT_CACHE}/${GAME_NAME_SAFE}" ]]; then
     log "Cache HIT (persistent): ${GAME_NAME}"
-    exec launch-emulator "${PERSISTENT_CACHE}/${GAME_NAME_SAFE}" "${ROM_PATH}"
+    launch-emulator "${PERSISTENT_CACHE}/${GAME_NAME_SAFE}" "${ROM_PATH}"
 fi
 
 # 3. Check NFS
@@ -169,7 +169,7 @@ if [[ -e "${NFS_PATH}" ]]; then
     else
         # Direct ROM on NFS → launch directly
         log "Direct ROM on NFS, launching from ${NFS_PATH}"
-        exec launch-emulator "${NFS_PATH}" "${ROM_PATH}"
+        launch-emulator "${NFS_PATH}" "${ROM_PATH}"
     fi
 else
     # 4. Not on NFS → 1G1R, download from Myrient
@@ -178,5 +178,5 @@ else
 
     script -q -c "/usr/local/bin/bubbletea-game-loader --src \"${ROM_PATH}\" --dst \"${CACHE_FILE}\" --operation download --nfs-mount \"${NFS_MOUNT}\" --title \"${GAME_NAME}\"" /dev/null
 
-    exec launch-emulator "${CACHE_FILE}" "${ROM_PATH}"
+    launch-emulator "${CACHE_FILE}" "${ROM_PATH}"
 fi
