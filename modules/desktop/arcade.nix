@@ -200,7 +200,7 @@ in
       ppsspp
       pcsx2
       dolphin-emu
-      ryujinx
+      ryubing
       # RetroArch cores for various systems (installed via retroarch.withCores)
       (retroarch.withCores (cores: [
         cores.nestopia      # NES
