@@ -42,9 +42,9 @@ in
     # Ensure transmission daemon is installed
     environment.systemPackages = [ pkgs.transmission_4 ];
 
-    # Create cache directory
+    # Create cache directory (owned by transmission user so daemon can write)
     systemd.tmpfiles.rules = [
-      "d ${cfg.cacheDir} 0755 root root - -"
+      "d ${cfg.cacheDir} 0755 transmission transmission - -"
     ];
 
     # Transmission daemon runs 24/7 to seed Minerva torrents back to the community
