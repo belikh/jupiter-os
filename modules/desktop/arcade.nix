@@ -223,15 +223,15 @@ in
         mkdir -p "$CONFIG_DIR"
 
         # game_dirs.txt: where Pegasus finds collections (one per line)
+        # Always write to ensure path stays in sync (user can edit but gets reset on rebuild)
         GAME_DIRS="$CONFIG_DIR/game_dirs.txt"
-        if [ ! -f "$GAME_DIRS" ]; then
-          cat > "$GAME_DIRS" <<'EOF'
+        cat > "$GAME_DIRS" <<'EOF'
 # Seeded by jupiterOS arcade module. Safe to edit; changes persist via impermanence.
 ${cfg.pegasusCollectionsDir}
 EOF
-        fi
 
         # settings.txt: launcher + assets directory
+        # Append new settings if file exists (preserve user edits), otherwise create fresh
         SETTINGS="$CONFIG_DIR/settings.txt"
         if [ ! -f "$SETTINGS" ]; then
           cat > "$SETTINGS" <<'EOF'
@@ -241,6 +241,11 @@ assets.directory=${cfg.pegasusAssetsDir}
 launcher.script=/usr/local/bin/pegasus-rom-launch
 general.theme=themes/${cfg.theme}
 EOF
+        else
+          # Ensure key settings are present even if file exists
+          grep -q "collections.directory" "$SETTINGS" || echo "collections.directory=${cfg.pegasusCollectionsDir}" >> "$SETTINGS"
+          grep -q "assets.directory" "$SETTINGS" || echo "assets.directory=${cfg.pegasusAssetsDir}" >> "$SETTINGS"
+          grep -q "launcher.script" "$SETTINGS" || echo "launcher.script=/usr/local/bin/pegasus-rom-launch" >> "$SETTINGS"
         fi
 
         # Ensure theme symlink exists in user's themes dir
