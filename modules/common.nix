@@ -127,6 +127,8 @@
   # hash ("test") — this variant only ever runs as an ephemeral local QEMU VM,
   # never deployed.
   virtualisation.vmVariant = {
+    # Wi-Fi is not available in the VM, disable to prevent sops wifi_psk secret dependencies
+    jupiter.tcxwave-kiosk.wifi.enable = lib.mkForce false;
     # The Fallout splash is pointless in the headless serial QEMU VM (no
     # display to render to) and just bloats the initrd, so force it off for
     # `make test-<host>` / boot-smoke runs.
