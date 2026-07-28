@@ -86,16 +86,16 @@ in
       description = "Persistent download cache (survives reboot via impermanence)";
     };
 
-    # Pegasus metadata location on NFS
+    # Pegasus metadata location on NFS (relative to mountPoint)
     pegasusCollectionsDir = lib.mkOption {
       type = lib.types.str;
-      default = "/tank/archive/retro/metadata/pegasus/collections";
+      default = "/tank/archive/metadata/pegasus/collections";
       description = "NFS path to Pegasus collection files";
     };
 
     pegasusAssetsDir = lib.mkOption {
       type = lib.types.str;
-      default = "/tank/archive/retro/metadata/pegasus/assets";
+      default = "/tank/archive/metadata/pegasus/assets";
       description = "NFS path to Pegasus assets (boxart, screenshots, logos)";
     };
 
