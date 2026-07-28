@@ -212,7 +212,6 @@ in
         cores.yabause       # Saturn
         cores.flycast       # Dreamcast
         cores.puae          # Amiga
-        cores.xemu          # Xbox
         cores.gsplus        # Apple IIGS
         cores.gargoyle      # Interactive Fiction
       ]))
