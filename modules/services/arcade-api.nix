@@ -47,7 +47,8 @@ in
       "d ${cfg.cacheDir} 0755 root root - -"
     ];
 
-    # Transmission daemon runs 24/7 to seed Minerva_Myrient back to the community
+    # Transmission daemon runs 24/7 to seed Minerva torrents back to the community
+    # IPv6 enabled for global peer connectivity
     services.transmission = {
       enable = true;
       package = pkgs.transmission_4;
@@ -56,9 +57,12 @@ in
         incomplete-dir = cfg.cacheDir;
         incomplete-dir-enabled = true;
         rpc-bind-address = "0.0.0.0";
+        bind-address-ipv6 = "::";
         rpc-port = 9091;
         rpc-enabled = true;
         rpc-whitelist-enabled = false;
+        peer-port = 51413;
+        peer-port-random-on-start = false;
       };
     };
 

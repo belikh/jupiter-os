@@ -37,6 +37,7 @@
     ../../modules/services/smart-monitoring.nix
     ../../modules/services/console-screensaver.nix
     ../../modules/services/cloudflare-tunnel.nix
+    ../../modules/services/vps-image-server.nix
     ../../modules/services/pallene-watchdog.nix
     ../../modules/services/iscsi-target.nix
     # jupiterOS Arcade metadata generator — runs on europa to generate
@@ -162,11 +163,18 @@
   # roaming hosts can pull them, without opening a router port. Runs on
   # europa itself because no other always-on server host is registered yet
   # (master ran it on ganymede). Uses the cloudflare_cert sops secret.
+  # Also routes images.jupiter.au to the VPS image server (port 8084).
   jupiter.services.cloudflareTunnel = {
     enable = true;
     # Cloudflare tunnel UUID (from ~/.cloudflared/<id>.json / the dashboard).
     # The cloudflare_cert sops secret is this tunnel's credentials JSON.
     tunnelId = "aa1088b8-a0e1-4073-8567-6a9bf5fb4bd7";
+    extraIngress = [
+      {
+        hostname = "images.jupiter.au";
+        port = 8084;
+      }
+    ];
   };
 
   # External backstop for the pallene build server: destroys any BinaryLane
@@ -189,6 +197,11 @@
   # bubbletea-game-loader on kiosks to trigger transmission downloads from
   # the Minerva_Myrient archive and report progress in real time.
   jupiter.services.arcadeApi.enable = true;
+
+  # VPS image server — serves compressed disk images for Kamatera's
+  # "Import from URL" flow. Images live in /var/lib/vps-images/ and
+  # are accessible at https://images.jupiter.au/ via the Cloudflare Tunnel.
+  jupiter.services.vpsImageServer.enable = true;
 
   # ---- sops secrets --------------------------------------------------------
   # attic_server_token_secret: RS256 JWT signing key for atticd.

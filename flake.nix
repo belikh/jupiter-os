@@ -176,17 +176,6 @@
           ++ extraModules;
         };
 
-      # Ephemeral build-server ISO host (pallene): no common flake-module
-      # injection — it's an installer ISO with no persistent host key, no
-      # storage profile, no impermanence. Secrets are baked in at ISO build
-      # time, not decrypted at runtime.
-      mkIsoHost =
-        hostPath:
-        nixpkgs.lib.nixosSystem {
-          system = "x86_64-linux";
-          modules = [ hostPath ];
-        };
-
       # Wire the PXE server (on europa — see hosts/europa/configuration.nix
       # for why it's here and not ganymede) directly to callisto's build
       # products, so the TFTP-served image always matches the flake. The
@@ -276,18 +265,20 @@
         # provisioned/booted on this design.
         callisto = mkHost ./hosts/callisto/configuration.nix [ ];
 
-        # Ephemeral BinaryLane build server. Never a persistent fleet member —
-        # booted from the pallene-iso package, rebuilds europa's tuned closure,
-        # pushes to attic, self-destructs. See hosts/pallene/configuration.nix
-        # and modules/services/build-server.nix.
-        pallene = mkIsoHost ./hosts/pallene/configuration.nix; # build server
+        # Kamatera VPS build server (persistent, disk-booted). The raw disk image
+        # is built with nixos-generators, compressed, and served via europa's
+        # vps-image-server + Cloudflare Tunnel for Kamatera's "Import from URL"
+        # flow. See hosts/pallene/disk-configuration.nix.
+        pallene = nixpkgs.lib.nixosSystem {
+          system = "x86_64-linux";
+          modules = [ ./hosts/pallene/disk-configuration.nix ];
+        };
       };
 
-      # The disposable build server as a bootable ISO. Build with
-      # `make pallene-iso` (not plain `nix build .#pallene-iso`) — that target
-      # injects the BinaryLane API + attic push tokens the same way
-      # `make build-mx4300` injects OpenWrt secrets, then cleans up.
-      packages.x86_64-linux.pallene-iso = self.nixosConfigurations.pallene.config.system.build.isoImage;
+      # Build the raw 10 GB disk image for Kamatera:
+      #   nix build .#pallene-raw
+      # The output is result/nixos.img — compress with `xz -T0 -9` before serving.
+      packages.x86_64-linux.pallene-raw = self.nixosConfigurations.pallene.config.system.build.raw;
 
       # The TFTP root europa serves callisto's netboot chain from — exposed
       # standalone (built with the untuned nixpkgs, see pxeModule above) so
