@@ -34,58 +34,6 @@ mkdir -p "${TMP_CACHE}" "${PERSISTENT_CACHE}"
 
 log() { echo "[$(date '+%H:%M:%S')] $*" >&2; }
 
-# 1. Check ephemeral cache first
-if [[ -e "${TMP_CACHE}/${GAME_NAME_SAFE}" ]]; then
-    log "Cache HIT (ephemeral): ${GAME_NAME}"
-    exec launch-emulator "${TMP_CACHE}/${GAME_NAME_SAFE}" "${ROM_PATH}"
-fi
-
-# 2. Check persistent cache
-if [[ -e "${PERSISTENT_CACHE}/${GAME_NAME_SAFE}" ]]; then
-    log "Cache HIT (persistent): ${GAME_NAME}"
-    exec launch-emulator "${PERSISTENT_CACHE}/${GAME_NAME_SAFE}" "${ROM_PATH}"
-fi
-
-# 3. Check NFS
-NFS_PATH="${GAMES_ROOT}/${ROM_PATH}"
-if [[ -e "${NFS_PATH}" ]]; then
-    log "Found on NFS: ${NFS_PATH}"
-
-    if [[ "${ROM_PATH}" == *.zip ]] || [[ "${ROM_PATH}" == *.ZIP ]] || [[ "${ROM_PATH}" == *.7z ]] || [[ "${ROM_PATH}" == *.7Z ]]; then
-        # Curated archive → extract to ephemeral cache
-        CACHE_DIR="${TMP_CACHE}/${GAME_NAME_SAFE}"
-        log "Curated archive detected, extracting to ${CACHE_DIR}"
-        mkdir -p "${CACHE_DIR}"
-
-        /usr/local/bin/bubbletea-game-loader \
-            --src "${ROM_PATH}" \
-            --dst "${CACHE_DIR}" \
-            --operation extract \
-            --nfs-mount "${NFS_MOUNT}" \
-            --title "${GAME_NAME}"
-
-        exec launch-emulator "${CACHE_DIR}" "${ROM_PATH}"
-    else
-        # Direct ROM on NFS → launch directly
-        log "Direct ROM on NFS, launching from ${NFS_PATH}"
-        exec launch-emulator "${NFS_PATH}" "${ROM_PATH}"
-    fi
-else
-    # 4. Not on NFS → 1G1R, download from Myrient
-    log "Not on NFS (1G1R), downloading to persistent cache"
-    CACHE_FILE="${PERSISTENT_CACHE}/${GAME_NAME_SAFE}"
-
-    /usr/local/bin/bubbletea-game-loader \
-        --src "${ROM_PATH}" \
-        --dst "${CACHE_FILE}" \
-        --operation download \
-        --nfs-mount "${NFS_MOUNT}" \
-        --title "${GAME_NAME}"
-
-    exec launch-emulator "${CACHE_FILE}" "${ROM_PATH}"
-fi
-
-
 # --- Internal: determine emulator and launch ---
 launch-emulator() {
     local cache_path="$1"
@@ -146,10 +94,10 @@ launch-emulator() {
             emulator="retroarch -L /run/current-system/sw/lib/libretro/mupen64plus_next_libretro.so"
             ;;
         1g1r-nointro-ds/*)
-            emulator="retroarch -L /run/current-system/sw/lib/libretro/melonDS_libretro.so"
+            emulator="retroarch -L /run/current-system/sw/lib/libretro/melonds_libretro.so"
             ;;
         1g1r-redump-ps1/*)
-            emulator="retroarch -L /run/current-system/sw/lib/libretro/duckstation_libretro.so"
+            emulator="retroarch -L /run/current-system/sw/lib/libretro/pcsx_rearmed_libretro.so"
             ;;
         1g1r-redump-ps2/*)
             emulator="pcsx2"
@@ -167,7 +115,7 @@ launch-emulator() {
             emulator="dolphin-emu"
             ;;
         1g1r-redump-xbox/*)
-            emulator="retroarch -L /run/current-system/sw/lib/libretro/xemu_libretro.so"
+            emulator="retroarch"
             ;;
         1g1r-tosec/*)
             emulator="retroarch"
@@ -180,3 +128,54 @@ launch-emulator() {
     log "Launching with: ${emulator} ${cache_path}"
     exec ${emulator} "${cache_path}"
 }
+
+# 1. Check ephemeral cache first
+if [[ -e "${TMP_CACHE}/${GAME_NAME_SAFE}" ]]; then
+    log "Cache HIT (ephemeral): ${GAME_NAME}"
+    exec launch-emulator "${TMP_CACHE}/${GAME_NAME_SAFE}" "${ROM_PATH}"
+fi
+
+# 2. Check persistent cache
+if [[ -e "${PERSISTENT_CACHE}/${GAME_NAME_SAFE}" ]]; then
+    log "Cache HIT (persistent): ${GAME_NAME}"
+    exec launch-emulator "${PERSISTENT_CACHE}/${GAME_NAME_SAFE}" "${ROM_PATH}"
+fi
+
+# 3. Check NFS
+NFS_PATH="${GAMES_ROOT}/${ROM_PATH}"
+if [[ -e "${NFS_PATH}" ]]; then
+    log "Found on NFS: ${NFS_PATH}"
+
+    if [[ "${ROM_PATH}" == *.zip ]] || [[ "${ROM_PATH}" == *.ZIP ]] || [[ "${ROM_PATH}" == *.7z ]] || [[ "${ROM_PATH}" == *.7Z ]]; then
+        # Curated archive → extract to ephemeral cache
+        CACHE_DIR="${TMP_CACHE}/${GAME_NAME_SAFE}"
+        log "Curated archive detected, extracting to ${CACHE_DIR}"
+        mkdir -p "${CACHE_DIR}"
+
+        /usr/local/bin/bubbletea-game-loader \
+            --src "${ROM_PATH}" \
+            --dst "${CACHE_DIR}" \
+            --operation extract \
+            --nfs-mount "${NFS_MOUNT}" \
+            --title "${GAME_NAME}"
+
+        exec launch-emulator "${CACHE_DIR}" "${ROM_PATH}"
+    else
+        # Direct ROM on NFS → launch directly
+        log "Direct ROM on NFS, launching from ${NFS_PATH}"
+        exec launch-emulator "${NFS_PATH}" "${ROM_PATH}"
+    fi
+else
+    # 4. Not on NFS → 1G1R, download from Myrient
+    log "Not on NFS (1G1R), downloading to persistent cache"
+    CACHE_FILE="${PERSISTENT_CACHE}/${GAME_NAME_SAFE}"
+
+    /usr/local/bin/bubbletea-game-loader \
+        --src "${ROM_PATH}" \
+        --dst "${CACHE_FILE}" \
+        --operation download \
+        --nfs-mount "${NFS_MOUNT}" \
+        --title "${GAME_NAME}"
+
+    exec launch-emulator "${CACHE_FILE}" "${ROM_PATH}"
+fi
