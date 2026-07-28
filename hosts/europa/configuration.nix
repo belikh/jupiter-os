@@ -39,6 +39,7 @@
     ../../modules/services/cloudflare-tunnel.nix
     ../../modules/services/pallene-watchdog.nix
     ../../modules/services/iscsi-target.nix
+    ../../modules/services/vps-image-server.nix
     # jupiterOS Arcade metadata generator — runs on europa to generate
     # Pegasus collections from curated collections + 1G1R DATs
     ../../modules/services/arcade-metadata-generator.nix
@@ -163,7 +164,18 @@
     # Cloudflare tunnel UUID (from ~/.cloudflared/<id>.json / the dashboard).
     # The cloudflare_cert sops secret is this tunnel's credentials JSON.
     tunnelId = "aa1088b8-a0e1-4073-8567-6a9bf5fb4bd7";
+    extraIngress = [
+      {
+        hostname = "images.jupiter.au";
+        port = 8084;
+      }
+    ];
   };
+
+  # VPS image server — serves compressed disk images for Kamatera's
+  # "Import from URL" flow (see hosts/pallene/disk-configuration.nix). The
+  # Cloudflare Tunnel rule above routes images.jupiter.au → localhost:8084.
+  jupiter.services.vpsImageServer.enable = true;
 
   # External backstop for the pallene build server: destroys any BinaryLane
   # pallene* server still running past 4h, from a different host on a
