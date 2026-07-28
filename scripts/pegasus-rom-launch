@@ -29,12 +29,14 @@ GAMES_ROOT="${NFS_MOUNT}/retro/games"
 
 # Normalize ROM_PATH: if it's an absolute path, extract the collection/game part
 # Handles cases where Pegasus passes full paths like:
-#   /tank/archive/retro/games/1g1r-nointro-nes/Pac-Man.nes
+#   /tank/archive/retro/games/1g1r/nointro-nes/Pac-Man.nes
 # Normalizes to:
-#   1g1r-nointro-nes/Pac-Man.nes
+#   1g1r-nointro-nes/Pac-Man.nes (collection/game format expected by bubbletea-game-loader)
 if [[ "${ROM_PATH}" == /* ]]; then
     ROM_PATH="${ROM_PATH#${GAMES_ROOT}/}"
     ROM_PATH="${ROM_PATH#/}"
+    # Convert 1g1r/collection/ to 1g1r-collection/ for bubbletea-game-loader's collection mapper
+    ROM_PATH="${ROM_PATH//1g1r\//1g1r-}"
 fi
 
 GAME_NAME="$(basename "${ROM_PATH}" | sed 's/\.[^.]*$//')"
