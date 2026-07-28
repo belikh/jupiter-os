@@ -26,24 +26,6 @@
 let
   cfg = config.jupiter.arcade;
 
-  # Build the Bubble Tea game loader from Go source
-  bubbleteaGameLoader = pkgs.stdenv.mkDerivation {
-    name = "bubbletea-game-loader";
-    src = ../../scripts/bubbletea-game-loader;
-    nativeBuildInputs = [ pkgs.go ];
-    buildPhase = ''
-      export GOPATH=$PWD/.gopath
-      mkdir -p $GOPATH/src
-      ln -sf $PWD $GOPATH/src/bubbletea-game-loader
-      cd $GOPATH/src/bubbletea-game-loader
-      go build -o bubbletea-game-loader .
-    '';
-    installPhase = ''
-      mkdir -p $out/bin
-      cp $GOPATH/src/bubbletea-game-loader/bubbletea-game-loader $out/bin/
-    '';
-  };
-
   # Custom Pegasus theme: "jupiterOS arcade". Touch-friendly, Catppuccin Mocha palette.
   # Files live in the Nix store and are symlinked into the gamer user's themes dir via tmpfiles.
   jupiterArcadeTheme = pkgs.stdenv.mkDerivation {
@@ -189,7 +171,6 @@ in
     # --- Packages: Pegasus frontend, game loader, theme, emulators ------------------
     environment.systemPackages = with pkgs; [
       pegasus-frontend
-      bubbleteaGameLoader
       jupiterArcadeTheme
       retroarch
       dosbox-staging
