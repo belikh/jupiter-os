@@ -192,7 +192,7 @@ in
       ppsspp
       pcsx2
       dolphin-emu
-      ryujinx
+      ryubing
       xterm
       transmission_4
       unzip
