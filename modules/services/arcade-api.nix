@@ -41,35 +41,26 @@ in
     ];
 
     # Transmission daemon runs 24/7 to seed Minerva_Myrient back to the community
-    systemd.services.transmission-daemon = {
-      description = "Transmission Torrent Daemon (Minerva seeding)";
-      after = [ "network-online.target" ];
-      wants = [ "network-online.target" ];
-      wantedBy = [ "multi-user.target" ];
-
-      serviceConfig = {
-        Type = "simple";
-        ExecStart = "${pkgs.transmission_4}/bin/transmission-daemon --download-dir ${cfg.cacheDir} -w ${cfg.cacheDir}";
-        Restart = "always";
-        RestartSec = "10s";
-        User = "root";
-        Group = "root";
-        StandardOutput = "journal";
-        StandardError = "journal";
-        SyslogIdentifier = "transmission";
+    services.transmission = {
+      enable = true;
+      package = pkgs.transmission_4;
+      settings = {
+        download-dir = cfg.cacheDir;
+        incomplete-dir = cfg.cacheDir;
+        incomplete-dir-enabled = true;
+        rpc-bind-address = "0.0.0.0";
+        rpc-port = 9091;
+        rpc-enabled = true;
+        rpc-whitelist-enabled = false;
       };
-
-      preStart = ''
-        mkdir -p ${cfg.cacheDir}
-      '';
     };
 
     # Systemd service for the arcade API (depends on transmission)
     systemd.services.arcade-api = {
       description = "Jupiter OS Arcade API Server";
-      after = [ "network-online.target" "transmission-daemon.service" ];
+      after = [ "network-online.target" "transmission.service" ];
       wants = [ "network-online.target" ];
-      requires = [ "transmission-daemon.service" ];
+      requires = [ "transmission.service" ];
       wantedBy = [ "multi-user.target" ];
 
       serviceConfig = {
