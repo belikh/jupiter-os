@@ -50,17 +50,6 @@ mkdir -p "${TMP_CACHE}" "${PERSISTENT_CACHE}"
 
 log() { echo "[$(date '+%H:%M:%S')] $*" >&2; }
 
-# If no TTY, relaunch in xterm so user can see the progress TUI
-if [[ ! -t 0 ]] && [[ ! -t 1 ]] && [[ ! -t 2 ]]; then
-    if command -v xterm &>/dev/null; then
-        exec xterm -e "$0" "$@"
-    elif command -v konsole &>/dev/null; then
-        exec konsole -e "$0" "$@"
-    elif command -v gnome-terminal &>/dev/null; then
-        exec gnome-terminal -- "$0" "$@"
-    fi
-fi
-
 # --- Internal: determine emulator and launch ---
 launch-emulator() {
     local cache_path="$1"
