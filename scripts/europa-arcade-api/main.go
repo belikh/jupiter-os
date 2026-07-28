@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 )
 
 const (
@@ -184,8 +183,8 @@ func getTransmissionStatus() DownloadStatus {
 		ETA:     "unknown",
 	}
 
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
+	outputLines := strings.Split(string(output), "\n")
+	for _, line := range outputLines {
 		line = strings.TrimSpace(line)
 
 		if strings.HasPrefix(line, "State:") {
