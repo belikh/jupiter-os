@@ -6,8 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -290,22 +290,12 @@ func (m model) extract() error {
 	return nil
 }
 
-var myrientMirrors = []string{
-	"https://myrient.erista.me/files",
-	"https://archive.org/download",
-	"https://cdn-archive.org/download",
-	"https://ia800508.us.archive.org/download",
-	"https://ia600508.us.archive.org/download",
-}
+// Minerva_Myrient torrent — community backup of Myrient archive
+// Contains all No-Intro, Redump, and other ROM collections
+const minervaMagnet = "magnet:?xt=urn:btih:c1358e4763f8a5935109412b7d0db46ce9af238e&dn=Minerva_Myrient&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&tr=udp%3A%2F%2F9.rarbg.com%3A2810%2Fannounce&tr=udp%3A%2F%2Ftracker.openbittorrent.com%3A6969%2Fannounce&tr=http%3A%2F%2Ftracker.openbittorrent.com%3A80%2Fannounce&tr=http%3A%2F%2F95.107.48.115%3A80%2Fannounce&tr=http%3A%2F%2Fopen.acgnxtracker.com%3A80%2Fannounce&tr=http%3A%2F%2Ft.acg.rip%3A6699%2Fannounce&tr=http%3A%2F%2Ft.nyaatracker.com%3A80%2Fannounce&tr=http%3A%2F%2Ftracker.bt4g.com%3A2095%2Fannounce&tr=http%3A%2F%2Ftracker.files.fm%3A6969%2Fannounce&tr=http%3A%2F%2Ftracker.opentrackr.org%3A1337%2Fannounce&tr=http%3A%2F%2Fvps02.net.orel.ru%3A80%2Fannounce&tr=https%3A%2F%2F1337.abcvg.info%3A443%2Fannounce&tr=https%3A%2F%2Fopentracker.i2p.rocks%3A443%2Fannounce&tr=https%3A%2F%2Ftracker.nanoha.org%3A443%2Fannounce&tr=https%3A%2F%2Ftracker.sloppyta.co%3A443%2Fannounce&tr=udp%3A%2F%2F208.83.20.20%3A6969%2Fannounce&tr=udp%3A%2F%2F37.235.174.46%3A2710%2Fannounce&tr=udp%3A%2F%2F75.127.14.224%3A2710%2Fannounce&tr=udp%3A%2F%2Fexodus.desync.com%3A6969%2Fannounce&tr=udp%3A%2F%2Fexplodie.org%3A6969%2Fannounce&tr=udp%3A%2F%2Ffe.dealclub.de%3A6969%2Fannounce&tr=udp%3A%2F%2Fipv4.tracker.harry.lu%3A80%2Fannounce&tr=udp%3A%2F%2Fmovies.zsw.ca%3A6969%2Fannounce&tr=udp%3A%2F%2Fopen.demonii.com%3A1337%2Fannounce&tr=udp%3A%2F%2Fopen.stealth.si%3A80%2Fannounce&tr=udp%3A%2F%2Fopentracker.i2p.rocks%3A6969%2Fannounce&tr=udp%3A%2F%2Fp4p.arenabg.com%3A1337%2Fannounce&tr=udp%3A%2F%2Fpublic.tracker.vraphim.com%3A6969%2Fannounce&tr=udp%3A%2F%2Fretracker.lanta-net.ru%3A2710%2Fannounce&tr=udp%3A%2F%2Ftracker.0x.tf%3A6969%2Fannounce&tr=udp%3A%2F%2Ftracker.dler.org%3A6969%2Fannounce&tr=udp%3A%2F%2Ftracker.filemail.com%3A6969%2Fannounce&tr=udp%3A%2F%2Ftracker.moeking.me%3A6969%2Fannounce&tr=udp%3A%2F%2Ftracker.pomf.se%3A80%2Fannounce&tr=udp%3A%2F%2Ftracker.swateam.org.uk%3A2710%2Fannounce&tr=udp%3A%2F%2Ftracker.tiny-vps.com%3A6969%2Fannounce&tr=udp%3A%2F%2Ftracker.torrent.eu.org%3A451%2Fannounce&tr=https%3A%2F%2Ftracker1.ctix.cn%3A443%2Fannounce&tr=https%3A%2F%2Ftracker.loligirl.cn%3A443%2Fannounce&tr=udp%3A%2F%2Ftracker-udp.gbitt.info%3A80%2Fannounce&tr=https%3A%2F%2Ftracker.gbitt.info%3A443%2Fannounce&tr=http%3A%2F%2Ftracker.gbitt.info%3A80%2Fannounce&tr=udp%3A%2F%2Ftracker.therarbg.to%3A6969%2Fannounce&tr=udp%3A%2F%2Ftracker.therarbg.com%3A6969%2Fannounce&tr=udp%3A%2F%2Fopentracker.io%3A6969%2Fannounce&tr=udp%3A%2F%2Fnew-line.net%3A6969%2Fannounce&tr=udp%3A%2F%2Fmoonburrow.club%3A6969%2Fannounce&tr=udp%3A%2F%2Fepider.me%3A6969%2Fannounce&tr=udp%3A%2F%2Fbt1.archive.org%3A6969%2Fannounce&tr=udp%3A%2F%2Fbt.ktrackers.com%3A6666%2Fannounce"
 
-// Torrent/magnet fallback for Minerva Archive (Myrient community backup)
-var torrentTrackers = []string{
-	"udp://tracker.opentrackr.org:1337/announce",
-	"udp://tracker.openbittorrent.com:80/announce",
-	"udp://tracker.torrent.eu.org:451/announce",
-	"udp://tracker.bittor.pw:1337/announce",
-	"https://tracker.files.fm:443/announce",
-}
+// Torrent download directory (shared between all kiosks via NFS or local cache)
+const torrentDir = "/var/cache/pegasus-torrents"
 
 func (m model) download() error {
 	// Parse collection/game from src (e.g., "1g1r-nointro-nes/Super Mario Bros.nes")
@@ -316,26 +306,122 @@ func (m model) download() error {
 	collection := parts[0]
 	gameFile := parts[1]
 
-	// Map collection to Myrient path
-	myrientPath := m.collectionToMyrientPath(collection, gameFile)
-	if myrientPath == "" {
+	// Map collection to Myrient archive path
+	archivePath := m.collectionToMyrientPath(collection, gameFile)
+	if archivePath == "" {
 		return fmt.Errorf("unknown collection: %s", collection)
 	}
 
-	var lastErr error
-	for _, mirror := range myrientMirrors {
-		url := strings.TrimRight(mirror, "/") + "/" + myrientPath
-		m.sendProgress(0, "", "", fmt.Sprintf("Trying mirror: %s", mirror))
+	// Download via Minerva_Myrient torrent
+	return m.downloadViaMinervaTorrent(archivePath)
+}
 
-		err := m.downloadFromURL(url)
-		if err == nil {
-			return nil
-		}
-		lastErr = err
-		m.sendProgress(0, "", "", fmt.Sprintf("Mirror failed: %v, trying next...", err))
+func (m model) downloadViaMinervaTorrent(archivePath string) error {
+	// archivePath is like "No-Intro/Nintendo - NES/Super Mario Bros..nes"
+	// We need to extract it from the Minerva_Myrient torrent
+
+	m.sendProgress(0, "", "", "Starting torrent download for Minerva_Myrient...")
+
+	// Ensure torrent directory exists
+	if err := os.MkdirAll(torrentDir, 0755); err != nil {
+		return fmt.Errorf("mkdir torrent dir: %w", err)
 	}
 
-	return fmt.Errorf("all mirrors failed: %w", lastErr)
+	// Start/resume torrent download using transmission-cli
+	torrentPath := filepath.Join(torrentDir, "Minerva_Myrient")
+	if err := m.startTorrentDownload(minervaMagnet, torrentDir); err != nil {
+		return fmt.Errorf("start torrent: %w", err)
+	}
+
+	// Poll for the specific file we need
+	gamePathInTorrent := filepath.Join(torrentPath, strings.ReplaceAll(archivePath, "/", string(filepath.Separator)))
+	if err := m.waitForFile(gamePathInTorrent, 5*time.Minute); err != nil {
+		return fmt.Errorf("download timeout: %w", err)
+	}
+
+	// Copy from torrent to destination
+	if err := m.copyFile(gamePathInTorrent, m.dst); err != nil {
+		return fmt.Errorf("copy file: %w", err)
+	}
+
+	return nil
+}
+
+func (m model) startTorrentDownload(magnet string, downloadDir string) error {
+	// Check if transmission-daemon is running; if not, start it
+	_, err := os.Stat("/var/run/transmission/transmission.sock")
+	if err != nil {
+		m.sendProgress(0, "", "", "Starting transmission daemon...")
+		cmd := exec.CommandContext(m.ctx, "transmission-daemon", "--download-dir", downloadDir)
+		if err := cmd.Start(); err != nil {
+			return fmt.Errorf("start transmission: %w", err)
+		}
+		time.Sleep(2 * time.Second)
+	}
+
+	// Add torrent via transmission-remote
+	m.sendProgress(0, "", "", "Adding Minerva_Myrient torrent...")
+	cmd := exec.CommandContext(m.ctx, "transmission-remote", "--add", magnet)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		// It's okay if already added
+		if !strings.Contains(string(output), "already in the transmission queue") {
+			return fmt.Errorf("add torrent: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (m model) waitForFile(filePath string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	lastSize := int64(-1)
+	stuckCount := 0
+
+	for {
+		select {
+		case <-m.ctx.Done():
+			return m.ctx.Err()
+		default:
+		}
+
+		// Check if file exists
+		fi, err := os.Stat(filePath)
+		if err == nil && !fi.IsDir() {
+			// File exists and is complete (size stable for 2 checks)
+			if fi.Size() == lastSize {
+				m.sendProgress(1.0, "", "", "Download complete!")
+				return nil
+			}
+			lastSize = fi.Size()
+			percent := 0.1 // Rough estimate since we can't see full torrent progress easily
+			m.sendProgress(percent, "", "", fmt.Sprintf("Downloading %s", formatBytes(fi.Size())))
+			stuckCount = 0
+		} else if time.Now().After(deadline) {
+			return fmt.Errorf("file not downloaded within timeout: %s", filePath)
+		} else {
+			m.sendProgress(0, "", "", "Waiting for torrent download...")
+			stuckCount++
+		}
+
+		time.Sleep(1 * time.Second)
+	}
+}
+
+func (m model) copyFile(src, dst string) error {
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+
+	dstFile, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer dstFile.Close()
+
+	_, err = io.Copy(dstFile, srcFile)
+	return err
 }
 
 func (m model) collectionToMyrientPath(collection, gameFile string) string {
@@ -386,99 +472,6 @@ func urlPathEscape(s string) string {
 	return s
 }
 
-func (m model) downloadFromURL(url string) error {
-	req, err := http.NewRequestWithContext(m.ctx, "GET", url, nil)
-	if err != nil {
-		return err
-	}
-
-	// Resume support
-	if fi, err := os.Stat(m.dst); err == nil {
-		req.Header.Set("Range", fmt.Sprintf("bytes=%d-", fi.Size()))
-	}
-
-	client := &http.Client{Timeout: 0}
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusPartialContent {
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, resp.Status)
-	}
-
-	totalSize := resp.ContentLength
-	if resp.StatusCode == http.StatusPartialContent {
-		if fi, err := os.Stat(m.dst); err == nil {
-			totalSize += fi.Size()
-		}
-	}
-
-	outFile, err := os.OpenFile(m.dst, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
-	if err != nil {
-		return err
-	}
-	defer outFile.Close()
-
-	var written int64
-	if fi, err := os.Stat(m.dst); err == nil {
-		written = fi.Size()
-	}
-
-	buf := make([]byte, 32*1024)
-	startTime := time.Now()
-	lastUpdate := startTime
-	lastWritten := written
-
-	for {
-		select {
-		case <-m.ctx.Done():
-			return m.ctx.Err()
-		default:
-		}
-
-		n, err := resp.Body.Read(buf)
-		if n > 0 {
-			if _, wErr := outFile.Write(buf[:n]); wErr != nil {
-				return wErr
-			}
-			written += int64(n)
-
-			now := time.Now()
-			elapsed := now.Sub(startTime).Seconds()
-			if elapsed > 0 && now.Sub(lastUpdate) > 200*time.Millisecond {
-				speed := float64(written-lastWritten) / now.Sub(lastUpdate).Seconds()
-				var speedStr, etaStr string
-				if speed > 0 {
-					speedStr = formatSpeed(speed)
-					if totalSize > 0 {
-						remaining := totalSize - written
-						if remaining > 0 {
-							eta := time.Duration(float64(remaining)/speed) * time.Second
-							etaStr = eta.Round(time.Second).String()
-						}
-					}
-				}
-				percent := 0.0
-				if totalSize > 0 {
-					percent = float64(written) / float64(totalSize)
-				}
-				m.sendProgress(percent, speedStr, etaStr, fmt.Sprintf("Downloaded %s / %s", formatBytes(written), formatBytes(totalSize)))
-				lastUpdate = now
-				lastWritten = written
-			}
-		}
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
 
 func formatBytes(b int64) string {
 	const unit = 1024

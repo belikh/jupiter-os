@@ -176,10 +176,13 @@ in
       "L+ /usr/local/bin/pegasus-rom-launch - - - - /etc/pegasus-rom-launch"
     ];
 
-    # Persistent cache survives impermanence wipe via extraDirectories
-    jupiter.core.impermanence.extraDirectories = [ cfg.persistentCacheDir ];
+    # Persistent caches survive impermanence wipe via extraDirectories
+    jupiter.core.impermanence.extraDirectories = [
+      cfg.persistentCacheDir
+      "/var/cache/pegasus-torrents"
+    ];
 
-    # --- Packages: Pegasus frontend, game loader, theme, emulators ------------------
+    # --- Packages: Pegasus frontend, game loader, theme, emulators, torrent ------------------
     environment.systemPackages = with pkgs; [
       pegasus-frontend
       bubbleteaGameLoader
@@ -194,6 +197,7 @@ in
       dolphin-emu
       ryubing
       xterm
+      transmission
     ];
 
     # --- Pegasus configuration (seeded into gamer user's home) ----------------
