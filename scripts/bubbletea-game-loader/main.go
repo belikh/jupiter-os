@@ -275,7 +275,7 @@ func (m model) extract() error {
 			return fmt.Errorf("create %s: %w", targetPath, err)
 		}
 
-		_, err := io.Copy(outFile, rc)
+		_, err = io.Copy(outFile, rc)
 		rc.Close()
 		outFile.Close()
 		if err != nil {
