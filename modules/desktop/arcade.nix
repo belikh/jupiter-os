@@ -201,21 +201,6 @@ in
       pcsx2
       dolphin-emu
       ryubing
-      # RetroArch cores for various systems (installed via retroarch.withCores)
-      (retroarch.withCores (cores: [
-        cores.nestopia      # NES
-        cores.snes9x        # SNES
-        cores.gambatte      # GB/GBC
-        cores.mgba          # GBA
-        cores.melonds       # DS
-        cores.pcsx_rearmed  # PS1
-        cores.yabause       # Saturn
-        cores.flycast       # Dreamcast
-        cores.puae          # Amiga
-        cores.gsplus        # Apple IIGS
-        cores.gargoyle      # Interactive Fiction
-      ]))
-      # Additional emulators can be added per-collection
     ];
 
     # --- Pegasus configuration (seeded into gamer user's home) ----------------
