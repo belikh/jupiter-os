@@ -230,22 +230,22 @@ in
 ${cfg.pegasusCollectionsDir}
 EOF
 
-        # settings.txt: launcher + assets directory
+        # settings.txt: launcher + assets directory (uses key: value format with colon+space)
         # Append new settings if file exists (preserve user edits), otherwise create fresh
         SETTINGS="$CONFIG_DIR/settings.txt"
         if [ ! -f "$SETTINGS" ]; then
           cat > "$SETTINGS" <<'EOF'
 # Seeded by jupiterOS arcade module. Safe to edit; changes persist via impermanence.
-collections.directory=${cfg.pegasusCollectionsDir}
-assets.directory=${cfg.pegasusAssetsDir}
-launcher.script=/usr/local/bin/pegasus-rom-launch
-general.theme=themes/${cfg.theme}
+collections.directory: ${cfg.pegasusCollectionsDir}
+assets.directory: ${cfg.pegasusAssetsDir}
+launcher.script: /usr/local/bin/pegasus-rom-launch
+general.theme: themes/${cfg.theme}
 EOF
         else
           # Ensure key settings are present even if file exists
-          grep -q "collections.directory" "$SETTINGS" || echo "collections.directory=${cfg.pegasusCollectionsDir}" >> "$SETTINGS"
-          grep -q "assets.directory" "$SETTINGS" || echo "assets.directory=${cfg.pegasusAssetsDir}" >> "$SETTINGS"
-          grep -q "launcher.script" "$SETTINGS" || echo "launcher.script=/usr/local/bin/pegasus-rom-launch" >> "$SETTINGS"
+          grep -q "collections.directory" "$SETTINGS" || echo "collections.directory: ${cfg.pegasusCollectionsDir}" >> "$SETTINGS"
+          grep -q "assets.directory" "$SETTINGS" || echo "assets.directory: ${cfg.pegasusAssetsDir}" >> "$SETTINGS"
+          grep -q "launcher.script" "$SETTINGS" || echo "launcher.script: /usr/local/bin/pegasus-rom-launch" >> "$SETTINGS"
         fi
 
         # Ensure theme symlink exists in user's themes dir
