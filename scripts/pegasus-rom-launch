@@ -22,16 +22,14 @@ if [[ -z "${ROM_PATH}" ]]; then
     exit 2
 fi
 
-NFS_MOUNT="/tank/archive"
+NFS_MOUNT="/tank/archive/retro"
 TMP_CACHE="/tmp/pegasus-cache"
 PERSISTENT_CACHE="/var/cache/pegasus-roms"
-# Note: NFS_MOUNT is the local mount point; the remote path is /tank/archive/retro
-# Games are at /tank/archive/games/ (relative to NFS mount, i.e., /tank/archive/retro/games on europa)
 GAMES_ROOT="${NFS_MOUNT}/games"
 
 # Normalize ROM_PATH: if it's an absolute path, extract the collection/game part
 # Handles cases where Pegasus passes full paths like:
-#   /tank/archive/games/1g1r/nointro-nes/Pac-Man.nes
+#   /tank/archive/retro/games/1g1r/nointro-nes/Pac-Man.nes
 # Normalizes to:
 #   1g1r-nointro-nes/Pac-Man.nes (collection/game format expected by bubbletea-game-loader)
 #

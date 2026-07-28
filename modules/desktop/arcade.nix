@@ -69,7 +69,7 @@ in
 
     mountPoint = lib.mkOption {
       type = lib.types.str;
-      default = "/tank/archive";
+      default = "/tank/archive/retro";
       description = "Where to mount the NFS export on this kiosk";
     };
 
@@ -86,16 +86,16 @@ in
       description = "Persistent download cache (survives reboot via impermanence)";
     };
 
-    # Pegasus metadata location on NFS (relative to mountPoint)
+    # Pegasus metadata location on NFS
     pegasusCollectionsDir = lib.mkOption {
       type = lib.types.str;
-      default = "/tank/archive/metadata/pegasus/collections";
+      default = "/tank/archive/retro/metadata/pegasus/collections";
       description = "NFS path to Pegasus collection files";
     };
 
     pegasusAssetsDir = lib.mkOption {
       type = lib.types.str;
-      default = "/tank/archive/metadata/pegasus/assets";
+      default = "/tank/archive/retro/metadata/pegasus/assets";
       description = "NFS path to Pegasus assets (boxart, screenshots, logos)";
     };
 
