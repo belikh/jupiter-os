@@ -20,7 +20,9 @@
     # 1G1R DAT metadata (No-Intro, Redump, TOSEC) + generated Pegasus metadata.
     # Served to 10.1.1.0/24 so all TCxWave kiosks can mount it.
     # no_root_squash needed so overlayfs upper layer on kiosks can write as gamer user.
-    /tank/archive/retro  10.1.1.0/24(ro,sync,no_subtree_check,no_root_squash)
+    # crossmnt allows NFS clients to traverse into child ZFS datasets
+    # (tank/archive/retro/games, tank/archive/retro/games/1g1r, etc.)
+    /tank/archive/retro  10.1.1.0/24(ro,sync,crossmnt,no_root_squash)
   '';
 
   networking.firewall.allowedTCPPorts = [ 2049 ];
