@@ -32,6 +32,10 @@ GAMES_ROOT="${NFS_MOUNT}/retro/games"
 #   /tank/archive/retro/games/1g1r/nointro-nes/Pac-Man.nes
 # Normalizes to:
 #   1g1r-nointro-nes/Pac-Man.nes (collection/game format expected by bubbletea-game-loader)
+#
+# TODO: Ideal solution is to configure Pegasus metadata files (.pegasus.txt) with
+# correct romdir paths so Pegasus passes normalized collection/game paths directly,
+# eliminating the need for this normalization logic. See issue #30 architecture notes.
 if [[ "${ROM_PATH}" == /* ]]; then
     ROM_PATH="${ROM_PATH#${GAMES_ROOT}/}"
     ROM_PATH="${ROM_PATH#/}"
