@@ -39,6 +39,11 @@
     ../../modules/services/cloudflare-tunnel.nix
     ../../modules/services/pallene-watchdog.nix
     ../../modules/services/iscsi-target.nix
+    # jupiterOS Arcade metadata generator — runs on europa to generate
+    # Pegasus collections from curated collections + 1G1R DATs
+    ../../modules/services/arcade-metadata-generator.nix
+    # jupiterOS Arcade API — HTTP server for on-demand ROM downloads
+    ../../modules/services/arcade-api.nix
   ];
 
   networking.hostName = "europa";
@@ -90,7 +95,9 @@
   # which GCC targets as btver2. The BinaryLane build server compiles this
   # host's closure with -march=btver2 and pushes it to the local Attic; see
   # modules/core/build-tuning.nix for the SIGILL/march caveats.
-  jupiter.build.microarch = "btver2"; # pallene (build server) compiles this host's closure -march=btver2 and pushes to the local Attic
+  # TODO: ZFS 2.4.3 has kernel build issues with btver2 on nixpkgs 26.11;
+  # temporarily disabled to get arcade system online. Re-enable once fixed.
+  # jupiter.build.microarch = "btver2"; # pallene (build server) compiles this host's closure -march=btver2 and pushes to the local Attic
 
   # ---- nixpkgs overlays ----------------------------------------------------
   # bmake's `deptgt-interrupt` unit test is timing-sensitive (it asserts a
@@ -177,6 +184,11 @@
     targetIqn = "iqn.2026-07.au.jupiter:europa:callisto-root";
     initiatorIqn = "iqn.2026-07.au.jupiter:callisto";
   };
+
+  # Arcade API — HTTP server for on-demand game ROM downloads, queried by
+  # bubbletea-game-loader on kiosks to trigger transmission downloads from
+  # the Minerva_Myrient archive and report progress in real time.
+  jupiter.services.arcadeApi.enable = true;
 
   # ---- sops secrets --------------------------------------------------------
   # attic_server_token_secret: RS256 JWT signing key for atticd.
