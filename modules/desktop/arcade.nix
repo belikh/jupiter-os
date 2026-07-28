@@ -180,15 +180,11 @@ in
       "d ${cfg.persistentCacheDir} 0755 gamer users -"
       "d /home/${cfg.sessionUser}/.config/pegasus-frontend/themes 0755 gamer users -"
       "L+ /home/${cfg.sessionUser}/.config/pegasus-frontend/themes/jupiteros-arcade - - - - ${jupiterArcadeTheme}"
-    ]
-    ++ lib.mkForce [
       "L+ /usr/local/bin/pegasus-rom-launch - - - - /etc/pegasus-rom-launch"
-    ]
-    ++ config.systemd.tmpfiles.rules;
+    ];
 
     # Persistent cache survives impermanence wipe via extraDirectories
-    jupiter.core.impermanence.extraDirectories = lib.mkForce
-      (lib.unique ([ cfg.persistentCacheDir ] ++ (config.jupiter.core.impermanence.extraDirectories or [])));
+    jupiter.core.impermanence.extraDirectories = [ cfg.persistentCacheDir ];
 
     # --- Packages: Pegasus frontend, game loader, theme, emulators ------------------
     environment.systemPackages = with pkgs; [
