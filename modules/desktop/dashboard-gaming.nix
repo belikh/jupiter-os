@@ -7,8 +7,8 @@
 
 # Dashboard ↔ gaming modes for the TCx Wave kiosks, switchable from Home
 # Assistant. Normally the kiosk shows the Cage + Chromium dashboard; HA can flip
-# it to any enabled gamescope session — Steam (Deck UI), Heroic, or Lutris — and
-# back. All session modes share a single tty1 and are mutually exclusive.
+# it to the arcade session (Pegasus frontend) and back. All session modes share
+# a single tty1 and are mutually exclusive.
 #
 # --- Why a custom service, not Jovian's native session ---------------------
 # Jovian-NixOS's gamescope "gaming mode" session is a *systemd user unit*
@@ -16,10 +16,10 @@
 # gamescope-wayland session (see jovian's modules/steam/autostart.nix). SDDM
 # and Cage both want to own the graphical seat / tty1, so jovian's
 # autoStart=true would boot straight into gaming and fight cage. Instead we
-# keep jovian's *software stack* (Steam, gamescope + its cap_sys_nice wrapper,
-# Proton, the gamescope-wsi Vulkan layer) but run each session ourselves as a
-# single start/stoppable SYSTEM service on a SHARED tty1, modelled on Cage's
-# own PAM/logind seat wiring. Only one session owns the display at a time.
+# keep jovian's *software stack* (gamescope, emulators, retroarch) but run each
+# session ourselves as a single start/stoppable SYSTEM service on a SHARED tty1,
+# modelled on Cage's own PAM/logind seat wiring. Only one session owns the
+# display at a time.
 #
 # --- Switching model -------------------------------------------------------
 # ha-linux-agent's backend-launcher (modules/services/ha-agent.nix) collapses
@@ -103,9 +103,7 @@ let
   # Single source of truth for the mode catalogue. Drives both the option
   # interface (modes.<name>.enable / .command, generated below) and the session
   # units / launcher / polkit / HA select / impermanence wiring. Adding a mode
-  # is one entry here — e.g. a future retroarch mode. The steam entry preserves
-  # the debugged Steam/Deck-UI session byte-for-byte (same command, same
-  # capsh/PATH/XDG/DBUS launcher, same persisted dirs).
+  # is one entry here.
   #
   # `command` must NOT pass gamescope's -e/--steam flag for non-Steam apps:
   # -e and --steam are the SAME getopt flag (gamescope main.cpp:2579), Steam-
@@ -120,52 +118,15 @@ let
   # pga.db library DB) — both are persisted because Lutris falls back
   # config→data when the config dir is absent. Caches stay ephemeral.
   modeSpecs = {
-    steam = {
-      enableDefault = true;
-      command = "gamescope --steam -e -- steam -gamepadui";
-      description = "gamescope/Steam session (tty1)";
-      icon = "mdi:steam";
-      persist = [
-        ".steam"
-        ".local/share/Steam"
-        ".config/Steam"
-        ".config/gamescope"
-      ];
-    };
-    heroic = {
+    # Pegasus frontend over NFS-mounted curated + 1G1R collections from europa.
+    # On-demand ROM loading: curated ZIPs extract to /tmp/pegasus-cache/,
+    # 1G1R games download from Myrient mirrors to /var/cache/pegasus-roms/.
+    # Bubble Tea TUI shows extract/download progress with cancel support.
+    # Persisted dirs cover Pegasus config + cache.
+    arcade = {
       enableDefault = false;
-      command = "gamescope -f -- heroic";
-      description = "gamescope/Heroic session (tty1)";
-      icon = "mdi:gamepad-variant";
-      persist = [
-        ".config/heroic"
-        "Games/Heroic"
-      ];
-    };
-    lutris = {
-      enableDefault = false;
-      command = "gamescope -f -- lutris";
-      description = "gamescope/Lutris session (tty1)";
-      icon = "mdi:gamepad";
-      persist = [
-        ".config/lutris"
-        ".local/share/lutris"
-      ];
-    };
-    # Pegasus over the eXoDOS + eXoWin3x collection. Everything around the
-    # session (NFS mount of europa, overlayfs, metadata generator, exo-launch
-    # wrapper) is wired in modules/desktop/exodos.nix and pulled in by
-    # tcxwave-kiosk.nix. The command runs exo-pegasus-session (also from
-    # exodos.nix) instead of bare pegasus-fe so settings.txt's `directories:`
-    # line is seeded into the gamer user's home on first launch — without it
-    # Pegasus shows "no games". pegasus-fe is the binary name (not `pegasus`).
-    # Persisted dirs cover Pegasus config + cache (overlay upper lives at
-    # /var/lib/exo-overlay instead and is persisted via impermanence's
-    # extraDirectories from exodos.nix directly).
-    exodos = {
-      enableDefault = false;
-      command = "gamescope -f -- exo-pegasus-session";
-      description = "gamescope/eXo (DOS + Win3.x) session (tty1)";
+      command = "gamescope -f -- pegasus-fe";
+      description = "gamescope/Pegasus arcade session (tty1)";
       icon = "mdi:controller-classic";
       persist = [
         ".config/pegasus-frontend"
@@ -199,9 +160,7 @@ in
     };
 
     # Per-mode options generated from `modeSpecs`, mirroring console.nix's
-    # appCatalog pattern. `steam` defaults on (preserving the original always-on
-    # gaming session); heroic/lutris default off and are opted into per-profile
-    # (tcxwave-kiosk.nix turns them on fleet-identically).
+    # appCatalog pattern. Only `arcade` mode exists now.
     modes = lib.mapAttrs (name: spec: {
       enable = lib.mkOption {
         type = lib.types.bool;

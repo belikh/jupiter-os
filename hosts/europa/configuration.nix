@@ -39,6 +39,11 @@
     ../../modules/services/cloudflare-tunnel.nix
     ../../modules/services/pallene-watchdog.nix
     ../../modules/services/iscsi-target.nix
+    # jupiterOS Arcade metadata generator — runs on europa to generate
+    # Pegasus collections from curated collections + 1G1R DATs
+    ../../modules/services/arcade-metadata-generator.nix
+    # jupiterOS Arcade API — HTTP server for on-demand ROM downloads
+    ../../modules/services/arcade-api.nix
   ];
 
   networking.hostName = "europa";
@@ -178,9 +183,20 @@
     initiatorIqn = "iqn.2026-07.au.jupiter:callisto";
   };
 
+  # Arcade API — HTTP server for on-demand game ROM downloads, queried by
+  # bubbletea-game-loader on kiosks to trigger transmission downloads from
+  # the Minerva_Myrient archive and report progress in real time.
+  jupiter.services.arcadeApi.enable = true;
+
   # ---- sops secrets --------------------------------------------------------
   # attic_server_token_secret: RS256 JWT signing key for atticd.
   # binarylane_api_token: consumed by jupiter.services.palleneWatchdog.
+  # nix_build_ssh_key: SSH private key for Nix distributed builds (auth to callisto).
   # Must be added to secrets/secrets.yaml before first deploy.
   sops.secrets.attic_server_token_secret = { };
+  sops.secrets.nix_build_ssh_key = { };
+
+  # Disable zfs-share to avoid SMB share failures during activation
+  # (samba config issue with these datasets; NFS serving works fine)
+  systemd.services.zfs-share.enable = false;
 }
