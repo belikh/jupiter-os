@@ -208,7 +208,7 @@ in
         cores.gambatte      # GB/GBC
         cores.mgba          # GBA
         cores.melonds       # DS
-        cores.mednafen_psx  # PS1
+        cores.pcsx_rearmed  # PS1
         cores.yabause       # Saturn
         cores.flycast       # Dreamcast
         cores.uae           # Amiga
