@@ -193,9 +193,9 @@ func (m model) checkAndLaunch() tea.Cmd {
 			return doneMsg{err: fmt.Errorf("download request failed: %w", err)}
 		}
 
-		// Step 3: Poll for file availability
-		if err := m.waitForFile(nfsPath); err != nil {
-			return doneMsg{err: fmt.Errorf("download timeout: %w", err)}
+		// Step 3: Poll europa's API for download progress
+		if err := m.waitForDownload(); err != nil {
+			return doneMsg{err: fmt.Errorf("download failed: %w", err)}
 		}
 
 		// Step 4: Launch emulator
@@ -207,6 +207,14 @@ func (m model) checkAndLaunch() tea.Cmd {
 	}
 }
 
+type downloadStatus struct {
+	Status  string  `json:"status"`   // "downloading", "complete", "error"
+	Percent float64 `json:"percent"`
+	Speed   string  `json:"speed"`
+	ETA     string  `json:"eta"`
+	Error   string  `json:"error"`
+}
+
 func (m model) requestDownload() error {
 	reqBody := map[string]string{
 		"file": m.gamePath,
@@ -214,25 +222,24 @@ func (m model) requestDownload() error {
 	body, _ := json.Marshal(reqBody)
 
 	resp, err := http.Post(
-		fmt.Sprintf("http://%s/api/download", m.europaAddr),
+		fmt.Sprintf("http://%s:8765/api/download", m.europaAddr),
 		"application/json",
 		strings.NewReader(string(body)),
 	)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not reach europa: %w", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
 		return fmt.Errorf("europa returned %d", resp.StatusCode)
 	}
 
 	return nil
 }
 
-func (m model) waitForFile(nfsPath string) error {
-	deadline := time.Now().Add(30 * time.Minute)
-	lastSize := int64(-1)
+func (m model) waitForDownload() error {
+	deadline := time.Now().Add(2 * time.Hour)
 
 	for time.Now().Before(deadline) {
 		select {
@@ -241,23 +248,50 @@ func (m model) waitForFile(nfsPath string) error {
 		default:
 		}
 
-		fi, err := os.Stat(nfsPath)
-		if err == nil && fi.Size() > 0 {
-			if fi.Size() == lastSize {
-				return nil // File is complete
-			}
-			lastSize = fi.Size()
+		// Poll europa's progress API
+		status, err := m.getDownloadStatus()
+		if err != nil {
+			return fmt.Errorf("could not get status from europa: %w", err)
 		}
 
-		pct := 0.1 + (time.Since(deadline.Add(-30*time.Minute)).Minutes() / 30 * 0.8)
-		if pct > 0.99 {
-			pct = 0.99
+		if status.Status == "complete" {
+			return nil
 		}
 
-		time.Sleep(2 * time.Second)
+		if status.Status == "error" {
+			return fmt.Errorf("europa error: %s", status.Error)
+		}
+
+		// Update progress in TUI
+		// Note: in a real tea app, this would send a message through a channel
+		_ = progressMsg{
+			percent: status.Percent,
+			status:  "Downloading from europa...",
+			detail:  fmt.Sprintf("%s  •  %s", status.Speed, status.ETA),
+		}
+
+		time.Sleep(1 * time.Second)
 	}
 
-	return fmt.Errorf("download timeout after 30 minutes")
+	return fmt.Errorf("download timeout after 2 hours")
+}
+
+func (m model) getDownloadStatus() (*downloadStatus, error) {
+	url := fmt.Sprintf("http://%s:8765/api/download-status?file=%s",
+		m.europaAddr, strings.TrimPrefix(m.gamePath, "1g1r-"))
+
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var status downloadStatus
+	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
+		return nil, err
+	}
+
+	return &status, nil
 }
 
 func (m model) launchEmulator(romPath string) error {
