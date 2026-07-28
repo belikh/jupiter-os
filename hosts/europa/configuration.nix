@@ -37,14 +37,8 @@
     ../../modules/services/smart-monitoring.nix
     ../../modules/services/console-screensaver.nix
     ../../modules/services/cloudflare-tunnel.nix
-    ../../modules/services/vps-image-server.nix
     ../../modules/services/pallene-watchdog.nix
     ../../modules/services/iscsi-target.nix
-    # jupiterOS Arcade metadata generator — runs on europa to generate
-    # Pegasus collections from curated collections + 1G1R DATs
-    ../../modules/services/arcade-metadata-generator.nix
-    # jupiterOS Arcade API — HTTP server for on-demand ROM downloads
-    ../../modules/services/arcade-api.nix
   ];
 
   networking.hostName = "europa";
@@ -96,9 +90,7 @@
   # which GCC targets as btver2. The BinaryLane build server compiles this
   # host's closure with -march=btver2 and pushes it to the local Attic; see
   # modules/core/build-tuning.nix for the SIGILL/march caveats.
-  # TODO: ZFS 2.4.3 has kernel build issues with btver2 on nixpkgs 26.11;
-  # temporarily disabled to get arcade system online. Re-enable once fixed.
-  # jupiter.build.microarch = "btver2"; # pallene (build server) compiles this host's closure -march=btver2 and pushes to the local Attic
+  jupiter.build.microarch = "btver2"; # pallene (build server) compiles this host's closure -march=btver2 and pushes to the local Attic
 
   # ---- nixpkgs overlays ----------------------------------------------------
   # bmake's `deptgt-interrupt` unit test is timing-sensitive (it asserts a
@@ -163,18 +155,11 @@
   # roaming hosts can pull them, without opening a router port. Runs on
   # europa itself because no other always-on server host is registered yet
   # (master ran it on ganymede). Uses the cloudflare_cert sops secret.
-  # Also routes images.jupiter.au to the VPS image server (port 8084).
   jupiter.services.cloudflareTunnel = {
     enable = true;
     # Cloudflare tunnel UUID (from ~/.cloudflared/<id>.json / the dashboard).
     # The cloudflare_cert sops secret is this tunnel's credentials JSON.
     tunnelId = "aa1088b8-a0e1-4073-8567-6a9bf5fb4bd7";
-    extraIngress = [
-      {
-        hostname = "images.jupiter.au";
-        port = 8084;
-      }
-    ];
   };
 
   # External backstop for the pallene build server: destroys any BinaryLane
@@ -193,25 +178,9 @@
     initiatorIqn = "iqn.2026-07.au.jupiter:callisto";
   };
 
-  # Arcade API — HTTP server for on-demand game ROM downloads, queried by
-  # bubbletea-game-loader on kiosks to trigger transmission downloads from
-  # the Minerva_Myrient archive and report progress in real time.
-  jupiter.services.arcadeApi.enable = true;
-
-  # VPS image server — serves compressed disk images for Kamatera's
-  # "Import from URL" flow. Images live in /var/lib/vps-images/ and
-  # are accessible at https://images.jupiter.au/ via the Cloudflare Tunnel.
-  jupiter.services.vpsImageServer.enable = true;
-
   # ---- sops secrets --------------------------------------------------------
   # attic_server_token_secret: RS256 JWT signing key for atticd.
   # binarylane_api_token: consumed by jupiter.services.palleneWatchdog.
-  # nix_build_ssh_key: SSH private key for Nix distributed builds (auth to callisto).
   # Must be added to secrets/secrets.yaml before first deploy.
   sops.secrets.attic_server_token_secret = { };
-  sops.secrets.nix_build_ssh_key = { };
-
-  # Disable zfs-share to avoid SMB share failures during activation
-  # (samba config issue with these datasets; NFS serving works fine)
-  systemd.services.zfs-share.enable = false;
 }
