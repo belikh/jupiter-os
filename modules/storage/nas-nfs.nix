@@ -15,13 +15,19 @@
     # Media library for Jellyfin/media hosts (read-only).
     /tank/media        10.1.1.0/24(ro,sync,no_subtree_check)
 
-    # eXoDOS + eXoWin3x collection (europa/games dataset). Read-only — the
-    # europa pool itself is mounted ro, and the TCx Wave kiosks layer a
-    # per-kiosk overlayfs on top (modules/desktop/exodos.nix) so game saves
-    # land in a persisted upper layer without ever writing back here. Served
-    # to the whole LAN so every kiosk sees the same ~1 TB collection
-    # (~7,200 DOS + ~1,140 Win3.x titles) without copying.
-    /mnt/europa/games  10.1.1.0/24(ro,sync,no_subtree_check,no_root_squash)
+    # jupiterOS Arcade retro archive (read-only).
+    # NFSv4 cannot reach ZFS child datasets nested >1 level deep via crossmnt alone.
+    # Each dataset must be exported separately with unique fsid to allow proper
+    # referral following through the dataset hierarchy.
+    # no_root_squash allows overlayfs upper layer on kiosks to write as gamer user.
+    /tank/archive/retro                           10.1.1.0/24(ro,sync,no_subtree_check,fsid=10,no_root_squash)
+    /tank/archive/retro/games                     10.1.1.0/24(ro,sync,no_subtree_check,fsid=11,no_root_squash)
+    /tank/archive/retro/games/1g1r                10.1.1.0/24(ro,sync,no_subtree_check,fsid=12,no_root_squash)
+    /tank/archive/retro/games/curated             10.1.1.0/24(ro,sync,no_subtree_check,fsid=13,no_root_squash)
+    /tank/archive/retro/metadata                  10.1.1.0/24(ro,sync,no_subtree_check,fsid=14,no_root_squash)
+    /tank/archive/retro/metadata/pegasus          10.1.1.0/24(ro,sync,no_subtree_check,fsid=15,no_root_squash)
+    /tank/archive/retro/metadata/pegasus/collections 10.1.1.0/24(ro,sync,no_subtree_check,fsid=16,no_root_squash)
+    /tank/archive/retro/metadata/pegasus/assets   10.1.1.0/24(ro,sync,no_subtree_check,fsid=17,no_root_squash)
   '';
 
   networking.firewall.allowedTCPPorts = [ 2049 ];
