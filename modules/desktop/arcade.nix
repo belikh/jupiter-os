@@ -32,15 +32,18 @@ let
     src = ../../scripts/bubbletea-game-loader;
     nativeBuildInputs = [ pkgs.go ];
     buildPhase = ''
+      export HOME=$PWD
       export GOPATH=$PWD/.gopath
+      export GOCACHE=$PWD/.cache/go-build
+      mkdir -p $GOCACHE
       mkdir -p $GOPATH/src
-      ln -sf $PWD $GOPATH/src/bubbletea-game-loader
+      cp -r . $GOPATH/src/bubbletea-game-loader
       cd $GOPATH/src/bubbletea-game-loader
       go build -o bubbletea-game-loader .
     '';
     installPhase = ''
       mkdir -p $out/bin
-      cp $GOPATH/src/bubbletea-game-loader/bubbletea-game-loader $out/bin/
+      cp $PWD/.gopath/src/bubbletea-game-loader/bubbletea-game-loader $out/bin/
     '';
   };
 
