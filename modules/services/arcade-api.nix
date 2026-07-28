@@ -1,4 +1,9 @@
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 let
   cfg = config.jupiter.services.arcadeApi;
   arcadeApi = pkgs.buildGoModule {
@@ -46,6 +51,7 @@ in
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
       wantedBy = [ "multi-user.target" ];
+      path = [ pkgs.transmission_4 ];
 
       serviceConfig = {
         Type = "simple";

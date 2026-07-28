@@ -67,7 +67,11 @@ let
     system = "x86_64-linux";
     protocol = "ssh-ng";
     sshUser = "root";
-    sshKey = config.sops.secrets.nix_build_ssh_key.path;
+    sshKey =
+      if builtins.hasAttr "nix_build_ssh_key" config.sops.secrets then
+        config.sops.secrets.nix_build_ssh_key.path
+      else
+        "/run/secrets/nix_build_ssh_key";
     maxJobs = 1;
     speedFactor = 1;
     supportedFeatures = [
@@ -103,7 +107,11 @@ in
         system = "x86_64-linux";
         protocol = "ssh-ng";
         sshUser = "root";
-        sshKey = config.sops.secrets.nix_build_ssh_key.path;
+        sshKey =
+          if builtins.hasAttr "nix_build_ssh_key" config.sops.secrets then
+            config.sops.secrets.nix_build_ssh_key.path
+          else
+            "/run/secrets/nix_build_ssh_key";
         # maxJobs mirrors callisto's local nix.settings.max-jobs = 1
         # (hosts/callisto/configuration.nix): callisto runs ONE derivation
         # at a time using all 6 cores (cores=6), the right shape for its
@@ -137,7 +145,12 @@ in
     # the literal argument passed to ssh, not a resolved/aliased name.
     programs.ssh.extraConfig = ''
       Host 10.1.1.3
-        IdentityFile ${config.sops.secrets.nix_build_ssh_key.path}
+        IdentityFile ${
+          if builtins.hasAttr "nix_build_ssh_key" config.sops.secrets then
+            config.sops.secrets.nix_build_ssh_key.path
+          else
+            "/run/secrets/nix_build_ssh_key"
+        }
         IdentitiesOnly yes
     '';
 

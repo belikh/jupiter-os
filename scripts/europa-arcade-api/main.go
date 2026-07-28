@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -24,6 +25,22 @@ type DownloadStatus struct {
 	Speed   string  `json:"speed"`
 	ETA     string  `json:"eta"`
 	Error   string  `json:"error,omitempty"`
+}
+
+func isSafePath(file string) bool {
+	cleaned := filepath.Clean(file)
+
+	// Reject absolute paths
+	if filepath.IsAbs(cleaned) || strings.HasPrefix(cleaned, "/") || strings.HasPrefix(cleaned, "\\") {
+		return false
+	}
+
+	// Reject directory traversal segments
+	if strings.HasPrefix(cleaned, "..") || strings.Contains(cleaned, "../") || strings.Contains(cleaned, "..\\") {
+		return false
+	}
+
+	return true
 }
 
 func normalizeFilePath(file string) string {
@@ -58,6 +75,81 @@ func main() {
 	log.Fatal(http.ListenAndServe(":8765", nil))
 }
 
+func findFileIndex(file string) (string, error) {
+	output, err := exec.Command("transmission-remote", "-t", "1", "--files").Output()
+	if err != nil {
+		return "", err
+	}
+
+	normalized := filepath.ToSlash(normalizeFilePath(file)) // e.g. "1g1r/nointro-nes/Super Mario Bros.nes"
+
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		// Line looks like: "145: Minerva_Myrient/1g1r/nointro-nes/Super Mario Bros.nes (45%)" or similar
+		if !strings.Contains(line, ":") {
+			continue
+		}
+
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) < 2 {
+			continue
+		}
+
+		index := strings.TrimSpace(parts[0])
+		rest := strings.TrimSpace(parts[1])
+
+		// Normalize backslashes/slashes
+		restSlash := filepath.ToSlash(rest)
+
+		// Check if the requested file path matches/is-part-of the torrent file path
+		if strings.Contains(restSlash, normalized) {
+			return index, nil
+		}
+	}
+
+	return "", fmt.Errorf("file not found in torrent")
+}
+
+func getFilePercent(file string) (float64, error) {
+	output, err := exec.Command("transmission-remote", "-t", "1", "--files").Output()
+	if err != nil {
+		return 0.0, err
+	}
+
+	normalized := filepath.ToSlash(normalizeFilePath(file))
+
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if !strings.Contains(line, ":") {
+			continue
+		}
+
+		parts := strings.SplitN(line, ":", 2)
+		if len(parts) < 2 {
+			continue
+		}
+
+		rest := strings.TrimSpace(parts[1])
+		restSlash := filepath.ToSlash(rest)
+
+		if strings.Contains(restSlash, normalized) {
+			// Find percentage in parenthesis at the end, e.g., " (45%)" or " (100%)"
+			openParen := strings.LastIndex(line, "(")
+			closeParen := strings.LastIndex(line, ")")
+			if openParen != -1 && closeParen > openParen {
+				pctStr := strings.TrimSuffix(line[openParen+1:closeParen], "%")
+				if val, err := strconv.ParseFloat(pctStr, 64); err == nil {
+					return val / 100.0, nil
+				}
+			}
+		}
+	}
+
+	return 0.0, fmt.Errorf("file not found in torrent")
+}
+
 func handleDownload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -70,7 +162,11 @@ func handleDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Normalize file path: convert 1g1r-collection to 1g1r/collection
+	if !isSafePath(file) {
+		http.Error(w, "invalid or unsafe file path", http.StatusBadRequest)
+		return
+	}
+
 	normalizedFile := normalizeFilePath(file)
 
 	// Verify file doesn't already exist (if it does, no need to download)
@@ -84,9 +180,21 @@ func handleDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// File doesn't exist, request transmission to download it
-	// For now, just ensure the Minerva torrent is active and seeding
-	log.Printf("Download requested for: %s (normalized: %s)", file, normalizedFile)
+	// Find the file index in the torrent
+	index, err := findFileIndex(file)
+	if err != nil {
+		log.Printf("Failed to find file index for %s: %v", file, err)
+		http.Error(w, "file not found in torrent", http.StatusNotFound)
+		return
+	}
+
+	// Request download for only this file in Transmission
+	log.Printf("Requesting download for file index %s: %s", index, file)
+	if err := exec.Command("transmission-remote", "-t", "1", "-g", index).Run(); err != nil {
+		log.Printf("Failed to set download priority for index %s: %v", index, err)
+		http.Error(w, "failed to start download", http.StatusInternalServerError)
+		return
+	}
 
 	w.WriteHeader(http.StatusAccepted)
 	json.NewEncoder(w).Encode(DownloadStatus{
@@ -99,6 +207,11 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 	file := r.URL.Query().Get("file")
 	if file == "" {
 		http.Error(w, "missing file parameter", http.StatusBadRequest)
+		return
+	}
+
+	if !isSafePath(file) {
+		http.Error(w, "invalid or unsafe file path", http.StatusBadRequest)
 		return
 	}
 
@@ -118,8 +231,24 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// File not on NFS yet, check transmission torrent status
+	// File not on NFS yet, get the percentage of the specific file
+	pct, err := getFilePercent(file)
+	if err != nil {
+		log.Printf("Failed to get file percent for status: %v", err)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(DownloadStatus{
+			Status: "error",
+			Error:  err.Error(),
+		})
+		return
+	}
+
+	// Get overall transmission status (for speed and ETA)
 	status := getTransmissionStatus()
+	status.Percent = pct
+	if pct >= 1.0 {
+		status.Status = "complete"
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(status)
@@ -151,6 +280,11 @@ func ensureMinervaTorrent() {
 	// Add torrent
 	exec.Command("transmission-remote", "--add", minervaMagnet).Run()
 	log.Printf("Added Minerva_Myrient torrent")
+
+	// Wait 2 seconds for it to register and then set all files to do not download
+	time.Sleep(2 * time.Second)
+	exec.Command("transmission-remote", "-t", "1", "-G", "all").Run()
+	log.Printf("Set all files in Minerva torrent to do not download")
 }
 
 func getTransmissionStatus() DownloadStatus {

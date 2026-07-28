@@ -28,13 +28,10 @@ let
 
   # Build the Bubble Tea game loader from Go source
   bubbleteaGameLoader = pkgs.buildGoModule {
-    name = "bubbletea-game-loader";
+    pname = "bubbletea-game-loader";
+    version = "1.0.0";
     src = ../../scripts/bubbletea-game-loader;
     vendorHash = "sha256-ntYW/eWIavEyc8WtVZXb7/NwgzX9U8MxfneOGssDbFE=";
-    installPhase = ''
-      mkdir -p $out/bin
-      cp $GOPATH/bin/bubbletea-game-loader $out/bin/ || cp bubbletea-game-loader $out/bin/
-    '';
   };
 
   # Custom Pegasus theme: "jupiterOS arcade". Touch-friendly, Catppuccin Mocha palette.
@@ -198,6 +195,8 @@ in
       ryujinx
       xterm
       transmission_4
+      unzip
+      p7zip
     ];
 
     # --- Pegasus configuration (seeded into gamer user's home) ----------------
@@ -205,55 +204,57 @@ in
     # assets.directory. The launcher.script is invoked per-game.
     users.users.${cfg.sessionUser} = {
       initialHashedPassword = "!"; # login via HA only
-      extraGroups = [ "video" "render" "input" "audio" ];
+      extraGroups = [
+        "video"
+        "render"
+        "input"
+        "audio"
+      ];
     };
 
     # Seed Pegasus config on first launch (preserves user edits via impermanence)
     systemd.services.pegasus-config-seed = {
       description = "Seed Pegasus config (collections + assets dirs + launcher) for ${cfg.sessionUser} user";
-      path = [ pkgs.coreutils ];
+      path = [
+        pkgs.coreutils
+        pkgs.gnugrep
+      ];
       serviceConfig = {
         Type = "oneshot";
         User = "${cfg.sessionUser}";
         Group = "users";
       };
       script = ''
-        set -eu
-        CONFIG_DIR="''${XDG_CONFIG_HOME:-/home/${cfg.sessionUser}/.config}/pegasus-frontend"
-        mkdir -p "$CONFIG_DIR"
+                set -eu
+                CONFIG_DIR="''${XDG_CONFIG_HOME:-/home/${cfg.sessionUser}/.config}/pegasus-frontend"
+                mkdir -p "$CONFIG_DIR"
 
-        # game_dirs.txt: where Pegasus finds collections (one per line)
-        # Always write to ensure path stays in sync (user can edit but gets reset on rebuild)
-        GAME_DIRS="$CONFIG_DIR/game_dirs.txt"
-        cat > "$GAME_DIRS" <<'EOF'
-# Seeded by jupiterOS arcade module. Safe to edit; changes persist via impermanence.
-${cfg.pegasusCollectionsDir}
-EOF
+                # game_dirs.txt: where Pegasus finds collections (one per line)
+                # Always write to ensure path stays in sync (user can edit but gets reset on rebuild)
+                GAME_DIRS="$CONFIG_DIR/game_dirs.txt"
+                cat > "$GAME_DIRS" <<'EOF'
+        # Seeded by jupiterOS arcade module. Safe to edit; changes persist via impermanence.
+        ${cfg.pegasusCollectionsDir}
+        EOF
 
-        # settings.txt: launcher + assets directory (uses key: value format with colon+space)
-        # Append new settings if file exists (preserve user edits), otherwise create fresh
-        SETTINGS="$CONFIG_DIR/settings.txt"
-        if [ ! -f "$SETTINGS" ]; then
-          cat > "$SETTINGS" <<'EOF'
-# Seeded by jupiterOS arcade module. Safe to edit; changes persist via impermanence.
-collections.directory: ${cfg.pegasusCollectionsDir}
-assets.directory: ${cfg.pegasusAssetsDir}
-launcher.script: /usr/local/bin/pegasus-rom-launch
-general.theme: themes/${cfg.theme}
-EOF
-        else
-          # Ensure key settings are present even if file exists
-          grep -q "collections.directory" "$SETTINGS" || echo "collections.directory: ${cfg.pegasusCollectionsDir}" >> "$SETTINGS"
-          grep -q "assets.directory" "$SETTINGS" || echo "assets.directory: ${cfg.pegasusAssetsDir}" >> "$SETTINGS"
-          grep -q "launcher.script" "$SETTINGS" || echo "launcher.script: /usr/local/bin/pegasus-rom-launch" >> "$SETTINGS"
-        fi
+                # settings.txt: launcher + assets directory (uses key: value format with colon+space)
+                # Append new settings if file exists (preserve user edits), otherwise create fresh
+                SETTINGS="$CONFIG_DIR/settings.txt"
+                if [ ! -f "$SETTINGS" ]; then
+                  cat > "$SETTINGS" <<'EOF'
+        # Seeded by jupiterOS arcade module. Safe to edit; changes persist via impermanence.
+        collections.directory: ${cfg.pegasusCollectionsDir}
+        assets.directory: ${cfg.pegasusAssetsDir}
+        launcher.script: /usr/local/bin/pegasus-rom-launch
+        general.theme: themes/${cfg.theme}
+        EOF
+                else
+                  # Ensure key settings are present even if file exists
+                  grep -q "collections.directory" "$SETTINGS" || echo "collections.directory: ${cfg.pegasusCollectionsDir}" >> "$SETTINGS"
+                  grep -q "assets.directory" "$SETTINGS" || echo "assets.directory: ${cfg.pegasusAssetsDir}" >> "$SETTINGS"
+                  grep -q "launcher.script" "$SETTINGS" || echo "launcher.script: /usr/local/bin/pegasus-rom-launch" >> "$SETTINGS"
+                fi
 
-        # Ensure theme symlink exists in user's themes dir
-        THEMES_DIR="$CONFIG_DIR/themes"
-        mkdir -p "$THEMES_DIR"
-        if [ ! -L "$THEMES_DIR/${cfg.theme}" ]; then
-          ln -sf "${pkgs.pegasus-frontend}/share/pegasus-frontend/themes/${cfg.theme}" "$THEMES_DIR/${cfg.theme}" 2>/dev/null || true
-        fi
       '';
     };
 

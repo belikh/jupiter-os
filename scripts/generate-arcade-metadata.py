@@ -306,7 +306,7 @@ def main():
     p.add_argument("--nfs-root", required=True, help="NFS mount root (e.g. /tank/archive)")
     p.add_argument("--output", required=True, help="Output directory for collection files")
     p.add_argument("--assets", required=True, help="Assets output directory")
-    p.add_argument("--collections", nargs="+", default="all",
+    p.add_argument("--collections", nargs="+", default=["all"],
                    help="Collections to generate (default: all)")
     args = p.parse_args()
 

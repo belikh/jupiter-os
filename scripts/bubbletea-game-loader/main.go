@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -314,7 +315,7 @@ type downloadStatus struct {
 
 func (m model) requestDownload() error {
 	url := fmt.Sprintf("http://%s:8765/api/download?file=%s",
-		m.europaAddr, m.gamePath)
+		m.europaAddr, url.QueryEscape(m.gamePath))
 
 	resp, err := http.Post(url, "application/json", strings.NewReader("{}"))
 	if err != nil {
@@ -331,7 +332,7 @@ func (m model) requestDownload() error {
 
 func (m model) getDownloadStatus() (*downloadStatus, error) {
 	url := fmt.Sprintf("http://%s:8765/api/download-status?file=%s",
-		m.europaAddr, m.gamePath)
+		m.europaAddr, url.QueryEscape(m.gamePath))
 
 	resp, err := http.Get(url)
 	if err != nil {
