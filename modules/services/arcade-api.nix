@@ -48,7 +48,7 @@ in
     ];
 
     # Transmission daemon runs 24/7 to seed Minerva torrents back to the community
-    # IPv6 enabled for global peer connectivity
+    # IPv6 enabled for global peer connectivity; 1000+ torrents need high peer limits
     services.transmission = {
       enable = true;
       package = pkgs.transmission_4;
@@ -63,8 +63,13 @@ in
         rpc-whitelist-enabled = false;
         peer-port = 51413;
         peer-port-random-on-start = false;
+        peer-limit-global = 4096;
+        peer-limit-per-torrent = 5;
       };
     };
+
+    # Allow transmission daemon high file descriptor limits for many peer connections
+    systemd.services.transmission.serviceConfig.LimitNOFILE = 131072;
 
     # Systemd service for the arcade API (depends on transmission)
     systemd.services.arcade-api = {
