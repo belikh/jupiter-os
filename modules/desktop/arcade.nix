@@ -240,7 +240,7 @@ in
       };
       script = ''
         set -eu
-        CONFIG_DIR="${XDG_CONFIG_HOME:-/home/${cfg.sessionUser}/.config}/pegasus-frontend"
+        CONFIG_DIR="''${XDG_CONFIG_HOME:-/home/${cfg.sessionUser}/.config}/pegasus-frontend"
         mkdir -p "$CONFIG_DIR"
 
         # game_dirs.txt: where Pegasus finds collections (one per line)
