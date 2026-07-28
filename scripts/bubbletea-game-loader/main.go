@@ -1,9 +1,11 @@
 package main
 
 import (
+	"archive/zip"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/exec"
@@ -310,6 +312,16 @@ func (m model) getDownloadStatus() (*downloadStatus, error) {
 }
 
 func (m model) launchEmulator(romPath string) error {
+	// Check if romPath is a ZIP archive (curated collection)
+	if strings.HasSuffix(strings.ToLower(romPath), ".zip") {
+		// Extract to /tmp/pegasus-cache
+		cachePath, err := m.extractZip(romPath)
+		if err != nil {
+			return fmt.Errorf("extraction failed: %w", err)
+		}
+		romPath = cachePath
+	}
+
 	// Determine emulator based on game collection
 	emulator := m.getEmulator()
 	if emulator == "" {
@@ -322,6 +334,56 @@ func (m model) launchEmulator(romPath string) error {
 	cmd.Stdin = os.Stdin
 
 	return cmd.Run()
+}
+
+func (m model) extractZip(zipPath string) (string, error) {
+	reader, err := zip.OpenReader(zipPath)
+	if err != nil {
+		return "", err
+	}
+	defer reader.Close()
+
+	// Create destination directory in /tmp/pegasus-cache
+	cacheDir := "/tmp/pegasus-cache"
+	os.MkdirAll(cacheDir, 0755)
+
+	// Extract first file (or find the main executable/game file)
+	var extractedPath string
+	for _, file := range reader.File {
+		// Skip directories
+		if file.FileInfo().IsDir() {
+			continue
+		}
+
+		// Extract to cache directory
+		src, err := file.Open()
+		if err != nil {
+			return "", err
+		}
+		defer src.Close()
+
+		destPath := filepath.Join(cacheDir, filepath.Base(file.Name))
+		dest, err := os.Create(destPath)
+		if err != nil {
+			return "", err
+		}
+		defer dest.Close()
+
+		if _, err := io.Copy(dest, src); err != nil {
+			return "", err
+		}
+
+		// Use the first file extracted
+		if extractedPath == "" {
+			extractedPath = destPath
+		}
+	}
+
+	if extractedPath == "" {
+		return "", fmt.Errorf("no files found in archive")
+	}
+
+	return extractedPath, nil
 }
 
 func (m model) getEmulator() string {
