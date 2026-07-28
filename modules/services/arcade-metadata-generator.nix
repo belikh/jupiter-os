@@ -72,13 +72,21 @@ in
     # Generator service (oneshot)
     systemd.services.arcade-metadata-generate = {
       description = "Generate Pegasus metadata from curated collections + 1G1R DATs";
-      path = [ pkgs.python3 pkgs.unzip pkgs.p7zip pkgs.coreutils ];
+      path = [
+        pkgs.python3
+        pkgs.unzip
+        pkgs.p7zip
+        pkgs.coreutils
+      ];
       serviceConfig = {
         Type = "oneshot";
         User = "root";
         Group = "root";
         # Read-only access to source collections, write to output
-        ReadWritePaths = [ cfg.outputDir cfg.assetsDir ];
+        ReadWritePaths = [
+          cfg.outputDir
+          cfg.assetsDir
+        ];
         ReadOnlyPaths = [ cfg.nfsRoot ];
       };
       script = ''

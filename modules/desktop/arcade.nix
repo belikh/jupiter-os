@@ -192,7 +192,7 @@ in
       ppsspp
       pcsx2
       dolphin-emu
-      ryujinx
+      ryubing
       xterm
     ];
 
@@ -201,7 +201,12 @@ in
     # assets.directory. The launcher.script is invoked per-game.
     users.users.${cfg.sessionUser} = {
       initialHashedPassword = "!"; # login via HA only
-      extraGroups = [ "video" "render" "input" "audio" ];
+      extraGroups = [
+        "video"
+        "render"
+        "input"
+        "audio"
+      ];
     };
 
     # Seed Pegasus config on first launch (preserves user edits via impermanence)
@@ -214,37 +219,37 @@ in
         Group = "users";
       };
       script = ''
-        set -eu
-        CONFIG_DIR="''${XDG_CONFIG_HOME:-/home/${cfg.sessionUser}/.config}/pegasus-frontend"
-        mkdir -p "$CONFIG_DIR"
+                set -eu
+                CONFIG_DIR="''${XDG_CONFIG_HOME:-/home/${cfg.sessionUser}/.config}/pegasus-frontend"
+                mkdir -p "$CONFIG_DIR"
 
-        # game_dirs.txt: where Pegasus finds collections (one per line)
-        GAME_DIRS="$CONFIG_DIR/game_dirs.txt"
-        if [ ! -f "$GAME_DIRS" ]; then
-          cat > "$GAME_DIRS" <<'EOF'
-# Seeded by jupiterOS arcade module. Safe to edit; changes persist via impermanence.
-${cfg.pegasusCollectionsDir}
-EOF
-        fi
+                # game_dirs.txt: where Pegasus finds collections (one per line)
+                GAME_DIRS="$CONFIG_DIR/game_dirs.txt"
+                if [ ! -f "$GAME_DIRS" ]; then
+                  cat > "$GAME_DIRS" <<'EOF'
+        # Seeded by jupiterOS arcade module. Safe to edit; changes persist via impermanence.
+        ${cfg.pegasusCollectionsDir}
+        EOF
+                fi
 
-        # settings.txt: launcher + assets directory
-        SETTINGS="$CONFIG_DIR/settings.txt"
-        if [ ! -f "$SETTINGS" ]; then
-          cat > "$SETTINGS" <<'EOF'
-# Seeded by jupiterOS arcade module. Safe to edit; changes persist via impermanence.
-collections.directory=${cfg.pegasusCollectionsDir}
-assets.directory=${cfg.pegasusAssetsDir}
-launcher.script=/usr/local/bin/pegasus-rom-launch
-general.theme=themes/${cfg.theme}
-EOF
-        fi
+                # settings.txt: launcher + assets directory
+                SETTINGS="$CONFIG_DIR/settings.txt"
+                if [ ! -f "$SETTINGS" ]; then
+                  cat > "$SETTINGS" <<'EOF'
+        # Seeded by jupiterOS arcade module. Safe to edit; changes persist via impermanence.
+        collections.directory=${cfg.pegasusCollectionsDir}
+        assets.directory=${cfg.pegasusAssetsDir}
+        launcher.script=/usr/local/bin/pegasus-rom-launch
+        general.theme=themes/${cfg.theme}
+        EOF
+                fi
 
-        # Ensure theme symlink exists in user's themes dir
-        THEMES_DIR="$CONFIG_DIR/themes"
-        mkdir -p "$THEMES_DIR"
-        if [ ! -L "$THEMES_DIR/${cfg.theme}" ]; then
-          ln -sf "${pkgs.pegasus-frontend}/share/pegasus-frontend/themes/${cfg.theme}" "$THEMES_DIR/${cfg.theme}" 2>/dev/null || true
-        fi
+                # Ensure theme symlink exists in user's themes dir
+                THEMES_DIR="$CONFIG_DIR/themes"
+                mkdir -p "$THEMES_DIR"
+                if [ ! -L "$THEMES_DIR/${cfg.theme}" ]; then
+                  ln -sf "${pkgs.pegasus-frontend}/share/pegasus-frontend/themes/${cfg.theme}" "$THEMES_DIR/${cfg.theme}" 2>/dev/null || true
+                fi
       '';
     };
 

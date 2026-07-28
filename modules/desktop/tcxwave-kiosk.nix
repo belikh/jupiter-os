@@ -125,20 +125,20 @@ in
       url = cfg.dashboardUrl;
     };
 
-# Dashboard ↔ gaming modes, switchable from Home Assistant. Adds a
-# jupiter-<mode>.service per enabled mode on a shared tty1; all session
-# modes plus the Cage dashboard collapse into one HA `select` (launcher
-# group "session"). ONLY `arcade` mode is enabled (Pegasus frontend with
-# on-demand ROM loading via NFS + Myrient mirrors).
-jupiter.dashboardGaming = {
-  enable = true;
-  modes.arcade.enable = true;
-};
+    # Dashboard ↔ gaming modes, switchable from Home Assistant. Adds a
+    # jupiter-<mode>.service per enabled mode on a shared tty1; all session
+    # modes plus the Cage dashboard collapse into one HA `select` (launcher
+    # group "session"). ONLY `arcade` mode is enabled (Pegasus frontend with
+    # on-demand ROM loading via NFS + Myrient mirrors).
+    jupiter.dashboardGaming = {
+      enable = true;
+      modes.arcade.enable = true;
+    };
 
-# jupiterOS Arcade: Pegasus frontend with on-demand ROM loading via NFS + Myrient mirrors.
-# Replaces the old exodos.nix module (which only handled eXoDOS + eXoWin3x).
-# Enabled via jupiter.dashboardGaming.modes.arcade.enable above.
-# jupiter.exodos.enable = false; # explicitly disabled (replaced by arcade.nix)
+    # jupiterOS Arcade: Pegasus frontend with on-demand ROM loading via NFS + Myrient mirrors.
+    # Replaces the old exodos.nix module (which only handled eXoDOS + eXoWin3x).
+    # Enabled via jupiter.dashboardGaming.modes.arcade.enable above.
+    # jupiter.exodos.enable = false; # explicitly disabled (replaced by arcade.nix)
 
     jupiter.boot.falloutSplash.enable = true;
 
