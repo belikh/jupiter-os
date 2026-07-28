@@ -250,5 +250,13 @@ EOF
     # Allow the session user to run the extraction helper as root with no password.
     # --- Install launcher script to /usr/local/bin ----------------------------
     environment.etc."pegasus-rom-launch".source = cfg.launcherScript;
+
+    # Symlink bubbletea-game-loader to /usr/local/bin for pegasus-rom-launch
+    system.activationScripts.bubbleteaGameLoaderLink = {
+      text = ''
+        mkdir -p /usr/local/bin
+        ln -sfn ${bubbleteaGameLoader}/bin/bubbletea-game-loader /usr/local/bin/bubbletea-game-loader
+      '';
+    };
   };
 }
