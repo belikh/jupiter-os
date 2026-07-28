@@ -35,14 +35,9 @@
 # that path. iSCSI root uses a different, purpose-built NixOS mechanism
 # instead (boot.iscsi-initiator, nixos/modules/services/networking/iscsi/
 # root-initiator.nix) that nixpkgs ships specifically for booting / and /nix
-# over iSCSI — not a hand-rolled mount. Its one hard requirement is the
-# CLASSIC (non-systemd) stage-1 initrd: it asserts
-# `!boot.initrd.systemd.enable`, because systemd-stage-1 doesn't support
-# iSCSI yet. That's a real trade (this host loses systemd-stage-1's
-# tooling), but it's the same initrd implementation every ordinary
-# disk-based NixOS install has used for years — not the newer, thinner
-# netboot-minimal environment that had "no hardware scan behind it" and
-# caused the earlier pain.
+# over iSCSI — not a hand-rolled mount. Under systemd initrd, we implement
+# this via a custom iscsi-login systemd unit, since boot.iscsi-initiator
+# does not support systemd stage 1 yet and asserts !boot.initrd.systemd.enable.
 #
 # A useful side effect: since root is now a real persistent filesystem
 # instead of a tmpfs squashfs overlay, sops-nix can decrypt secrets at
@@ -63,31 +58,75 @@
   # ever added on this host later.
   networking.hostId = "ca11157c";
 
-  # ---- Root over iSCSI -----------------------------------------------------
-  # boot.iscsi-initiator (nixos/modules/services/networking/iscsi/root-initiator.nix)
-  # HARD-asserts `!boot.initrd.systemd.enable` — it uses preLVMCommands/
-  # extraUtilsCommands, which the systemd-stage-1 initrd doesn't implement
-  # at all ("systemd stage 1 does not support iscsi yet" is its own literal
-  # assertion message). This is the one non-optional trade of this whole
-  # design: callisto loses systemd-stage-1's tooling in exchange for a
-  # working iSCSI root, on this one host only.
-  boot.initrd.systemd.enable = false;
+  # ---- Root over iSCSI with systemd initrd ---------------------------------
+  boot.initrd.systemd.enable = true;
 
-  # The module also forces networking.useNetworkd = true and
-  # networking.useDHCP = false itself (unconditional assignments, not
-  # mkDefault) — don't set those separately here, they'd conflict. It adds
-  # the iscsi_tcp kernel module, the iscsid/iscsiadm binaries, and
-  # boot.initrd.network.enable = true (generic initrd DHCP, the classic-initrd
-  # equivalent of what systemd-stage-1's network.enable does) on its own.
-  # The only thing left to us is the NIC driver, which (unlike
-  # netboot-minimal's RAM-resident environment, which had "no hardware scan
-  # behind it") this classic initrd can autoload via udev the normal way —
-  # same mechanism every disk-based NixOS install already relies on.
-  boot.initrd.availableKernelModules = [ "e1000e" ]; # onboard Intel I219-LM
-  boot.iscsi-initiator = {
+  # Load the physical NIC driver (Intel I219-LM) and iSCSI TCP kernel module early
+  boot.initrd.availableKernelModules = [ "e1000e" ];
+  boot.initrd.kernelModules = [ "iscsi_tcp" ];
+
+  # Configure systemd-networkd in the initrd to configure DHCP on all ethernet interfaces
+  boot.initrd.systemd.network = {
+    enable = true;
+    networks."99-ethernet-default" = {
+      matchConfig.Name = "*";
+      networkConfig.DHCP = "yes";
+    };
+  };
+
+  # Custom iSCSI initiator login in systemd initrd
+  boot.initrd.systemd.services.iscsi-login = {
+    description = "Log into the iSCSI target backing the root filesystem";
+    wantedBy = [ "initrd-root-device.target" ];
+    before = [ "initrd-root-device.target" ];
+    after = [ "network-online.target" ];
+    wants = [ "network-online.target" ];
+
+    # Do not inherit default systemd target dependencies in initrd
+    unitConfig.DefaultDependencies = false;
+
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+
+    path = with pkgs; [
+      openiscsi
+      kmod
+      iproute2
+    ];
+
+    script = ''
+      echo "Setting up iSCSI initiator..."
+      mkdir -p /etc/iscsi
+      echo "InitiatorName=iqn.2026-07.au.jupiter:callisto" > /etc/iscsi/initiatorname.iscsi
+      cp ${pkgs.openiscsi}/etc/iscsi/iscsid.conf /etc/iscsi/iscsid.conf
+
+      echo "Starting iscsid..."
+      iscsid
+
+      echo "Discovering iSCSI target at 10.1.1.2:3260..."
+      iscsiadm --mode discoverydb --type sendtargets --discover --portal 10.1.1.2:3260
+
+      echo "Logging into target iqn.2026-07.au.jupiter:europa:callisto-root..."
+      iscsiadm --mode node --targetname iqn.2026-07.au.jupiter:europa:callisto-root --login
+    '';
+  };
+
+  # ---- Stage 2 Networking & iSCSI services ---------------------------------
+  networking.useNetworkd = true;
+  networking.useDHCP = false;
+
+  # Configure systemd-networkd for stage 2 to use DHCP on all ethernet interfaces.
+  systemd.network.networks."99-ethernet-default" = {
+    matchConfig.Name = "*";
+    networkConfig.DHCP = "yes";
+  };
+
+  # Ensure the iSCSI service runs in stage 2
+  services.openiscsi = {
+    enable = true;
     name = "iqn.2026-07.au.jupiter:callisto";
-    discoverPortal = "10.1.1.2:3260";
-    target = "iqn.2026-07.au.jupiter:europa:callisto-root";
   };
 
   # Root over iSCSI: a plain ext4 filesystem on the whole LUN. NO ZFS layer
