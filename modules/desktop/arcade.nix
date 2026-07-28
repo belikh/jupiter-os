@@ -27,23 +27,13 @@ let
   cfg = config.jupiter.arcade;
 
   # Build the Bubble Tea game loader from Go source
-  bubbleteaGameLoader = pkgs.stdenv.mkDerivation {
+  bubbleteaGameLoader = pkgs.buildGoModule {
     name = "bubbletea-game-loader";
     src = ../../scripts/bubbletea-game-loader;
-    nativeBuildInputs = [ pkgs.go ];
-    buildPhase = ''
-      export HOME=$PWD
-      export GOPATH=$PWD/.gopath
-      export GOCACHE=$PWD/.cache/go-build
-      mkdir -p $GOCACHE
-      mkdir -p $GOPATH/src
-      cp -r . $GOPATH/src/bubbletea-game-loader
-      cd $GOPATH/src/bubbletea-game-loader
-      go build -o bubbletea-game-loader .
-    '';
+    vendorHash = null;
     installPhase = ''
       mkdir -p $out/bin
-      cp $PWD/.gopath/src/bubbletea-game-loader/bubbletea-game-loader $out/bin/
+      cp $GOPATH/bin/bubbletea-game-loader $out/bin/ || cp bubbletea-game-loader $out/bin/
     '';
   };
 
