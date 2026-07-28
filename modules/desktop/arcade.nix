@@ -193,6 +193,7 @@ in
       pcsx2
       dolphin-emu
       ryubing
+      xterm
     ];
 
     # --- Pegasus configuration (seeded into gamer user's home) ----------------
