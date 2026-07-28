@@ -6,6 +6,13 @@ let
     src = ../../scripts/europa-arcade-api;
     vendorHash = null;
     meta.mainProgram = "europa-arcade-api";
+
+    postInstall = ''
+      wrapProgram "$out/bin/europa-arcade-api" \
+        --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.transmission_4 ]}
+    '';
+
+    nativeBuildInputs = [ pkgs.makeWrapper ];
   };
 in
 {
