@@ -29,7 +29,7 @@ let
   # Build the Bubble Tea game loader from Go source
   bubbleteaGameLoader = pkgs.stdenv.mkDerivation {
     name = "bubbletea-game-loader";
-    src = ./scripts/bubbletea-game-loader;
+    src = ../../scripts/bubbletea-game-loader;
     nativeBuildInputs = [ pkgs.go ];
     buildPhase = ''
       export GOPATH=$PWD/.gopath
@@ -116,7 +116,7 @@ in
     # Launcher script path (installed to /usr/local/bin)
     launcherScript = lib.mkOption {
       type = lib.types.path;
-      default = ./scripts/pegasus-rom-launch;
+      default = ../../scripts/pegasus-rom-launch;
       description = "Path to the pegasus-rom-launch wrapper script";
     };
 
