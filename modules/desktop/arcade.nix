@@ -207,7 +207,7 @@ in
         cores.snes9x        # SNES
         cores.gambatte      # GB/GBC
         cores.mgba          # GBA
-        cores.melonDS       # DS
+        cores.melonds       # DS
         cores.duckstation   # PS1
         cores.yabause       # Saturn
         cores.flycast       # Dreamcast
