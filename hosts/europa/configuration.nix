@@ -188,4 +188,8 @@
   # Must be added to secrets/secrets.yaml before first deploy.
   sops.secrets.attic_server_token_secret = { };
   sops.secrets.nix_build_ssh_key = { };
+
+  # Disable zfs-share to avoid SMB share failures during activation
+  # (samba config issue with these datasets; NFS serving works fine)
+  systemd.services.zfs-share.enable = false;
 }
