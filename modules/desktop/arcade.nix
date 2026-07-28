@@ -197,7 +197,6 @@ in
       vice
       scummvm
       pcem
-      fs-uae
       ppsspp
       pcsx2
       dolphin-emu
