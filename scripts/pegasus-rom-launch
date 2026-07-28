@@ -152,12 +152,7 @@ if [[ -e "${NFS_PATH}" ]]; then
         log "Curated archive detected, extracting to ${CACHE_DIR}"
         mkdir -p "${CACHE_DIR}"
 
-        /usr/local/bin/bubbletea-game-loader \
-            --src "${ROM_PATH}" \
-            --dst "${CACHE_DIR}" \
-            --operation extract \
-            --nfs-mount "${NFS_MOUNT}" \
-            --title "${GAME_NAME}"
+        script -q -c "/usr/local/bin/bubbletea-game-loader --src \"${ROM_PATH}\" --dst \"${CACHE_DIR}\" --operation extract --nfs-mount \"${NFS_MOUNT}\" --title \"${GAME_NAME}\"" /dev/null
 
         exec launch-emulator "${CACHE_DIR}" "${ROM_PATH}"
     else
@@ -170,12 +165,7 @@ else
     log "Not on NFS (1G1R), downloading to persistent cache"
     CACHE_FILE="${PERSISTENT_CACHE}/${GAME_NAME_SAFE}"
 
-    /usr/local/bin/bubbletea-game-loader \
-        --src "${ROM_PATH}" \
-        --dst "${CACHE_FILE}" \
-        --operation download \
-        --nfs-mount "${NFS_MOUNT}" \
-        --title "${GAME_NAME}"
+    script -q -c "/usr/local/bin/bubbletea-game-loader --src \"${ROM_PATH}\" --dst \"${CACHE_FILE}\" --operation download --nfs-mount \"${NFS_MOUNT}\" --title \"${GAME_NAME}\"" /dev/null
 
     exec launch-emulator "${CACHE_FILE}" "${ROM_PATH}"
 fi
