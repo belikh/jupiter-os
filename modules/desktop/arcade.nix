@@ -194,7 +194,6 @@ in
       retroarch
       dosbox-staging
       dosbox-x
-      vice
       scummvm
       pcem
       ppsspp
