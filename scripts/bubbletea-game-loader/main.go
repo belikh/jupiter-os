@@ -22,22 +22,27 @@ type progressMsg struct {
 	status  string
 	detail  string
 }
+type statusPollMsg struct {
+	status string
+	err    error
+}
 type doneMsg struct{ err error }
 type launchMsg struct{}
 
 type model struct {
-	gamePath   string
-	gameTitle  string
-	nfsRoot    string
-	europaAddr string
-	progress   progress.Model
-	percent    float64
-	status     string
-	detail     string
-	err        error
-	done       bool
-	ctx        context.Context
-	cancelFunc context.CancelFunc
+	gamePath    string
+	gameTitle   string
+	nfsRoot     string
+	europaAddr  string
+	progress    progress.Model
+	percent     float64
+	status      string
+	detail      string
+	err         error
+	done        bool
+	downloading bool
+	ctx         context.Context
+	cancelFunc  context.CancelFunc
 }
 
 var (
@@ -121,16 +126,46 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case tickMsg:
+		if m.downloading {
+			return m, tea.Batch(
+				m.pollDownloadStatus(),
+				tickCmd(),
+			)
+		}
 		if !m.done {
 			return m, tickCmd()
 		}
 		return m, tea.Quit
 
+	case statusPollMsg:
+		if msg.err != nil {
+			m.downloading = false
+			m.done = true
+			m.err = msg.err
+			m.status = fmt.Sprintf("Download failed: %v", msg.err)
+			return m, tea.Quit
+		}
+		if msg.status == "complete" {
+			m.downloading = false
+			m.percent = 1.0
+			m.status = "Download complete, launching..."
+			return m, m.doLaunch()
+		}
+		// Still downloading, will poll again on next tick
+		return m, nil
+
 	case progressMsg:
 		m.percent = msg.percent
 		m.status = msg.status
 		m.detail = msg.detail
-		return m, tickCmd()
+		// If we got a progress message indicating we're downloading, set the flag
+		if msg.status == "Found on NFS" {
+			return m, m.doLaunch()
+		}
+		if strings.Contains(msg.status, "Downloading") {
+			m.downloading = true
+		}
+		return m, nil
 
 	case launchMsg:
 		m.done = true
@@ -193,12 +228,36 @@ func (m model) checkAndLaunch() tea.Cmd {
 			return doneMsg{err: fmt.Errorf("download request failed: %w", err)}
 		}
 
-		// Step 3: Poll europa's API for download progress
-		if err := m.waitForDownload(); err != nil {
-			return doneMsg{err: fmt.Errorf("download failed: %w", err)}
+		// Step 3: Return a message that tells Update to start polling
+		return progressMsg{
+			percent: 0.0,
+			status:  "Downloading from europa...",
+			detail:  "Starting download...",
+		}
+	}
+}
+
+func (m model) pollDownloadStatus() tea.Cmd {
+	return func() tea.Msg {
+		status, err := m.getDownloadStatus()
+		if err != nil {
+			return statusPollMsg{err: fmt.Errorf("status poll failed: %w", err)}
 		}
 
-		// Step 4: Launch emulator
+		m.percent = status.Percent
+		m.detail = fmt.Sprintf("%s  •  %s", status.Speed, status.ETA)
+
+		return statusPollMsg{
+			status: status.Status,
+			err:    nil,
+		}
+	}
+}
+
+func (m model) doLaunch() tea.Cmd {
+	return func() tea.Msg {
+		nfsPath := filepath.Join(m.nfsRoot, "games", m.gamePath)
+
 		if err := m.launchEmulator(nfsPath); err != nil {
 			return doneMsg{err: fmt.Errorf("launch failed: %w", err)}
 		}
@@ -216,16 +275,10 @@ type downloadStatus struct {
 }
 
 func (m model) requestDownload() error {
-	reqBody := map[string]string{
-		"file": m.gamePath,
-	}
-	body, _ := json.Marshal(reqBody)
+	url := fmt.Sprintf("http://%s:8765/api/download?file=%s",
+		m.europaAddr, m.gamePath)
 
-	resp, err := http.Post(
-		fmt.Sprintf("http://%s:8765/api/download", m.europaAddr),
-		"application/json",
-		strings.NewReader(string(body)),
-	)
+	resp, err := http.Post(url, "application/json", strings.NewReader("{}"))
 	if err != nil {
 		return fmt.Errorf("could not reach europa: %w", err)
 	}
@@ -238,47 +291,9 @@ func (m model) requestDownload() error {
 	return nil
 }
 
-func (m model) waitForDownload() error {
-	deadline := time.Now().Add(2 * time.Hour)
-
-	for time.Now().Before(deadline) {
-		select {
-		case <-m.ctx.Done():
-			return m.ctx.Err()
-		default:
-		}
-
-		// Poll europa's progress API
-		status, err := m.getDownloadStatus()
-		if err != nil {
-			return fmt.Errorf("could not get status from europa: %w", err)
-		}
-
-		if status.Status == "complete" {
-			return nil
-		}
-
-		if status.Status == "error" {
-			return fmt.Errorf("europa error: %s", status.Error)
-		}
-
-		// Update progress in TUI
-		// Note: in a real tea app, this would send a message through a channel
-		_ = progressMsg{
-			percent: status.Percent,
-			status:  "Downloading from europa...",
-			detail:  fmt.Sprintf("%s  •  %s", status.Speed, status.ETA),
-		}
-
-		time.Sleep(1 * time.Second)
-	}
-
-	return fmt.Errorf("download timeout after 2 hours")
-}
-
 func (m model) getDownloadStatus() (*downloadStatus, error) {
 	url := fmt.Sprintf("http://%s:8765/api/download-status?file=%s",
-		m.europaAddr, strings.TrimPrefix(m.gamePath, "1g1r-"))
+		m.europaAddr, m.gamePath)
 
 	resp, err := http.Get(url)
 	if err != nil {
