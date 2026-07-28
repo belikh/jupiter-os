@@ -27,6 +27,16 @@ TMP_CACHE="/tmp/pegasus-cache"
 PERSISTENT_CACHE="/var/cache/pegasus-roms"
 GAMES_ROOT="${NFS_MOUNT}/retro/games"
 
+# Normalize ROM_PATH: if it's an absolute path, extract the collection/game part
+# Handles cases where Pegasus passes full paths like:
+#   /tank/archive/retro/games/1g1r-nointro-nes/Pac-Man.nes
+# Normalizes to:
+#   1g1r-nointro-nes/Pac-Man.nes
+if [[ "${ROM_PATH}" == /* ]]; then
+    ROM_PATH="${ROM_PATH#${GAMES_ROOT}/}"
+    ROM_PATH="${ROM_PATH#/}"
+fi
+
 GAME_NAME="$(basename "${ROM_PATH}" | sed 's/\.[^.]*$//')"
 GAME_NAME_SAFE="$(echo "${GAME_NAME}" | sed 's/[^a-zA-Z0-9._-]/_/g')"
 
