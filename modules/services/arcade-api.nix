@@ -27,5 +27,34 @@ in
     systemd.tmpfiles.rules = [
       "d ${cfg.cacheDir} 0755 root root - -"
     ];
+
+    # Build arcade-api from source and create systemd service
+    systemd.services.arcade-api = {
+      description = "Jupiter OS Arcade API Server";
+      after = [ "network-online.target" ];
+      wants = [ "network-online.target" ];
+      wantedBy = [ "multi-user.target" ];
+
+      serviceConfig = {
+        Type = "simple";
+        ExecStart = "${pkgs.buildGoModule {
+          name = "arcade-api";
+          src = ../../scripts/arcade-api;
+          vendorHash = null;
+          buildPhase = ''
+            CGO_ENABLED=0 go build -o arcade-api main.go
+          '';
+          installPhase = ''
+            mkdir -p $out/bin
+            cp arcade-api $out/bin/arcade-api
+          '';
+        }}/bin/arcade-api";
+        Restart = "on-failure";
+        RestartSec = 5;
+        StandardOutput = "journal";
+        StandardError = "journal";
+        SyslogIdentifier = "arcade-api";
+      };
+    };
   };
 }
