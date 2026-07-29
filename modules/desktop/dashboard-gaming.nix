@@ -180,6 +180,9 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    # Enable the Arcade module if arcade mode is enabled
+    jupiter.arcade.enable = cfg.modes.arcade.enable;
+
     # --- Gaming software stack (Jovian), NO SDDM autostart -------------------
     # Stock kernel + stock Mesa: these are low-power Intel (HD 520) kiosks on
     # ZFS, not CachyOS boxes. gamingMode.autoStart = false is load-bearing:
