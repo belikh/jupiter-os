@@ -128,16 +128,20 @@ extract_collection() {
         zfs destroy -r "${dst_dataset}" || error "Failed to destroy ${dst_dataset}"
     fi
 
-    # Create dataset by tar'ing source directory and piping to zfs recv
-    log "  Creating ZFS dataset from directory contents..."
-    tar -C "${STAGING_MOUNT_REAL}/${src_dir}" -cf - . | zfs recv -F "${dst_dataset}" || {
-        error "Failed to create ${dst_dataset}"
+    # Create dataset and copy content
+    log "  Creating ZFS dataset..."
+    mkdir -p "${TARGET_BASE}"
+    zfs create "${dst_dataset}" || error "Failed to create ${dst_dataset}"
+
+    local dst_mount=$(zfs get -H -o value mountpoint "${dst_dataset}")
+    log "  Copying content to ${dst_mount}..."
+    cp -r "${STAGING_MOUNT_REAL}/${src_dir}"/* "${dst_mount}/" || {
+        error "Failed to copy ${name} content"
     }
 
     success "Created ${dst_dataset}"
 
     # Verify structure
-    local dst_mount=$(zfs get -H -o value mountpoint "${dst_dataset}")
     log "  Mounted at: ${dst_mount}"
 
     if [[ -f "${dst_mount}/${xml_path}" ]]; then
