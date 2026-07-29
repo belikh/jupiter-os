@@ -161,8 +161,8 @@ in
 
     # ---- SMB shares --------------------------------------------------------
     services.samba = {
-      enable = true;
-      openFirewall = true;
+      enable = false;
+      openFirewall = false;
       settings = {
         global = {
           "workgroup" = "WORKGROUP";
@@ -206,8 +206,8 @@ in
     };
 
     services.samba-wsdd = {
-      enable = true; # Makes the NAS discoverable on the network
-      openFirewall = true;
+      enable = false;
+      openFirewall = false;
     };
 
     environment.systemPackages = with pkgs; [
