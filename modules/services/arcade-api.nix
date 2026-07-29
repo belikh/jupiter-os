@@ -2,13 +2,11 @@
 let
   cfg = config.jupiter.services.arcadeApi;
 
-  arcade-api = pkgs.buildGoModule {
+  arcade-api = pkgs.buildGoModule rec {
     pname = "arcade-api";
     version = "0.1.0";
-    src = ../../scripts/arcade-api;
+    src = ./../../scripts/arcade-api;
     vendorHash = null;
-    CGO_ENABLED = "0";
-    ldflags = [ "-s" "-w" ];
   };
 in
 {
