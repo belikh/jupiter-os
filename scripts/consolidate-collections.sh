@@ -1,41 +1,37 @@
 #!/bin/bash
-# consolidate-collections.sh — Consolidate eXoDOS and eXoWin3x using ZFS send/recv
+# consolidate-collections.sh — Consolidate eXoDOS and eXoWin3x via ZFS send
 #
-# This script consolidates existing game collections from /mnt/europa/games
-# to /tank/archive/retro/games/curated using ZFS send/receive.
+# Strategy: Send full europa/games@b4exodoslinux snapshot, extract needed
+# collections to nested datasets, delete staging.
 #
 # Prerequisites:
 # - Script runs ON europa (10.1.1.2)
-# - Source collections must be on a ZFS dataset
-# - ~1 TB free space on tank/archive pool
+# - ~4 TB free space on tank/archive pool (worst case: full snapshot + extraction)
 # - No active Pegasus/arcade sessions
 #
-# Usage: Run this on europa:
+# Usage:
 #   ssh root@10.1.1.2 bash /root/consolidate-collections.sh
 
 set -euo pipefail
 
 # Configuration
-SOURCE_BASE="/mnt/europa/games"
+EUROPA_HOST="10.1.1.2"
+SOURCE_SNAPSHOT="europa/games@b4exodoslinux"
 TARGET_BASE="/tank/archive/retro/games/curated"
+STAGING_DATASET="tank/archive/retro/games/staging-europa-games"
+STAGING_MOUNT="/mnt/staging-europa-games"
 METADATA_DIR="/tank/archive/retro/metadata/pegasus/collections"
 
-EXODOS_SRC="${SOURCE_BASE}/eXoDOS"
-EXODOS_DST="${TARGET_BASE}/exo-dos"
 EXODOS_DATASET="tank/archive/retro/games/curated/exo-dos"
-
-EXOWIN3X_SRC="${SOURCE_BASE}/eXoWin3x"
-EXOWIN3X_DST="${TARGET_BASE}/exo-win3x"
 EXOWIN3X_DATASET="tank/archive/retro/games/curated/exo-win3x"
 
 LOG_FILE="/var/log/consolidate-collections.log"
 
-# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "${LOG_FILE}"
@@ -58,145 +54,126 @@ info() {
     echo -e "${BLUE}ℹ $*${NC}" | tee -a "${LOG_FILE}"
 }
 
-# Verify we're running on europa
-if ! hostname | grep -q europa; then
-    error "This script must be run on europa. Try: ssh root@10.1.1.2 bash /root/consolidate-collections.sh"
+# Verify we're on a machine that can receive (tank pool accessible)
+if ! zfs list tank &>/dev/null 2>&1; then
+    error "tank pool not found. This script must be run on a machine with tank pool access."
 fi
 
-log "=== Consolidating Game Collections via ZFS send/recv ==="
-log "Source base: ${SOURCE_BASE}"
+log "=== Consolidating Game Collections (eXoDOS, eXoWin3x) ==="
+log "Strategy: Send europa/games snapshot → staging → extract collections → delete staging"
+log "Source snapshot: ${SOURCE_SNAPSHOT}"
 log "Target base: ${TARGET_BASE}"
-log "Log file: ${LOG_FILE}"
+log "Staging: ${STAGING_DATASET} → ${STAGING_MOUNT}"
 log ""
 
 # Verify ZFS is available
-if ! command -v zfs &> /dev/null; then
-    error "ZFS not found. This script requires ZFS."
-fi
-
+command -v zfs &>/dev/null || error "ZFS not found"
 success "ZFS available"
 
-# Create target base directory
 mkdir -p "${METADATA_DIR}"
 success "Created metadata directory"
 
-# Function to consolidate via ZFS send/recv from read-only europa pool
-consolidate_collection_zfs() {
-    local src="$1"
-    local dst="$2"
-    local dst_dataset="$3"
-    local name="$4"
-    local xml_path="$5"
+# Step 1: Send snapshot from europa to staging dataset
+log ""
+log "=== Step 1: Receive europa/games snapshot to staging ==="
+log "Sending ${SOURCE_SNAPSHOT}..."
 
-    if [[ ! -d "${src}" ]]; then
-        warning "${name} not found at ${src}, skipping"
-        return 0
+# Destroy staging if it exists from a previous failed run
+if zfs list -H "${STAGING_DATASET}" &>/dev/null; then
+    log "Destroying existing staging dataset..."
+    zfs destroy -r "${STAGING_DATASET}" || error "Failed to destroy existing staging"
+    success "Staging cleaned up"
+fi
+
+# Send snapshot from europa to tank
+ssh root@${EUROPA_HOST} "zfs send ${SOURCE_SNAPSHOT}" | zfs recv -F "${STAGING_DATASET}" || {
+    error "Failed to send snapshot from europa"
+}
+
+# Verify staging is mounted
+STAGING_MOUNT_REAL=$(zfs get -H -o value mountpoint "${STAGING_DATASET}")
+log "Staging dataset mounted at: ${STAGING_MOUNT_REAL}"
+success "Snapshot received to staging"
+
+# Step 2: Create nested datasets from staging content
+log ""
+log "=== Step 2: Extract collections to nested datasets ==="
+
+# Helper to extract directory from staging to nested dataset
+extract_collection() {
+    local src_dir="$1"
+    local dst_dataset="$2"
+    local name="$3"
+    local xml_path="$4"
+
+    if [[ ! -d "${STAGING_MOUNT_REAL}/${src_dir}" ]]; then
+        warning "${name} directory not found at ${STAGING_MOUNT_REAL}/${src_dir}"
+        return 1
     fi
 
     log ""
-    log "Consolidating ${name}..."
-    info "  Source: ${src}"
-    info "  Target: ${dst_dataset}"
+    info "Extracting ${name}..."
+    log "  Source: ${STAGING_MOUNT_REAL}/${src_dir}"
+    log "  Dataset: ${dst_dataset}"
 
-    # Check if destination dataset already exists
+    # Destroy destination if it exists
     if zfs list -H "${dst_dataset}" &>/dev/null; then
-        warning "Dataset ${dst_dataset} already exists"
-        read -p "Destroy and recreate? (y/n) " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            log "Skipping ${name}"
-            return 0
-        fi
+        log "  Destroying existing ${dst_dataset}..."
         zfs destroy -r "${dst_dataset}" || error "Failed to destroy ${dst_dataset}"
-        success "Destroyed existing dataset"
     fi
 
-    # Send snapshot from europa pool to tank pool
-    # europa/games@b4exodoslinux is a pre-existing snapshot
-    log "Sending europa/games snapshot to ${dst_dataset}..."
-    ssh root@10.1.1.2 "zfs send europa/games@b4exodoslinux" | zfs recv -F "${dst_dataset}" || {
-        error "Failed to send europa/games snapshot to ${dst_dataset}"
+    # Create dataset by tar'ing source directory and piping to zfs recv
+    log "  Creating ZFS dataset from directory contents..."
+    tar -C "${STAGING_MOUNT_REAL}/${src_dir}" -cf - . | zfs recv -F "${dst_dataset}" || {
+        error "Failed to create ${dst_dataset}"
     }
 
-    success "${name} consolidated to ${dst_dataset}"
+    success "Created ${dst_dataset}"
 
-    # Verify dataset was created and is mounted
-    if zfs list -H "${dst_dataset}" &>/dev/null; then
-        success "Dataset ${dst_dataset} created successfully"
-        info "  Mounted at: $(zfs get -H mountpoint "${dst_dataset}" | cut -f3)"
+    # Verify structure
+    local dst_mount=$(zfs get -H -o value mountpoint "${dst_dataset}")
+    log "  Mounted at: ${dst_mount}"
+
+    if [[ -f "${dst_mount}/${xml_path}" ]]; then
+        success "  LaunchBox XML verified: ${xml_path}"
     else
-        error "Dataset ${dst_dataset} not found after recv"
+        warning "  LaunchBox XML not found at expected location: ${xml_path}"
     fi
 
-    # Verify LaunchBox XML exists
-    if [[ -f "${dst}/${xml_path}" ]]; then
-        success "LaunchBox XML found at ${xml_path}"
-    else
-        warning "LaunchBox XML not found at expected location: ${xml_path}"
-        info "Searching for XML files..."
-        find "${dst}" -name "*.xml" -path "*/Platforms/*" 2>/dev/null | head -3 | while read -r xml; do
-            info "  Found: ${xml}"
-        done
-    fi
-
-    return 0
+    # Show size
+    local size=$(zfs get -H -o value used "${dst_dataset}")
+    log "  Dataset size: ${size}"
 }
 
-# Copy collections directly with rsync (simpler than ZFS send)
+extract_collection "eXoDOS" "${EXODOS_DATASET}" "eXoDOS" "Data/Platforms/MS-DOS.xml"
+extract_collection "eXoWin3x" "${EXOWIN3X_DATASET}" "eXoWin3x" "Data/Platforms/Windows 3x.xml"
+
+# Step 3: Verify collections
 log ""
-log "--- Consolidating collections via rsync ---"
+log "=== Step 3: Verifying Datasets ==="
+log "Created datasets:"
+zfs list -r "${TARGET_BASE}" 2>/dev/null || warning "No curated datasets found"
 
-# Create parent dataset first
-zfs create -p "${TARGET_BASE}" 2>/dev/null || true
+for ds in "${EXODOS_DATASET}" "${EXOWIN3X_DATASET}"; do
+    if zfs list -H "${ds}" &>/dev/null; then
+        size=$(zfs get -H -o value used "${ds}")
+        mount=$(zfs get -H -o value mountpoint "${ds}")
+        info "${ds}: ${size} (mounted at ${mount})"
+    fi
+done
 
-# Create and populate nested datasets for each collection
+# Step 4: Clean up staging dataset
 log ""
-log "Creating nested datasets and copying collections..."
+log "=== Step 4: Cleaning up staging ==="
+log "Destroying ${STAGING_DATASET}..."
+zfs destroy -r "${STAGING_DATASET}" || error "Failed to destroy staging dataset"
+success "Staging cleaned up"
 
-# eXoDOS
-if [[ -d "${EXODOS_SRC}" ]]; then
-    log "Creating exo-dos dataset..."
-    zfs create "${EXODOS_DATASET}" || error "Failed to create exo-dos dataset"
-    log "Copying eXoDOS via rsync..."
-    rsync -av "${EXODOS_SRC}/" "${EXODOS_DST}/" || {
-        error "Failed to copy eXoDOS"
-    }
-    success "eXoDOS consolidated to ${EXODOS_DATASET}"
-fi
-
-# eXoWin3x
-if [[ -d "${EXOWIN3X_SRC}" ]]; then
-    log "Creating exo-win3x dataset..."
-    zfs create "${EXOWIN3X_DATASET}" || error "Failed to create exo-win3x dataset"
-    log "Copying eXoWin3x via rsync..."
-    rsync -av "${EXOWIN3X_SRC}/" "${EXOWIN3X_DST}/" || {
-        error "Failed to copy eXoWin3x"
-    }
-    success "eXoWin3x consolidated to ${EXOWIN3X_DATASET}"
-fi
-
-# Verify consolidated collections
+# Step 5: Generate Pegasus metadata
 log ""
-log "=== ZFS Dataset Verification ==="
-log "Listing created datasets:"
-zfs list -H tank/archive/retro/games/curated 2>/dev/null || warning "No datasets found"
+log "=== Step 5: Generating Pegasus Metadata ==="
 
-info "eXoDOS:"
-zfs get -H compressratio,used,available "${EXODOS_DATASET}" 2>/dev/null | \
-    while IFS=$'\t' read -r dataset property value; do
-        info "  ${property}: ${value}"
-    done
-
-info "eXoWin3x:"
-zfs get -H compressratio,used,available "${EXOWIN3X_DATASET}" 2>/dev/null | \
-    while IFS=$'\t' read -r dataset property value; do
-        info "  ${property}: ${value}"
-    done
-
-# Generate Pegasus metadata
-log ""
-log "=== Generating Pegasus Metadata ==="
-if command -v python3 &> /dev/null; then
+if command -v python3 &>/dev/null; then
     for collection in curated-exo-dos curated-exo-win3x; do
         log "Generating metadata for ${collection}..."
         python3 /root/jupiter-os/scripts/generate-arcade-metadata.py \
@@ -204,36 +181,29 @@ if command -v python3 &> /dev/null; then
             --output "${METADATA_DIR}" \
             --assets /tank/archive/retro/metadata/pegasus/assets \
             --collections "${collection}" 2>&1 | tee -a "${LOG_FILE}" || {
-            warning "Metadata generation failed for ${collection}"
+            warning "Metadata generation had issues, but collection is ready"
         }
     done
     success "Pegasus metadata generated"
 else
     warning "python3 not found, skipping metadata generation"
-    warning "Run manually: python3 /root/jupiter-os/scripts/generate-arcade-metadata.py ..."
 fi
 
 # Summary
 log ""
 log "=== Consolidation Complete ==="
 log ""
-log "Collections consolidated via ZFS send/recv:"
-log "  eXoDOS: ${EXODOS_DATASET}"
-log "  eXoWin3x: ${EXOWIN3X_DATASET}"
+log "Collections consolidated:"
+log "  • eXoDOS → ${EXODOS_DATASET}"
+log "  • eXoWin3x → ${EXOWIN3X_DATASET}"
 log ""
-log "Mounted at:"
-log "  ${EXODOS_DST}/"
-log "  ${EXOWIN3X_DST}/"
-log ""
-log "Pegasus metadata at:"
-log "  ${METADATA_DIR}/curated-exo-dos.txt"
-log "  ${METADATA_DIR}/curated-exo-win3x.txt"
+log "Pegasus metadata:"
+log "  • ${METADATA_DIR}/curated-exo-dos.txt"
+log "  • ${METADATA_DIR}/curated-exo-win3x.txt"
 log ""
 log "Next steps:"
-log "1. Verify collections are accessible: zfs list tank/archive/retro/games/curated"
-log "2. Check Pegasus metadata: ls -l ${METADATA_DIR}/curated-*.txt"
-log "3. Test on a kiosk: select a game in Pegasus"
+log "1. Verify datasets: zfs list -r tank/archive/retro/games/curated"
+log "2. Check metadata: ls -lh ${METADATA_DIR}/curated-*.txt"
+log "3. Test on kiosk: select a game in Pegasus"
 log ""
-log "To clean up old location after verification (optional):"
-log "  rm -rf ${EXODOS_SRC}"
-log "  rm -rf ${EXOWIN3X_SRC}"
+log "Log: ${LOG_FILE}"
