@@ -31,12 +31,14 @@ This script uses **ZFS send/recv** to efficiently consolidate collections:
 
 **Expected time**: 30-60 minutes (ZFS is very efficient)
 **Disk impact**: ~1 TB on `/tank/archive` (deduplication may help)
+**Individual games**: Stored as-is, launched on-demand at runtime
 
 **Benefits of ZFS send/recv:**
 - Atomic snapshots
-- Efficient stream (no need to copy full data if already on ZFS)
+- Efficient stream 
 - Preserves metadata and permissions
 - Can resume on network interruption
+- No per-game extraction overhead
 
 After consolidation:
 ```bash
@@ -67,27 +69,37 @@ ssh root@10.1.1.2 "cd /root/jupiter-os && nixos-rebuild switch --flake .#europa"
 ```
 
 #### Step 2: Provide torrent file to transmission
+The torrent contains the eXoWin9x collection (~262 GB compressed or pre-extracted):
+
 ```bash
-# Download torrent from: https://www.retro-exo.com/win9x.html
+# Download .torrent file from: https://www.retro-exo.com/win9x.html
 scp eXoWin9x_Vol1_v*.torrent root@10.1.1.2:/tmp/
 
-# Start download
+# Start download via transmission
 ssh root@10.1.1.2 /etc/download-arcade-torrent.sh /tmp/eXoWin9x_Vol1_v*.torrent
 ```
 
 #### Step 3: Monitor progress
 ```bash
 ssh root@10.1.1.2 "tail -f /var/log/transmission.log"
+# Or check folder: ssh root@10.1.1.2 "ls -lh /tank/archive/retro/downloads/"
 ```
 
-#### Step 4: Extract when complete
-Once the `.7z` archive appears in `/tank/archive/retro/downloads/`, run setup:
+#### Step 4: Consolidate when complete
+Once transmission finishes downloading:
 ```bash
+# If torrent contains .7z file:
 ssh root@10.1.1.2 bash /root/jupiter-os/scripts/setup-exowin9x.sh /tank/archive/retro/downloads/eXoWin9x_Vol1_v*.7z
+
+# If torrent contains extracted collection:
+ssh root@10.1.1.2 bash /root/consolidate-collections.sh  # (same as eXoDOS/Win3x)
 ```
 
-**Expected time**: Background download (varies by connection); extraction 30-60 minutes
-**Disk space needed**: ~700 GB total (~262 GB download + ~400 GB extracted)
+**Expected time**: 
+- Download: Varies by connection speed and torrent availability
+- Consolidation: 30-60 minutes (ZFS send/recv)
+
+**Disk space needed**: ~262 GB for download + buffer for consolidation
 
 ## Directory Structure
 
