@@ -118,14 +118,23 @@ func downloadViaAria2c(job *DownloadJob, torrentFile, gameName, outputFile strin
 	job.Status = "Downloading"
 	log.Printf("Job %s: Downloading %s from %s", job.ID, gameName, torrentFile)
 
+	// Load file index from minerva-ids metadata
+	fileIndex, err := getFileIndexFromMetadata(gameName, torrentFile)
+	if err != nil {
+		job.Status = "Error"
+		job.Error = fmt.Sprintf("Could not find file: %v", err)
+		log.Printf("Job %s: Error finding index: %v", job.ID, err)
+		return
+	}
+
 	cmd := exec.Command("aria2c",
-		"--select-file", gameName,
+		"--select-file", fileIndex,
 		"-d", cacheDir,
 		"-o", filepath.Base(gameName),
 		torrentFile,
 	)
 
-	err := cmd.Run()
+	err = cmd.Run()
 	if err != nil {
 		job.Status = "Error"
 		job.Error = fmt.Sprintf("Download failed: %v", err)
@@ -136,6 +145,40 @@ func downloadViaAria2c(job *DownloadJob, torrentFile, gameName, outputFile strin
 	job.Status = "Complete"
 	job.Percent = 1.0
 	log.Printf("Job %s: Complete", job.ID)
+}
+
+func getFileIndexFromMetadata(gameName, torrentFile string) (string, error) {
+	// Extract torrent collection name from path
+	// e.g., "Minerva_Myrient - No-Intro - Nintendo - Nintendo Entertainment System*.torrent"
+	// maps to "1g1r-nointro-nes" collection
+
+	// Try to find the corresponding JSON file in minerva-ids
+	metadataDir := "/tank/archive/retro/metadata/minerva-ids"
+	jsonFiles, err := filepath.Glob(filepath.Join(metadataDir, "*.json"))
+	if err != nil {
+		return "", fmt.Errorf("could not read metadata directory: %v", err)
+	}
+
+	for _, jsonFile := range jsonFiles {
+		data, err := os.ReadFile(jsonFile)
+		if err != nil {
+			continue
+		}
+
+		var metadata map[string]interface{}
+		if err := json.Unmarshal(data, &metadata); err != nil {
+			continue
+		}
+
+		// Look for the game in this metadata file
+		if files, ok := metadata["files"].(map[string]interface{}); ok {
+			if index, ok := files[gameName]; ok {
+				return fmt.Sprintf("%v", index), nil
+			}
+		}
+	}
+
+	return "", fmt.Errorf("game not found in metadata: %s", gameName)
 }
 
 func handleStatus(w http.ResponseWriter, r *http.Request) {
