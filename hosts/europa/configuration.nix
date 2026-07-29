@@ -1,7 +1,4 @@
-{
-  config,
-  ...
-}:
+{ config, lib, pkgs, ... }:
 
 # HPE MicroServer Gen10 — the ZFS NAS and data hub.
 #
