@@ -91,6 +91,17 @@ in
       description = "NFS path to Pegasus collection files";
     };
 
+    # Game directories (where actual ROMs live, one per line in game_dirs.txt)
+    gameDirs = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [
+        "/tank/archive/retro/games/curated/exo-dos"
+        "/tank/archive/retro/games/curated/exo-win3x"
+        "/tank/archive/retro/games/curated/exo-win9x"
+      ];
+      description = "Game collection directories for Pegasus game_dirs.txt";
+    };
+
     pegasusAssetsDir = lib.mkOption {
       type = lib.types.str;
       default = "/tank/archive/retro/metadata/pegasus/assets";
@@ -216,8 +227,10 @@ in
         GAME_DIRS="$CONFIG_DIR/game_dirs.txt"
         cat > "$GAME_DIRS" <<'EOF'
 # Seeded by jupiterOS arcade module. Safe to edit; changes persist via impermanence.
-${cfg.pegasusCollectionsDir}
 EOF
+        for dir in ${toString cfg.gameDirs}; do
+          echo "$dir" >> "$GAME_DIRS"
+        done
 
         # settings.txt: launcher + assets directory (uses key: value format with colon+space)
         # Append new settings if file exists (preserve user edits), otherwise create fresh
