@@ -191,7 +191,7 @@
   jupiter.services.arcadeApi.enable = true;
 
   # ---- System packages -------------------------------------------------------
-  environment.systemPackages = with config.pkgs; [
+  environment.systemPackages = with pkgs; [
     aria2
   ];
 
