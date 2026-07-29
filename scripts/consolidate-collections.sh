@@ -142,50 +142,38 @@ consolidate_collection_zfs() {
     return 0
 }
 
-# Send full europa/games snapshot to tank (includes all collections + other content)
-# We'll keep the full dataset and prune later
+# Copy collections directly with rsync (simpler than ZFS send)
 log ""
-log "--- Consolidating full europa/games dataset ---"
-log "Sending europa/games@b4exodoslinux snapshot..."
+log "--- Consolidating collections via rsync ---"
 
 # Create parent dataset first
 zfs create -p "${TARGET_BASE}" 2>/dev/null || true
 
-# Send the snapshot from europa
-ssh root@10.1.1.2 "zfs send europa/games@b4exodoslinux" | zfs recv -F "tank/archive/retro/games/curated-staging" || {
-    error "Failed to send europa/games snapshot"
-}
-
-success "Snapshot received at tank/archive/retro/games/curated-staging"
-
-# Now create nested datasets for each collection
+# Create and populate nested datasets for each collection
 log ""
-log "Creating nested datasets for collections..."
+log "Creating nested datasets and copying collections..."
 
-# Move eXoDOS
-if [[ -d /tank/archive/retro/games/curated-staging/eXoDOS ]]; then
+# eXoDOS
+if [[ -d "${EXODOS_SRC}" ]]; then
     log "Creating exo-dos dataset..."
     zfs create "${EXODOS_DATASET}" || error "Failed to create exo-dos dataset"
-    rsync -av /tank/archive/retro/games/curated-staging/eXoDOS/ "${EXODOS_DST}/" || {
-        error "Failed to move eXoDOS"
+    log "Copying eXoDOS via rsync..."
+    rsync -av "${EXODOS_SRC}/" "${EXODOS_DST}/" || {
+        error "Failed to copy eXoDOS"
     }
-    success "eXoDOS moved to ${EXODOS_DATASET}"
+    success "eXoDOS consolidated to ${EXODOS_DATASET}"
 fi
 
-# Move eXoWin3x
-if [[ -d /tank/archive/retro/games/curated-staging/eXoWin3x ]]; then
+# eXoWin3x
+if [[ -d "${EXOWIN3X_SRC}" ]]; then
     log "Creating exo-win3x dataset..."
     zfs create "${EXOWIN3X_DATASET}" || error "Failed to create exo-win3x dataset"
-    rsync -av /tank/archive/retro/games/curated-staging/eXoWin3x/ "${EXOWIN3X_DST}/" || {
-        error "Failed to move eXoWin3x"
+    log "Copying eXoWin3x via rsync..."
+    rsync -av "${EXOWIN3X_SRC}/" "${EXOWIN3X_DST}/" || {
+        error "Failed to copy eXoWin3x"
     }
-    success "eXoWin3x moved to ${EXOWIN3X_DATASET}"
+    success "eXoWin3x consolidated to ${EXOWIN3X_DATASET}"
 fi
-
-# Note: Other directories (Obscure, Wii, pc-iso, etc.) remain in curated-staging for now
-log ""
-log "Staging dataset contains all content: tank/archive/retro/games/curated-staging"
-log "To clean up staging after verifying collections: zfs destroy tank/archive/retro/games/curated-staging"
 
 # Verify consolidated collections
 log ""
