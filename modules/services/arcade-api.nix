@@ -42,6 +42,8 @@ in
       wants = [ "network-online.target" ];
       wantedBy = [ "multi-user.target" ];
 
+      path = [ pkgs.aria2 ];
+
       serviceConfig = {
         Type = "simple";
         ExecStart = "${arcade-api}/bin/arcade-api";
