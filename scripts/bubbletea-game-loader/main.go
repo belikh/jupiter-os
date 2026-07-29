@@ -387,17 +387,72 @@ func (m model) extractZip(zipPath string) (string, error) {
 }
 
 func (m model) getEmulator() string {
+	// Map collection patterns to emulators
+	// Both curated/ and 1g1r- prefixes are supported
 	switch {
-	case strings.Contains(m.gamePath, "nointro-nes"):
+	// 1G1R collections (1g1r-<platform> format)
+	case strings.Contains(m.gamePath, "1g1r-nointro-nes"):
 		return "retroarch"
-	case strings.Contains(m.gamePath, "nointro-snes"):
+	case strings.Contains(m.gamePath, "1g1r-nointro-snes"):
 		return "retroarch"
-	case strings.Contains(m.gamePath, "redump-ps1"):
+	case strings.Contains(m.gamePath, "1g1r-nointro-gb"):
 		return "retroarch"
+	case strings.Contains(m.gamePath, "1g1r-nointro-gbc"):
+		return "retroarch"
+	case strings.Contains(m.gamePath, "1g1r-nointro-gba"):
+		return "retroarch"
+	case strings.Contains(m.gamePath, "1g1r-nointro-n64"):
+		return "retroarch"
+	case strings.Contains(m.gamePath, "1g1r-nointro-ds"):
+		return "retroarch"
+	case strings.Contains(m.gamePath, "1g1r-redump-ps1"):
+		return "retroarch"
+	case strings.Contains(m.gamePath, "1g1r-redump-ps2"):
+		return "retroarch"
+	case strings.Contains(m.gamePath, "1g1r-redump-psp"):
+		return "retroarch"
+	case strings.Contains(m.gamePath, "1g1r-redump-saturn"):
+		return "retroarch"
+	case strings.Contains(m.gamePath, "1g1r-redump-dreamcast"):
+		return "retroarch"
+	case strings.Contains(m.gamePath, "1g1r-redump-gamecube"):
+		return "retroarch"
+	case strings.Contains(m.gamePath, "1g1r-redump-wii"):
+		return "retroarch"
+	case strings.Contains(m.gamePath, "1g1r-redump-xbox"):
+		return "retroarch"
+
+	// Curated collections (curated/<subcollection> format)
+	case strings.Contains(m.gamePath, "curated/exo-dos"):
+		return "dosbox-staging"
+	case strings.Contains(m.gamePath, "curated/exo-win3x"):
+		return "dosbox-x"
+	case strings.Contains(m.gamePath, "curated/exo-win9x"):
+		return "pcem"
+	case strings.Contains(m.gamePath, "curated/exo-if"):
+		return "gargoyle"
+	case strings.Contains(m.gamePath, "curated/exo-demos"):
+		return "dosbox-staging"
+	case strings.Contains(m.gamePath, "curated/exo-appleiigs"):
+		return "gsplus"
+	case strings.Contains(m.gamePath, "curated/exo-scummvm"):
+		return "scummvm"
+	case strings.Contains(m.gamePath, "curated/c64-dreams"):
+		return "vice"
+	case strings.Contains(m.gamePath, "curated/oneload64"):
+		return "vice"
+	case strings.Contains(m.gamePath, "curated/megaags"):
+		return "fs-uae"
+
+	// Fallback for legacy paths or unknown collections
 	case strings.Contains(m.gamePath, "exo-dos"):
 		return "dosbox-staging"
 	case strings.Contains(m.gamePath, "exo-win3x"):
 		return "dosbox-x"
+	case strings.Contains(m.gamePath, "nointro-nes"):
+		return "retroarch"
+
+	// Default: use retroarch for anything else
 	default:
 		return "retroarch"
 	}
