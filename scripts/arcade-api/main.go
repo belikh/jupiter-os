@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -190,48 +189,10 @@ func downloadViaAria2c(job *DownloadJob, torrentFile, gameName, outputFile strin
 		torrentFile,
 	)
 
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		job.Status = "Error"
-		job.Error = fmt.Sprintf("Setup error: %v", err)
-		return
-	}
-
-	if err := cmd.Start(); err != nil {
-		job.Status = "Error"
-		job.Error = fmt.Sprintf("Failed to start download: %v", err)
-		log.Printf("Job %s: Start error: %v", job.ID, err)
-		return
-	}
-
-	job.cmd = cmd
-
-	scanner := bufio.NewScanner(stdout)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if strings.Contains(line, "%) CN:") || strings.Contains(line, "% CN:") {
-			parts := strings.Fields(line)
-			for i, p := range parts {
-				if strings.HasSuffix(p, "%") {
-					pct := strings.TrimSuffix(p, "%")
-					if f, err := strconv.ParseFloat(pct, 64); err == nil {
-						job.Percent = f / 100.0
-					}
-				}
-				if strings.HasSuffix(p, "B/s") || strings.HasSuffix(p, "KB/s") || strings.HasSuffix(p, "MB/s") {
-					job.Speed = p
-				}
-				if i > 0 && strings.HasPrefix(parts[i-1], "ETA:") {
-					job.ETA = p
-				}
-			}
-		}
-	}
-
-	if err := cmd.Wait(); err != nil {
+	if err := cmd.Run(); err != nil {
 		job.Status = "Error"
 		job.Error = fmt.Sprintf("Download failed: %v", err)
-		log.Printf("Job %s: Wait error: %v", job.ID, err)
+		log.Printf("Job %s: aria2c error: %v", job.ID, err)
 		return
 	}
 
