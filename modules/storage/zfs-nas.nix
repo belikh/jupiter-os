@@ -142,6 +142,9 @@ in
     # pool's disks aren't attached (no 10TB drives present).
     boot.zfs.extraPools = [ "tank" ];
 
+    # Disable ZFS automatic sharing (SMB shares are disabled)
+    systemd.services.zfs-share.enable = false;
+
     # Pool maintenance
     services.zfs.autoScrub.enable = true;
     services.zfs.trim.enable = true;
