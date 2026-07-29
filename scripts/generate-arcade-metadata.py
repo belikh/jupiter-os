@@ -93,6 +93,7 @@ def parse_launchbox_xml(
         f"collection: {collection_name}",
         f"shortname: {shortname}",
         f"launch: pegasus-rom-launch {{file.path}}",
+        f"directory: /tank/archive/retro",
         "",
     ]
 
@@ -205,6 +206,7 @@ def parse_dat_file(dat_path: Path, collection_name: str, shortname: str) -> str:
         f"collection: {collection_name}",
         f"shortname: {shortname}",
         f"launch: pegasus-rom-launch 1g1r-{shortname}/{{file.name}}",
+        f"directory: /tank/archive/retro",
         "",
     ]
 
@@ -252,6 +254,7 @@ def scan_directory(
         f"collection: {collection_name}",
         f"shortname: {shortname}",
         f"launch: {launch_prefix} {{file.path}}",
+        f"directory: /tank/archive/retro",
         "",
     ]
 
