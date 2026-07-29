@@ -91,15 +91,13 @@ in
       description = "NFS path to Pegasus collection files";
     };
 
-    # Game directories (where actual ROMs live, one per line in game_dirs.txt)
+    # Game directories (where Pegasus metadata files live, one per line in game_dirs.txt)
     gameDirs = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [
-        "/tank/archive/retro/games/curated/exo-dos"
-        "/tank/archive/retro/games/curated/exo-win3x"
-        "/tank/archive/retro/games/curated/exo-win9x"
+        cfg.pegasusCollectionsDir
       ];
-      description = "Game collection directories for Pegasus game_dirs.txt";
+      description = "Directory containing Pegasus metadata collection files (game_dirs.txt)";
     };
 
     pegasusAssetsDir = lib.mkOption {
