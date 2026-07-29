@@ -48,7 +48,7 @@ var (
 	}
 
 	torrentDir = "/tank/archive/retro/metadata/minerva-torrents"
-	cacheDir   = "/var/cache/pegasus-roms"
+	cacheDir   = "/tank/archive/retro/games"
 )
 
 func init() {
