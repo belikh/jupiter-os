@@ -30,21 +30,21 @@ var (
 	nextJobID int
 
 	collectionTorrent = map[string]string{
-		"1g1r-nointro-nes":      "Minerva_Myrient_-_No-Intro_-_Nintendo_-_Nintendo_Entertainment_System*.torrent",
-		"1g1r-nointro-snes":     "Minerva_Myrient_-_No-Intro_-_Nintendo_-_Super_Nintendo_Entertainment_System*.torrent",
-		"1g1r-nointro-gb":       "Minerva_Myrient_-_No-Intro_-_Nintendo_-_Game_Boy*.torrent",
-		"1g1r-nointro-gbc":      "Minerva_Myrient_-_No-Intro_-_Nintendo_-_Game_Boy_Color*.torrent",
-		"1g1r-nointro-gba":      "Minerva_Myrient_-_No-Intro_-_Nintendo_-_Game_Boy_Advance*.torrent",
-		"1g1r-nointro-n64":      "Minerva_Myrient_-_No-Intro_-_Nintendo_-_Nintendo_64*.torrent",
-		"1g1r-nointro-ds":       "Minerva_Myrient_-_No-Intro_-_Nintendo_-_Nintendo_DS*.torrent",
-		"1g1r-redump-ps1":       "Minerva_Myrient_-_Redump_-_Sony_-_PlayStation*.torrent",
-		"1g1r-redump-ps2":       "Minerva_Myrient_-_Redump_-_Sony_-_PlayStation_2*.torrent",
-		"1g1r-redump-psp":       "Minerva_Myrient_-_Redump_-_Sony_-_PlayStation_Portable*.torrent",
-		"1g1r-redump-saturn":    "Minerva_Myrient_-_Redump_-_Sega_-_Saturn*.torrent",
-		"1g1r-redump-dreamcast": "Minerva_Myrient_-_Redump_-_Sega_-_Dreamcast*.torrent",
-		"1g1r-redump-gamecube":  "Minerva_Myrient_-_Redump_-_Nintendo_-_GameCube*.torrent",
-		"1g1r-redump-wii":       "Minerva_Myrient_-_Redump_-_Nintendo_-_Wii*.torrent",
-		"1g1r-redump-xbox":      "Minerva_Myrient_-_Redump_-_Microsoft_-_Xbox*.torrent",
+		"1g1r-nointro-nes":      "Minerva_Myrient - No-Intro - Nintendo - Nintendo Entertainment System*.torrent",
+		"1g1r-nointro-snes":     "Minerva_Myrient - No-Intro - Nintendo - Super Nintendo Entertainment System*.torrent",
+		"1g1r-nointro-gb":       "Minerva_Myrient - No-Intro - Nintendo - Game Boy*.torrent",
+		"1g1r-nointro-gbc":      "Minerva_Myrient - No-Intro - Nintendo - Game Boy Color*.torrent",
+		"1g1r-nointro-gba":      "Minerva_Myrient - No-Intro - Nintendo - Game Boy Advance*.torrent",
+		"1g1r-nointro-n64":      "Minerva_Myrient - No-Intro - Nintendo - Nintendo 64*.torrent",
+		"1g1r-nointro-ds":       "Minerva_Myrient - No-Intro - Nintendo - Nintendo DS*.torrent",
+		"1g1r-redump-ps1":       "Minerva_Myrient - Redump - Sony - PlayStation*.torrent",
+		"1g1r-redump-ps2":       "Minerva_Myrient - Redump - Sony - PlayStation 2*.torrent",
+		"1g1r-redump-psp":       "Minerva_Myrient - Redump - Sony - PlayStation Portable*.torrent",
+		"1g1r-redump-saturn":    "Minerva_Myrient - Redump - Sega - Saturn*.torrent",
+		"1g1r-redump-dreamcast": "Minerva_Myrient - Redump - Sega - Dreamcast*.torrent",
+		"1g1r-redump-gamecube":  "Minerva_Myrient - Redump - Nintendo - GameCube*.torrent",
+		"1g1r-redump-wii":       "Minerva_Myrient - Redump - Nintendo - Wii*.torrent",
+		"1g1r-redump-xbox":      "Minerva_Myrient - Redump - Microsoft - Xbox*.torrent",
 	}
 
 	torrentDir = "/tank/archive/retro/metadata/minerva-torrents"
