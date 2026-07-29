@@ -211,6 +211,7 @@ in
         mkdir -p "$CONFIG_DIR"
 
         # game_dirs.txt: where Pegasus finds collections (one per line)
+        # Pegasus expects a directory containing subdirectories, each with metadata.pegasus.txt
         # Always write to ensure path stays in sync (user can edit but gets reset on rebuild)
         GAME_DIRS="$CONFIG_DIR/game_dirs.txt"
         cat > "$GAME_DIRS" <<'EOF'
