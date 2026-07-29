@@ -92,12 +92,14 @@ in
     };
 
     # Game directories (where Pegasus metadata files live, one per line in game_dirs.txt)
+    # Each collection (arcade, exo-win9x, etc.) is a subdirectory with metadata.pegasus inside
     gameDirs = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [
-        cfg.pegasusCollectionsDir
+        "${cfg.pegasusCollectionsDir}/arcade"
+        "${cfg.pegasusCollectionsDir}/exo-win9x"
       ];
-      description = "Directory containing Pegasus metadata collection files (game_dirs.txt)";
+      description = "Subdirectories containing Pegasus metadata files (game_dirs.txt, one per line)";
     };
 
     pegasusAssetsDir = lib.mkOption {
@@ -236,16 +238,15 @@ EOF
         if [ ! -f "$SETTINGS" ]; then
           cat > "$SETTINGS" <<'EOF'
 # Seeded by jupiterOS arcade module. Safe to edit; changes persist via impermanence.
-collections.directory: ${cfg.pegasusCollectionsDir}
 assets.directory: ${cfg.pegasusAssetsDir}
 launcher.script: /usr/local/bin/pegasus-rom-launch
 general.theme: themes/${cfg.theme}
 EOF
         else
-          # Ensure key settings are present even if file exists
-          grep -q "collections.directory" "$SETTINGS" || echo "collections.directory: ${cfg.pegasusCollectionsDir}" >> "$SETTINGS"
+          # Ensure key settings are present even if file exists (remove stale collections.directory)
           grep -q "assets.directory" "$SETTINGS" || echo "assets.directory: ${cfg.pegasusAssetsDir}" >> "$SETTINGS"
           grep -q "launcher.script" "$SETTINGS" || echo "launcher.script: /usr/local/bin/pegasus-rom-launch" >> "$SETTINGS"
+          sed -i '/^collections.directory:/d' "$SETTINGS" || true
         fi
 
         # Ensure theme symlink exists in user's themes dir
