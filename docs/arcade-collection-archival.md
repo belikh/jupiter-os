@@ -22,14 +22,21 @@ Run on europa:
 ssh root@10.1.1.2 bash /root/consolidate-collections.sh
 ```
 
-This script:
-1. Copies collections from `/mnt/europa/games` to `/tank/archive/retro/games/curated/` (europa pool is read-only)
-2. Verifies LaunchBox XML metadata is intact
-3. Generates Pegasus collection files
-4. Logs all operations to `/var/log/consolidate-collections.log`
+This script uses **ZFS send/recv** to efficiently consolidate collections:
+1. Creates ZFS datasets from source collections via tar pipe
+2. Receives into `/tank/archive/retro/games/curated/` datasets
+3. Verifies LaunchBox XML metadata is intact
+4. Generates Pegasus collection files
+5. Logs all operations to `/var/log/consolidate-collections.log`
 
-**Expected time**: 2-4 hours (copying ~1 TB of data)
-**Disk impact**: ~1 TB additional space needed on `/tank/archive/retro/games/curated/`
+**Expected time**: 30-60 minutes (ZFS is very efficient)
+**Disk impact**: ~1 TB on `/tank/archive` (deduplication may help)
+
+**Benefits of ZFS send/recv:**
+- Atomic snapshots
+- Efficient stream (no need to copy full data if already on ZFS)
+- Preserves metadata and permissions
+- Can resume on network interruption
 
 After consolidation:
 ```bash
@@ -40,22 +47,47 @@ ssh root@10.1.1.2 "du -sh /tank/archive/retro/games/curated/exo-*"
 ssh root@10.1.1.2 "ls -lh /tank/archive/retro/metadata/pegasus/collections/curated-*.txt"
 ```
 
-### For New Collections (eXoWin9x, etc.)
+### For New Collections (eXoWin9x, etc.) - Background Download
 
-#### Step 1: Download the torrent
-- Visit: https://www.retro-exo.com/win9x.html
-- Download torrent for eXoWin9x Vol. 1 (~262 GB compressed)
-- Seed/download to get the `.7z` archive
+Europa can run Transmission daemon to seed/download large collections in the background:
 
-#### Step 2: Run setup script
+#### Step 1: Enable the downloader service
 ```bash
-scp /path/to/eXoWin9x_Vol1_v*.7z root@10.1.1.2:/tmp/
-
-ssh root@10.1.1.2 bash /root/jupiter-os/scripts/setup-exowin9x.sh /tmp/eXoWin9x_Vol1_v*.7z
+# On europa's configuration (hosts/europa/configuration.nix)
+jupiter.services.arcadeCollectionDownloader = {
+  enable = true;
+  exowin9x.enable = true;
+  downloadDir = "/tank/archive/retro/downloads";
+};
 ```
 
-**Expected time**: 30-60 minutes (extraction + organization)
-**Disk space needed**: ~400 GB free on `/tank/archive/retro/games/curated`
+Or enable via nixos-rebuild:
+```bash
+ssh root@10.1.1.2 "cd /root/jupiter-os && nixos-rebuild switch --flake .#europa"
+```
+
+#### Step 2: Provide torrent file to transmission
+```bash
+# Download torrent from: https://www.retro-exo.com/win9x.html
+scp eXoWin9x_Vol1_v*.torrent root@10.1.1.2:/tmp/
+
+# Start download
+ssh root@10.1.1.2 /etc/download-arcade-torrent.sh /tmp/eXoWin9x_Vol1_v*.torrent
+```
+
+#### Step 3: Monitor progress
+```bash
+ssh root@10.1.1.2 "tail -f /var/log/transmission.log"
+```
+
+#### Step 4: Extract when complete
+Once the `.7z` archive appears in `/tank/archive/retro/downloads/`, run setup:
+```bash
+ssh root@10.1.1.2 bash /root/jupiter-os/scripts/setup-exowin9x.sh /tank/archive/retro/downloads/eXoWin9x_Vol1_v*.7z
+```
+
+**Expected time**: Background download (varies by connection); extraction 30-60 minutes
+**Disk space needed**: ~700 GB total (~262 GB download + ~400 GB extracted)
 
 ## Directory Structure
 

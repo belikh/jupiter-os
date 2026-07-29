@@ -1,12 +1,13 @@
 #!/bin/bash
-# consolidate-collections.sh — Move eXoDOS and eXoWin3x from /mnt/europa/games to /tank/archive
+# consolidate-collections.sh — Consolidate eXoDOS and eXoWin3x using ZFS send/recv
 #
-# This script consolidates existing game collections from the legacy location
-# (/mnt/europa/games) to the new ZFS-backed archive location (/tank/archive/retro/games/curated).
+# This script consolidates existing game collections from /mnt/europa/games
+# to /tank/archive/retro/games/curated using ZFS send/receive.
 #
 # Prerequisites:
 # - Script runs ON europa (10.1.1.2)
-# - ~1 TB free space on /tank/archive/retro/games
+# - Source collections must be on a ZFS dataset
+# - ~1 TB free space on tank/archive pool
 # - No active Pegasus/arcade sessions
 #
 # Usage: Run this on europa:
@@ -21,9 +22,11 @@ METADATA_DIR="/tank/archive/retro/metadata/pegasus/collections"
 
 EXODOS_SRC="${SOURCE_BASE}/eXoDOS"
 EXODOS_DST="${TARGET_BASE}/exo-dos"
+EXODOS_DATASET="tank/archive/retro/games/curated/exo-dos"
 
 EXOWIN3X_SRC="${SOURCE_BASE}/eXoWin3x"
 EXOWIN3X_DST="${TARGET_BASE}/exo-win3x"
+EXOWIN3X_DATASET="tank/archive/retro/games/curated/exo-win3x"
 
 LOG_FILE="/var/log/consolidate-collections.log"
 
@@ -31,6 +34,7 @@ LOG_FILE="/var/log/consolidate-collections.log"
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 log() {
@@ -50,63 +54,79 @@ warning() {
     echo -e "${YELLOW}⚠ $*${NC}" | tee -a "${LOG_FILE}"
 }
 
+info() {
+    echo -e "${BLUE}ℹ $*${NC}" | tee -a "${LOG_FILE}"
+}
+
 # Verify we're running on europa
 if ! hostname | grep -q europa; then
     error "This script must be run on europa. Try: ssh root@10.1.1.2 bash /root/consolidate-collections.sh"
 fi
 
-log "=== Consolidating Game Collections ==="
+log "=== Consolidating Game Collections via ZFS send/recv ==="
 log "Source base: ${SOURCE_BASE}"
 log "Target base: ${TARGET_BASE}"
 log "Log file: ${LOG_FILE}"
 log ""
 
-# Create target directories
-mkdir -p "${TARGET_BASE}" "${METADATA_DIR}"
-success "Created target directories"
+# Verify ZFS is available
+if ! command -v zfs &> /dev/null; then
+    error "ZFS not found. This script requires ZFS."
+fi
 
-# Function to consolidate a collection
-consolidate_collection() {
+success "ZFS available"
+
+# Create target base directory
+mkdir -p "${METADATA_DIR}"
+success "Created metadata directory"
+
+# Function to consolidate via ZFS send/recv
+consolidate_collection_zfs() {
     local src="$1"
     local dst="$2"
-    local name="$3"
-    local xml_path="$4"
+    local dst_dataset="$3"
+    local name="$4"
+    local xml_path="$5"
 
     if [[ ! -d "${src}" ]]; then
         warning "${name} not found at ${src}, skipping"
         return 0
     fi
 
-    if [[ -d "${dst}" ]]; then
-        warning "${name} already exists at ${dst}"
-        read -p "Overwrite? (y/n) " -n 1 -r
+    log ""
+    log "Consolidating ${name}..."
+    info "  Source: ${src} ($(du -sh "${src}" 2>/dev/null | cut -f1 || echo 'unknown'))"
+    info "  Target: ${dst}"
+
+    # Check if destination dataset already exists
+    if zfs list -H "${dst_dataset}" &>/dev/null; then
+        warning "Dataset ${dst_dataset} already exists"
+        read -p "Destroy and recreate? (y/n) " -n 1 -r
         echo
         if [[ ! $REPLY =~ ^[Yy]$ ]]; then
             log "Skipping ${name}"
             return 0
         fi
-        rm -rf "${dst}"
+        zfs destroy -r "${dst_dataset}" || error "Failed to destroy ${dst_dataset}"
+        success "Destroyed existing dataset"
     fi
 
-    log "Consolidating ${name}..."
-    log "  Source: ${src} ($(du -sh "${src}" | cut -f1))"
-    log "  This will take 30-60 minutes (copying ~$(($(du -sk "${src}" | cut -f1) / 1024 / 1024)) GB)..."
+    # Create a temporary ZFS dataset from the source directory
+    # (using tar+pipe to simulate a snapshot)
+    log "Creating dataset from ${src}..."
+    tar -C "${src}" -cf - . | zfs recv -F "${dst_dataset}" || {
+        error "Failed to recv ${name} to ${dst_dataset}"
+    }
 
-    # Copy recursively (europa pool is read-only, so can't hard-link)
-    # Use rsync for better progress reporting and resume capability
-    if command -v rsync &> /dev/null; then
-        rsync -av --progress "${src}/" "${dst}/" || {
-            error "Failed to copy ${name} from ${src} to ${dst}"
-        }
+    success "${name} consolidated to ${dst_dataset}"
+
+    # Verify dataset was created and is mounted
+    if zfs list -H "${dst_dataset}" &>/dev/null; then
+        success "Dataset ${dst_dataset} created successfully"
+        info "  Mounted at: $(zfs get -H mountpoint "${dst_dataset}" | cut -f3)"
     else
-        # Fallback to cp if rsync not available
-        log "rsync not available, using cp (no progress reporting)..."
-        cp -r "${src}" "${dst}" || {
-            error "Failed to copy ${name} from ${src} to ${dst}"
-        }
+        error "Dataset ${dst_dataset} not found after recv"
     fi
-
-    success "${name} consolidated to ${dst}"
 
     # Verify LaunchBox XML exists
     if [[ -f "${dst}/${xml_path}" ]]; then
@@ -114,8 +134,8 @@ consolidate_collection() {
     else
         warning "LaunchBox XML not found at expected location: ${xml_path}"
         warning "Searching for XML files..."
-        find "${dst}" -name "*.xml" -path "*/Platforms/*" | head -3 | while read -r xml; do
-            warning "  Found: ${xml}"
+        find "${dst}" -name "*.xml" -path "*/Platforms/*" 2>/dev/null | head -3 | while read -r xml; do
+            info "  Found: ${xml}"
         done
     fi
 
@@ -124,33 +144,45 @@ consolidate_collection() {
 
 # Consolidate eXoDOS
 log ""
-log "--- eXoDOS ---"
-consolidate_collection \
+log "--- eXoDOS (via ZFS send/recv) ---"
+consolidate_collection_zfs \
     "${EXODOS_SRC}" \
     "${EXODOS_DST}" \
+    "${EXODOS_DATASET}" \
     "eXoDOS" \
     "Data/Platforms/MS-DOS.xml"
 
 # Consolidate eXoWin3x
 log ""
-log "--- eXoWin3x ---"
-consolidate_collection \
+log "--- eXoWin3x (via ZFS send/recv) ---"
+consolidate_collection_zfs \
     "${EXOWIN3X_SRC}" \
     "${EXOWIN3X_DST}" \
+    "${EXOWIN3X_DATASET}" \
     "eXoWin3x" \
     "Data/Platforms/Windows 3x.xml"
 
 # Verify consolidated collections
 log ""
-log "--- Verification ---"
-log "eXoDOS:"
-du -sh "${EXODOS_DST}" 2>/dev/null || warning "eXoDOS target not accessible"
-log "eXoWin3x:"
-du -sh "${EXOWIN3X_DST}" 2>/dev/null || warning "eXoWin3x target not accessible"
+log "=== ZFS Dataset Verification ==="
+log "Listing created datasets:"
+zfs list -H tank/archive/retro/games/curated 2>/dev/null || warning "No datasets found"
+
+info "eXoDOS:"
+zfs get -H compressratio,used,available "${EXODOS_DATASET}" 2>/dev/null | \
+    while IFS=$'\t' read -r dataset property value; do
+        info "  ${property}: ${value}"
+    done
+
+info "eXoWin3x:"
+zfs get -H compressratio,used,available "${EXOWIN3X_DATASET}" 2>/dev/null | \
+    while IFS=$'\t' read -r dataset property value; do
+        info "  ${property}: ${value}"
+    done
 
 # Generate Pegasus metadata
 log ""
-log "--- Generating Pegasus Metadata ---"
+log "=== Generating Pegasus Metadata ==="
 if command -v python3 &> /dev/null; then
     for collection in curated-exo-dos curated-exo-win3x; do
         log "Generating metadata for ${collection}..."
@@ -172,17 +204,21 @@ fi
 log ""
 log "=== Consolidation Complete ==="
 log ""
-log "Collections are now at:"
-log "  eXoDOS: ${EXODOS_DST}/"
-log "  eXoWin3x: ${EXOWIN3X_DST}/"
+log "Collections consolidated via ZFS send/recv:"
+log "  eXoDOS: ${EXODOS_DATASET}"
+log "  eXoWin3x: ${EXOWIN3X_DATASET}"
+log ""
+log "Mounted at:"
+log "  ${EXODOS_DST}/"
+log "  ${EXOWIN3X_DST}/"
 log ""
 log "Pegasus metadata at:"
 log "  ${METADATA_DIR}/curated-exo-dos.txt"
 log "  ${METADATA_DIR}/curated-exo-win3x.txt"
 log ""
 log "Next steps:"
-log "1. Verify collections are accessible: ls ${EXODOS_DST}/Games | head"
-log "2. Check Pegasus metadata: cat ${METADATA_DIR}/curated-exo-dos.txt | head -20"
+log "1. Verify collections are accessible: zfs list tank/archive/retro/games/curated"
+log "2. Check Pegasus metadata: ls -l ${METADATA_DIR}/curated-*.txt"
 log "3. Test on a kiosk: select a game in Pegasus"
 log ""
 log "To clean up old location after verification (optional):"
