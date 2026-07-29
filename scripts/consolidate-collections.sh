@@ -95,7 +95,7 @@ consolidate_collection_zfs() {
 
     log ""
     log "Consolidating ${name}..."
-    info "  Source: ${src} (via ${src_dataset})"
+    info "  Source: ${src}"
     info "  Target: ${dst_dataset}"
 
     # Check if destination dataset already exists
@@ -111,11 +111,14 @@ consolidate_collection_zfs() {
         success "Destroyed existing dataset"
     fi
 
-    # Stream directory via tar into ZFS recv on tank
+    # Create ZFS dataset and copy directory contents
     # (europa pool collections are directories, not separate datasets)
-    log "Streaming directory ${src} into ZFS dataset ${dst_dataset}..."
-    tar -C "${src}" -cf - . | zfs recv -F "${dst_dataset}" || {
-        error "Failed to stream ${name} from ${src} to ${dst_dataset}"
+    log "Creating ZFS dataset ${dst_dataset}..."
+    zfs create -p "${dst_dataset}" || error "Failed to create dataset ${dst_dataset}"
+
+    log "Copying directory contents ${src} -> ${dst}..."
+    rsync -av --progress "${src}/" "${dst}/" || {
+        error "Failed to copy ${name} from ${src} to ${dst}"
     }
 
     success "${name} consolidated to ${dst_dataset}"

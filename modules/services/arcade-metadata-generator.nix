@@ -8,6 +8,7 @@
 # jupiterOS Arcade Metadata Generator — runs on europa (NAS) to generate
 # Pegasus collection files from curated collections + 1G1R DATs.
 # Output served via NFS to kiosks at /tank/archive/retro/metadata/pegasus/
+# Also runs a scraper to enrich 1G1R collections with metadata + assets via Hasheous.
 
 let
   cfg = config.jupiter.arcade.metadataGenerator;
