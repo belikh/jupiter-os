@@ -5,23 +5,21 @@
   ...
 }:
 
-# jupiterOS Arcade — Pegasus frontend with on-demand ROM loading via NFS + mirrors.
+# jupiterOS Arcade — Pegasus frontend with on-demand ROM loading via NFS + Minerva torrents.
 #
 # Architecture (per issue #30):
-# - Curated collections (eXoDOS, eXoWin3x, C64 Dreams, OneLoad64, etc.) live on
-#   europa NAS at /tank/archive/retro/games/curated/, served read-only via NFS.
-# - 1G1R collections (No-Intro, Redump) store only DAT metadata on NFS at
-#   /tank/archive/retro/games/1g1r/; ROMs are fetched from Myrient mirrors on
-#   first play.
+# - All ROMs (1G1R collections) live on europa NAS at /tank/archive/retro/games/,
+#   served read-only via NFS to kiosks.
+# - ROMs are fetched on-demand from Minerva .torrent files using aria2c
+#   (see arcade-api HTTP service on europa:8765).
 # - Pegasus metadata collections + assets served from NFS at
 #   /tank/archive/retro/metadata/pegasus/
 # - Launcher script (pegasus-rom-launch) dispatches:
-#     * cache hit → instant launch
-#     * curated ZIP on NFS → extract to /tmp/pegasus-cache (ephemeral) via TUI
-#     * 1G1R game → download from Myrient to /var/cache/pegasus-roms (persistent) via TUI
-# - Bubble Tea TUI (bubbletea-game-loader) shows progress with cancel support.
-# - Two-tier cache: /tmp/pegasus-cache (cleared on reboot) + /var/cache/pegasus-roms (persisted via impermanence).
-# - Kiosks are consumers only — no timers, no API server, no DAT processing.
+#     * cache hit → instant launch (file already on NFS)
+#     * cache miss → spawn bubbletea-game-loader TUI to download from Minerva
+# - Bubble Tea TUI (bubbletea-game-loader) shows progress with cancellation support.
+# - Download cache: /tank/archive/retro/games/ on europa NAS (persistent, shared via NFS).
+# - Kiosks are consumers only — no timers, no API server, no DAT processing, no local ROM storage.
 
 let
   cfg = config.jupiter.arcade;
@@ -136,15 +134,6 @@ in
       description = "Emulator binary names per platform";
     };
 
-    # Myrient mirror base URLs for 1G1R downloads
-    mirrors = lib.mkOption {
-      type = lib.types.listOf lib.types.str;
-      default = [
-        "https://myrient.erista.me/files"
-        "https://archive.org/download"
-      ];
-      description = "Mirror bases for 1G1R ROM downloads (tried in order)";
-    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -182,7 +171,7 @@ in
       "/var/cache/pegasus-torrents"
     ];
 
-    # --- Packages: Pegasus frontend, game loader, theme, emulators, torrent ------------------
+    # --- Packages: Pegasus frontend, game loader, theme, emulators ------------------
     environment.systemPackages = with pkgs; [
       pegasus-frontend
       bubbleteaGameLoader
@@ -197,7 +186,6 @@ in
       dolphin-emu
       ryubing
       xterm
-      transmission_4
     ];
 
     # --- Pegasus configuration (seeded into gamer user's home) ----------------
