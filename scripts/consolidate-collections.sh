@@ -85,10 +85,16 @@ if zfs list -H "${STAGING_DATASET}" &>/dev/null; then
     success "Staging cleaned up"
 fi
 
-# Send snapshot from europa to tank
-ssh root@${EUROPA_HOST} "zfs send ${SOURCE_SNAPSHOT}" | zfs recv -F "${STAGING_DATASET}" || {
-    error "Failed to send snapshot from europa"
-}
+# Send snapshot from europa to tank (local if on europa, else remote)
+if hostname | grep -q europa; then
+    log "Running on europa, using local zfs send"
+    zfs send ${SOURCE_SNAPSHOT} | zfs recv -F "${STAGING_DATASET}" || error "Failed to send snapshot"
+else
+    log "Running remotely, using SSH to europa"
+    ssh root@${EUROPA_HOST} "zfs send ${SOURCE_SNAPSHOT}" | zfs recv -F "${STAGING_DATASET}" || {
+        error "Failed to send snapshot from europa"
+    }
+fi
 
 # Verify staging is mounted
 STAGING_MOUNT_REAL=$(zfs get -H -o value mountpoint "${STAGING_DATASET}")
