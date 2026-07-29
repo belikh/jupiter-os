@@ -301,23 +301,45 @@ def symlink_assets(source_root: Path, assets_root: Path) -> None:
 
 # --- Main --------------------------------------------------------------------
 
-def main():
-    p = argparse.ArgumentParser(description="Generate Pegasus metadata for jupiterOS Arcade")
-    p.add_argument("--nfs-root", required=True, help="NFS mount root (e.g. /tank/archive)")
-    p.add_argument("--output", required=True, help="Output directory for collection files")
-    p.add_argument("--assets", required=True, help="Assets output directory")
-    p.add_argument("--collections", nargs="+", default="all",
-                   help="Collections to generate (default: all)")
-    args = p.parse_args()
+# --- Collection categories ----------------------------------------------------
 
-    nfs_root = Path(args.nfs_root)
-    out_dir = Path(args.output)
-    assets_dir = Path(args.assets)
+CURATED_COLLECTIONS = [
+    "curated-exo-dos",
+    "curated-exo-win3x",
+    "curated-c64-dreams",
+    "curated-oneload64",
+    "curated-exo-if",
+    "curated-exo-demos",
+    "curated-exo-appleiigs",
+    "curated-exo-scummvm",
+    "curated-exo-win9x",
+    "curated-megaags",
+]
 
-    out_dir.mkdir(parents=True, exist_ok=True)
-    assets_dir.mkdir(parents=True, exist_ok=True)
+ONE_G1R_COLLECTIONS = [
+    "1g1r-nointro-nes",
+    "1g1r-nointro-snes",
+    "1g1r-nointro-gb",
+    "1g1r-nointro-gbc",
+    "1g1r-nointro-gba",
+    "1g1r-nointro-n64",
+    "1g1r-nointro-ds",
+    "1g1r-redump-ps1",
+    "1g1r-redump-ps2",
+    "1g1r-redump-psp",
+    "1g1r-redump-saturn",
+    "1g1r-redump-dreamcast",
+    "1g1r-redump-gamecube",
+    "1g1r-redump-wii",
+    "1g1r-redump-xbox",
+]
 
-    collections = {
+ALL_COLLECTIONS = CURATED_COLLECTIONS + ONE_G1R_COLLECTIONS
+
+
+def get_collections(nfs_root: Path) -> dict:
+    """Return the collections dict, built dynamically from categories."""
+    return {
         # Curated: LaunchBox XML based
         "curated-exo-dos": {
             "type": "launchbox",
@@ -437,24 +459,35 @@ def main():
         "1g1r-redump-xbox": {"type": "dat", "dat": nfs_root / "retro/games/1g1r/redump-xbox.dat", "name": "Xbox (1G1R)", "shortname": "redump-xbox"},
     }
 
-    selected = collections.keys() if args.collections == ["all"] else args.collections
 
-    for key in selected:
-        if key not in collections:
+def generate_collections(
+    nfs_root: Path,
+    out_dir: Path,
+    assets_dir: Path,
+    collections_to_generate: list,
+) -> None:
+    """Generate collection files for the given list of collection keys."""
+    all_collections = get_collections(nfs_root)
+
+    for key in collections_to_generate:
+        if key not in all_collections:
             print(f"Unknown collection: {key}", file=sys.stderr)
             continue
 
-        c = collections[key]
+        c = all_collections[key]
         print(f"Generating {key}...")
         content = ""
+
+        # Pegasus expects each collection as a .txt file in the collections directory
+        # (not subdirectories). Format: collection_name.txt containing metadata.pegasus.txt content
+        output_file = out_dir / f"{key}.txt"
 
         if c["type"] == "launchbox":
             if c["xml"].exists():
                 content = parse_launchbox_xml(
                     c["xml"], c["root"], c["name"], c["shortname"], c["emulator"], c.get("rewrites", [])
                 )
-                (out_dir / f"{key}.txt").write_text(content)
-                # Symlink assets
+                output_file.write_text(content)
                 if "assets_src" in c and c["assets_src"].exists():
                     symlink_assets(c["assets_src"], assets_dir / key)
             else:
@@ -463,7 +496,7 @@ def main():
         elif c["type"] == "dat":
             if c["dat"].exists():
                 content = parse_dat_file(c["dat"], c["name"], c["shortname"])
-                (out_dir / f"{key}.txt").write_text(content)
+                output_file.write_text(content)
             else:
                 print(f"  WARNING: DAT not found: {c['dat']}", file=sys.stderr)
 
@@ -473,11 +506,48 @@ def main():
                     c["root"], c["name"], c["shortname"], c["emulator"],
                     c["extensions"], c["launch_prefix"]
                 )
-                (out_dir / f"{key}.txt").write_text(content)
+                output_file.write_text(content)
                 if "assets_src" in c and c["assets_src"].exists():
                     symlink_assets(c["assets_src"], assets_dir / key)
             else:
                 print(f"  WARNING: Root not found: {c['root']}", file=sys.stderr)
+
+
+def main():
+    p = argparse.ArgumentParser(description="Generate Pegasus metadata for jupiterOS Arcade")
+    p.add_argument("--nfs-root", required=True, help="NFS mount root (e.g. /tank/archive)")
+    p.add_argument("--output", required=True, help="Output directory for collection files (all collections)")
+    p.add_argument("--curated-output", help="Output directory for curated-only collection files (for kiosks)")
+    p.add_argument("--assets", required=True, help="Assets output directory")
+    p.add_argument("--collections", nargs="+", default=["all"],
+                   help="Collections to generate (default: all)")
+    args = p.parse_args()
+
+    nfs_root = Path(args.nfs_root)
+    out_dir = Path(args.output)
+    assets_dir = Path(args.assets)
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    assets_dir.mkdir(parents=True, exist_ok=True)
+
+    # Parse --collections argument
+    if args.collections == ["curated"]:
+        selected = CURATED_COLLECTIONS
+    elif args.collections == ["1g1r"]:
+        selected = ONE_G1R_COLLECTIONS
+    elif args.collections == ["all"]:
+        selected = ALL_COLLECTIONS
+    else:
+        selected = args.collections
+
+    generate_collections(nfs_root, out_dir, assets_dir, selected)
+
+    # If --curated-output is specified, also generate curated collections there
+    if args.curated_output:
+        curated_dir = Path(args.curated_output)
+        curated_dir.mkdir(parents=True, exist_ok=True)
+        curated_assets = assets_dir  # share assets dir
+        generate_collections(nfs_root, curated_dir, curated_assets, CURATED_COLLECTIONS)
 
     print("Done.")
 
