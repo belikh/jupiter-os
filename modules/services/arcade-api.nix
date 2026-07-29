@@ -1,6 +1,15 @@
 { config, lib, pkgs, ... }:
 let
   cfg = config.jupiter.services.arcadeApi;
+
+  arcade-api = pkgs.buildGoModule {
+    pname = "arcade-api";
+    version = "0.1.0";
+    src = ../../scripts/arcade-api;
+    vendorHash = null;
+    CGO_ENABLED = "0";
+    ldflags = [ "-s" "-w" ];
+  };
 in
 {
   options.jupiter.services.arcadeApi = {
@@ -28,7 +37,7 @@ in
       "d ${cfg.cacheDir} 0755 root root - -"
     ];
 
-    # Build arcade-api from source and create systemd service
+    # Create systemd service for arcade-api
     systemd.services.arcade-api = {
       description = "Jupiter OS Arcade API Server";
       after = [ "network-online.target" ];
@@ -37,18 +46,7 @@ in
 
       serviceConfig = {
         Type = "simple";
-        ExecStart = "${pkgs.buildGoModule {
-          name = "arcade-api";
-          src = ../../scripts/arcade-api;
-          vendorHash = null;
-          buildPhase = ''
-            CGO_ENABLED=0 go build -o arcade-api main.go
-          '';
-          installPhase = ''
-            mkdir -p $out/bin
-            cp arcade-api $out/bin/arcade-api
-          '';
-        }}/bin/arcade-api";
+        ExecStart = "${arcade-api}/bin/arcade-api";
         Restart = "on-failure";
         RestartSec = 5;
         StandardOutput = "journal";
