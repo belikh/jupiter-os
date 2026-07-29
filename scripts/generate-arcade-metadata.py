@@ -92,7 +92,7 @@ def parse_launchbox_xml(
         "",
         f"collection: {collection_name}",
         f"shortname: {shortname}",
-        f"launch: pegasus-rom-launch {emulator} {{file.path}}",
+        f"launch: pegasus-rom-launch {{file.path}}",
         "",
     ]
 

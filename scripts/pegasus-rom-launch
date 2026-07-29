@@ -1,31 +1,54 @@
 #!/usr/bin/env bash
 # pegasus-rom-launch — dispatcher to bubbletea-game-loader
 #
-# Usage: pegasus-rom-launch <game-file-path>
-#   e.g., pegasus-rom-launch 1g1r-nointro-nes/Pac-Man.nes
-#   e.g., pegasus-rom-launch curated/exo-dos/Commander Keen.zip
+# Called by Pegasus with paths specified in collection metadata files.
+# Pegasus collection format specifies:
+#   launch: pegasus-rom-launch {file.path}
 #
-# bubbletea-game-loader handles:
-# - Checking if game exists on NFS (curated collections)
-# - Requesting download from europa API for 1G1R games
-# - Polling progress and displaying TUI
-# - Launching appropriate emulator when ready
+# So Pegasus will call this script with the file.path value from the metadata.
 
+# Enable error reporting
 set -euo pipefail
 
+# Get the game path argument
 GAME_PATH="${1:-}"
+
+# Debug output to systemd journal for troubleshooting
+{
+    echo "pegasus-rom-launch invoked"
+    echo "  args: $@"
+    echo "  game_path: '$GAME_PATH'"
+    echo "  uid: $(id -u)"
+} >&2
+
+# Validate we got a path
 if [[ -z "${GAME_PATH}" ]]; then
-    echo "Usage: $0 <game-file-path>" >&2
-    exit 2
+    echo "ERROR: No game path provided" >&2
+    echo "Usage: $0 <game-path>" >&2
+    echo "  Examples:" >&2
+    echo "    $0 curated/exo-dos/Commander\\ Keen.zip" >&2
+    echo "    $0 1g1r-nointro-nes/Pac-Man.nes" >&2
+    exit 1
 fi
 
-# Normalize path: if Pegasus passes absolute path like /tank/archive/retro/games/1g1r/nointro-nes/Pac-Man.nes
-# convert to relative path 1g1r-nointro-nes/Pac-Man.nes (the format bubbletea-game-loader expects)
-if [[ "${GAME_PATH}" == /tank/archive/retro/games/* ]]; then
-    GAME_PATH="${GAME_PATH#/tank/archive/retro/games/}"
-    # Convert 1g1r/collection/ to 1g1r-collection/ for consistency
-    GAME_PATH="${GAME_PATH//1g1r\//1g1r-}"
-fi
+# Curated collections: if path starts with a known subcollection name, prepend 'curated/'
+# Known curated subcollections:
+#   exo-dos, exo-win3x, exo-win9x, exo-if, exo-demos, exo-appleiigs, exo-scummvm,
+#   c64-dreams, oneload64, megaags
+case "${GAME_PATH}" in
+  exo-dos/*|exo-win3x/*|exo-win9x/*|exo-if/*|exo-demos/*|exo-appleiigs/*|exo-scummvm/*|c64-dreams/*|oneload64/*|megaags/*)
+    # These are curated collections stored under /tank/archive/retro/games/curated/
+    # Prepend the 'curated/' prefix
+    GAME_PATH="curated/${GAME_PATH}"
+    ;;
+  *)
+    # Assume 1G1R or other format - pass through as-is
+    # These will be in format like: 1g1r-nointro-nes/Pac-Man.nes
+    ;;
+esac
 
-# Pass to bubbletea-game-loader with no wrapper (shows TUI directly)
+echo "pegasus-rom-launch resolved path: '$GAME_PATH'" >&2
+
+# Invoke bubbletea-game-loader
+# Use exec so bubbletea takes over this process entirely
 exec /usr/local/bin/bubbletea-game-loader "${GAME_PATH}"
