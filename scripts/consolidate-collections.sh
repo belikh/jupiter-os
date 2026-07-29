@@ -80,13 +80,14 @@ success "ZFS available"
 mkdir -p "${METADATA_DIR}"
 success "Created metadata directory"
 
-# Function to consolidate via ZFS send/recv
+# Function to consolidate via ZFS send/recv from read-only europa pool
 consolidate_collection_zfs() {
     local src="$1"
     local dst="$2"
     local dst_dataset="$3"
-    local name="$4"
-    local xml_path="$5"
+    local src_dataset="$4"  # ZFS dataset on europa (read-only pool)
+    local name="$5"
+    local xml_path="$6"
 
     if [[ ! -d "${src}" ]]; then
         warning "${name} not found at ${src}, skipping"
@@ -95,8 +96,8 @@ consolidate_collection_zfs() {
 
     log ""
     log "Consolidating ${name}..."
-    info "  Source: ${src} ($(du -sh "${src}" 2>/dev/null | cut -f1 || echo 'unknown'))"
-    info "  Target: ${dst}"
+    info "  Source: ${src} (via ${src_dataset})"
+    info "  Target: ${dst_dataset}"
 
     # Check if destination dataset already exists
     if zfs list -H "${dst_dataset}" &>/dev/null; then
@@ -111,11 +112,10 @@ consolidate_collection_zfs() {
         success "Destroyed existing dataset"
     fi
 
-    # Create a temporary ZFS dataset from the source directory
-    # (using tar+pipe to simulate a snapshot)
-    log "Creating dataset from ${src}..."
-    tar -C "${src}" -cf - . | zfs recv -F "${dst_dataset}" || {
-        error "Failed to recv ${name} to ${dst_dataset}"
+    # Use zfs send from europa pool (read-only is fine for send) and recv on tank
+    log "Sending dataset via ZFS..."
+    zfs send "${src_dataset}" | zfs recv -F "${dst_dataset}" || {
+        error "Failed to send/recv ${name} from ${src_dataset} to ${dst_dataset}"
     }
 
     success "${name} consolidated to ${dst_dataset}"
@@ -133,7 +133,7 @@ consolidate_collection_zfs() {
         success "LaunchBox XML found at ${xml_path}"
     else
         warning "LaunchBox XML not found at expected location: ${xml_path}"
-        warning "Searching for XML files..."
+        info "Searching for XML files..."
         find "${dst}" -name "*.xml" -path "*/Platforms/*" 2>/dev/null | head -3 | while read -r xml; do
             info "  Found: ${xml}"
         done
@@ -142,6 +142,16 @@ consolidate_collection_zfs() {
     return 0
 }
 
+# Determine source ZFS datasets on europa (read-only pool)
+# These need to match the actual ZFS structure on europa
+EXODOS_SRC_DATASET="${EXODOS_SRC_DATASET:-mnt/games/eXoDOS}"  # Override if different
+EXOWIN3X_SRC_DATASET="${EXOWIN3X_SRC_DATASET:-mnt/games/eXoWin3x}"
+
+log "Source ZFS datasets on europa:"
+log "  eXoDOS: ${EXODOS_SRC_DATASET}"
+log "  eXoWin3x: ${EXOWIN3X_SRC_DATASET}"
+log ""
+
 # Consolidate eXoDOS
 log ""
 log "--- eXoDOS (via ZFS send/recv) ---"
@@ -149,6 +159,7 @@ consolidate_collection_zfs \
     "${EXODOS_SRC}" \
     "${EXODOS_DST}" \
     "${EXODOS_DATASET}" \
+    "${EXODOS_SRC_DATASET}" \
     "eXoDOS" \
     "Data/Platforms/MS-DOS.xml"
 
@@ -159,6 +170,7 @@ consolidate_collection_zfs \
     "${EXOWIN3X_SRC}" \
     "${EXOWIN3X_DST}" \
     "${EXOWIN3X_DATASET}" \
+    "${EXOWIN3X_SRC_DATASET}" \
     "eXoWin3x" \
     "Data/Platforms/Windows 3x.xml"
 
