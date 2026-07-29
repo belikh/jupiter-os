@@ -1,17 +1,17 @@
 #!/bin/bash
-# setup-exowin9x.sh — Archive and integrate eXoWin9x (Vol. 1) into jupiter-os arcade
+# setup-exowin9x.sh — Extract and consolidate eXoWin9x (Vol. 1) to ZFS archive
 #
 # Prerequisites:
-# - eXoWin9x_Vol1 archive downloaded and available at $SOURCE_ARCHIVE
-# - ~350-400 GB free space on /tank/archive/retro/curated/
+# - eXoWin9x_Vol1.7z archive downloaded
+# - ~700 GB space needed (~262 GB compressed + ~400 GB extracted)
 #
 # Usage: setup-exowin9x.sh /path/to/eXoWin9x_Vol1_v*.7z
 #
 # This script:
-# 1. Extracts the 7z archive to a working directory
-# 2. Organizes into the proper ZFS layout
-# 3. Creates Pegasus metadata
-# 4. Verifies integrity
+# 1. Extracts the 7z archive once to get collection structure
+# 2. Moves to /tank/archive/retro/games/curated/exo-win9x via ZFS send/recv
+# 3. Games are launched on-demand at runtime (not pre-extracted)
+# 4. Creates Pegasus metadata
 
 set -euo pipefail
 
@@ -20,7 +20,7 @@ if [[ -z "${SOURCE_ARCHIVE}" ]]; then
     echo "Usage: $0 <path-to-exowin9x-archive.7z>"
     echo ""
     echo "Example:"
-    echo "  $0 /mnt/staging/eXoWin9x_Vol1_v1.0.7z"
+    echo "  $0 /tank/archive/retro/downloads/eXoWin9x_Vol1_v1.0.7z"
     exit 1
 fi
 
@@ -32,97 +32,94 @@ fi
 # Configuration
 ARCHIVE_DIR="/tank/archive/retro/games/curated"
 TARGET_DIR="${ARCHIVE_DIR}/exo-win9x"
-WORK_DIR="/tmp/exowin9x-setup"
+TARGET_DATASET="tank/archive/retro/games/curated/exo-win9x"
+WORK_DIR="/tmp/exowin9x-extract"
 METADATA_DIR="/tank/archive/retro/metadata/pegasus/collections"
 
-echo "=== eXoWin9x Setup ==="
-echo "Source archive: ${SOURCE_ARCHIVE}"
-echo "Target directory: ${TARGET_DIR}"
-echo "Work directory: ${WORK_DIR}"
-echo ""
+LOG_FILE="/var/log/exowin9x-setup.log"
 
-# Create target directory
-mkdir -p "${TARGET_DIR}" "${METADATA_DIR}"
-echo "✓ Created target directories"
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
 
-# Extract archive
-echo "Extracting archive (this may take 10-30 minutes)..."
-mkdir -p "${WORK_DIR}"
-7z x -o"${WORK_DIR}" "${SOURCE_ARCHIVE}" || {
-    echo "ERROR: Failed to extract archive"
-    rm -rf "${WORK_DIR}"
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "${LOG_FILE}"
+}
+
+error() {
+    echo -e "${RED}ERROR: $*${NC}" | tee -a "${LOG_FILE}"
     exit 1
 }
-echo "✓ Extraction complete"
 
-# Move extracted content to target
-echo "Organizing files into archive structure..."
-if [[ -d "${WORK_DIR}/eXoWin9x" ]]; then
-    mv "${WORK_DIR}/eXoWin9x"/* "${TARGET_DIR}/" 2>/dev/null || true
-elif [[ -d "${WORK_DIR}/extracted" ]]; then
-    mv "${WORK_DIR}/extracted"/* "${TARGET_DIR}/" 2>/dev/null || true
-else
-    # Assume the archive extracts directly
-    find "${WORK_DIR}" -maxdepth 1 -type d ! -name "${WORK_DIR}" -exec mv {} "${TARGET_DIR}/" \;
+success() {
+    echo -e "${GREEN}✓ $*${NC}" | tee -a "${LOG_FILE}"
+}
+
+log "=== eXoWin9x Setup ==="
+log "Source archive: ${SOURCE_ARCHIVE}"
+log "Target location: ${TARGET_DIR}"
+log "Log: ${LOG_FILE}"
+log ""
+
+# Extract archive to temporary location
+log "Extracting 7z archive (may take 10-30 minutes)..."
+mkdir -p "${WORK_DIR}"
+7z x -o"${WORK_DIR}" "${SOURCE_ARCHIVE}" || error "Failed to extract archive"
+success "Extraction complete"
+
+# Move extracted collection to target via ZFS send/recv
+log "Consolidating to ZFS dataset ${TARGET_DATASET}..."
+
+# Check if dataset exists
+if zfs list -H "${TARGET_DATASET}" &>/dev/null; then
+    log "Dataset already exists, destroying..."
+    zfs destroy -r "${TARGET_DATASET}" || error "Failed to destroy existing dataset"
 fi
 
-# Verify key directories exist
-required_dirs=(
-    "Games"
-    "DOSBox-X"
-    "PCem"
-    "VHD"
-    "Glide"
-    "_Windows"
-    "Extras"
-)
+# Create dataset from extracted archive
+log "Creating ZFS dataset from extracted content..."
+tar -C "${WORK_DIR}" -cf - . | zfs recv -F "${TARGET_DATASET}" || error "Failed to send/recv dataset"
+success "ZFS dataset created"
 
-echo "Verifying directory structure..."
-missing=()
-for dir in "${required_dirs[@]}"; do
-    if [[ ! -d "${TARGET_DIR}/${dir}" ]]; then
-        missing+=("${dir}")
-    fi
-done
-
-if [[ ${#missing[@]} -gt 0 ]]; then
-    echo "⚠ WARNING: Missing directories (may not be critical):"
-    printf '  - %s\n' "${missing[@]}"
-else
-    echo "✓ All expected directories found"
-fi
+# Verify structure
+log ""
+log "Verifying collection structure..."
+zfs list -H "${TARGET_DATASET}" && success "Dataset is mounted and accessible"
 
 # Count games
-game_count=$(find "${TARGET_DIR}/Games" -maxdepth 1 -type d | wc -l)
-echo "✓ Found ${game_count} game directories"
+game_count=$(find "${TARGET_DIR}/Games" -maxdepth 1 -type d 2>/dev/null | wc -l)
+if [[ $game_count -gt 0 ]]; then
+    success "Found ~${game_count} game directories"
+fi
 
-# Set permissions
-echo "Setting permissions..."
-chmod -R 755 "${TARGET_DIR}"
-echo "✓ Permissions set"
-
-# Clean up work directory
+# Clean up temporary extraction
+log "Cleaning up temporary files..."
 rm -rf "${WORK_DIR}"
-echo "✓ Cleaned up temporary files"
+success "Temporary files removed"
 
 # Generate Pegasus metadata
-echo ""
-echo "Generating Pegasus metadata..."
+log ""
+log "Generating Pegasus metadata..."
+mkdir -p "${METADATA_DIR}"
 python3 /root/jupiter-os/scripts/generate-arcade-metadata.py \
     --nfs-root /tank/archive \
     --output "${METADATA_DIR}" \
     --assets /tank/archive/retro/metadata/pegasus/assets \
-    --collections curated-exo-win9x || {
-    echo "⚠ Metadata generation returned non-zero, but archive is ready"
+    --collections curated-exo-win9x 2>&1 | tee -a "${LOG_FILE}" || {
+    echo "⚠ Metadata generation had issues, but collection is ready"
 }
 
-echo ""
-echo "=== eXoWin9x Setup Complete ==="
-echo ""
-echo "Collection location: ${TARGET_DIR}/"
-echo "Pegasus metadata: ${METADATA_DIR}/curated-exo-win9x.txt"
-echo ""
-echo "Next steps:"
-echo "1. Verify Pegasus collection file: cat ${METADATA_DIR}/curated-exo-win9x.txt"
-echo "2. Test launch on a kiosk: select a game in Pegasus"
-echo "3. Monitor: journalctl -u pegasus-rom-launch.service -f"
+log ""
+log "=== eXoWin9x Setup Complete ==="
+log ""
+log "Collection: ${TARGET_DATASET} → ${TARGET_DIR}/"
+log "Metadata: ${METADATA_DIR}/curated-exo-win9x.txt"
+log ""
+log "Games are stored as-is and launched on-demand at runtime."
+log ""
+log "Next steps:"
+log "1. Verify metadata: cat ${METADATA_DIR}/curated-exo-win9x.txt | head -20"
+log "2. Test on kiosk: select a game in Pegasus"
+log "3. Monitor launch: journalctl -u pegasus-rom-launch -f"
