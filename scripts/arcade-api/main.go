@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -8,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -22,12 +25,17 @@ type DownloadJob struct {
 	ETA       string
 	Error     string
 	StartTime time.Time
+	cmd       *exec.Cmd
+	cancel    context.CancelFunc
 }
 
 var (
 	jobs      map[string]*DownloadJob
 	jobsMutex sync.RWMutex
 	nextJobID int
+
+	metadataCache map[string]map[string]int
+	cacheMutex    sync.RWMutex
 
 	collectionTorrent = map[string]string{
 		"1g1r-nointro-nes":      "Minerva_Myrient - No-Intro - Nintendo - Nintendo Entertainment System*.torrent",
@@ -53,7 +61,47 @@ var (
 
 func init() {
 	jobs = make(map[string]*DownloadJob)
+	metadataCache = make(map[string]map[string]int)
 	os.MkdirAll(cacheDir, 0755)
+	loadMetadataCache()
+}
+
+func loadMetadataCache() {
+	metadataDir := "/tank/archive/retro/metadata/minerva-ids"
+	files, err := filepath.Glob(filepath.Join(metadataDir, "*.json"))
+	if err != nil {
+		log.Printf("Warning: could not read metadata dir: %v", err)
+		return
+	}
+	for _, f := range files {
+		data, err := os.ReadFile(f)
+		if err != nil {
+			log.Printf("Warning: could not read %s: %v", f, err)
+			continue
+		}
+		var m map[string]interface{}
+		if err := json.Unmarshal(data, &m); err != nil {
+			log.Printf("Warning: invalid JSON in %s: %v", f, err)
+			continue
+		}
+		if filesMap, ok := m["files"].(map[string]interface{}); ok {
+			indexMap := make(map[string]int)
+			for gameName, idx := range filesMap {
+				switch v := idx.(type) {
+				case float64:
+					indexMap[gameName] = int(v)
+				case string:
+					if i, err := strconv.Atoi(v); err == nil {
+						indexMap[gameName] = i
+					}
+				}
+			}
+			cacheMutex.Lock()
+			metadataCache[filepath.Base(f)] = indexMap
+			cacheMutex.Unlock()
+		}
+	}
+	log.Printf("Loaded metadata cache: %d files", len(metadataCache))
 }
 
 func handleDownload(w http.ResponseWriter, r *http.Request) {
@@ -118,63 +166,95 @@ func downloadViaAria2c(job *DownloadJob, torrentFile, gameName, outputFile strin
 	job.Status = "Downloading"
 	log.Printf("Job %s: Downloading %s from %s", job.ID, gameName, torrentFile)
 
-	// Load file index from minerva-ids metadata
 	fileIndex, err := getFileIndexFromMetadata(gameName, torrentFile)
 	if err != nil {
 		job.Status = "Error"
-		job.Error = fmt.Sprintf("Could not find file: %v", err)
-		log.Printf("Job %s: Error finding index: %v", job.ID, err)
+		job.Error = fmt.Sprintf("Metadata lookup failed: %v", err)
+		log.Printf("Job %s: Metadata error: %v", job.ID, err)
 		return
 	}
 
-	cmd := exec.Command("aria2c",
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+	job.cancel = cancel
+
+	cmd := exec.CommandContext(ctx, "aria2c",
 		"--select-file", fileIndex,
 		"-d", cacheDir,
 		"-o", filepath.Base(gameName),
+		"--seed-time=0",
+		"--bt-stop-timeout=60",
+		"--check-integrity=true",
+		"--max-tries=3",
+		"-x", "16",
 		torrentFile,
 	)
 
-	err = cmd.Run()
+	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		job.Status = "Error"
+		job.Error = fmt.Sprintf("Setup error: %v", err)
+		return
+	}
+
+	if err := cmd.Start(); err != nil {
+		job.Status = "Error"
+		job.Error = fmt.Sprintf("Failed to start download: %v", err)
+		log.Printf("Job %s: Start error: %v", job.ID, err)
+		return
+	}
+
+	job.cmd = cmd
+
+	scanner := bufio.NewScanner(stdout)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.Contains(line, "%) CN:") || strings.Contains(line, "% CN:") {
+			parts := strings.Fields(line)
+			for i, p := range parts {
+				if strings.HasSuffix(p, "%") {
+					pct := strings.TrimSuffix(p, "%")
+					if f, err := strconv.ParseFloat(pct, 64); err == nil {
+						job.Percent = f / 100.0
+					}
+				}
+				if strings.HasSuffix(p, "B/s") || strings.HasSuffix(p, "KB/s") || strings.HasSuffix(p, "MB/s") {
+					job.Speed = p
+				}
+				if i > 0 && strings.HasPrefix(parts[i-1], "ETA:") {
+					job.ETA = p
+				}
+			}
+		}
+	}
+
+	if err := cmd.Wait(); err != nil {
+		job.Status = "Error"
 		job.Error = fmt.Sprintf("Download failed: %v", err)
-		log.Printf("Job %s: Error: %v", job.ID, err)
+		log.Printf("Job %s: Wait error: %v", job.ID, err)
+		return
+	}
+
+	downloadedFile := filepath.Join(cacheDir, filepath.Base(gameName))
+	if _, err := os.Stat(downloadedFile); err != nil {
+		job.Status = "Error"
+		job.Error = fmt.Sprintf("File not found after download: %v", err)
+		log.Printf("Job %s: File missing: %s", job.ID, downloadedFile)
 		return
 	}
 
 	job.Status = "Complete"
 	job.Percent = 1.0
-	log.Printf("Job %s: Complete", job.ID)
+	log.Printf("Job %s: Complete - %s", job.ID, downloadedFile)
 }
 
 func getFileIndexFromMetadata(gameName, torrentFile string) (string, error) {
-	// Extract torrent collection name from path
-	// e.g., "Minerva_Myrient - No-Intro - Nintendo - Nintendo Entertainment System*.torrent"
-	// maps to "1g1r-nointro-nes" collection
+	cacheMutex.RLock()
+	defer cacheMutex.RUnlock()
 
-	// Try to find the corresponding JSON file in minerva-ids
-	metadataDir := "/tank/archive/retro/metadata/minerva-ids"
-	jsonFiles, err := filepath.Glob(filepath.Join(metadataDir, "*.json"))
-	if err != nil {
-		return "", fmt.Errorf("could not read metadata directory: %v", err)
-	}
-
-	for _, jsonFile := range jsonFiles {
-		data, err := os.ReadFile(jsonFile)
-		if err != nil {
-			continue
-		}
-
-		var metadata map[string]interface{}
-		if err := json.Unmarshal(data, &metadata); err != nil {
-			continue
-		}
-
-		// Look for the game in this metadata file
-		if files, ok := metadata["files"].(map[string]interface{}); ok {
-			if index, ok := files[gameName]; ok {
-				return fmt.Sprintf("%v", index), nil
-			}
+	for _, indexMap := range metadataCache {
+		if idx, ok := indexMap[gameName]; ok {
+			return strconv.Itoa(idx), nil
 		}
 	}
 
@@ -209,9 +289,14 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 func main() {
 	http.HandleFunc("/api/download", handleDownload)
 	http.HandleFunc("/api/download-status", handleStatus)
+	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, "OK")
+	})
 
-	log.Println("Arcade API starting on :8765")
-	if err := http.ListenAndServe(":8765", nil); err != nil {
+	addr := "0.0.0.0:8765"
+	log.Printf("Arcade API starting on %s", addr)
+	if err := http.ListenAndServe(addr, nil); err != nil {
 		log.Fatalf("Server failed: %v", err)
 	}
 }
