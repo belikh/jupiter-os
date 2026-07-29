@@ -15,17 +15,31 @@
 
 set -euo pipefail
 
-SOURCE_ARCHIVE="${1:-}"
-if [[ -z "${SOURCE_ARCHIVE}" ]]; then
-    echo "Usage: $0 <path-to-exowin9x-archive.7z>"
+SOURCE_PATH="${1:-}"
+if [[ -z "${SOURCE_PATH}" ]]; then
+    echo "Usage: $0 <path-to-exowin9x-directory-or-archive>"
     echo ""
-    echo "Example:"
-    echo "  $0 /tank/archive/retro/downloads/eXoWin9x_Vol1_v1.0.7z"
+    echo "Examples:"
+    echo "  $0 /tank/archive/retro/downloads/eXoWin9x  (extracted directory)"
+    echo "  $0 /tank/archive/retro/downloads/eXoWin9x_Vol1_v1.0.7z  (7z archive)"
     exit 1
 fi
 
-if [[ ! -f "${SOURCE_ARCHIVE}" ]]; then
-    echo "ERROR: Archive not found: ${SOURCE_ARCHIVE}"
+# Handle both extracted directories and 7z archives
+SKIP_EXTRACT=false
+WORK_DIR="/tmp/exowin9x-extract"
+
+if [[ -d "${SOURCE_PATH}" ]]; then
+    WORK_DIR="${SOURCE_PATH}"
+    SKIP_EXTRACT=true
+elif [[ -f "${SOURCE_PATH}" ]]; then
+    if [[ ! "${SOURCE_PATH}" =~ \.7z$ ]]; then
+        echo "ERROR: Archive must be .7z format: ${SOURCE_PATH}"
+        exit 1
+    fi
+    SKIP_EXTRACT=false
+else
+    echo "ERROR: Not found: ${SOURCE_PATH}"
     exit 1
 fi
 
@@ -33,7 +47,6 @@ fi
 ARCHIVE_DIR="/tank/archive/retro/games/curated"
 TARGET_DIR="${ARCHIVE_DIR}/exo-win9x"
 TARGET_DATASET="tank/archive/retro/games/curated/exo-win9x"
-WORK_DIR="/tmp/exowin9x-extract"
 METADATA_DIR="/tank/archive/retro/metadata/pegasus/collections"
 
 LOG_FILE="/var/log/exowin9x-setup.log"
@@ -58,16 +71,21 @@ success() {
 }
 
 log "=== eXoWin9x Setup ==="
-log "Source archive: ${SOURCE_ARCHIVE}"
+log "Source path: ${SOURCE_PATH}"
 log "Target location: ${TARGET_DIR}"
 log "Log: ${LOG_FILE}"
 log ""
 
-# Extract archive to temporary location
-log "Extracting 7z archive (may take 10-30 minutes)..."
-mkdir -p "${WORK_DIR}"
-7z x -o"${WORK_DIR}" "${SOURCE_ARCHIVE}" || error "Failed to extract archive"
-success "Extraction complete"
+# Extract archive if needed
+if [[ "${SKIP_EXTRACT}" == "false" ]]; then
+    log "Extracting 7z archive (may take 10-30 minutes)..."
+    mkdir -p "${WORK_DIR}"
+    7z x -o"${WORK_DIR}" "${SOURCE_PATH}" || error "Failed to extract archive"
+    success "Extraction complete"
+else
+    log "Using already-extracted directory: ${WORK_DIR}"
+    success "Directory verified"
+fi
 
 # Move extracted collection to target via ZFS send/recv
 log "Consolidating to ZFS dataset ${TARGET_DATASET}..."
@@ -78,26 +96,39 @@ if zfs list -H "${TARGET_DATASET}" &>/dev/null; then
     zfs destroy -r "${TARGET_DATASET}" || error "Failed to destroy existing dataset"
 fi
 
-# Create dataset from extracted archive
-log "Creating ZFS dataset from extracted content..."
-tar -C "${WORK_DIR}" -cf - . | zfs recv -F "${TARGET_DATASET}" || error "Failed to send/recv dataset"
+# Create ZFS dataset and copy content
+log "Creating ZFS dataset..."
+mkdir -p "${ARCHIVE_DIR}"
+zfs create "${TARGET_DATASET}" || error "Failed to create ZFS dataset"
 success "ZFS dataset created"
+
+# Copy content to mounted dataset
+TARGET_MOUNT=$(zfs get -H -o value mountpoint "${TARGET_DATASET}")
+log "Copying content to ${TARGET_MOUNT}..."
+cp -r "${WORK_DIR}"/* "${TARGET_MOUNT}/" || error "Failed to copy collection content"
+success "Collection content copied"
 
 # Verify structure
 log ""
 log "Verifying collection structure..."
 zfs list -H "${TARGET_DATASET}" && success "Dataset is mounted and accessible"
 
-# Count games
-game_count=$(find "${TARGET_DIR}/Games" -maxdepth 1 -type d 2>/dev/null | wc -l)
+# Count games (for eXoWin9x, games are in eXo/eXoWin9x/YYYY directories)
+game_count=$(find "${TARGET_MOUNT}/eXo/eXoWin9x" -maxdepth 1 -type d 2>/dev/null | grep -E '199[0-9]' | wc -l)
 if [[ $game_count -gt 0 ]]; then
-    success "Found ~${game_count} game directories"
+    success "Found ${game_count} year categories"
+    total_games=$(find "${TARGET_MOUNT}/eXo/eXoWin9x" -maxdepth 2 -type d 2>/dev/null | wc -l)
+    log "Total directories (including years): ${total_games}"
 fi
 
-# Clean up temporary extraction
-log "Cleaning up temporary files..."
-rm -rf "${WORK_DIR}"
-success "Temporary files removed"
+# Clean up temporary extraction (only if we extracted from archive)
+if [[ "${SKIP_EXTRACT}" == "false" ]]; then
+    log "Cleaning up temporary extraction..."
+    rm -rf "${WORK_DIR}"
+    success "Temporary files removed"
+else
+    log "Keeping source directory (already extracted): ${WORK_DIR}"
+fi
 
 # Generate Pegasus metadata
 log ""
