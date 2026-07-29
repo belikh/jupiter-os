@@ -190,6 +190,11 @@
   # the Minerva_Myrient archive and report progress in real time.
   jupiter.services.arcadeApi.enable = true;
 
+  # ---- System packages -------------------------------------------------------
+  environment.systemPackages = with config.pkgs; [
+    aria2
+  ];
+
   # ---- sops secrets --------------------------------------------------------
   # attic_server_token_secret: RS256 JWT signing key for atticd.
   # binarylane_api_token: consumed by jupiter.services.palleneWatchdog.
