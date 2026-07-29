@@ -85,9 +85,8 @@ consolidate_collection_zfs() {
     local src="$1"
     local dst="$2"
     local dst_dataset="$3"
-    local src_dataset="$4"  # ZFS dataset on europa (read-only pool)
-    local name="$5"
-    local xml_path="$6"
+    local name="$4"
+    local xml_path="$5"
 
     if [[ ! -d "${src}" ]]; then
         warning "${name} not found at ${src}, skipping"
@@ -112,10 +111,11 @@ consolidate_collection_zfs() {
         success "Destroyed existing dataset"
     fi
 
-    # Use zfs send from europa pool (read-only is fine for send) and recv on tank
-    log "Sending dataset via ZFS..."
-    zfs send "${src_dataset}" | zfs recv -F "${dst_dataset}" || {
-        error "Failed to send/recv ${name} from ${src_dataset} to ${dst_dataset}"
+    # Stream directory via tar into ZFS recv on tank
+    # (europa pool collections are directories, not separate datasets)
+    log "Streaming directory ${src} into ZFS dataset ${dst_dataset}..."
+    tar -C "${src}" -cf - . | zfs recv -F "${dst_dataset}" || {
+        error "Failed to stream ${name} from ${src} to ${dst_dataset}"
     }
 
     success "${name} consolidated to ${dst_dataset}"
@@ -142,35 +142,23 @@ consolidate_collection_zfs() {
     return 0
 }
 
-# Determine source ZFS datasets on europa (read-only pool)
-# These need to match the actual ZFS structure on europa
-EXODOS_SRC_DATASET="${EXODOS_SRC_DATASET:-mnt/games/eXoDOS}"  # Override if different
-EXOWIN3X_SRC_DATASET="${EXOWIN3X_SRC_DATASET:-mnt/games/eXoWin3x}"
-
-log "Source ZFS datasets on europa:"
-log "  eXoDOS: ${EXODOS_SRC_DATASET}"
-log "  eXoWin3x: ${EXOWIN3X_SRC_DATASET}"
-log ""
-
 # Consolidate eXoDOS
 log ""
-log "--- eXoDOS (via ZFS send/recv) ---"
+log "--- eXoDOS (via tar | zfs recv) ---"
 consolidate_collection_zfs \
     "${EXODOS_SRC}" \
     "${EXODOS_DST}" \
     "${EXODOS_DATASET}" \
-    "${EXODOS_SRC_DATASET}" \
     "eXoDOS" \
     "Data/Platforms/MS-DOS.xml"
 
 # Consolidate eXoWin3x
 log ""
-log "--- eXoWin3x (via ZFS send/recv) ---"
+log "--- eXoWin3x (via tar | zfs recv) ---"
 consolidate_collection_zfs \
     "${EXOWIN3X_SRC}" \
     "${EXOWIN3X_DST}" \
     "${EXOWIN3X_DATASET}" \
-    "${EXOWIN3X_SRC_DATASET}" \
     "eXoWin3x" \
     "Data/Platforms/Windows 3x.xml"
 
