@@ -197,23 +197,29 @@ case "$EMULATOR" in
         ;;
 esac
 # --- Win9x: provide a writable C: drive image ------------------------------
-# eXoWin9x boots a Windows 98 hard-disk image. Each Play.conf's [autoexec]
-# tries to build a *differencing* child VHD off a shared parent first:
+# eXoWin9x boots Windows 98 from a hard-disk image that the game's own
+# [autoexec] mounts as C: and boots:
 #   vhdmake -f -l .\emulators\dosbox\x98\parent/W98-C.vhd .\...\x98\W98-C.vhd
 #   IMGMOUNT c .\emulators\dosbox\x98\W98-C.vhd
-# That line cannot work here. dosbox-x's VHDMAKE aborts with "The parent VHD
-# image ... can't be opened for linking" against these images (verified with
-# both operand orders and both path separators), and even if it succeeded the
-# child lands in a directory that exists on the read-only NFS lower, where
-# overlayfs denies creates to the session user (only writes to files already
-# in the upper are allowed — the same ovl_permission behaviour that makes
-# extraction go through the root helper).
+#   BOOT -l c
+# The collection ships that C: image already built, so the vhdmake line is
+# belt-and-braces on Windows — and it can't run here anyway: dosbox-x
+# 2026.06.02's VHDMAKE aborts with "The parent VHD image ... can't be opened
+# for linking" against these images (reproduced against a fully writable
+# copy, with both operand orders and both path separators).
 #
-# So we materialise C: ourselves: copy the parent image to the child path
-# once, into the overlay upper, owned by the session user. IMGMOUNT then gets
-# a real writable disk and Windows keeps its state per kiosk across launches.
-# eXo's own vhdmake line still runs and still fails, but it aborts without
-# touching our copy, so it is harmless.
+# What actually breaks Windows is that the shipped image lives on the
+# read-only NFS lower, so booting it gives "General failure writing drive C"
+# the moment Windows touches the registry or swap. overlayfs won't let the
+# session user fix that in place either: it denies *creates* in directories
+# that exist on the lower even when the upper copy of the directory is owned
+# by them (only writes to files already in the upper succeed — the same
+# ovl_permission behaviour that forces extraction through the root helper).
+#
+# So copy the image into the overlay upper once, via the root helper, owned
+# by the session user. Windows then boots a writable C: and keeps its state
+# per kiosk across launches. Trigger on writability rather than existence:
+# the read-only lower copy always "exists".
 if [ "$PLATFORM_DIR" = "!win9x" ]; then
     # The conf names the image; don't hardcode W98-C.vhd (a handful of games
     # boot W98-J/W98-H/W95-C instead).
@@ -221,14 +227,24 @@ if [ "$PLATFORM_DIR" = "!win9x" ]; then
         | head -1 | sed 's/^"//; s/"$//; s/^\.\\//; s/\\/\//g')
     if [ -n "$CHILD_REL" ]; then
         CHILD="$EXO_DIR/$CHILD_REL"
-        PARENT="$(dirname "$CHILD")/parent/$(basename "$CHILD")"
-        if [ ! -s "$CHILD" ] && [ -f "$PARENT" ]; then
-            SUDO=/run/wrappers/bin/sudo
-            HELPER=$(readlink -f "$(command -v exo-prepare-c-drive)") || {
-                echo "exo-launch: exo-prepare-c-drive not on PATH" >&2
-                exit 8
-            }
-            "$SUDO" -n "$HELPER" "$PARENT" "$CHILD" "$(id -un)" "$(id -gn)"
+        if [ ! -w "$CHILD" ]; then
+            # Copy the BASE image from parent/, not the sibling image the
+            # collection ships at the mount path: that one is a *differencing*
+            # VHD (footer disk type 4) whose parent link dosbox-x does not
+            # resolve here — booting it gives "Invalid system disk" (verified
+            # on amalthea). The base image under parent/ is a self-contained
+            # dynamic VHD and boots. Fall back to the shipped image only if a
+            # collection has no parent/ copy at all.
+            SRC="$(dirname "$CHILD")/parent/$(basename "$CHILD")"
+            [ -f "$SRC" ] || SRC="$CHILD"
+            if [ -f "$SRC" ]; then
+                SUDO=/run/wrappers/bin/sudo
+                HELPER=$(readlink -f "$(command -v exo-prepare-c-drive)") || {
+                    echo "exo-launch: exo-prepare-c-drive not on PATH" >&2
+                    exit 8
+                }
+                "$SUDO" -n "$HELPER" "$SRC" "$CHILD" "$(id -un)" "$(id -gn)"
+            fi
         fi
     fi
 fi
