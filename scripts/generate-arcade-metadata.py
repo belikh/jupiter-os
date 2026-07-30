@@ -93,7 +93,7 @@ def parse_launchbox_xml(
         f"collection: {collection_name}",
         f"shortname: {shortname}",
         f"launch: pegasus-rom-launch {{file.path}}",
-        f"directory: /tank/archive/retro",
+        f"directory: {str(collection_root)}",
         "",
     ]
 
@@ -254,7 +254,7 @@ def scan_directory(
         f"collection: {collection_name}",
         f"shortname: {shortname}",
         f"launch: {launch_prefix} {{file.path}}",
-        f"directory: /tank/archive/retro",
+        f"directory: {str(dir_path)}",
         "",
     ]
 
@@ -351,7 +351,7 @@ def get_collections(nfs_root: Path) -> dict:
             "name": "eXoDOS",
             "shortname": "dos",
             "emulator": "dosbox",
-            "rewrites": [("eXoDOS", "exo-dos"), ("eXo", "exo")],
+            "rewrites": [],
             "assets_src": nfs_root / "retro/games/curated/exo-dos/Core/Images",
         },
         "curated-exo-win3x": {
@@ -361,7 +361,7 @@ def get_collections(nfs_root: Path) -> dict:
             "name": "eXoWin3x",
             "shortname": "win3x",
             "emulator": "dosbox-x",
-            "rewrites": [("eXoWin3X", "exo-win3x"), ("eXoWin3x", "exo-win3x")],
+            "rewrites": [],
             "assets_src": nfs_root / "retro/games/curated/exo-win3x/Images",
         },
         "curated-c64-dreams": {
