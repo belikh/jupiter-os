@@ -81,9 +81,21 @@ def parse_launchbox_xml(
     shortname: str,
     emulator: str,
     rewrites: List[Tuple[str, str]],
+    images_dir: Path = None,
 ) -> str:
     tree = ET.parse(xml_path)
     root = tree.getroot()
+
+    # Build image lookup: normalize game title → image path
+    image_map = {}
+    if images_dir and images_dir.exists():
+        box_front_dir = images_dir / "Box - Front"
+        if box_front_dir.exists():
+            for img_path in box_front_dir.glob("*.jpg"):
+                # Normalize: "Game Title-01.jpg" → "game title"
+                name = img_path.stem.rsplit("-", 1)[0].lower()  # Remove -01, -02 suffix
+                if name not in image_map:
+                    image_map[name] = str(img_path.relative_to(collection_root.parent / images_dir.name.split("/")[-1]))
 
     out = [
         f"# Generated from {xml_path.name}",
@@ -145,6 +157,13 @@ def parse_launchbox_xml(
                 p = p.replace(o, n)
             return p
 
+        # Try to find boxart by matching game title
+        boxfront_asset = ""
+        if image_map:
+            title_normalized = title.lower()
+            if title_normalized in image_map:
+                boxfront_asset = image_map[title_normalized]
+
         out.append(render_game_entry(
             title=title,
             file_rel=file_rel,
@@ -157,7 +176,7 @@ def parse_launchbox_xml(
             favorite=txt(fav).lower() == "true",
             logo=img_rel(wheel),
             screenshot=img_rel(scr),
-            boxfront=img_rel(box),
+            boxfront=boxfront_asset or img_rel(box),
             marquee=img_rel(marq),
         ))
 
@@ -463,7 +482,8 @@ def generate_collections(
         if c["type"] == "launchbox":
             if c["xml"].exists():
                 content = parse_launchbox_xml(
-                    c["xml"], c["root"], c["name"], c["shortname"], c["emulator"], c.get("rewrites", [])
+                    c["xml"], c["root"], c["name"], c["shortname"], c["emulator"],
+                    c.get("rewrites", []), c.get("assets_src")
                 )
                 output_file.write_text(content)
             else:
