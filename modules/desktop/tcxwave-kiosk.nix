@@ -214,6 +214,20 @@ in
     # manages the connection declaratively via ensureProfiles with PSK from sops.
     sops.secrets.wifi_psk = lib.mkIf cfg.wifi.enable { };
 
+    # The A6210 is a dual-mode USB device: on a cold power-up (first
+    # insertion, or after fully losing USB power — confirmed via a reboot on
+    # 2026-07-30) it enumerates as a flash-drive carrying its Windows driver
+    # (0846:9053), not the MT7612U radio (0846:9052/mt76x2u). Without this,
+    # nothing ever sends the mode-switch control message and wlp0s20f0u4u5
+    # simply never appears — no error, no udev event of note, the device
+    # just sits in storage mode forever. usb-modeswitch (triggered by udev on
+    # the 9053 vendor/product match) sends that switch automatically. This
+    # had been masked because the adapter happened to already be in radio
+    # mode from some earlier manual switch and never fully lost USB power
+    # across ordinary service/NetworkManager restarts — only a real reboot
+    # exposed the gap.
+    hardware.usb-modeswitch.enable = lib.mkIf cfg.wifi.enable true;
+
     # Declarative NetworkManager profile for wifi. The PSK is NOT inlined into
     # the profile (ensureProfiles are world-readable in the nix store); instead
     # the connection marks the secret agent-owned (psk-flags = 1) and
