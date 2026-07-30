@@ -346,7 +346,7 @@ def get_collections(nfs_root: Path) -> dict:
         # Curated: LaunchBox XML based
         "curated-exo-dos": {
             "type": "launchbox",
-            "xml": nfs_root / "retro/games/curated/exo-dos/Data/Platforms.xml",
+            "xml": nfs_root / "retro/games/curated/exo-dos/Data/Platforms/MS-DOS.xml",
             "root": nfs_root / "retro/games/curated/exo-dos",
             "name": "eXoDOS",
             "shortname": "dos",
@@ -356,7 +356,7 @@ def get_collections(nfs_root: Path) -> dict:
         },
         "curated-exo-win3x": {
             "type": "launchbox",
-            "xml": nfs_root / "retro/games/curated/exo-win3x/Metadata/Platforms.xml",
+            "xml": nfs_root / "retro/games/curated/exo-win3x/Data/Platforms/Windows 3x.xml",
             "root": nfs_root / "retro/games/curated/exo-win3x",
             "name": "eXoWin3x",
             "shortname": "win3x",
