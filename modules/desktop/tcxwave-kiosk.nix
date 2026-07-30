@@ -214,14 +214,27 @@ in
     # manages the connection declaratively via ensureProfiles with PSK from sops.
     sops.secrets.wifi_psk = lib.mkIf cfg.wifi.enable { };
 
-    # mt76x2u claims 0846:9053 directly (confirmed via its own modalias
-    # table — no usb_modeswitch/dual-mode quirk involved, unlike some other
-    # MediaTek dongles). But its udev-modalias autoload doesn't reliably fire
-    # on this hardware: confirmed on two independent clean reboots
-    # (2026-07-30, no manual intervention between them) that wlp0s20f0u4u5
-    # simply never appears and `lsmod` shows no mt76x2u — a bare `modprobe
-    # mt76x2u` immediately loads it and the interface appears and associates
-    # normally. Force it at boot instead of depending on the uevent race.
+    # nixpkgs' hardware/xone.nix (hardware.xone.enable, on for every kiosk via
+    # modules/gaming/console.nix's arcade-mode Xbox controller support)
+    # unconditionally adds mt76x2u — thebe's own wifi chip — to
+    # boot.blacklistedKernelModules alongside xpad. Confirmed live
+    # (2026-07-30): `modprobe --showconfig` showed `blacklist mt76x2u` coming
+    # from /etc/modprobe.d/nixos.conf, traced to that nixpkgs module, not
+    # anything in this repo. Two clean reboots with the blacklist in place
+    # showed wlp0s20f0u4u5 never appearing and no mt76x2u in `lsmod`, while a
+    # bare `modprobe mt76x2u` (which ignores blacklist entries — those only
+    # gate udev-alias/systemd-modules-load autoload) loaded it immediately
+    # and it associated normally. Only thebe has this adapter, so only thebe
+    # needs to override the blacklist; mkForce replaces the whole merged list
+    # (tcxwave-power-tuning.nix's "pcspkr" + xone.nix's "xpad"/"mt76x2u"), so
+    # the entries thebe still wants (xpad, still needed to avoid conflicting
+    # with xone/xpadneo; pcspkr) have to be repeated here explicitly.
+    boot.blacklistedKernelModules = lib.mkIf cfg.wifi.enable (
+      lib.mkForce [
+        "xpad"
+        "pcspkr"
+      ]
+    );
     boot.kernelModules = lib.mkIf cfg.wifi.enable [ "mt76x2u" ];
 
     # Declarative NetworkManager profile for wifi. The PSK is NOT inlined into
