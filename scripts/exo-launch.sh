@@ -390,7 +390,32 @@ if [ "$EMULATOR" = "86box" ]; then
                     val=${val%$'\r'}
                     val=${val%"${val##*[![:space:]]}"}
                     val=${val#"${val%%[![:space:]]*}"}
-                    fixed=$(ci_resolve_path "$VMPATH" "$val")
+                    case "$key" in
+                        hdd_01_fn*)
+                            # C: boot disk. eXo ships an EMPTY *-C.vhd stub
+                            # that its Windows launcher deletes + rebuilds as
+                            # a child of parent/*-P.vhd via makevhd.exe at
+                            # launch (see 9xlaunch86Box.bat). We can't run
+                            # makevhd, and we don't need to: every 86Box cfg
+                            # sets hdd_*_speed = ramdisk, so 86Box loads the
+                            # VHD read-only into RAM. Point hdd_01 straight
+                            # at the parent image — same bootable content as
+                            # a fresh child (parent + empty delta), and the
+                            # read-only NFS lower is fine for a ramdisk load.
+                            cbase=$(ci_resolve_path "$VMPATH" "$val")
+                            cdir=$(dirname "$cbase")
+                            pbn=$(basename "$cbase"); pbn=${pbn%-C.vhd}
+                            parent=$(ci_resolve_path "$cdir/parent" "${pbn}-P.vhd")
+                            if [ -f "$parent" ]; then
+                                fixed=$parent
+                            else
+                                fixed=$cbase
+                            fi
+                            ;;
+                        *)
+                            fixed=$(ci_resolve_path "$VMPATH" "$val")
+                            ;;
+                    esac
                     printf '%s = %s\n' "$key" "$fixed" >>"$OUT.tmp"
                     # Collect cdrom image paths so we can reconcile the
                     # .cue's internal FILE->bin refs too (one case level
