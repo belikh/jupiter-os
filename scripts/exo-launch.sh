@@ -228,8 +228,11 @@ esac
 if [ "$PLATFORM_DIR" = "!win9x" ]; then
     # The conf names the image; don't hardcode W98-C.vhd (a handful of games
     # boot W98-J/W98-H/W95-C instead).
-    CHILD_REL=$(sed -n 's/\r$//; s/^[Ii][Mm][Gg][Mm][Oo][Uu][Nn][Tt][[:space:]][[:space:]]*[Cc][[:space:]][[:space:]]*//p' "$CONF" \
-        | head -1 | sed 's/^"//; s/"$//; s/^\.\\//; s/\\/\//g')
+    # eXo's confs are CRLF and space-padded to a fixed width, so strip the CR
+    # and any trailing blanks before using the value as a path — otherwise
+    # every -f test below silently fails and C: is never prepared.
+    CHILD_REL=$(sed -n 's/\r//g; s/^[Ii][Mm][Gg][Mm][Oo][Uu][Nn][Tt][[:space:]][[:space:]]*[Cc][[:space:]][[:space:]]*//p' "$CONF" \
+        | head -1 | sed 's/[[:space:]]*$//; s/^"//; s/"[[:space:]]*$//; s/^\.\\//; s/\\/\//g')
     if [ -n "$CHILD_REL" ]; then
         CHILD="$EXO_DIR/$CHILD_REL"
         # Source the BASE image under parent/, not the sibling image the
