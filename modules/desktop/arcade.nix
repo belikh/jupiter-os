@@ -92,14 +92,39 @@ in
     };
 
     # Game directories (where Pegasus metadata files live, one per line in game_dirs.txt)
-    # Each collection (arcade, exo-win9x, etc.) is a subdirectory with metadata.pegasus inside
+    # Each collection (curated-exo-dos, 1g1r-nointro-nes, etc.) is a subdirectory with metadata.pegasus.txt inside
     gameDirs = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [
-        "${cfg.pegasusCollectionsDir}/arcade"
-        "${cfg.pegasusCollectionsDir}/exo-win9x"
+        # Curated collections (LaunchBox XML based)
+        "${cfg.pegasusCollectionsDir}/curated-exo-dos"
+        "${cfg.pegasusCollectionsDir}/curated-exo-win3x"
+        "${cfg.pegasusCollectionsDir}/curated-c64-dreams"
+        "${cfg.pegasusCollectionsDir}/curated-oneload64"
+        "${cfg.pegasusCollectionsDir}/curated-exo-if"
+        "${cfg.pegasusCollectionsDir}/curated-exo-demos"
+        "${cfg.pegasusCollectionsDir}/curated-exo-appleiigs"
+        "${cfg.pegasusCollectionsDir}/curated-exo-scummvm"
+        "${cfg.pegasusCollectionsDir}/curated-exo-win9x"
+        "${cfg.pegasusCollectionsDir}/curated-megaags"
+        # 1G1R collections (DAT file based, Myrient mirror support)
+        "${cfg.pegasusCollectionsDir}/1g1r-nointro-nes"
+        "${cfg.pegasusCollectionsDir}/1g1r-nointro-snes"
+        "${cfg.pegasusCollectionsDir}/1g1r-nointro-gb"
+        "${cfg.pegasusCollectionsDir}/1g1r-nointro-gbc"
+        "${cfg.pegasusCollectionsDir}/1g1r-nointro-gba"
+        "${cfg.pegasusCollectionsDir}/1g1r-nointro-n64"
+        "${cfg.pegasusCollectionsDir}/1g1r-nointro-ds"
+        "${cfg.pegasusCollectionsDir}/1g1r-redump-ps1"
+        "${cfg.pegasusCollectionsDir}/1g1r-redump-ps2"
+        "${cfg.pegasusCollectionsDir}/1g1r-redump-psp"
+        "${cfg.pegasusCollectionsDir}/1g1r-redump-saturn"
+        "${cfg.pegasusCollectionsDir}/1g1r-redump-dreamcast"
+        "${cfg.pegasusCollectionsDir}/1g1r-redump-gamecube"
+        "${cfg.pegasusCollectionsDir}/1g1r-redump-wii"
+        "${cfg.pegasusCollectionsDir}/1g1r-redump-xbox"
       ];
-      description = "Subdirectories containing Pegasus metadata files (game_dirs.txt, one per line)";
+      description = "Subdirectories containing Pegasus metadata files (each subdirectory must contain metadata.pegasus.txt)";
     };
 
     pegasusAssetsDir = lib.mkOption {

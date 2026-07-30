@@ -481,9 +481,11 @@ def generate_collections(
         print(f"Generating {key}...")
         content = ""
 
-        # Pegasus expects each collection as a .txt file in the collections directory
-        # (not subdirectories). Format: collection_name.txt containing metadata.pegasus.txt content
-        output_file = out_dir / f"{key}.txt"
+        # Pegasus discovers metadata files in subdirectories listed in game_dirs.txt
+        # Each collection gets its own subdirectory with metadata.pegasus.txt inside
+        collection_dir = out_dir / key
+        collection_dir.mkdir(parents=True, exist_ok=True)
+        output_file = collection_dir / "metadata.pegasus.txt"
 
         if c["type"] == "launchbox":
             if c["xml"].exists():
