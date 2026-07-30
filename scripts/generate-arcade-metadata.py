@@ -59,13 +59,13 @@ def render_game_entry(
     if rating:
         lines.append(f"rating: {rating}")
     if logo:
-        lines.append(f"logo: {escape_value(logo)}")
+        lines.append(f"assets.logo: {escape_value(logo)}")
     if screenshot:
-        lines.append(f"screenshot: {escape_value(screenshot)}")
+        lines.append(f"assets.screenshot: {escape_value(screenshot)}")
     if boxfront:
-        lines.append(f"image: {escape_value(boxfront)}")
+        lines.append(f"assets.box_front: {escape_value(boxfront)}")
     if marquee:
-        lines.append(f"marquee: {escape_value(marquee)}")
+        lines.append(f"assets.marquee: {escape_value(marquee)}")
     if favorite:
         lines.append("x-favorite: true")
     lines.append("")
