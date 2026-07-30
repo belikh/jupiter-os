@@ -82,6 +82,40 @@ ci_resolve_path() {
     printf '%s' "$_cur"
 }
 
+# Rewrite each `FILE "X"` line in a BIN/CUE descriptor ($1) to the on-disk
+# case of X, resolved case-insensitively in the .cue's own directory. This is
+# the .cue->.bin level of the same Windows case mismatch ci_resolve_path
+# fixes at the cfg->.cue level: eXo's .cue files name their .bin tracks in a
+# different case than the zip extracts (Quake's Winquake.cue says
+# FILE "WINQUAKE.BIN" but the zip extracts Winquake.bin), and 86Box opens
+# them case-sensitively, so an unreconciled .cue fails with "Unable to load
+# CD-ROM image". Idempotent (only the FILE-name token changes; CRLF→LF) and
+# best-effort (never aborts the launch: returns 0 on any internal failure).
+# The .cue lives in the extracted game dir (overlay upper, gamer-writable).
+fix_cue_refs() {
+    _cue=$1
+    [ -f "$_cue" ] || return 0
+    _cuedir=$(dirname "$_cue")
+    : >"$_cue.tmp" || return 0
+    while IFS= read -r _line || [ -n "$_line" ]; do
+        case "$_line" in
+            [Ff][Ii][Ll][Ee]\ *)
+                _q=${_line#*\"}            # X" BINARY
+                _name=${_q%%\"*}           # X
+                _tail=${_q#*\"}            # " BINARY (text after closing quote)
+                _hit=$(ci_resolve "$_cuedir" "$_name")
+                [ -n "$_hit" ] && _name=$_hit
+                printf 'FILE "%s"%s\n' "$_name" "$_tail" >>"$_cue.tmp"
+                ;;
+            *)
+                printf '%s\n' "${_line%$'\r'}" >>"$_cue.tmp"
+                ;;
+        esac
+    done <"$_cue"
+    mv -f "$_cue.tmp" "$_cue" 2>/dev/null
+    return 0
+}
+
 GAME_CONFDIR=$(dirname "$CONF")                 # .../!dos/<gamedir>  (or !win3x/<gamedir>, !win9x/<year>/<gamedir>)
 GAMEDIR=$(basename "$GAME_CONFDIR")             # <gamedir>, e.g. StuntIsl or "Hyperoid (1994)"
 DOS_DIR=$(dirname "$GAME_CONFDIR")              # .../!dos  (or !win3x, or !win9x/<year>)
@@ -333,6 +367,7 @@ if [ "$EMULATOR" = "86box" ]; then
     fi
     SCRATCH=/var/lib/exo-overlay/86box-cfg
     WRITABLE_CFG="$CONF"
+    CUES=
     if [ -d "$SCRATCH" ]; then
         OUT="$SCRATCH/$GAMEDIR.cfg"
         : >"$OUT.tmp"
@@ -357,6 +392,13 @@ if [ "$EMULATOR" = "86box" ]; then
                     val=${val#"${val%%[![:space:]]*}"}
                     fixed=$(ci_resolve_path "$VMPATH" "$val")
                     printf '%s = %s\n' "$key" "$fixed" >>"$OUT.tmp"
+                    # Collect cdrom image paths so we can reconcile the
+                    # .cue's internal FILE->bin refs too (one case level
+                    # deeper — see fix_cue_refs).
+                    case "$key" in
+                        cdrom_*_image_path*) CUES="${CUES:+$CUES
+}$fixed" ;;
+                    esac
                     ;;
                 *)
                     printf '%s\n' "${line%$'\r'}" >>"$OUT.tmp"
@@ -367,6 +409,17 @@ if [ "$EMULATOR" = "86box" ]; then
             WRITABLE_CFG="$OUT"
         else
             echo "exo-launch: 86Box cfg staging failed (using read-only $CONF)" >&2
+        fi
+        # Reconcile each referenced .cue's FILE->bin names to on-disk case.
+        # The .cue is in the extracted game dir (gamer-writable); fix_cue_refs
+        # is idempotent and best-effort.
+        if [ -n "$CUES" ]; then
+            printf '%s\n' "$CUES" | while IFS= read -r _c; do
+                [ -n "$_c" ] || continue
+                case "$_c" in
+                    *.[Cc][Uu][Ee]) fix_cue_refs "$_c" ;;
+                esac
+            done
         fi
     fi
     # nixpkgs _86box installs the binary as `86Box` (capital B); the launch
