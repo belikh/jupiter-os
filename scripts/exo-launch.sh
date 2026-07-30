@@ -41,20 +41,24 @@ ci_resolve() {
     ls -A "$1" 2>/dev/null | grep -ixF -- "$2" | head -1
 }
 
-# Multi-level case-insensitive resolver: walk $2 (a /-delimited RELATIVE
-# path) from base dir $1, matching each component case-insensitively against
-# the on-disk entry, and print the path with on-disk casing. '.' and '..'
-# are handled literally (not case-matched). If any real component is absent,
-# print $2 unchanged (never return a worse path than the input). Used to
-# reconcile 86Box Play.cfg disk/CD-ROM paths eXo authored on a
-# case-insensitive Windows FS (e.g. it says winquake.cue but the zip
-# extracts Winquake.cue) against this case-sensitive overlay/ZFS.
+# Multi-level case-insensitive resolver: walk $2 (a /-delimited path, with
+# optional . and .. components) from ABSOLUTE base dir $1, matching each real
+# component case-insensitively against the on-disk entry, and print the fully
+# resolved ABSOLUTE path with on-disk casing. On any missing component, print
+# $2 unchanged.
+#
+# The result must be absolute because 86Box resolves a cfg's disk/CD-ROM
+# paths relative to the CFG FILE's directory (NOT -P / vmpath, and NOT CWD),
+# and we stage the reconciled cfg copy in a scratch dir (/var/lib/exo-overlay/
+# 86box-cfg). Relative paths would resolve against that scratch dir and miss
+# (verified on amalthea: "unable to load CD-ROM image
+# /var/lib/eXoWin9x/1996/Quake (1996)/Winquake.cue"). Absolute paths resolve
+# identically no matter where the cfg lives. Also fixes the case mismatch
+# (eXo authored these on case-insensitive Windows: cfg says winquake.cue, the
+# zip extracts Winquake.cue).
 ci_resolve_path() {
-    _base=$1
-    _rel=$2
-    _cur=$_base
-    _out=
-    _rest=$_rel
+    _cur=$1
+    _rest=$2
     while [ -n "$_rest" ]; do
         _part=${_rest%%/*}
         if [ "$_rest" = "$_part" ]; then
@@ -63,24 +67,19 @@ ci_resolve_path() {
             _rest=${_rest#*/}
         fi
         [ -z "$_part" ] && continue
-        if [ "$_part" = "." ]; then
-            _out=$_out./
-            continue
-        fi
+        [ "$_part" = "." ] && continue
         if [ "$_part" = ".." ]; then
             _cur=$(dirname "$_cur")
-            _out=$_out../
             continue
         fi
         _hit=$(ls -A "$_cur" 2>/dev/null | grep -ixF -- "$_part" | head -1)
         if [ -z "$_hit" ]; then
-            printf '%s' "$_rel"
+            printf '%s' "$2"
             return
         fi
         _cur=$_cur/$_hit
-        _out=$_out$_hit/
     done
-    printf '%s' "$_out" | sed 's:/$::'
+    printf '%s' "$_cur"
 }
 
 GAME_CONFDIR=$(dirname "$CONF")                 # .../!dos/<gamedir>  (or !win3x/<gamedir>, !win9x/<year>/<gamedir>)
@@ -309,18 +308,23 @@ fi
 #      shared W98-C.vhd boot disk stays pristine on the read-only NFS lower,
 #      so — unlike dosbox-x above — there is no writable-C: image to
 #      materialise and no exo-prepare-c-drive call.
-#   2. 86Box resolves a cfg's relative disk paths against the VM path (-P),
-#      not the cfg file's location. The bundled 86Box98/ dir is the VM root
-#      eXo authored everything against (../../eXoWin9x/<year>/<game>/... for
-#      the game disk, sibling roms/ for BIOS files, sibling nvr/ for CMOS),
-#      so -P MUST point at it through the merge mount.
+#   2. The bundled 86Box98/ dir is the VM root eXo authored everything
+#      against (../../eXoWin9x/<year>/<game>/... for the game disk, sibling
+#      roms/ for BIOS files, sibling nvr/ for CMOS), so -P MUST point at it
+#      through the merge mount. CAVEAT: 86Box resolves a cfg's *relative*
+#      disk/CD-ROM paths against the cfg FILE's directory, NOT -P (verified
+#      on amalthea — a relative path resolved against the scratch dir and
+#      missed). Because we stage the cfg copy in a scratch dir, the rewrite
+#      below emits ABSOLUTE paths (ci_resolve_path), which resolve
+#      identically wherever the cfg lives. -P still matters for roms/ + nvr/.
 #
 # 86Box also writes its config back to the file it was handed on exit; the
 # per-game Play.cfg lives on the read-only NFS lower, so stage a fresh copy
-# in a per-kiosk writable scratch dir and hand 86Box that. The copy is
-# recreated every launch (cheap; a Play.cfg is ~1.7 KB) so one game's exit
-# state can't leak into the next. SCRATCH tracks jupiter.exodos.overlayBase's
-# default (/var/lib/exo-overlay); the module owns and gamer-owns this dir.
+# in a per-kiosk writable scratch dir (with each disk/CD-ROM path rewritten
+# to absolute + on-disk case) and hand 86Box that. The copy is recreated
+# every launch (cheap; a Play.cfg is ~1.7 KB) so one game's exit state can't
+# leak into the next. SCRATCH tracks jupiter.exodos.overlayBase's default
+# (/var/lib/exo-overlay); the module owns and gamer-owns this dir.
 if [ "$EMULATOR" = "86box" ]; then
     VMPATH="$EXO_DIR/emulators/86Box98"
     if [ ! -d "$VMPATH" ]; then
@@ -332,11 +336,13 @@ if [ "$EMULATOR" = "86box" ]; then
     if [ -d "$SCRATCH" ]; then
         OUT="$SCRATCH/$GAMEDIR.cfg"
         : >"$OUT.tmp"
-        # Rewrite each disk/CD-ROM image path in the staged copy to the
-        # on-disk case (see ci_resolve_path). eXo's Play.cfg files were
-        # authored on case-insensitive Windows and routinely disagree with
-        # the extracted filename case (Quake's cfg says winquake.cue, the
-        # zip extracts Winquake.cue); 86Box on Linux opens these
+        # Rewrite each disk/CD-ROM image path in the staged copy to an
+        # ABSOLUTE, case-corrected path (see ci_resolve_path). Absolute
+        # because 86Box resolves cfg paths against the cfg file's dir (not
+        # -P), and this copy lives in the scratch dir. eXo's Play.cfg files
+        # were authored on case-insensitive Windows and routinely disagree
+        # with the extracted filename case (Quake's cfg says winquake.cue,
+        # the zip extracts Winquake.cue); 86Box on Linux opens these
         # case-sensitively, so without this every CD-ROM game fails to find
         # its disc. Other lines pass through verbatim (CRLF stripped to LF,
         # which 86Box's ini parser reads fine).
