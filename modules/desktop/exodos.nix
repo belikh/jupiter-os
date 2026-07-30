@@ -153,23 +153,36 @@ let
   exoPrepareCDrive = pkgs.writeShellScriptBin "exo-prepare-c-drive" ''
     #!${pkgs.runtimeShell}
     # Invoked as root via: sudo -n exo-prepare-c-drive \
-    #   <parent-image> <child-path> <chown-user> <chown-group>
+    #   <base-image> <c-drive-path> <chown-user> <chown-group>
+    # Restores a pristine C: from a local master before each Win9x launch.
     set -eu
-    PARENT=$1
+    BASE=$1
     CHILD=$2
     CHOWN_USER=$3
     CHOWN_GROUP=$4
-    if [ ! -f "$PARENT" ]; then
-      echo "exo-prepare-c-drive: parent image not found: $PARENT" >&2
-      exit 1
+    # Absolute paths throughout: sudo sanitises PATH, so unqualified
+    # dirname/cp/mv would not resolve when this runs via `sudo -n`.
+    CP="${pkgs.coreutils}/bin/cp"
+    MASTER_DIR=${cfg.overlayBase}/win9x-base
+    MASTER="$MASTER_DIR/$("${pkgs.coreutils}/bin/basename" "$CHILD")"
+    if [ ! -s "$MASTER" ]; then
+      if [ ! -f "$BASE" ]; then
+        echo "exo-prepare-c-drive: base image not found: $BASE" >&2
+        exit 1
+      fi
+      # First use of this base image on this kiosk: pull it off the NFS
+      # lower once into local storage. Every later launch clones the master,
+      # so the NAS is never read for C: again.
+      "${pkgs.coreutils}/bin/mkdir" -p "$MASTER_DIR"
+      "$CP" "$BASE" "$MASTER.partial"
+      "${pkgs.coreutils}/bin/mv" -f "$MASTER.partial" "$MASTER"
     fi
-    # Absolute paths throughout: sudo sanitises PATH, so an unqualified
-    # dirname/cp would not resolve when this runs via `sudo -n`.
-    "${pkgs.coreutils}/bin/mkdir" -p "$("${pkgs.coreutils}/bin/dirname" "$CHILD")"
-    # Copy to a temp name in the same directory then rename, so an interrupted
-    # copy can't leave a truncated image that looks complete on the next run.
+    # --reflink=auto: master and the overlay upper are on the same ZFS
+    # dataset (both under ${cfg.overlayBase}), so this is a block clone —
+    # a full 396 MB image restores in well under a second. Falls back to a
+    # real copy on filesystems without cloning.
     TMP="$CHILD.partial"
-    "${pkgs.coreutils}/bin/cp" --reflink=auto "$PARENT" "$TMP"
+    "$CP" --reflink=auto "$MASTER" "$TMP"
     "${pkgs.coreutils}/bin/chown" "$CHOWN_USER:$CHOWN_GROUP" "$TMP"
     "${pkgs.coreutils}/bin/mv" -f "$TMP" "$CHILD"
   '';
@@ -297,6 +310,9 @@ in
 
     systemd.tmpfiles.rules = [
       "d ${cfg.overlayBase} 0755 root root -"
+      # Local pristine masters of the Win9x boot images; C: is block-cloned
+      # from here before every launch (see exoPrepareCDrive).
+      "d ${cfg.overlayBase}/win9x-base 0755 root root -"
     ]
     ++ lib.concatMap (name: [
       "d ${cfg.overlayBase}/${name} 0755 root root -"

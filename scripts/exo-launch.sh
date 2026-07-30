@@ -216,10 +216,15 @@ esac
 # by them (only writes to files already in the upper succeed — the same
 # ovl_permission behaviour that forces extraction through the root helper).
 #
-# So copy the image into the overlay upper once, via the root helper, owned
-# by the session user. Windows then boots a writable C: and keeps its state
-# per kiosk across launches. Trigger on writability rather than existence:
-# the read-only lower copy always "exists".
+# So the root helper materialises C: in the overlay upper, owned by the
+# session user. It does that on EVERY launch, restoring a pristine image
+# from a local master — which is exactly what eXo's own `vhdmake -f` line
+# achieves by rebuilding the child each time. That matters because C: is a
+# disposable boot volume SHARED by ~621 titles: persisting it would let one
+# game's registry writes, driver installs or a mid-write crash follow every
+# other game. Per-game state lives on D: — the game's own VHD, which does
+# persist in the overlay upper. The reset is effectively free: master and
+# upper sit on the same ZFS dataset, so it's a block clone (0.16s/396 MB).
 if [ "$PLATFORM_DIR" = "!win9x" ]; then
     # The conf names the image; don't hardcode W98-C.vhd (a handful of games
     # boot W98-J/W98-H/W95-C instead).
@@ -227,24 +232,22 @@ if [ "$PLATFORM_DIR" = "!win9x" ]; then
         | head -1 | sed 's/^"//; s/"$//; s/^\.\\//; s/\\/\//g')
     if [ -n "$CHILD_REL" ]; then
         CHILD="$EXO_DIR/$CHILD_REL"
-        if [ ! -w "$CHILD" ]; then
-            # Copy the BASE image from parent/, not the sibling image the
-            # collection ships at the mount path: that one is a *differencing*
-            # VHD (footer disk type 4) whose parent link dosbox-x does not
-            # resolve here — booting it gives "Invalid system disk" (verified
-            # on amalthea). The base image under parent/ is a self-contained
-            # dynamic VHD and boots. Fall back to the shipped image only if a
-            # collection has no parent/ copy at all.
-            SRC="$(dirname "$CHILD")/parent/$(basename "$CHILD")"
-            [ -f "$SRC" ] || SRC="$CHILD"
-            if [ -f "$SRC" ]; then
-                SUDO=/run/wrappers/bin/sudo
-                HELPER=$(readlink -f "$(command -v exo-prepare-c-drive)") || {
-                    echo "exo-launch: exo-prepare-c-drive not on PATH" >&2
-                    exit 8
-                }
-                "$SUDO" -n "$HELPER" "$SRC" "$CHILD" "$(id -un)" "$(id -gn)"
-            fi
+        # Source the BASE image under parent/, not the sibling image the
+        # collection ships at the mount path: that one is a *differencing*
+        # VHD (footer disk type 4) whose parent link dosbox-x does not
+        # resolve here — booting it gives "Invalid system disk" (verified on
+        # amalthea). The parent/ image is a self-contained dynamic VHD and
+        # boots. Fall back to the shipped image only if a collection ships
+        # no parent/ copy at all.
+        SRC="$(dirname "$CHILD")/parent/$(basename "$CHILD")"
+        [ -f "$SRC" ] || SRC="$CHILD"
+        if [ -f "$SRC" ]; then
+            SUDO=/run/wrappers/bin/sudo
+            HELPER=$(readlink -f "$(command -v exo-prepare-c-drive)") || {
+                echo "exo-launch: exo-prepare-c-drive not on PATH" >&2
+                exit 8
+            }
+            "$SUDO" -n "$HELPER" "$SRC" "$CHILD" "$(id -un)" "$(id -gn)"
         fi
     fi
 fi
