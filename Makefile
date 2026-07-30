@@ -1,4 +1,4 @@
-.PHONY: build-all check update fmt fmt-check pallene-iso rebuild-world verify-arcade
+.PHONY: build-all check update fmt fmt-check pallene-iso rebuild-world verify-arcade status-arcade
 
 # Build every registered host closure (the 4 dashboard kiosks).
 build-all:
@@ -34,6 +34,12 @@ boot-smoke-%:
 ROOTS ?= /mnt/exo-games/exo-dos /mnt/exo-games/exo-win3x /mnt/exo-games/exo-win9x
 verify-arcade:
 	./scripts/verify-exo-collections.sh $(ROOTS)
+
+# Fleet arcade status — pretty-print europa's generated inventory JSON
+# (cartridge ROM counts/sizes + eXo art coverage). Requires europa reachable
+# at 10.1.1.2 and the arcade-inventory timer to have run at least once.
+status-arcade:
+	./scripts/arcade-status.sh
 
 # Update flake locks
 update:

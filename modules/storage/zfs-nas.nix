@@ -85,14 +85,75 @@ let
       mountpoint = "/tank/archive/retro/games/curated";
       recordsize = "1M";
     }
+    # Cartridge ROMs (NES/SNES/GB/GBC/GBA/N64/...). Small leaf files (KB-MB)
+    # read directly by retroarch over NFS — a small recordsize avoids ARC waste
+    # and read-amplification across thousands of tiny ROMs. Single dataset with
+    # per-system directory children (no child datasets), so one NFS mount sees
+    # every system subdir — sidesteps the crossmnt-submount trap the eXo
+    # overlayfs layer has to mount around (modules/desktop/exodos.nix).
     {
-      name = "tank/archive/retro/games/1g1r";
-      mountpoint = "/tank/archive/retro/games/1g1r";
-      recordsize = "128K";
+      name = "tank/archive/retro/games/cartridge";
+      mountpoint = "/tank/archive/retro/games/cartridge";
+      recordsize = "64K";
+    }
+    # Optical disc images (PS1/Saturn/GameCube/Wii CHD). Large immutable files
+    # → 1M recordsize for compression. Wired later (not in this change).
+    {
+      name = "tank/archive/retro/games/optical";
+      mountpoint = "/tank/archive/retro/games/optical";
+      recordsize = "1M";
+    }
+    # Modern-era disc/card images (3DS/Wii U/PS3). Isolated on its own dataset
+    # so a runaway import or scrub can't block cartridge reads. Wired later.
+    {
+      name = "tank/archive/retro/games/modern";
+      mountpoint = "/tank/archive/retro/games/modern";
+      recordsize = "1M";
+    }
+    # Staging ground for in-flight torrent downloads (aria2 → cache/incoming).
+    # NOT exported to kiosks; promotion to games/cartridge happens only after
+    # igir hash verification (modules/services/rom-acquire.nix).
+    {
+      name = "tank/archive/retro/cache";
+      mountpoint = "/tank/archive/retro/cache";
+      recordsize = "1M";
+    }
+    {
+      name = "tank/archive/retro/scratch";
+      mountpoint = "/tank/archive/retro/scratch";
+      recordsize = "1M";
+    }
+    {
+      name = "tank/archive/retro/downloads";
+      mountpoint = "/tank/archive/retro/downloads";
+      recordsize = "1M";
     }
     {
       name = "tank/archive/retro/metadata";
       mountpoint = "/tank/archive/retro/metadata";
+      recordsize = "128K";
+    }
+    # No-Intro DAT packs (non-redistributable under No-Intro's terms — fetched
+    # from DAT-o-Matic, never committed to the repo; see ADR-0001). Used by
+    # igir to verify staged ROMs before promotion.
+    {
+      name = "tank/archive/retro/metadata/no-intro-dats";
+      mountpoint = "/tank/archive/retro/metadata/no-intro-dats";
+      recordsize = "128K";
+    }
+    # Skyscraper's source-agnostic scrape cache (CRC → metadata + art). Large;
+    # regenerating it means re-hitting ScreenScraper/TGDB rate limits, so it is
+    # its own dataset to snapshot and grow independently of the ROMs.
+    {
+      name = "tank/archive/retro/metadata/skyscraper-cache";
+      mountpoint = "/tank/archive/retro/metadata/skyscraper-cache";
+      recordsize = "128K";
+    }
+    # Generated fleet arcade inventory (inventory.json) — written by
+    # modules/services/arcade-inventory.nix, consumed by `make status-arcade`.
+    {
+      name = "tank/archive/retro/state";
+      mountpoint = "/tank/archive/retro/state";
       recordsize = "128K";
     }
     {
