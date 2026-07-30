@@ -214,6 +214,16 @@ in
     # manages the connection declaratively via ensureProfiles with PSK from sops.
     sops.secrets.wifi_psk = lib.mkIf cfg.wifi.enable { };
 
+    # mt76x2u claims 0846:9053 directly (confirmed via its own modalias
+    # table — no usb_modeswitch/dual-mode quirk involved, unlike some other
+    # MediaTek dongles). But its udev-modalias autoload doesn't reliably fire
+    # on this hardware: confirmed on two independent clean reboots
+    # (2026-07-30, no manual intervention between them) that wlp0s20f0u4u5
+    # simply never appears and `lsmod` shows no mt76x2u — a bare `modprobe
+    # mt76x2u` immediately loads it and the interface appears and associates
+    # normally. Force it at boot instead of depending on the uevent race.
+    boot.kernelModules = lib.mkIf cfg.wifi.enable [ "mt76x2u" ];
+
     # Declarative NetworkManager profile for wifi. The PSK is NOT inlined into
     # the profile (ensureProfiles are world-readable in the nix store); instead
     # the connection marks the secret agent-owned (psk-flags = 1) and
