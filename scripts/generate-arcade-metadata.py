@@ -143,7 +143,7 @@ def parse_launchbox_xml(
             p = path.replace("\\", "/")
             for o, n in rewrites:
                 p = p.replace(o, n)
-            return p.lower()
+            return p
 
         out.append(render_game_entry(
             title=title,
@@ -273,33 +273,6 @@ def scan_directory(
             ))
 
     return "\n".join(out)
-
-
-# --- Asset symlinker ----------------------------------------------------------
-
-def symlink_assets(source_root: Path, assets_root: Path) -> None:
-    """Symlink boxart, screenshots, logos from collection source to assets dir."""
-    asset_types = {
-        "boxart": ["BoxFront", "Box Front", "boxfront", "boxart"],
-        "screenshots": ["Screenshot", "screenshot", "Screenshots"],
-        "logos": ["Wheel", "wheel", "Logo", "logo", "Marquee", "marquee"],
-    }
-
-    for asset_dir, search_names in asset_types.items():
-        target = assets_root / asset_dir
-        target.mkdir(parents=True, exist_ok=True)
-
-        for search in search_names:
-            for src in source_root.rglob(f"*{search}*"):
-                if src.is_file() and src.suffix.lower() in [".png", ".jpg", ".jpeg", ".webp"]:
-                    rel = src.relative_to(source_root)
-                    dst = target / rel
-                    dst.parent.mkdir(parents=True, exist_ok=True)
-                    try:
-                        dst.unlink()
-                    except FileNotFoundError:
-                        pass
-                    dst.symlink_to(src)
 
 
 # --- Main --------------------------------------------------------------------
@@ -493,8 +466,6 @@ def generate_collections(
                     c["xml"], c["root"], c["name"], c["shortname"], c["emulator"], c.get("rewrites", [])
                 )
                 output_file.write_text(content)
-                if "assets_src" in c and c["assets_src"].exists():
-                    symlink_assets(c["assets_src"], assets_dir / key)
             else:
                 print(f"  WARNING: XML not found: {c['xml']}", file=sys.stderr)
 
@@ -512,8 +483,6 @@ def generate_collections(
                     c["extensions"], c["launch_prefix"]
                 )
                 output_file.write_text(content)
-                if "assets_src" in c and c["assets_src"].exists():
-                    symlink_assets(c["assets_src"], assets_dir / key)
             else:
                 print(f"  WARNING: Root not found: {c['root']}", file=sys.stderr)
 
