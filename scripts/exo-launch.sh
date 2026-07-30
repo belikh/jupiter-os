@@ -196,6 +196,43 @@ case "$EMULATOR" in
         OVERRIDE=
         ;;
 esac
+# --- Win9x: provide a writable C: drive image ------------------------------
+# eXoWin9x boots a Windows 98 hard-disk image. Each Play.conf's [autoexec]
+# tries to build a *differencing* child VHD off a shared parent first:
+#   vhdmake -f -l .\emulators\dosbox\x98\parent/W98-C.vhd .\...\x98\W98-C.vhd
+#   IMGMOUNT c .\emulators\dosbox\x98\W98-C.vhd
+# That line cannot work here. dosbox-x's VHDMAKE aborts with "The parent VHD
+# image ... can't be opened for linking" against these images (verified with
+# both operand orders and both path separators), and even if it succeeded the
+# child lands in a directory that exists on the read-only NFS lower, where
+# overlayfs denies creates to the session user (only writes to files already
+# in the upper are allowed — the same ovl_permission behaviour that makes
+# extraction go through the root helper).
+#
+# So we materialise C: ourselves: copy the parent image to the child path
+# once, into the overlay upper, owned by the session user. IMGMOUNT then gets
+# a real writable disk and Windows keeps its state per kiosk across launches.
+# eXo's own vhdmake line still runs and still fails, but it aborts without
+# touching our copy, so it is harmless.
+if [ "$PLATFORM_DIR" = "!win9x" ]; then
+    # The conf names the image; don't hardcode W98-C.vhd (a handful of games
+    # boot W98-J/W98-H/W95-C instead).
+    CHILD_REL=$(sed -n 's/\r$//; s/^[Ii][Mm][Gg][Mm][Oo][Uu][Nn][Tt][[:space:]][[:space:]]*[Cc][[:space:]][[:space:]]*//p' "$CONF" \
+        | head -1 | sed 's/^"//; s/"$//; s/^\.\\//; s/\\/\//g')
+    if [ -n "$CHILD_REL" ]; then
+        CHILD="$EXO_DIR/$CHILD_REL"
+        PARENT="$(dirname "$CHILD")/parent/$(basename "$CHILD")"
+        if [ ! -s "$CHILD" ] && [ -f "$PARENT" ]; then
+            SUDO=/run/wrappers/bin/sudo
+            HELPER=$(readlink -f "$(command -v exo-prepare-c-drive)") || {
+                echo "exo-launch: exo-prepare-c-drive not on PATH" >&2
+                exit 8
+            }
+            "$SUDO" -n "$HELPER" "$PARENT" "$CHILD" "$(id -un)" "$(id -gn)"
+        fi
+    fi
+fi
+
 set -- -conf "$CONF"
 # eXoWin9x ships a platform-wide options conf that the original Windows
 # launcher (util/9xlaunch.bat) always passes after the per-game Play.conf —

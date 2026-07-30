@@ -144,6 +144,36 @@ let
     fi
   '';
 
+  # Materialises the Win9x C: drive image. eXoWin9x expects each game to build
+  # a differencing VHD off a shared parent at launch, which doesn't work here
+  # (see the long note in scripts/exo-launch.sh); instead we copy the parent
+  # to the child path once, into the overlay upper. Root, for the same
+  # ovl_permission reason as the extraction helper: the target directory
+  # exists on the read-only NFS lower, so the session user can't create in it.
+  exoPrepareCDrive = pkgs.writeShellScriptBin "exo-prepare-c-drive" ''
+    #!${pkgs.runtimeShell}
+    # Invoked as root via: sudo -n exo-prepare-c-drive \
+    #   <parent-image> <child-path> <chown-user> <chown-group>
+    set -eu
+    PARENT=$1
+    CHILD=$2
+    CHOWN_USER=$3
+    CHOWN_GROUP=$4
+    if [ ! -f "$PARENT" ]; then
+      echo "exo-prepare-c-drive: parent image not found: $PARENT" >&2
+      exit 1
+    fi
+    # Absolute paths throughout: sudo sanitises PATH, so an unqualified
+    # dirname/cp would not resolve when this runs via `sudo -n`.
+    "${pkgs.coreutils}/bin/mkdir" -p "$("${pkgs.coreutils}/bin/dirname" "$CHILD")"
+    # Copy to a temp name in the same directory then rename, so an interrupted
+    # copy can't leave a truncated image that looks complete on the next run.
+    TMP="$CHILD.partial"
+    "${pkgs.coreutils}/bin/cp" --reflink=auto "$PARENT" "$TMP"
+    "${pkgs.coreutils}/bin/chown" "$CHOWN_USER:$CHOWN_GROUP" "$TMP"
+    "${pkgs.coreutils}/bin/mv" -f "$TMP" "$CHILD"
+  '';
+
   # VBMOUSE.DRV — Win3.x absolute mouse driver (javispedro/vbados, GPLv2).
   # dosbox-x implements VBMOUSE's int33 absolute-coordinate extension natively,
   # so installing this as MOUSE.DRV in each Win3.x image makes Win3.x read
@@ -285,6 +315,10 @@ in
             command = "${lib.getExe exoExtractHelper}";
             options = [ "NOPASSWD" ];
           }
+          {
+            command = "${lib.getExe exoPrepareCDrive}";
+            options = [ "NOPASSWD" ];
+          }
         ];
       }
     ];
@@ -336,6 +370,7 @@ in
     environment.systemPackages = [
       exoLauncher
       exoExtractHelper
+      exoPrepareCDrive
       pkgs.unzip
       pkgs.dosbox-staging
       pkgs.dosbox-x
