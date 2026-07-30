@@ -214,12 +214,22 @@ in
     # manages the connection declaratively via ensureProfiles with PSK from sops.
     sops.secrets.wifi_psk = lib.mkIf cfg.wifi.enable { };
 
-    # Declarative NetworkManager profile for wifi. The PSK from sops is injected
-    # at activation via an environment file. NetworkManager persists the connection
-    # to /etc/NetworkManager/system-connections, which survives erase-your-darlings
-    # because it's regenerated declaratively every activation.
+    # Declarative NetworkManager profile for wifi. The PSK is NOT inlined into
+    # the profile (ensureProfiles are world-readable in the nix store); instead
+    # the connection marks the secret agent-owned (psk-flags = 1) and
+    # nm-file-secret-agent supplies it at runtime from the sops-decrypted file
+    # — the accepted modern method (see CLAUDE.md). This replaces an earlier
+    # environmentFiles + envsubst + custom-service pipeline that raced the
+    # ensure-profiles unit and shipped an empty PSK.
     networking.networkmanager.ensureProfiles = lib.mkIf cfg.wifi.enable {
-      environmentFiles = [ "/run/secrets/wifi_psk_env" ];
+      secrets.entries = [
+        {
+          matchId = cfg.wifi.network;
+          matchSetting = "802-11-wireless-security";
+          key = "psk";
+          file = config.sops.secrets.wifi_psk.path;
+        }
+      ];
       profiles."${cfg.wifi.network}" = {
         connection = {
           id = cfg.wifi.network;
@@ -232,7 +242,7 @@ in
         };
         wifi-security = {
           key-mgmt = "wpa-psk";
-          psk = "\${WIFI_PSK}";
+          psk-flags = 1; # NM_SECRET_AGENT_OWNED — value from nm-file-secret-agent
         };
         ipv4 = {
           method = "auto";
@@ -244,25 +254,11 @@ in
       };
     };
 
-    # Generate environment file with PSK for NetworkManager to substitute into
-    # the profile. Runs after sops decrypts wifi_psk secret.
-    systemd.services.nm-wifi-psk-env = lib.mkIf cfg.wifi.enable {
-      description = "Generate NetworkManager wifi PSK environment file";
-      after = [ "sops-install-secrets.service" ];
-      before = [ "NetworkManager.service" ];
-      wantedBy = [ "multi-user.target" ];
-      serviceConfig = {
-        Type = "oneshot";
-        RemainAfterExit = true;
-      };
-      script = ''
-        if [ -f /run/secrets/wifi_psk ]; then
-          PSK=$(cat /run/secrets/wifi_psk | tr -d '\n')
-          echo "WIFI_PSK=$PSK" > /run/secrets/wifi_psk_env
-          chmod 600 /run/secrets/wifi_psk_env
-        fi
-      '';
-    };
+    # NetworkManager must own the wifi radio exclusively. wpa_supplicant
+    # (networking.wireless) also grabs the adapter if enabled, so the two race
+    # and neither associates — that conflict is what stranded thebe offline.
+    # mkForce overrides whatever else flips it on (gaming-mode/jovian defaults).
+    networking.wireless.enable = lib.mkIf cfg.wifi.enable (lib.mkForce false);
 
     # Integrated 15" PCAP touchscreen: NO custom/kernel driver needed. The panel
     # is a USB HID multitouch device handled in-tree by `hid-multitouch`, and
