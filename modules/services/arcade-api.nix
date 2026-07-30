@@ -1,3 +1,10 @@
+# Not imported by any host (disabled on europa, issue #42 item 4): its only
+# client, bubbletea-game-loader, is in scripts/deprecated/, and the eleven
+# 1G1R collection files it fed were never in the subdirectory-with-
+# metadata.pegasus.txt layout Pegasus needs, so nothing loaded them either.
+# A 1G1R revival should be a jupiter.arcade.gameDirs contributor (see
+# modules/desktop/arcade.nix) with a working on-demand fetch — Myrient is
+# gone, so that means Minerva torrents, not this module's transmission path.
 {
   config,
   lib,

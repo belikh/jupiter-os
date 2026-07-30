@@ -41,11 +41,6 @@
     ../../modules/services/cloudflare-tunnel.nix
     ../../modules/services/pallene-watchdog.nix
     ../../modules/services/iscsi-target.nix
-    # jupiterOS Arcade API — HTTP server for on-demand ROM downloads
-    # (1G1R collections only; the eXo collections generate their Pegasus
-    # metadata kiosk-side via modules/desktop/exodos.nix per issue #40 —
-    # the old arcade-metadata-generator module was never enabled and is gone)
-    ../../modules/services/arcade-api.nix
   ];
 
   networking.hostName = "europa";
@@ -186,11 +181,6 @@
     targetIqn = "iqn.2026-07.au.jupiter:europa:callisto-root";
     initiatorIqn = "iqn.2026-07.au.jupiter:callisto";
   };
-
-  # Arcade API — HTTP server for on-demand game ROM downloads, queried by
-  # bubbletea-game-loader on kiosks to trigger transmission downloads from
-  # the Minerva_Myrient archive and report progress in real time.
-  jupiter.services.arcadeApi.enable = true;
 
   # ---- System packages -------------------------------------------------------
   environment.systemPackages = with pkgs; [

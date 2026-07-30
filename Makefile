@@ -1,4 +1,4 @@
-.PHONY: build-all check update fmt fmt-check pallene-iso rebuild-world
+.PHONY: build-all check update fmt fmt-check pallene-iso rebuild-world verify-arcade
 
 # Build every registered host closure (the 4 dashboard kiosks).
 build-all:
@@ -23,6 +23,17 @@ test-%:
 # Usage: make boot-smoke-amalthea
 boot-smoke-%:
 	./scripts/boot-smoke.sh $* 300
+
+# Empirical eXo Pegasus metadata checks (issue #40 acceptance / issue #42
+# item 5). Needs the collections actually mounted, so it can't be a
+# `nix flake check` — run it on europa against the curated dataset roots, or
+# on a kiosk against its merge mounts (jupiter.exodos.mergeMountBase,
+# default /mnt/exo-games — see modules/desktop/exodos.nix). Not runnable
+# from a plain dev checkout with no eXo mounts present.
+# Usage: make verify-arcade [ROOTS="/other/path/exo-dos ..."]
+ROOTS ?= /mnt/exo-games/exo-dos /mnt/exo-games/exo-win3x /mnt/exo-games/exo-win9x
+verify-arcade:
+	./scripts/verify-exo-collections.sh $(ROOTS)
 
 # Update flake locks
 update:
