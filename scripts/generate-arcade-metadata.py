@@ -346,23 +346,23 @@ def get_collections(nfs_root: Path) -> dict:
         # Curated: LaunchBox XML based
         "curated-exo-dos": {
             "type": "launchbox",
-            "xml": nfs_root / "retro/games/curated/exo-dos/xml/MS-DOS.xml",
+            "xml": nfs_root / "retro/games/curated/exo-dos/Data/Platforms.xml",
             "root": nfs_root / "retro/games/curated/exo-dos",
             "name": "eXoDOS",
             "shortname": "dos",
             "emulator": "dosbox",
             "rewrites": [("eXoDOS", "exo-dos"), ("eXo", "exo")],
-            "assets_src": nfs_root / "retro/games/curated/exo-dos",
+            "assets_src": nfs_root / "retro/games/curated/exo-dos/Core/Images",
         },
         "curated-exo-win3x": {
             "type": "launchbox",
-            "xml": nfs_root / "retro/games/curated/exo-win3x/xml/Windows 3x.xml",
+            "xml": nfs_root / "retro/games/curated/exo-win3x/Metadata/Platforms.xml",
             "root": nfs_root / "retro/games/curated/exo-win3x",
             "name": "eXoWin3x",
             "shortname": "win3x",
             "emulator": "dosbox-x",
             "rewrites": [("eXoWin3X", "exo-win3x"), ("eXoWin3x", "exo-win3x")],
-            "assets_src": nfs_root / "retro/games/curated/exo-win3x",
+            "assets_src": nfs_root / "retro/games/curated/exo-win3x/Images",
         },
         "curated-c64-dreams": {
             "type": "launchbox",
