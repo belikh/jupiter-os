@@ -215,7 +215,11 @@ in
           --input-file="$INPUT" \
           --continue=true \
           --file-allocation=none \
-          --max-concurrent-downloads=2 \
+          --max-concurrent-downloads=6 \
+          --enable-dht=true \
+          --bt-enable-lpd=true \
+          --listen-port=51413 \
+          --dht-listen-port=51413 \
           --seed-time=0
       '';
     };
