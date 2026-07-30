@@ -100,6 +100,10 @@
     neededForUsers = true;
   };
 
+  sops.secrets.root_password = {
+    neededForUsers = true;
+  };
+
   users.users.io = {
     isNormalUser = true;
     extraGroups = [ "wheel" ];
@@ -116,11 +120,12 @@
   # closure build, which built everything correctly then failed at the very
   # last "copy to target" step with a bare "Host key verification failed" /
   # "Permission denied", since callisto had never been added here.
-  users.users.root.openssh.authorizedKeys.keys =
-    config.users.users.io.openssh.authorizedKeys.keys
-    ++ [
+  users.users.root = {
+    hashedPasswordFile = config.sops.secrets.root_password.path;
+    openssh.authorizedKeys.keys = config.users.users.io.openssh.authorizedKeys.keys ++ [
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGDIfzWbqrIXRa3cxN15nk5kn57EyYuDP9JsJWrW2hPu root@callisto"
     ];
+  };
 
   # Make it easy to log into the VM for testing (`make test-<host>` /
   # scripts/boot-smoke.sh). io and root intentionally share the same hardcoded
