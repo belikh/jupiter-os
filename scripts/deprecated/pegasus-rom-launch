@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# pegasus-rom-launch — dispatcher to bubbletea-game-loader
+#
+# Called by Pegasus with paths specified in collection metadata files.
+# Pegasus collection format specifies:
+#   launch: pegasus-rom-launch {file.path}
+#
+# So Pegasus will call this script with the file.path value from the metadata.
+
+# Enable error reporting
+set -euo pipefail
+
+# Get the game path argument
+GAME_PATH="${1:-}"
+
+# Debug output to systemd journal for troubleshooting
+{
+    echo "pegasus-rom-launch invoked"
+    echo "  args: $@"
+    echo "  game_path: '$GAME_PATH'"
+    echo "  uid: $(id -u)"
+} >&2
+
+# Validate we got a path
+if [[ -z "${GAME_PATH}" ]]; then
+    echo "ERROR: No game path provided" >&2
+    echo "Usage: $0 <game-path>" >&2
+    echo "  Examples:" >&2
+    echo "    $0 curated/exo-dos/Commander\\ Keen.zip" >&2
+    echo "    $0 1g1r-nointro-nes/Pac-Man.nes" >&2
+    exit 1
+fi
+
+# Curated collections: if path starts with a known subcollection name, prepend 'curated/'
+# Known curated subcollections:
+#   exo-dos, exo-win3x, exo-win9x, exo-if, exo-demos, exo-appleiigs, exo-scummvm,
+#   c64-dreams, oneload64, megaags
+case "${GAME_PATH}" in
+  exo-dos/*|exo-win3x/*|exo-win9x/*|exo-if/*|exo-demos/*|exo-appleiigs/*|exo-scummvm/*|c64-dreams/*|oneload64/*|megaags/*)
+    # These are curated collections stored under /tank/archive/retro/games/curated/
+    # Prepend the 'curated/' prefix
+    GAME_PATH="curated/${GAME_PATH}"
+    ;;
+  *)
+    # Assume 1G1R or other format - pass through as-is
+    # These will be in format like: 1g1r-nointro-nes/Pac-Man.nes
+    ;;
+esac
+
+echo "pegasus-rom-launch resolved path: '$GAME_PATH'" >&2
+
+# Invoke bubbletea-game-loader
+# Use exec so bubbletea takes over this process entirely
+exec /usr/local/bin/bubbletea-game-loader "${GAME_PATH}"

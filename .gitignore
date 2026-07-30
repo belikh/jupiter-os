@@ -13,3 +13,7 @@ result-*
 # never land in the store or git.
 secrets/pallene-secrets/*
 !secrets/pallene-secrets/*.placeholder
+
+# Python bytecode (scripts/ are run in place)
+__pycache__/
+*.pyc

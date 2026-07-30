@@ -64,6 +64,57 @@ let
       mountpoint = "/tank/vm";
       recordsize = "64K";
     }
+    # Retro gaming archive for jupiterOS Arcade (served via NFS to kiosks)
+    {
+      name = "tank/archive";
+      mountpoint = "/tank/archive";
+      recordsize = "1M";
+    }
+    {
+      name = "tank/archive/retro";
+      mountpoint = "/tank/archive/retro";
+      recordsize = "1M";
+    }
+    {
+      name = "tank/archive/retro/games";
+      mountpoint = "/tank/archive/retro/games";
+      recordsize = "1M";
+    }
+    {
+      name = "tank/archive/retro/games/curated";
+      mountpoint = "/tank/archive/retro/games/curated";
+      recordsize = "1M";
+    }
+    {
+      name = "tank/archive/retro/games/1g1r";
+      mountpoint = "/tank/archive/retro/games/1g1r";
+      recordsize = "128K";
+    }
+    {
+      name = "tank/archive/retro/metadata";
+      mountpoint = "/tank/archive/retro/metadata";
+      recordsize = "128K";
+    }
+    {
+      name = "tank/archive/retro/metadata/pegasus";
+      mountpoint = "/tank/archive/retro/metadata/pegasus";
+      recordsize = "128K";
+    }
+    {
+      name = "tank/archive/retro/metadata/pegasus/collections";
+      mountpoint = "/tank/archive/retro/metadata/pegasus/collections";
+      recordsize = "128K";
+    }
+    {
+      name = "tank/archive/retro/metadata/pegasus/assets";
+      mountpoint = "/tank/archive/retro/metadata/pegasus/assets";
+      recordsize = "128K";
+    }
+    {
+      name = "tank/archive/retro/metadata/dats";
+      mountpoint = "/tank/archive/retro/metadata/dats";
+      recordsize = "128K";
+    }
   ];
 
   # Generate the idempotent create script.
@@ -91,6 +142,9 @@ in
     # pool's disks aren't attached (no 10TB drives present).
     boot.zfs.extraPools = [ "tank" ];
 
+    # Disable ZFS automatic sharing (SMB shares are disabled)
+    systemd.services.zfs-share.enable = false;
+
     # Pool maintenance
     services.zfs.autoScrub.enable = true;
     services.zfs.trim.enable = true;
@@ -110,8 +164,8 @@ in
 
     # ---- SMB shares --------------------------------------------------------
     services.samba = {
-      enable = true;
-      openFirewall = true;
+      enable = false;
+      openFirewall = false;
       settings = {
         global = {
           "workgroup" = "WORKGROUP";
@@ -155,8 +209,8 @@ in
     };
 
     services.samba-wsdd = {
-      enable = true; # Makes the NAS discoverable on the network
-      openFirewall = true;
+      enable = false;
+      openFirewall = false;
     };
 
     environment.systemPackages = with pkgs; [
