@@ -1,12 +1,11 @@
 { ... }:
 
-# TCx Wave kiosk: robbie-room. One of 4 identical 6140-E45 units — a clone of
-# amalthea minus the broker role. All shared behavior lives in
-# modules/desktop/tcxwave-kiosk.nix; this file holds only what differs per
-# unit: hostName, hostId, the OS disk, the dashboard URL, and (uniquely among
-# the fleet) its USB Wi-Fi adapter — the other three are wired. Each unit is
-# its own host only because each points at a different room's Home Assistant
-# dashboard and can't share an identity.
+# TCx Wave kiosk: robbie-room. One of 4 identical 6140-E45 units sharing the
+# jupiter.tcxWaveKiosk profile (modules/desktop/tcxwave-kiosk.nix); this file
+# holds only what differs per unit: hostName, hostId, the OS disk, the
+# dashboard URL, and (uniquely among the fleet) its USB Wi-Fi adapter — the
+# other three are wired. Each unit is its own host only because each points
+# at a different room's Home Assistant dashboard and can't share an identity.
 {
   imports = [
     ../../modules/common.nix

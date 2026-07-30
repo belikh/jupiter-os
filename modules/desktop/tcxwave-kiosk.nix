@@ -244,7 +244,20 @@ in
         };
         wifi-security = {
           auth-alg = "open";
-          key-mgmt = "wpa-psk";
+          # jupiter.au is WPA3-Personal, SAE-only (confirmed live: every
+          # jupiter.au BSSID's RSN-FLAGS list "sae" with no "psk" — unlike
+          # e.g. OPTUS_31CCB8N's transition-mode "psk sae"). key-mgmt =
+          # "wpa-psk" here silently broke autoconnect: NetworkManager's
+          # policy-driven candidate matching (nm_policy_device_recheck_auto_activate)
+          # correctly excludes a wpa-psk profile against an SAE-only AP and
+          # never even attempts it — zero log output, connection just never
+          # comes up on its own. A forced `nmcli connection up` bypasses that
+          # candidate check and connects anyway, which is why 696336e/739be01
+          # both looked verified (manual test) but never actually fixed
+          # unassisted autoconnect. NM reuses the same `psk` property/secret
+          # for the SAE password, so psk-flags/nm-file-secret-agent wiring
+          # below is unchanged.
+          key-mgmt = "sae";
           psk-flags = 1; # NM_SECRET_AGENT_OWNED — value from nm-file-secret-agent
         };
         ipv4 = {
