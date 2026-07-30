@@ -41,6 +41,48 @@ ci_resolve() {
     ls -A "$1" 2>/dev/null | grep -ixF -- "$2" | head -1
 }
 
+# Multi-level case-insensitive resolver: walk $2 (a /-delimited RELATIVE
+# path) from base dir $1, matching each component case-insensitively against
+# the on-disk entry, and print the path with on-disk casing. '.' and '..'
+# are handled literally (not case-matched). If any real component is absent,
+# print $2 unchanged (never return a worse path than the input). Used to
+# reconcile 86Box Play.cfg disk/CD-ROM paths eXo authored on a
+# case-insensitive Windows FS (e.g. it says winquake.cue but the zip
+# extracts Winquake.cue) against this case-sensitive overlay/ZFS.
+ci_resolve_path() {
+    _base=$1
+    _rel=$2
+    _cur=$_base
+    _out=
+    _rest=$_rel
+    while [ -n "$_rest" ]; do
+        _part=${_rest%%/*}
+        if [ "$_rest" = "$_part" ]; then
+            _rest=
+        else
+            _rest=${_rest#*/}
+        fi
+        [ -z "$_part" ] && continue
+        if [ "$_part" = "." ]; then
+            _out=$_out./
+            continue
+        fi
+        if [ "$_part" = ".." ]; then
+            _cur=$(dirname "$_cur")
+            _out=$_out../
+            continue
+        fi
+        _hit=$(ls -A "$_cur" 2>/dev/null | grep -ixF -- "$_part" | head -1)
+        if [ -z "$_hit" ]; then
+            printf '%s' "$_rel"
+            return
+        fi
+        _cur=$_cur/$_hit
+        _out=$_out$_hit/
+    done
+    printf '%s' "$_out" | sed 's:/$::'
+}
+
 GAME_CONFDIR=$(dirname "$CONF")                 # .../!dos/<gamedir>  (or !win3x/<gamedir>, !win9x/<year>/<gamedir>)
 GAMEDIR=$(basename "$GAME_CONFDIR")             # <gamedir>, e.g. StuntIsl or "Hyperoid (1994)"
 DOS_DIR=$(dirname "$GAME_CONFDIR")              # .../!dos  (or !win3x, or !win9x/<year>)
@@ -253,6 +295,80 @@ if [ "$PLATFORM_DIR" = "!win9x" ]; then
             "$SUDO" -n "$HELPER" "$SRC" "$CHILD" "$(id -un)" "$(id -gn)"
         fi
     fi
+fi
+
+# --- 86Box titles (eXoWin9x subset) ----------------------------------------
+# The 30 eXoWin9x titles that ship an 86Box Play.cfg reach this branch via
+# `exo-launch 86box <Play.cfg>`. Everything above (path derivation, the
+# !win9x first-run extraction) is identical to the dosbox-x Win9x path and
+# already got the game's own .vhd/.cue extracted into the overlay upper.
+#
+# Two things make 86Box simpler than dosbox-x here:
+#   1. Every 86Box Play.cfg sets hdd_*_speed = ramdisk, so 86Box loads each
+#      VHD into memory and writes go to RAM, never to the image file. The
+#      shared W98-C.vhd boot disk stays pristine on the read-only NFS lower,
+#      so — unlike dosbox-x above — there is no writable-C: image to
+#      materialise and no exo-prepare-c-drive call.
+#   2. 86Box resolves a cfg's relative disk paths against the VM path (-P),
+#      not the cfg file's location. The bundled 86Box98/ dir is the VM root
+#      eXo authored everything against (../../eXoWin9x/<year>/<game>/... for
+#      the game disk, sibling roms/ for BIOS files, sibling nvr/ for CMOS),
+#      so -P MUST point at it through the merge mount.
+#
+# 86Box also writes its config back to the file it was handed on exit; the
+# per-game Play.cfg lives on the read-only NFS lower, so stage a fresh copy
+# in a per-kiosk writable scratch dir and hand 86Box that. The copy is
+# recreated every launch (cheap; a Play.cfg is ~1.7 KB) so one game's exit
+# state can't leak into the next. SCRATCH tracks jupiter.exodos.overlayBase's
+# default (/var/lib/exo-overlay); the module owns and gamer-owns this dir.
+if [ "$EMULATOR" = "86box" ]; then
+    VMPATH="$EXO_DIR/emulators/86Box98"
+    if [ ! -d "$VMPATH" ]; then
+        echo "exo-launch: 86Box VM path not found: $VMPATH" >&2
+        exit 9
+    fi
+    SCRATCH=/var/lib/exo-overlay/86box-cfg
+    WRITABLE_CFG="$CONF"
+    if [ -d "$SCRATCH" ]; then
+        OUT="$SCRATCH/$GAMEDIR.cfg"
+        : >"$OUT.tmp"
+        # Rewrite each disk/CD-ROM image path in the staged copy to the
+        # on-disk case (see ci_resolve_path). eXo's Play.cfg files were
+        # authored on case-insensitive Windows and routinely disagree with
+        # the extracted filename case (Quake's cfg says winquake.cue, the
+        # zip extracts Winquake.cue); 86Box on Linux opens these
+        # case-sensitively, so without this every CD-ROM game fails to find
+        # its disc. Other lines pass through verbatim (CRLF stripped to LF,
+        # which 86Box's ini parser reads fine).
+        while IFS= read -r line || [ -n "$line" ]; do
+            case "$line" in
+                hdd_*_fn*=* | cdrom_*_image_path*=*)
+                    key=${line%%=*}
+                    key=${key%"${key##*[![:space:]]}"}
+                    val=${line#*=}
+                    val=${val%$'\r'}
+                    val=${val%"${val##*[![:space:]]}"}
+                    val=${val#"${val%%[![:space:]]*}"}
+                    fixed=$(ci_resolve_path "$VMPATH" "$val")
+                    printf '%s = %s\n' "$key" "$fixed" >>"$OUT.tmp"
+                    ;;
+                *)
+                    printf '%s\n' "${line%$'\r'}" >>"$OUT.tmp"
+                    ;;
+            esac
+        done <"$CONF"
+        if mv -f "$OUT.tmp" "$OUT" 2>/dev/null; then
+            WRITABLE_CFG="$OUT"
+        else
+            echo "exo-launch: 86Box cfg staging failed (using read-only $CONF)" >&2
+        fi
+    fi
+    # nixpkgs _86box installs the binary as `86Box` (capital B); the launch
+    # line from Pegasus passes the lowercase `86box` token, which we use only
+    # to branch above. -F fullscreen, -N no confirm-on-quit, -P VM root,
+    # -R ROM dir, then the staged per-game cfg.
+    exec env PULSE_SINK=bluez_output.D8_E3_5E_8A_72_E5.1 86Box \
+        -F -N -P "$VMPATH" -R "$VMPATH/roms" "$WRITABLE_CFG"
 fi
 
 set -- -conf "$CONF"

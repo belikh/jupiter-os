@@ -74,6 +74,25 @@ let
   mergeMount = name: "${cfg.mergeMountBase}/${name}";
   mergeMounts = map mergeMount collectionNames;
 
+  # The eXoWin9x 86Box sub-collection. The ~30 titles that ship an 86Box
+  # Play.cfg (vs the dosbox-x Play.conf the rest of eXoWin9x uses) live
+  # INSIDE the exo-win9x dataset and share its LaunchBox XML, so they are
+  # not a separate mount — they are a second exo-to-pegasus.py pass
+  # (--emulator 86box --conf-name Play.cfg) emitted into a sibling
+  # collection dir (86box-titles/) whose file:/assets: paths reach back into
+  # the shared exo-win9x root via --path-prefix "../". Pegasus scans
+  # 86box-titles/ as its own collection; exo-launch's 86box branch does the
+  # rest (extract-on-first-run + case-reconcile + 86Box exec).
+  win9x86box = {
+    inherit (collections.exo-win9x) xml;
+    collection = "eXoWin9x 86Box";
+    shortname = "win9x86";
+    emulator = "86box";
+    conf = "Play.cfg";
+    outputDir = "${mergeMount "exo-win9x"}/86box-titles";
+    pathPrefix = "../";
+  };
+
   # The per-game launcher: extracts the matching .zip on first run (into the
   # overlay upper), then execs the emulator from <collection>/eXo/ as CWD so
   # the per-game conf's [autoexec] relative mounts resolve correctly.
@@ -218,6 +237,27 @@ let
         --emulator '${c.emulator}' \
         --conf-name '${c.conf}' ${lib.concatMapStringsSep " " (r: "--rewrite '${r}'") c.rewrites}
     '') collections
+    ++ [
+      # Second pass for the eXoWin9x 86Box titles: same XML/root as the
+      # dosbox-x pass above, but --conf-name Play.cfg picks only the ~30
+      # titles that ship an 86Box config, and writes into a sibling
+      # collection dir with ../-prefixed paths (see win9x86box above).
+      # install -d fixes the dir to 0755 explicitly so Pegasus (running as
+      # the gamer user) can always read it regardless of the service umask;
+      # os.makedirs alone would inherit systemd's default.
+      ''
+        ${pkgs.coreutils}/bin/install -d -m 0755 '${win9x86box.outputDir}'
+        ${pkgs.python3.interpreter} ${../../scripts/exo-to-pegasus.py} \
+          --xml '${mergeMount "exo-win9x"}/${win9x86box.xml}' \
+          --root '${mergeMount "exo-win9x"}' \
+          --output '${win9x86box.outputDir}/metadata.pegasus.txt' \
+          --path-prefix '${win9x86box.pathPrefix}' \
+          --collection '${win9x86box.collection}' \
+          --shortname '${win9x86box.shortname}' \
+          --emulator '${win9x86box.emulator}' \
+          --conf-name '${win9x86box.conf}'
+      ''
+    ]
   );
 in
 {
@@ -298,8 +338,9 @@ in
     # --- Pegasus wiring ------------------------------------------------------
     # arcade.nix's pegasus-config-seed writes these into the gamer user's
     # game_dirs.txt; each entry is a merged collection root holding the
-    # generated metadata.pegasus.txt.
-    jupiter.arcade.gameDirs = mergeMounts;
+    # generated metadata.pegasus.txt. The 86box-titles sibling dir is the
+    # eXoWin9x 86Box sub-collection (win9x86box above).
+    jupiter.arcade.gameDirs = mergeMounts ++ [ win9x86box.outputDir ];
 
     # --- Persisted overlay storage ------------------------------------------
     # extraDirectories is a no-op on non-impermanent hosts (the dir just lives
@@ -313,6 +354,11 @@ in
       # Local pristine masters of the Win9x boot images; C: is block-cloned
       # from here before every launch (see exoPrepareCDrive).
       "d ${cfg.overlayBase}/win9x-base 0755 root root -"
+      # Per-kiosk writable scratch for staged 86Box Play.cfg copies: the
+      # per-game Play.cfg ships on the read-only NFS lower, so exo-launch's
+      # 86box branch copies + case-reconciles each game's cfg into here
+      # (owned by the session user) and hands 86Box that path.
+      "d ${cfg.overlayBase}/86box-cfg 0755 ${cfg.sessionUser} users -"
     ]
     ++ lib.concatMap (name: [
       "d ${cfg.overlayBase}/${name} 0755 root root -"
@@ -382,7 +428,8 @@ in
 
     # --- Packages: launcher wrapper, extraction helper, dosboxen -------------
     # dosbox-staging (binary `dosbox`) for the DOS collection, dosbox-x for
-    # Win3.x and Win9x. Pegasus itself comes from arcade.nix.
+    # Win3.x and Win9x, plus 86Box (binary `86Box`) for the eXoWin9x Play.cfg
+    # titles. Pegasus itself comes from arcade.nix.
     environment.systemPackages = [
       exoLauncher
       exoExtractHelper
@@ -390,6 +437,7 @@ in
       pkgs.unzip
       pkgs.dosbox-staging
       pkgs.dosbox-x
+      pkgs._86box
     ];
 
     # Per-emulator override confs, passed to dosbox AFTER the per-game conf

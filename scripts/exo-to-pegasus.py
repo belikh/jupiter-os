@@ -9,7 +9,10 @@ collection-level `launch` invokes exo-launch (modules/desktop/exodos.nix)
 with that conf, which extracts the game zip on first run and execs
 dosbox-staging (DOS), or dosbox-x (Win3.x / Win9x) from the right CWD so
 each eXo conf's [autoexec] (relative mounts, .bat launcher) works
-unmodified.
+unmodified. The 30 eXoWin9x titles that ship an 86Box Play.cfg instead of
+a dosbox-x Play.conf are emitted by a second pass (--emulator 86box
+--conf-name Play.cfg) into a sibling collection dir whose file: paths
+reach back into exo-win9x via --path-prefix.
 
 Artwork: the eXo LaunchBox XMLs carry NO per-game image paths (only
 Missing*Image booleans — verified empirically against eXoDOS v5 /
@@ -219,9 +222,10 @@ def render_entry(
     lb_id: str,
     manual_rel: str,
     assets: dict,
+    path_prefix: str = "",
 ) -> list:
     lines = [f"game: {escape_value(title)}"]
-    lines.append(f"file: {file_rel}")
+    lines.append(f"file: {path_prefix}{file_rel}")
     if developer:
         lines.append(f"developer: {escape_value(developer)}")
     if publisher:
@@ -237,13 +241,13 @@ def render_entry(
     if rating:
         lines.append(f"rating: {rating}")
     for asset_key, rel in assets.items():
-        lines.append(f"assets.{asset_key}: {escape_value(rel)}")
+        lines.append(f"assets.{asset_key}: {escape_value(path_prefix + rel)}")
     if favorite:
         lines.append("x-favorite: true")
     if lb_id:
         lines.append(f"x-lb-id: {lb_id}")
     if manual_rel:
-        lines.append(f"x-manual: {escape_value(manual_rel)}")
+        lines.append(f"x-manual: {escape_value(path_prefix + manual_rel)}")
     lines.append("")  # blank separator between entries
     return lines
 
@@ -258,6 +262,7 @@ def convert(
     images_platform: str,
     rewrites: list,
     check_files: bool,
+    path_prefix: str = "",
 ):
     tree = ET.parse(xml_path)
     root_el = tree.getroot()
@@ -371,6 +376,7 @@ def convert(
                 lb_id=text_or_empty(game, "ID"),
                 manual_rel=manual_rel,
                 assets=assets,
+                path_prefix=path_prefix,
             )
         )
         counts["emitted"] += 1
@@ -387,13 +393,16 @@ def main() -> int:
     p.add_argument(
         "--emulator",
         required=True,
-        choices=["dosbox", "dosbox-x"],
-        help="Binary name (dosbox=dosbox-staging, dosbox-x=dosbox-x)",
+        choices=["dosbox", "dosbox-x", "86box"],
+        help="Binary name (dosbox=dosbox-staging, dosbox-x=dosbox-x, 86box=nixpkgs _86box)",
     )
     p.add_argument(
         "--conf-name",
         default="dosbox.conf",
-        help="Per-game conf filename: dosbox.conf (eXoDOS/eXoWin3x) or Play.conf (eXoWin9x)",
+        help=(
+            "Per-game conf filename: dosbox.conf (eXoDOS/eXoWin3x), Play.conf "
+            "(eXoWin9x dosbox-x titles) or Play.cfg (eXoWin9x 86Box titles)"
+        ),
     )
     p.add_argument(
         "--images-platform",
@@ -416,6 +425,25 @@ def main() -> int:
         action="store_true",
         help="Skip on-disk existence checks for file:/x-manual (for generating outside the collection)",
     )
+    p.add_argument(
+        "--output",
+        default="",
+        help=(
+            "Write metadata to this path instead of <root>/metadata.pegasus.txt. "
+            "Used to emit a second collection (e.g. the eXoWin9x 86Box titles) "
+            "that reaches back into the shared exo-win9x root via --path-prefix"
+        ),
+    )
+    p.add_argument(
+        "--path-prefix",
+        default="",
+        help=(
+            "String prepended to every emitted file:/assets.:/x-manual: value. "
+            "Pegasus resolves these relative to the metadata file's directory, "
+            "so '../' lets a sibling collection dir reference files in its parent. "
+            "Existence checks stay against the unprefixed path (i.e. under --root)"
+        ),
+    )
     p.add_argument("--force", action="store_true", help="Regenerate even if output is newer than XML")
     args = p.parse_args()
 
@@ -423,7 +451,7 @@ def main() -> int:
     if any(len(r) != 2 for r in rewrites):
         p.error("--rewrite values must be OLD:NEW (got one without a colon)")
 
-    output_path = os.path.join(args.root, "metadata.pegasus.txt")
+    output_path = args.output if args.output else os.path.join(args.root, "metadata.pegasus.txt")
 
     if not args.force and os.path.exists(output_path):
         xml_mtime = os.path.getmtime(args.xml)
@@ -445,9 +473,10 @@ def main() -> int:
         images_platform=args.images_platform,
         rewrites=rewrites,
         check_files=not args.no_check_files,
+        path_prefix=args.path_prefix,
     )
 
-    os.makedirs(args.root, exist_ok=True)
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
         f.write("\n".join(out_lines))
 
