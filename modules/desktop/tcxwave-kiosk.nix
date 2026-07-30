@@ -234,13 +234,16 @@ in
         connection = {
           id = cfg.wifi.network;
           type = "wifi";
+          permissions = ""; # system connection (no session agent on a headless kiosk)
           autoconnect = true;
         };
         wifi = {
           ssid = cfg.wifi.network;
+          mode = "infrastructure";
           hidden = false;
         };
         wifi-security = {
+          auth-alg = "open";
           key-mgmt = "wpa-psk";
           psk-flags = 1; # NM_SECRET_AGENT_OWNED — value from nm-file-secret-agent
         };
@@ -254,11 +257,14 @@ in
       };
     };
 
-    # NetworkManager must own the wifi radio exclusively. wpa_supplicant
-    # (networking.wireless) also grabs the adapter if enabled, so the two race
-    # and neither associates — that conflict is what stranded thebe offline.
-    # mkForce overrides whatever else flips it on (gaming-mode/jovian defaults).
-    networking.wireless.enable = lib.mkIf cfg.wifi.enable (lib.mkForce false);
+    # NOTE: do NOT disable networking.wireless here. NetworkManager does not
+    # run its own supplicant — it drives wpa_supplicant as a D-Bus backend
+    # (nixpkgs' networkmanager.nix forces wireless.enable=true +
+    # dbusControlled=true whenever NM is on). The D-Bus fi.w1.wpa_supplicant1
+    # service only ships with the wpa_supplicant package and is only
+    # registered while wireless.enable=true, so forcing it false leaves NM
+    # with no Wi-Fi backend and the adapter never associates. Commit 696336e
+    # made that mistake and stranded thebe offline.
 
     # Integrated 15" PCAP touchscreen: NO custom/kernel driver needed. The panel
     # is a USB HID multitouch device handled in-tree by `hid-multitouch`, and
