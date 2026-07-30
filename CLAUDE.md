@@ -112,6 +112,17 @@ no-build path for local iteration).
     the wire are registered and building.
 - sops secrets are read at **activation**, not build time — `nix build`, CI,
   and `nix flake check` work without the age key.
+- **Find the accepted "modern method" first.** Before wiring up any NixOS
+  service/module — especially anything with several evolving approaches
+  (secrets, networking/wifi, NetworkManager, sops integration) — **websearch
+  for the current canonical method** (e.g. nixpkgs option docs, discourse,
+  upstream module READMEs) and use it. Do not reverse-engineer a mechanism
+  from first principles, copy a stale pattern from the archive branch, or
+  hand-roll a workaround (a racy envsubst/systemd hack, a plaintext fallback,
+  etc.) when nixpkgs already ships the blessed option. Hard-won example: thebe
+  wifi PSK must go through `networking.networkmanager.ensureProfiles.secrets`
+  (the `nm-file-secret-agent` D-Bus secret agent), NOT an `environmentFiles` +
+  `envsubst` + custom service pipeline.
 - **Git:** always `git push` after committing — the user wants every commit
   pushed to the remote immediately, no holding locally.
 
