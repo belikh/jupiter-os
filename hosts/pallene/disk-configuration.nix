@@ -82,9 +82,11 @@
   # Override the raw format's auto-sized image (which evaluates disk usage at
   # build time and may produce a larger image than needed) with a fixed 10 GB.
   # After compression (xz -9), the actual transfer size is ~1-2 GB.
-  system.build.raw = lib.mkForce (import "${toString modulesPath}/../lib/make-disk-image.nix" {
-    inherit lib config pkgs;
-    diskSize = 10240;
-    format = "raw";
-  });
+  system.build.raw = lib.mkForce (
+    import "${toString modulesPath}/../lib/make-disk-image.nix" {
+      inherit lib config pkgs;
+      diskSize = 10240;
+      format = "raw";
+    }
+  );
 }

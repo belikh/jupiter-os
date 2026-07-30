@@ -118,11 +118,9 @@ let
   # pga.db library DB) — both are persisted because Lutris falls back
   # config→data when the config dir is absent. Caches stay ephemeral.
   modeSpecs = {
-    # Pegasus frontend over NFS-mounted curated + 1G1R collections from europa.
-    # On-demand ROM loading: curated ZIPs extract to /tmp/pegasus-cache/,
-    # 1G1R games download from Myrient mirrors to /var/cache/pegasus-roms/.
-    # Bubble Tea TUI shows extract/download progress with cancel support.
-    # Persisted dirs cover Pegasus config + cache.
+    # Pegasus frontend (modules/desktop/arcade.nix) over the eXo collections
+    # contributed by modules/desktop/exodos.nix (NFS + overlayfs +
+    # exo-launch). Persisted dirs cover Pegasus config + cache.
     arcade = {
       enableDefault = false;
       command = "gamescope -f -- pegasus-fe";

@@ -46,18 +46,20 @@ in
     };
 
     extraIngress = lib.mkOption {
-      type = lib.types.listOf (lib.types.submodule {
-        options = {
-          hostname = lib.mkOption {
-            type = lib.types.str;
-            description = "Public hostname for this ingress rule";
+      type = lib.types.listOf (
+        lib.types.submodule {
+          options = {
+            hostname = lib.mkOption {
+              type = lib.types.str;
+              description = "Public hostname for this ingress rule";
+            };
+            port = lib.mkOption {
+              type = lib.types.port;
+              description = "Local upstream port";
+            };
           };
-          port = lib.mkOption {
-            type = lib.types.port;
-            description = "Local upstream port";
-          };
-        };
-      });
+        }
+      );
       default = [ ];
       description = "Additional ingress rules for the tunnel: hostname → localhost:port";
     };
@@ -74,10 +76,13 @@ in
         # Add more ingress rules here as services come back up.
         ingress = {
           ${cfg.atticHostname} = "http://localhost:${toString cfg.atticPort}";
-        } // builtins.listToAttrs (map (rule: {
-          name = rule.hostname;
-          value = "http://localhost:${toString rule.port}";
-        }) cfg.extraIngress);
+        }
+        // builtins.listToAttrs (
+          map (rule: {
+            name = rule.hostname;
+            value = "http://localhost:${toString rule.port}";
+          }) cfg.extraIngress
+        );
         originRequest.noTLSVerify = true;
         default = "http_status:404";
       };

@@ -13,7 +13,6 @@
   imports = [
     ../../modules/common.nix
     ../../modules/desktop/tcxwave-kiosk.nix
-    ../../modules/desktop/arcade.nix
   ];
 
   networking.hostName = "amalthea";
@@ -24,6 +23,4 @@
     dashboardUrl = "https://iot.jupiter.au/jupiter-room/quarters";
     disk = "/dev/disk/by-id/ata-SanDisk_SD9SN8W128G1011_204903800470";
   };
-
-  jupiter.arcade.enable = true;
 }

@@ -33,10 +33,12 @@ in
     ../services/ha-agent.nix
     ./dashboard-kiosk.nix
     ./dashboard-gaming.nix
-    # jupiterOS Arcade: Pegasus frontend with on-demand ROM loading via NFS + Myrient mirrors.
-    # Bubble Tea TUI shows extract/download progress with cancel support.
-    # Replaces exodos.nix (eXoDOS/eXoWin3x only) with full curated + 1G1R support.
+    # jupiterOS Arcade: Pegasus frontend for the HA-switchable gaming session.
     ./arcade.nix
+    # eXo collection launch stack (eXoDOS/eXoWin3x/eXoWin9x from europa over
+    # NFS + per-kiosk overlayfs + exo-launch). Contributes the collections
+    # Pegasus shows; arcade.nix owns Pegasus itself.
+    ./exodos.nix
     # Open-source driver + animation for the integrated customer-facing line
     # display (0x0f66:0x4500). Verified live on amalthea 2026-07-25
     # (tcxwave-cdp-anim.service running against the real hardware). See the
@@ -125,20 +127,21 @@ in
       url = cfg.dashboardUrl;
     };
 
-# Dashboard ↔ gaming modes, switchable from Home Assistant. Adds a
-# jupiter-<mode>.service per enabled mode on a shared tty1; all session
-# modes plus the Cage dashboard collapse into one HA `select` (launcher
-# group "session"). ONLY `arcade` mode is enabled (Pegasus frontend with
-# on-demand ROM loading via NFS + Myrient mirrors).
-jupiter.dashboardGaming = {
-  enable = true;
-  modes.arcade.enable = true;
-};
+    # Dashboard ↔ gaming modes, switchable from Home Assistant. Adds a
+    # jupiter-<mode>.service per enabled mode on a shared tty1; all session
+    # modes plus the Cage dashboard collapse into one HA `select` (launcher
+    # group "session"). ONLY `arcade` mode is enabled (Pegasus frontend;
+    # dashboard-gaming.nix sets jupiter.arcade.enable from this mode toggle).
+    jupiter.dashboardGaming = {
+      enable = true;
+      modes.arcade.enable = true;
+    };
 
-# jupiterOS Arcade: Pegasus frontend with on-demand ROM loading via NFS + Myrient mirrors.
-# Replaces the old exodos.nix module (which only handled eXoDOS + eXoWin3x).
-# Enabled via jupiter.dashboardGaming.modes.arcade.enable above.
-# jupiter.exodos.enable = false; # explicitly disabled (replaced by arcade.nix)
+    # eXo collections (eXoDOS/eXoWin3x/eXoWin9x) in the arcade session:
+    # per-collection NFS mounts of europa's curated datasets + per-kiosk
+    # overlayfs for saves/extractions + exo-launch. See
+    # modules/desktop/exodos.nix.
+    jupiter.exodos.enable = true;
 
     jupiter.boot.falloutSplash.enable = true;
 

@@ -1,4 +1,9 @@
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 
 # HPE MicroServer Gen10 — the ZFS NAS and data hub.
 #
@@ -36,10 +41,10 @@
     ../../modules/services/cloudflare-tunnel.nix
     ../../modules/services/pallene-watchdog.nix
     ../../modules/services/iscsi-target.nix
-    # jupiterOS Arcade metadata generator — runs on europa to generate
-    # Pegasus collections from curated collections + 1G1R DATs
-    ../../modules/services/arcade-metadata-generator.nix
     # jupiterOS Arcade API — HTTP server for on-demand ROM downloads
+    # (1G1R collections only; the eXo collections generate their Pegasus
+    # metadata kiosk-side via modules/desktop/exodos.nix per issue #40 —
+    # the old arcade-metadata-generator module was never enabled and is gone)
     ../../modules/services/arcade-api.nix
   ];
 

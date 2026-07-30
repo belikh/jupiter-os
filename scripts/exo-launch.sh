@@ -1,21 +1,25 @@
 #!/bin/sh
 # exo-launch: extract-on-first-run + dosbox launcher for the eXo collections.
 #
-# The eXoDOS / eXoWin3x layout is tiered: the per-game dosbox.conf lives at
-#   <collection>/eXo/eXoDOS/!dos/<gamedir>/dosbox.conf      (DOS)
-#   <collection>/eXo/eXoWin3x/!win3x/<gamedir>/dosbox.conf   (Win3.x)
+# The eXo layout is tiered: the per-game emulator conf lives at
+#   <collection>/eXo/eXoDOS/!dos/<gamedir>/dosbox.conf           (DOS)
+#   <collection>/eXo/eXoWin3x/!win3x/<gamedir>/dosbox.conf       (Win3.x)
+#   <collection>/eXo/eXoWin9x/!win9x/<year>/<gamedir>/Play.conf  (Win9x)
 # while the actual game files stay zipped at
-#   <collection>/eXo/eXoDOS/<full name>.zip
-# until first play. The per-game dosbox.conf's [autoexec] mounts C: at
-# `.\eXoDOS\<gamedir>` and runs the game's run.bat from there, which means
-# dosbox's CWD must be <collection>/eXo/ (NOT the game dir) when launched,
-# and the zip must have been extracted into <collection>/eXo/eXoDOS/<gamedir>/.
+#   <collection>/eXo/eXoDOS/<full name>.zip                      (DOS/Win3.x)
+#   <collection>/eXo/eXoWin9x/<year>/<gamedir>.zip               (Win9x)
+# until first play. The per-game conf's [autoexec] mounts the game dir
+# relative to dosbox's CWD — `.\eXoDOS\<gamedir>` for DOS,
+# `.\eXoWin9x\<year>\<gamedir>\<gamedir>.vhd` (a Win98 hard-disk image
+# booted with BOOT -l c) for Win9x — which means the emulator's CWD must be
+# <collection>/eXo/ (NOT the game dir) when launched, and the zip must have
+# been extracted next to its platform dir first.
 #
 # This wrapper handles both: extract the matching zip on first launch (the
 # overlayfs upper in modules/desktop/exodos.nix makes that writable even
 # though the underlying NFS mount is read-only), then exec dosbox from the
 # right CWD with the per-game conf. Pegasus calls it as
-#   exo-launch <dosbox|dosbox-x> <path-to-per-game-dosbox.conf>
+#   exo-launch <dosbox|dosbox-x> <path-to-per-game-conf>
 # and we derive everything else from that conf path by convention.
 set -eu
 
@@ -27,35 +31,59 @@ if [ -z "$EMULATOR" ] || [ -z "$CONF" ]; then
     exit 2
 fi
 
-GAME_CONFDIR=$(dirname "$CONF")                 # .../!dos/<gamedir>  (or !win3x/<gamedir>)
-GAMEDIR=$(basename "$GAME_CONFDIR")             # <gamedir>, e.g. StuntIsl
-DOS_DIR=$(dirname "$GAME_CONFDIR")              # .../!dos            (or !win3x)
-PLATFORM_DIR=$(basename "$DOS_DIR")             # !dos or !win3x
-EXO_COLLECTION_DIR=$(dirname "$DOS_DIR")        # .../eXoDOS or .../eXoWin3x (inner)
-EXO_DIR=$(dirname "$EXO_COLLECTION_DIR")        # .../eXo
+# eXo's own data is case-inconsistent in places (it was authored on a
+# case-insensitive Windows FS): 'Pure-stat College Basketball (1987).bat'
+# ships next to 'Pure-Stat College Basketball (1987).zip', and hugo3Jd's zip
+# extracts to 'hugo3jd'. On the case-sensitive NFS/overlay these break the
+# exact-name lookups below, so resolve names case-insensitively when the
+# literal name isn't there. Prints the on-disk name, or nothing.
+ci_resolve() {
+    ls -A "$1" 2>/dev/null | grep -ixF -- "$2" | head -1
+}
+
+GAME_CONFDIR=$(dirname "$CONF")                 # .../!dos/<gamedir>  (or !win3x/<gamedir>, !win9x/<year>/<gamedir>)
+GAMEDIR=$(basename "$GAME_CONFDIR")             # <gamedir>, e.g. StuntIsl or "Hyperoid (1994)"
+DOS_DIR=$(dirname "$GAME_CONFDIR")              # .../!dos  (or !win3x, or !win9x/<year>)
+PLATFORM_DIR=$(basename "$DOS_DIR")             # !dos, !win3x, or a bare <year> under !win9x
+GRANDPARENT_DIR=$(basename "$(dirname "$DOS_DIR")")  # !win9x for Win9x games (year level in between)
 
 # Per-platform conventions for where unzipped game files live and where the
-# source zip is. eXoDOS and eXoWin3x both unzip into <collection>/eXo/<Inner>/
-# using the bare <gamedir> as the target subdir.
-case "$PLATFORM_DIR" in
-    "!dos")
-        TARGET="$EXO_COLLECTION_DIR/$GAMEDIR"           # .../eXo/eXoDOS/<gamedir>/
-        ZIP_DIR="$EXO_COLLECTION_DIR"                   # .../eXo/eXoDOS/<FullName>.zip
-        ;;
-    "!win3x")
-        TARGET="$EXO_COLLECTION_DIR/$GAMEDIR"           # .../eXo/eXoWin3x/<gamedir>/
-        ZIP_DIR="$EXO_COLLECTION_DIR"                   # .../eXo/eXoWin3x/<FullName>.zip
-        ;;
-    *)
-        echo "exo-launch: unexpected platform dir '$PLATFORM_DIR' (expected !dos or !win3x)" >&2
-        exit 3
-        ;;
-esac
+# source zip is. eXoDOS and eXoWin3x unzip into <collection>/eXo/<Inner>/
+# using the bare <gamedir> as the target subdir; eXoWin9x nests one <year>
+# level deeper on both the conf side (!win9x/<year>/<gamedir>) and the
+# payload side (eXoWin9x/<year>/<gamedir>.zip).
+if [ "$GRANDPARENT_DIR" = "!win9x" ]; then
+    PLATFORM_DIR="!win9x"
+    YEAR_DIR=$(basename "$DOS_DIR")                     # 1994 / 1995 / 1996
+    EXO_COLLECTION_DIR=$(dirname "$(dirname "$DOS_DIR")")  # .../eXo/eXoWin9x
+    EXO_DIR=$(dirname "$EXO_COLLECTION_DIR")            # .../eXo
+    TARGET="$EXO_COLLECTION_DIR/$YEAR_DIR/$GAMEDIR"     # .../eXo/eXoWin9x/<year>/<gamedir>/
+    ZIP_DIR="$EXO_COLLECTION_DIR/$YEAR_DIR"             # .../eXo/eXoWin9x/<year>/<gamedir>.zip
+else
+    EXO_COLLECTION_DIR=$(dirname "$DOS_DIR")        # .../eXoDOS or .../eXoWin3x (inner)
+    EXO_DIR=$(dirname "$EXO_COLLECTION_DIR")        # .../eXo
+    case "$PLATFORM_DIR" in
+        "!dos")
+            TARGET="$EXO_COLLECTION_DIR/$GAMEDIR"           # .../eXo/eXoDOS/<gamedir>/
+            ZIP_DIR="$EXO_COLLECTION_DIR"                   # .../eXo/eXoDOS/<FullName>.zip
+            ;;
+        "!win3x")
+            TARGET="$EXO_COLLECTION_DIR/$GAMEDIR"           # .../eXo/eXoWin3x/<gamedir>/
+            ZIP_DIR="$EXO_COLLECTION_DIR"                   # .../eXo/eXoWin3x/<FullName>.zip
+            ;;
+        *)
+            echo "exo-launch: unexpected platform dir '$PLATFORM_DIR' (expected !dos, !win3x or !win9x/<year>)" >&2
+            exit 3
+            ;;
+    esac
+fi
 
-# Extract on first run. The matching zip is named after the game's full title
-# (e.g. "Stunt Island (1992).zip"); the per-game launcher .bat in the conf dir
-# is named the same way, so derive the zip name from it. install.bat is the
-# only other .bat in these dirs and is excluded.
+# Extract on first run. For DOS/Win3.x the matching zip is named after the
+# game's full title (e.g. "Stunt Island (1992).zip"); the per-game launcher
+# .bat in the conf dir is named the same way, so derive the zip name from it
+# (install.bat is the only other .bat in these dirs and is excluded). For
+# Win9x the game dir, launcher .bat and payload zip all share the same name
+# ("Hyperoid (1994)"), so the zip comes straight from $GAMEDIR.
 #
 # Existence check is "dir exists AND is non-empty" — a plain `[ ! -d ]` gets
 # fooled by stale overlay dentries: an interrupted extraction (or a dosbox
@@ -72,22 +100,41 @@ esac
 # unzips as root then chowns the result back to the calling user, so dosbox
 # (running as that user) can later write saves into the per-game dir — by then
 # in the upper only, so no further lower-perm check.
-if [ ! -d "$TARGET" ] || [ -z "$(ls -A "$TARGET" 2>/dev/null)" ]; then
-    BAT=$(
-        cd "$GAME_CONFDIR" || exit 4
-        for f in *.bat; do
-            [ "$f" = "install.bat" ] && continue
-            [ "$f" = "*.bat" ] && continue
-            echo "$f"
-            break
-        done
-    )
-    if [ -z "$BAT" ]; then
-        echo "exo-launch: no launcher .bat found in $GAME_CONFDIR" >&2
-        exit 5
+# A previous extraction may have created the game dir under the zip's own
+# casing rather than the conf dir's (hugo3Jd -> hugo3jd); adopt it so we
+# don't re-extract on every launch.
+if [ ! -d "$TARGET" ]; then
+    ALT=$(ci_resolve "$(dirname "$TARGET")" "$GAMEDIR")
+    if [ -n "$ALT" ]; then
+        GAMEDIR=$ALT
+        TARGET="$(dirname "$TARGET")/$ALT"
     fi
-    FULL_NAME=${BAT%.bat}
-    ZIP="$ZIP_DIR/$FULL_NAME.zip"
+fi
+
+if [ ! -d "$TARGET" ] || [ -z "$(ls -A "$TARGET" 2>/dev/null)" ]; then
+    if [ "$PLATFORM_DIR" = "!win9x" ]; then
+        ZIP="$ZIP_DIR/$GAMEDIR.zip"
+    else
+        BAT=$(
+            cd "$GAME_CONFDIR" || exit 4
+            for f in *.bat; do
+                [ "$f" = "install.bat" ] && continue
+                [ "$f" = "*.bat" ] && continue
+                echo "$f"
+                break
+            done
+        )
+        if [ -z "$BAT" ]; then
+            echo "exo-launch: no launcher .bat found in $GAME_CONFDIR" >&2
+            exit 5
+        fi
+        FULL_NAME=${BAT%.bat}
+        ZIP="$ZIP_DIR/$FULL_NAME.zip"
+    fi
+    if [ ! -f "$ZIP" ]; then
+        ALT=$(ci_resolve "$ZIP_DIR" "$(basename "$ZIP")")
+        [ -n "$ALT" ] && ZIP="$ZIP_DIR/$ALT"
+    fi
     if [ ! -f "$ZIP" ]; then
         echo "exo-launch: game zip not found at $ZIP" >&2
         exit 6
@@ -149,8 +196,14 @@ case "$EMULATOR" in
         OVERRIDE=
         ;;
 esac
-if [ -n "$OVERRIDE" ] && [ -f "$OVERRIDE" ]; then
-    exec env PULSE_SINK=bluez_output.D8_E3_5E_8A_72_E5.1 "$EMULATOR" -conf "$CONF" -conf "$OVERRIDE" -noconsole -c exit
-else
-    exec env PULSE_SINK=bluez_output.D8_E3_5E_8A_72_E5.1 "$EMULATOR" -conf "$CONF" -noconsole -c exit
+set -- -conf "$CONF"
+# eXoWin9x ships a platform-wide options conf that the original Windows
+# launcher (util/9xlaunch.bat) always passes after the per-game Play.conf —
+# shared dosbox-x defaults for the Win98-VHD boot flow. Same ordering here.
+if [ "$PLATFORM_DIR" = "!win9x" ] && [ -f "$EXO_DIR/emulators/dosbox/options9x.conf" ]; then
+    set -- "$@" -conf "$EXO_DIR/emulators/dosbox/options9x.conf"
 fi
+if [ -n "$OVERRIDE" ] && [ -f "$OVERRIDE" ]; then
+    set -- "$@" -conf "$OVERRIDE"
+fi
+exec env PULSE_SINK=bluez_output.D8_E3_5E_8A_72_E5.1 "$EMULATOR" "$@" -noconsole -c exit
