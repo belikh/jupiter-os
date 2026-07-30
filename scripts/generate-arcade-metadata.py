@@ -95,7 +95,9 @@ def parse_launchbox_xml(
                 # Normalize: "Game Title-01.jpg" → "game title"
                 name = img_path.stem.rsplit("-", 1)[0].lower()  # Remove -01, -02 suffix
                 if name not in image_map:
-                    image_map[name] = str(img_path.relative_to(collection_root.parent / images_dir.name.split("/")[-1]))
+                    # Paths are relative to collection_root: Images/Windows 3x/Box - Front/...
+                    rel = img_path.relative_to(collection_root)
+                    image_map[name] = str(rel)
 
     out = [
         f"# Generated from {xml_path.name}",
@@ -354,7 +356,7 @@ def get_collections(nfs_root: Path) -> dict:
             "shortname": "win3x",
             "emulator": "dosbox-x",
             "rewrites": [],
-            "assets_src": nfs_root / "retro/games/curated/exo-win3x/Images",
+            "assets_src": nfs_root / "retro/games/curated/exo-win3x/Images/Windows 3x",
         },
         "curated-c64-dreams": {
             "type": "launchbox",
