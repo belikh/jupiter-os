@@ -126,6 +126,24 @@ no-build path for local iteration).
 - **Git:** always `git push` after committing — the user wants every commit
   pushed to the remote immediately, no holding locally.
 
+## Fable-Domain: Jupiter-OS Infrastructure Workflow
+
+Use the **fable-domain for jupiterOS** to approach infrastructure changes safely and efficiently. The domain captures the 7 most tempting mistakes developers make (custom kernels on ZFS hosts, unjustified flake inputs, secrets read at build time, etc.) and structures a 9-step workflow that prevents them:
+
+1. **Classify & scope** the change (which hosts, what consequence)
+2. **Establish host state empirically** (ping/ssh, check sops keys for real vs placeholder)
+3. **SEARCH the internet for the modern canonical method** ← Key discipline; do not hand-roll
+4. **Locate module extension point** and read house-style skeleton
+5. **Check cross-host wiring gates** (both ends registered and building?)
+6. **Write module in style** and test with `make check`
+7. **Verify secrets are activation-time only** (gated by real age key)
+8. **Deploy and verify by observation** (not by assertion — restart services, passively poll, clean reboot)
+9. **Commit, push, and report outcome-first**
+
+Each step has explicit gates that block before deployment. Reference: `references/domains/jupiterOS.md` (full workflow + flowchart + fraud prevention table). Trap fixture in `eval/scenarios/jupiterOS-trap/GROUND-TRUTH.md`.
+
+Key memories that drove this workflow: `jupiter_os_thebe_wifi_sae_fix.md`, `jupiter_os_pallene_push_path.md`, `jupiter_os_kiosk_build_oom.md`, `jupiter_os_nm_autoconnect_vs_connection_up.md`, `jupiter_os_test_dont_assert.md`.
+
 ## Common commands
 
 ```bash
