@@ -32,7 +32,13 @@
 #                       passed via -u to lift the per-IP 429 when <source> is
 #                       thegamesdb.
 
-set -euo pipefail
+# NOTE: deliberately `set -uo pipefail` WITHOUT `-e`. This script loops every
+# platform in one run (it's the jupiter-rom-scrape daily timer); with `-e` a
+# single transient Skyscraper failure on the first platform would abort and
+# skip the rest. Each invocation below is `|| log`-guarded instead, so a
+# failed phase is logged and the run continues to the next platform/phase
+# (matching cartridge-integrate.sh's resilience).
+set -uo pipefail
 
 if [ "$#" -lt 4 ]; then
   echo "usage: $0 <romRoot> <cacheDir> <source> <platform> [<platform> ...]" >&2
@@ -113,7 +119,7 @@ INI
       -c "$config_ini" \
       -u "$(cat "$SCREENSCRAPER_CREDS")" \
       -t 1 \
-      --flags unattend,unpack
+      --flags unattend,unpack || log "  ScreenScraper pass failed (rc=$?), continuing"
   fi
 
   # <source> pass: onlymissing when ScreenScraper ran (gap-fill), full scrape
@@ -137,7 +143,7 @@ INI
     -d "$platform_cache" \
     -c "$config_ini" \
     "${src_args[@]}" \
-    --flags "$src_flags"
+    --flags "$src_flags" || log "  $SOURCE pass failed (rc=$?), continuing"
 
   # Phase 2: compose Pegasus frontend files from the cache. -f pegasus selects
   # the frontend; -g sets the metadata.pegasus.txt output dir (the ROM dir, so
@@ -152,7 +158,7 @@ INI
     -d "$platform_cache" \
     -g "$platform_dir" \
     -c "$config_ini" \
-    --flags unattend
+    --flags unattend || log "  pegasus compose failed (rc=$?), continuing"
 
   # Rewrite absolute europa ROM/media paths to be relative to this metadata
   # dir. The kiosks mount the cartridge tree at /mnt/europa-cartridges, not
