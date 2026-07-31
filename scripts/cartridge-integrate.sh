@@ -106,9 +106,13 @@ scrape_one() {
     log "$sys: enriching (platform=$plat core=$core) with Skyscraper/ TGDB"
     cfg="$SKCACHE/config-$sys.ini"
     mkdir -p "$SKCACHE/$plat"
-    # launch value unquoted so the embedded "{file.path}" quotes survive Qt INI
-    # parsing verbatim (matches scripts/cartridge-scrape.sh).
-    printf '[pegasus]\nlaunch=jupiter-retroarch -L %s "{file.path}"\n' "$core" > "$cfg"
+    # {file.path} is wrapped in backslash-escaped quotes (\\") rather than bare
+    # quotes: Qt's INI parser strips a bare quote pair, which left unescaped
+    # would make Skyscraper emit `launch: ... {file.path}` (unquoted) and
+    # word-split No-Intro paths (spaces/parens) at launch time. \\" survives
+    # Qt's parse as a literal " so Pegasus sees `... "{file.path}"`.
+    # (matches scripts/cartridge-scrape.sh)
+    printf '[pegasus]\nlaunch=jupiter-retroarch -L %s \\"{file.path}\\"\n' "$core" > "$cfg"
     # Build per-source credential args. ScreenScraper wants USERID:PASSWORD;
     # TheGamesDB wants its private apikey (both passed via Skyscraper's -u).
     local ss_args=() tgdb_args=()

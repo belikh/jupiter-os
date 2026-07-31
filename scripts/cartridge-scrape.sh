@@ -78,14 +78,16 @@ for platform in "${PLATFORMS[@]}"; do
 
   mkdir -p "$platform_cache"
 
-  # Per-platform Skyscraper config. The [pegasus] launch line becomes every
-  # game entry's `launch:` field in metadata.pegasus.txt. {file.path} is the
-  # Pegasus token for the ROM's path. The value is written unquoted so the
-  # embedded quotes around {file.path} survive Qt's INI value parsing verbatim
-  # (Qt only strips a quote pair that wraps the *whole* value).
+  # Per-platform Skyscraper config. The [pegasus] launch line becomes the
+  # collection's `launch:` field in metadata.pegasus.txt. {file.path} is the
+  # Pegasus token for the ROM's path. It is wrapped in backslash-escaped quotes
+  # (\\"): Qt's INI parser strips a BARE quote pair, which would otherwise leave
+  # the token unquoted and word-split No-Intro paths (spaces/parens) at launch
+  # time. The \\" survives Qt's parse as a literal " so Pegasus sees
+  # "{file.path}".
   cat > "$config_ini" <<INI
 [pegasus]
-launch=jupiter-retroarch -L ${core} "{file.path}"
+launch=jupiter-retroarch -L ${core} \"{file.path}\"
 INI
 
   log "scraping $platform (core=$core) -> $platform_dir"
