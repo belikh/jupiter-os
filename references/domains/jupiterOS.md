@@ -6,7 +6,7 @@
 
 - `CLAUDE.md` (buildability rules §1-5, module conventions §6-7)
 - `flake.nix` (inputs block, mkHost, nixosConfigurations keys, extraModules mechanism)
-- `Makefile` (targets: make check, make build-all, make pallene-iso)
+- `Makefile` (targets: make check, make build-all, make test-<host>, make verify-arcade)
 - `.sops.yaml` (registered vs unregistered hosts, real vs placeholder age keys)
 - `git log --oneline` (commit history for pattern reference)
 - `modules/core/build-machines.nix` (house style skeleton)

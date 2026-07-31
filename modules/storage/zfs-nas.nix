@@ -15,8 +15,9 @@
 # 18TB drives, using whole-disk vdevs (ZFS-managed GPT — pool members are
 # addressed by-id with no -partN suffix, so `zpool replace` can rebuild the
 # layout on a new disk automatically). autoexpand=on; all OpenZFS 2.4.3
-# feature flags enabled. Built via the attach-then-grow sequence — see
-# docs/europa-bringup-stages.md Stage 2 for the procedure and history.
+# feature flags enabled. Built via the attach-then-grow sequence (whole-disk
+# vdev attach, then replace the legacy partition member with a second
+# whole-disk vdev).
 
 let
   cfg = config.jupiter.nas;
