@@ -16,8 +16,8 @@ Registered hosts: the 4 TCx Wave dashboard kiosks — `amalthea`
 MicroServer Gen10, the ZFS NAS + data hub + PXE server), `callisto` (HP
 EliteDesk 800 G4 DM, fleet's shared Nix remote builder AND MQTT broker,
 i5-8500T Coffee Lake 6c/6t, 64GB RAM, **persistent iSCSI root on europa's
-zvol**), and `pallene` (ephemeral BinaryLane build-server ISO host, phase 2
-only). `amalthea`, `thebe`, `europa`, `callisto`, and `metis` are physically
+zvol**), and `pallene` (Kamatera VPS build server — persistent, disk-booted
+from a raw image built via `nix build .#pallene-raw`; not a fleet member). `amalthea`, `thebe`, `europa`, `callisto`, and `metis` are physically
 live today; `adrastea` is registered and CI-green but still on a placeholder
 disk (`REPLACE-ME` diskId) and a placeholder sops age key (not derived from
 its real SSH host key), awaiting physical install (see `.sops.yaml`). All 4
@@ -58,11 +58,14 @@ via `flake.nix`'s `pxeModule`) — ganymede's role in the old design, moved
 here since ganymede isn't registered yet, same deviation as
 `cloudflareTunnel`.
 
-**europa bring-up:** Stage 4 is **done** — europa is running its full
-`btver2`-tuned closure, substituted from its own Attic (`attic.jupiter.au` /
-the `neptune.jupiter.au:8080` port-forward). See `docs/europa-bringup-stages.md`
-for the full runbook and history; remaining stages (2 — ZFS mirror, 5 —
-deferred items) are independent cleanup, not blockers.
+**europa:** live at `10.1.1.2` running the **untuned** closure from
+cache.nixos.org. The `btver2` tuning (`jupiter.build.microarch = "btver2"`)
+was rolled back (`e10a46a`) — ZFS 2.4.3 has a kernel build issue with btver2
+on nixpkgs 26.11, so it was disabled to unblock the arcade bring-up; the line
+sits commented-out with a TODO in `hosts/europa/configuration.nix`. Re-enable
+once the ZFS/nixpkgs compat clears. europa's Attic (`attic.jupiter.au` /
+`neptune.jupiter.au:8080` port-forward) and substituter wiring stay in place
+for when btver2 comes back online.
 
 **callisto bring-up:** live at `10.1.1.3` on a persistent iSCSI-root closure
 (nixpkgs `26.11.20260616.567a49d`, HP EliteDesk 800 G4 DM, i5-8500T
@@ -73,24 +76,37 @@ entry (`jupiter.build.microarch = "skylake"`) is committed but NOT deployed —
 pallene must build and push the skylake-tagged closure to attic first (same
 sequence europa's btver2 closure followed).
 
-Everything must keep building from cache.nixos.org with `nix flake check`
-(note: europa's `btver2` closure substitutes only from europa's own Attic, not
-cache.nixos.org — `nix flake check` still works fleet-wide since it's
-eval-only and doesn't realize derivations; `make check` remains the fast
-no-build path for local iteration).
+Everything must keep building from cache.nixos.org with `nix flake check`.
+Note: when a host sets `jupiter.build.microarch`, its closure's derivations
+carry `requiredSystemFeatures=["gccarch-<arch>"]` and can't build on a dev
+machine without the matching system-feature + the private Attic substituter —
+but `nix flake check` is eval-only and never realizes derivations, so
+`make check` (which runs it `--no-build`) still passes fleet-wide and is the
+fast local iteration path.
 
 ## Layout
 
-- `flake.nix` — entry point. Inputs are deliberately minimal (nixpkgs, disko,
-  impermanence, sops-nix, ha-linux-agent). `mkHost` injects flake modules via
-  a lexical closure — avoid `specialArgs`. Every host in
+- `flake.nix` — entry point. Inputs are deliberately minimal (nixpkgs,
+  `nixpkgs-unstable` floated free so `modules/core/crush.nix` can pull a newer
+  Go toolchain than the fleet pin, disko, impermanence, sops-nix,
+  ha-linux-agent, `jovian` for the kiosks' gaming stack). `mkHost` injects
+  flake modules via a lexical closure — avoid `specialArgs`. Every host in
   `nixosConfigurations` is also a flake check.
 - `hosts/<name>/` — per-host config (`configuration.nix`). Hosts are named
   after Jupiter's moons.
 - `modules/` — reusable NixOS modules behind a `jupiter.*` options namespace,
-  organized into category subdirs (`boot/`, `core/`, `desktop/`, `network/`,
-  `services/`, `storage/`). `common.nix` at the `modules/` root is the base
-  layer.
+  organized into category subdirs (`boot/`, `core/`, `desktop/`, `gaming/`,
+  `network/`, `services/`, `storage/`). `common.nix` at the `modules/` root is
+  the base layer.
+- **jupiterOS Arcade** (partial, in-tree) — europa runs the cartridge-ROM
+  pipeline (`modules/services/rom-acquire.nix`, `rom-scraper.nix`,
+  `arcade-inventory.nix`: bulk-stage via Minerva torrents, igir-verify,
+  Skyscraper-scrape into Pegasus metadata, emit inventory JSON); kiosks
+  consume the results read-only over NFS and mount the eXo DOS/Win3x
+  collections (`modules/desktop/exodos.nix`).
+  `modules/gaming/console.nix` is the Bazzite-style Jovian gaming stack
+  (gamescope "gaming mode", Steam, peripherals) the kiosks flip into via
+  `modules/desktop/dashboard-gaming.nix`.
 - `secrets/secrets.yaml` — sops-nix + age. Recipients (one age key per host
   plus the admin key) are listed in `.sops.yaml`. Carried over unchanged from
   the previous tree.
@@ -126,6 +142,24 @@ no-build path for local iteration).
 - **Git:** always `git push` after committing — the user wants every commit
   pushed to the remote immediately, no holding locally.
 
+## Fable-Domain: Jupiter-OS Infrastructure Workflow
+
+Use the **fable-domain for jupiterOS** to approach infrastructure changes safely and efficiently. The domain captures the 7 most tempting mistakes developers make (custom kernels on ZFS hosts, unjustified flake inputs, secrets read at build time, etc.) and structures a 9-step workflow that prevents them:
+
+1. **Classify & scope** the change (which hosts, what consequence)
+2. **Establish host state empirically** (ping/ssh, check sops keys for real vs placeholder)
+3. **SEARCH the internet for the modern canonical method** ← Key discipline; do not hand-roll
+4. **Locate module extension point** and read house-style skeleton
+5. **Check cross-host wiring gates** (both ends registered and building?)
+6. **Write module in style** and test with `make check`
+7. **Verify secrets are activation-time only** (gated by real age key)
+8. **Deploy and verify by observation** (not by assertion — restart services, passively poll, clean reboot)
+9. **Commit, push, and report outcome-first**
+
+Each step has explicit gates that block before deployment. Reference: `references/domains/jupiterOS.md` (full workflow + flowchart + fraud prevention table). Trap fixture in `eval/scenarios/jupiterOS-trap/GROUND-TRUTH.md`.
+
+Key memories that drove this workflow: `jupiter_os_thebe_wifi_sae_fix.md`, `jupiter_os_pallene_push_path.md`, `jupiter_os_kiosk_build_oom.md`, `jupiter_os_nm_autoconnect_vs_connection_up.md`, `jupiter_os_test_dont_assert.md`.
+
 ## Common commands
 
 ```bash
@@ -133,16 +167,14 @@ make check              # nix flake check --no-build (eval every registered host
 make build-all          # build the 4 kiosk closures (the untuned hosts)
 make test-<host>        # build & boot a host in a QEMU VM
 make boot-smoke-<host>  # headless CI-style boot test
-make pallene-iso        # build the disposable build-server ISO
-make rebuild-world      # full ephemeral build-server run: ISO → R2 → BinaryLane → attic
 make fmt                # format all Nix (nixfmt-rfc-style); fmt-check to verify
 ```
 
 ## Roadmap (bring-up order)
 
 amalthea + thebe (live) → the remaining 2 kiosks (metis/adrastea —
-registered, CI-green, awaiting physical install) → europa (live, full
-`btver2` tuned closure — see `docs/europa-bringup-stages.md`) → callisto
+registered, CI-green, awaiting physical install) → europa (live, untuned —
+`btver2` rolled back pending a ZFS/nixpkgs fix) → callisto
 (registered CI-green, **live with iSCSI root**, fleet build server) →
 ganymede (resolver/services) → himalia (laptop) → gaming/branding/terranix/
 edge layers. Port each from `archive/full-fleet-reference`, keeping the

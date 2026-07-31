@@ -39,6 +39,11 @@ in
     # NFS + per-kiosk overlayfs + exo-launch). Contributes the collections
     # Pegasus shows; arcade.nix owns Pegasus itself.
     ./exodos.nix
+    # Nintendo cartridge console collections (No-Intro NES/SNES/GB/GBC/GBA/N64)
+    # from europa over a read-only NFS mount + retroarch with cores + per-kiosk
+    # persisted saves. Sibling contributor to exodos.nix; see
+    # modules/desktop/cartridges.nix and docs/adr/0001-*.
+    ./cartridges.nix
     # Open-source driver + animation for the integrated customer-facing line
     # display (0x0f66:0x4500). Verified live on amalthea 2026-07-25
     # (tcxwave-cdp-anim.service running against the real hardware). See the
@@ -142,6 +147,13 @@ in
     # overlayfs for saves/extractions + exo-launch. See
     # modules/desktop/exodos.nix.
     jupiter.exodos.enable = true;
+
+    # Nintendo cartridge console collections (No-Intro NES/SNES/GB/GBC/GBA/N64)
+    # in the arcade session: read-only NFS mount of europa's scraped cartridge
+    # tree + retroarch with the needed libretro cores + per-kiosk saves.
+    # ROMs + metadata are bulk-staged/scraped on europa (rom-acquire/rom-scraper);
+    # this module only consumes them. See modules/desktop/cartridges.nix.
+    jupiter.cartridges.enable = true;
 
     jupiter.boot.falloutSplash.enable = true;
 

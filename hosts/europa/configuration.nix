@@ -41,6 +41,14 @@
     ../../modules/services/cloudflare-tunnel.nix
     ../../modules/services/pallene-watchdog.nix
     ../../modules/services/iscsi-target.nix
+    # jupiterOS Arcade — europa-side cartridge ROM pipeline: bulk torrent
+    # acquisition + igir hash verification (rom-acquire), headless Skyscraper
+    # scraping into Pegasus metadata (rom-scraper), and a periodic library
+    # inventory JSON (arcade-inventory). Kiosks consume the results read-only
+    # over NFS; see modules/desktop/cartridges.nix and docs/adr/0001-*.
+    ../../modules/services/rom-acquire.nix
+    ../../modules/services/rom-scraper.nix
+    ../../modules/services/arcade-inventory.nix
   ];
 
   networking.hostName = "europa";
@@ -182,10 +190,15 @@
     initiatorIqn = "iqn.2026-07.au.jupiter:callisto";
   };
 
-  # ---- System packages -------------------------------------------------------
-  environment.systemPackages = with pkgs; [
-    aria2
-  ];
+  # ---- jupiterOS Arcade (europa-side cartridge pipeline) ------------------
+  # Bulk-stage No-Intro Nintendo cartridge ROMs via Minerva torrents, verify
+  # against DATs with igir, scrape Pegasus metadata with Skyscraper, and emit
+  # a periodic library inventory. Acquisition/verify are manual oneshots (no
+  # timer — start them explicitly); scraping runs daily; inventory every 15min.
+  # Kiosks mount /tank/archive/retro/games/cartridge read-only.
+  jupiter.services.romAcquire.enable = true;
+  jupiter.services.romScraper.enable = true;
+  jupiter.services.arcadeInventory.enable = true;
 
   # ---- sops secrets --------------------------------------------------------
   # attic_server_token_secret: RS256 JWT signing key for atticd.

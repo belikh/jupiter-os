@@ -63,8 +63,7 @@ in
       default = "jupiter-os:jd6naJxSxt9xPtYTaOSQDOoeoHil5OsVy8ltpIBs9dQ=";
       description = ''
         Attic cache public key (matches modules/services/attic-server.nix).
-        Minted once via `attic cache create <cacheName>` — see
-        docs/europa-bringup-stages.md.
+        Minted once via `attic cache create <cacheName>`.
       '';
     };
   };

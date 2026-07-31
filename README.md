@@ -38,11 +38,13 @@ Seven hosts are wired into the flake today:
   are physically installed and live. adrastea shares the same kiosk profile
   (its own hostName/hostId/dashboard URL/disk), registered and CI-green but
   awaiting its real install (placeholder disk and sops key).
-- **europa** (HPE MicroServer Gen10) — the ZFS NAS + data hub. Running its
-  full Phase 2 `btver2`-tuned closure, substituted from its own Attic (see
-  `docs/europa-bringup-stages.md`). Also runs the PXE server callisto
-  netboots from (ganymede's role in the old design, moved here since
-  ganymede isn't registered).
+- **europa** (HPE MicroServer Gen10) — the ZFS NAS + data hub, live at
+  `10.1.1.2`. Currently running the **untuned** closure from cache.nixos.org;
+  `btver2` tuning is rolled back pending a ZFS 2.4.3 / nixpkgs 26.11
+  kernel-build fix (see `hosts/europa/configuration.nix`). Also runs the PXE
+  server callisto netboots from (ganymede's role in the old design, moved
+  here since ganymede isn't registered), the jupiterOS Arcade ROM pipeline,
+  and the Attic binary cache (`attic.jupiter.au`).
 - **callisto** — netboot compute node (HP EliteDesk 800 G4 DM, i5-8500T
   Coffee Lake 6c/6t, 64GB RAM; the box destroyed NVMe drives repeatedly, so
   root lives on ext4-over-iSCSI instead of local disk), the fleet's shared
@@ -53,17 +55,16 @@ Seven hosts are wired into the flake today:
   `jupiter.build.microarch = "skylake"` is committed as a roadmap entry only
   — pallene must build and push the skylake-tagged closure to attic before
   callisto's next deploy.
-- **pallene** — the ephemeral BinaryLane build-server ISO host that compiles
-  europa's tuned closure and pushes it to attic. Never a persistent fleet
-  member; built via `make pallene-iso` / `make rebuild-world`.
+- **pallene** — Kamatera VPS build server (persistent, disk-booted). Not a
+  fleet member; the raw disk image is built with `nix build .#pallene-raw`,
+  compressed, and served to Kamatera's image library via europa's
+  vps-image-server + Cloudflare Tunnel.
 
 ```bash
 make check              # nix flake check --no-build (eval every registered host)
 make build-all          # build the 4 kiosk closures explicitly
 make test-<host>        # build & boot a host in an interactive QEMU VM
 make boot-smoke-<host>  # headless CI-style boot test
-make pallene-iso        # build the disposable build-server ISO
-make rebuild-world      # full ephemeral build-server run: ISO → R2 → BinaryLane → attic
 make fmt                # format all Nix (nixfmt-rfc-style); fmt-check to verify
 ```
 
@@ -108,10 +109,11 @@ machine actually needs them:
    URL/disk). ✅ live
 4. **adrastea** — shares the kiosk profile. registered; awaiting physical
    install
-5. **europa** (NAS + data hub) — full Phase 2 `btver2`-tuned closure live at
-   `10.1.1.2`, substituted from its own Attic. See
-   `docs/europa-bringup-stages.md`. Also PXE-serves callisto (ganymede's role
-   in the old design; moved here since ganymede isn't registered).
+5. **europa** (NAS + data hub) — live at `10.1.1.2`, currently untuned
+   (`btver2` rolled back pending a ZFS 2.4.3 / nixpkgs 26.11 kernel-build
+   fix). Also PXE-serves callisto (ganymede's role in the old design; moved
+   here since ganymede isn't registered), runs the Attic binary cache, and
+   hosts the jupiterOS Arcade ROM pipeline.
 6. **callisto** (netboot, fleet Nix remote builder and MQTT broker — HP
    EliteDesk 800 G4 DM, i5-8500T Coffee Lake 6c/6t, 64GB RAM). ✅ live at
    `10.1.1.3` on a kexec-netboot closure, root over ext4-iSCSI; daemon
@@ -129,28 +131,28 @@ Rules that keep this buildable:
 - **No custom kernels on ZFS hosts.** The stock `linuxPackages` default is
   the one ZFS always supports and the cache always has.
 - **No microarch tuning** until a trusted build cache exists and is proven.
-  (europa's `btver2` is the one justified exception — served from its own
-  attic via the pallene build server.)
+  (europa's planned `btver2` tuning is the one justified exception — served
+  from its own attic via the pallene build server; currently rolled back
+  pending a ZFS 2.4.3 / nixpkgs kernel-build fix.)
 - **A new input must be justified by a registered host** that uses it.
 - **Every registered host is a flake check** — `make check` evals it, CI
   boot-tests the kiosks. Don't register scaffolds that can't build.
 
 ## Layout
 
-- `flake.nix` — inputs (nixpkgs, disko, impermanence, sops-nix,
-  ha-linux-agent), `mkHost` / `mkIsoHost`, `nixosConfigurations`, checks,
-  formatter, dev shell.
+- `flake.nix` — inputs (nixpkgs, `nixpkgs-unstable`, disko, impermanence,
+  sops-nix, ha-linux-agent, `jovian`), `mkHost`, `nixosConfigurations`,
+  checks, formatter, dev shell.
 - `hosts/<name>/configuration.nix` — per-host config. Hosts are named after
   Jupiter's moons.
 - `modules/` — reusable NixOS modules behind the `jupiter.*` options
   namespace (`jupiter.storage.profile`, `jupiter.core.impermanence`,
   `jupiter.dashboardKiosk`, `jupiter.build.microarch`, …), organized into
-  `boot/`, `core/`, `desktop/`, `network/`, `services/`, `storage/`.
+  `boot/`, `core/`, `desktop/`, `gaming/`, `network/`, `services/`, `storage/`.
   `common.nix` at the modules root is the base layer. Hosts opt in via
   toggles.
 - `secrets/secrets.yaml` — sops-nix + age (recipients in `.sops.yaml`);
   carried over unchanged from the previous tree.
 - `scripts/` — `boot-smoke.sh` (headless QEMU boot assertion used by CI),
-  `binarylane-build-server.sh` + `upload-pallene-iso-r2.sh` (drive the
-  ephemeral build-server cycle), `amt.py` (Intel AMT power control for the
-  kiosks), `tcxwave-touch-wake.py` (touch-screen wake helper).
+  `amt.py` (Intel AMT power control for the kiosks),
+  `tcxwave-touch-wake.py` (touch-screen wake helper).
