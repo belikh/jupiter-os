@@ -153,6 +153,19 @@ INI
     -g "$platform_dir" \
     -c "$config_ini" \
     --flags unattend
+
+  # Rewrite absolute europa ROM/media paths to be relative to this metadata
+  # dir. The kiosks mount the cartridge tree at /mnt/europa-cartridges, not
+  # /tank/..., so Skyscraper's absolute paths would make Pegasus drop every
+  # game + asset there. Relative paths resolve against the collection root on
+  # whichever host mounts the tree. (No Skyscraper relative-path option exists
+  # for the pegasus frontend.)
+  sed -i "s|^\(file: \)$ROM_ROOT/$platform/|\1|; s|^\(assets\.[^:]*: \)$ROM_ROOT/$platform/|\1|" \
+    "$platform_dir/metadata.pegasus.txt"
+  # Drop whitespace-only lines Skyscraper emits as intra-description paragraph
+  # separators -- Pegasus treats them as entry-ending blank lines and rejects
+  # the next indented continuation. Truly-empty (0-char) separators survive.
+  sed -i '/^[[:space:]][[:space:]]*$/d' "$platform_dir/metadata.pegasus.txt"
 done
 
 log "done: ${#PLATFORMS[@]} platform(s) processed"

@@ -150,6 +150,24 @@ scrape_one() {
     QT_QPA_PLATFORM=offscreen "$SKY" -p "$plat" -f pegasus \
       -i "$CART/$sys" -d "$SKCACHE/$plat" -g "$CART/$sys" -c "$cfg" --flags unattend
 
+    # Skyscraper's pegasus frontend writes ABSOLUTE ROM + media paths rooted at
+    # the europa scrape dir (e.g. `file: /tank/.../snes/<rom>`). The kiosks
+    # mount this tree read-only at /mnt/europa-cartridges, so those absolute
+    # paths don't resolve there and Pegasus silently drops every game + asset
+    # ("Game file ... doesn't seem to exist"). Rewrite file:/assets. lines
+    # relative to this metadata dir; Pegasus resolves relative paths against
+    # the collection root on whichever host mounts it. (Skyscraper exposes no
+    # relative-path option for the pegasus frontend -- verified: even `-i .`
+    # run from inside the ROM dir still emits absolute paths.)
+    sed -i "s|^\(file: \)$CART/$sys/|\1|; s|^\(assets\.[^:]*: \)$CART/$sys/|\1|" \
+      "$CART/$sys/metadata.pegasus.txt"
+    # Skyscraper also emits whitespace-only lines as intra-description
+    # paragraph separators; Pegasus reads those as entry-ending blank lines
+    # and then rejects the following indented continuation ("line starts with
+    # whitespace, but no attribute has been defined yet"). Drop whitespace-only
+    # lines -- truly-empty (0-char) entry separators don't match and survive.
+    sed -i '/^[[:space:]][[:space:]]*$/d' "$CART/$sys/metadata.pegasus.txt"
+
     # Gate ".scraped" on real enrichment: only flag done if game: entries
     # actually landed. A persistent failure (bad creds / broken source) would
     # otherwise stall the serial queue forever, so after 3 zero-game attempts
