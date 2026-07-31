@@ -109,6 +109,17 @@ in
       {
         environment.systemPackages = [ pkgs.skyscraper ];
 
+        # Scraping credentials, decrypted at activation by sops-nix into
+        # /run/secrets/... cartridge-scrape.sh consumes the paths via the env
+        # vars below: SCREENSCRAPER_CREDS (primary, CRC-exact) and TGDB_APIKEY_FILE
+        # (keyed gap-fill). Both are optional at runtime -- the script degrades
+        # to unkeyed thegamesdb when a file is empty/absent. The values live in
+        # secrets/secrets.yaml. Declared unconditionally here (matching
+        # attic-server.nix / cloudflare-tunnel.nix) since every host that
+        # enables this module imports sops-nix via common.nix.
+        sops.secrets.screenscraper_creds = { };
+        sops.secrets.tgdb_apikey = { };
+
         systemd.services.jupiter-rom-scrape = {
           description = "Scrape cartridge ROMs into Pegasus metadata with Skyscraper";
           serviceConfig.Type = "oneshot";
@@ -119,6 +130,11 @@ in
             # construct a platform offscreen surface and aborts.
             QT_QPA_PLATFORM = "offscreen";
             SKYSCRAPER = "${pkgs.skyscraper}/bin/Skyscraper";
+            # Activation-time sops secret paths (declarations above); the
+            # scripts read these at runtime. ScreenScraper is the primary
+            # source, TheGamesDB the keyed onlymissing gap-fill.
+            SCREENSCRAPER_CREDS = "${config.sops.secrets.screenscraper_creds.path}";
+            TGDB_APIKEY_FILE = "${config.sops.secrets.tgdb_apikey.path}";
           };
           script = ''
             exec ${lib.getExe scrapeScript} \
@@ -138,16 +154,6 @@ in
           };
         };
       }
-
-      # Optional ScreenScraper enrichment: wired automatically when (and only
-      # when) a `screenscraper_creds` sops secret is declared on this host.
-      # The three-part guard stays eval-safe even if sops-nix isn't imported.
-      # The secret path is read at activation (sops-nix decrypts to
-      # /run/secrets/...); the script reads it at runtime to pass `-u`.
-      (lib.mkIf (config ? sops && config.sops ? secrets && config.sops.secrets ? screenscraper_creds) {
-        systemd.services.jupiter-rom-scrape.environment.SCREENSCRAPER_CREDS =
-          "${config.sops.secrets.screenscraper_creds.path}";
-      })
     ]
   );
 }

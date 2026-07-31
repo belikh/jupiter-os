@@ -24,8 +24,13 @@
 # Env:
 #   SKYSCRAPER          path to the Skyscraper binary (default: "Skyscraper")
 #   SCREENSCRAPER_CREDS optional path to a `USERID:PASSWORD` file; when set,
-#                       an additional ScreenScraper cache pass runs (-u) to
-#                       fill gaps left by the primary source.
+#                       ScreenScraper runs as the PRIMARY source (CRC-exact
+#                       for No-Intro zips) and <source> demotes to an
+#                       onlymissing gap-fill pass. Without it, <source> runs
+#                       as the primary instead.
+#   TGDB_APIKEY_FILE    optional path to a TheGamesDB private apikey file;
+#                       passed via -u to lift the per-IP 429 when <source> is
+#                       thegamesdb.
 
 set -euo pipefail
 
@@ -83,25 +88,21 @@ for platform in "${PLATFORMS[@]}"; do
 launch=jupiter-retroarch -L ${core} "{file.path}"
 INI
 
-  log "scraping $platform (core=$core, source=$SOURCE) -> $platform_dir"
+  log "scraping $platform (core=$core) -> $platform_dir"
 
-  # Phase 1: gather resources from the scraping source into the cache.
-  # -d is the resource cache folder (Skyscraper expects a per-platform folder
-  # holding db.xml + resource subdirs); --flags unattend avoids the
-  # overwrite/confirm prompts that would deadlock a headless service.
-  "$SKYSCRAPER" \
-    -p "$platform" \
-    -s "$SOURCE" \
-    -i "$platform_dir" \
-    -d "$platform_cache" \
-    -c "$config_ini" \
-    --flags unattend
-
-  # Optional ScreenScraper enrichment pass: only when creds are provided and
-  # only for games the primary source missed (onlymissing), so the cache fills
-  # without re-fetching everything ScreenScraper-side.
+  # Phase 1: gather resources into the cache. ScreenScraper is primary when
+  # creds are present (CRC-exact for No-Intro zips via --flags unpack, -t 1 for
+  # the free-tier thread cap); the positional <source> (default thegamesdb)
+  # then runs onlymissing to fill the gaps, so a fuzzy filename match can never
+  # overwrite a correct checksum match. With no ScreenScraper creds, <source>
+  # runs as the primary instead.
+  # -d is the resource cache folder (the folder holding db.xml + resource
+  # subdirs); --flags unattend avoids the overwrite/confirm prompts that would
+  # deadlock a headless service.
+  have_ss=0
   if [ -n "${SCREENSCRAPER_CREDS:-}" ] && [ -f "$SCREENSCRAPER_CREDS" ]; then
-    log "enriching $platform from ScreenScraper"
+    have_ss=1
+    log "  primary: ScreenScraper (CRC-exact)"
     "$SKYSCRAPER" \
       -p "$platform" \
       -s screenscraper \
@@ -109,16 +110,44 @@ INI
       -d "$platform_cache" \
       -c "$config_ini" \
       -u "$(cat "$SCREENSCRAPER_CREDS")" \
-      --flags unattend,onlymissing
+      -t 1 \
+      --flags unattend,unpack
   fi
+
+  # <source> pass: onlymissing when ScreenScraper ran (gap-fill), full scrape
+  # otherwise (primary). TheGamesDB benefits from a private apikey (-u) to
+  # lift the per-IP 429 that otherwise caps it near zero.
+  src_flags=unattend
+  src_args=()
+  if [ "$have_ss" -eq 1 ]; then
+    src_flags=unattend,onlymissing
+    log "  secondary: $SOURCE (onlymissing)"
+  else
+    log "  primary: $SOURCE (no ScreenScraper creds)"
+  fi
+  if [ "$SOURCE" = "thegamesdb" ] && [ -n "${TGDB_APIKEY_FILE:-}" ] && [ -f "$TGDB_APIKEY_FILE" ]; then
+    src_args=(-u "$(cat "$TGDB_APIKEY_FILE")")
+  fi
+  "$SKYSCRAPER" \
+    -p "$platform" \
+    -s "$SOURCE" \
+    -i "$platform_dir" \
+    -d "$platform_cache" \
+    -c "$config_ini" \
+    "${src_args[@]}" \
+    --flags "$src_flags"
 
   # Phase 2: compose Pegasus frontend files from the cache. -f pegasus selects
   # the frontend; -g sets the metadata.pegasus.txt output dir (the ROM dir, so
   # Pegasus finds it alongside the ROMs); media/ lands at <g>/media by default.
+  # -d MUST point at the same cache phase-1 wrote to -- without it Skyscraper
+  # reads its default ~/.skyscraper/cache/<platform> (empty here) and emits
+  # zero game entries.
   "$SKYSCRAPER" \
     -p "$platform" \
     -f pegasus \
     -i "$platform_dir" \
+    -d "$platform_cache" \
     -g "$platform_dir" \
     -c "$config_ini" \
     --flags unattend

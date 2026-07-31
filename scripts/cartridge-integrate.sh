@@ -27,6 +27,16 @@ if ! command -v "$SKY" >/dev/null 2>&1; then
   exit 1
 fi
 
+# Scraping credentials. On europa's real closure these are activation-time
+# sops secrets (SCREENSCRAPER_CREDS / TGDB_APIKEY_FILE set by rom-scraper.nix
+# to /run/secrets/... paths); for the live scratch run, drop the same values
+# at these pool paths. ScreenScraper is the primary source (CRC-exact for
+# No-Intro zips via --flags unpack); TheGamesDB runs keyed + onlymissing to
+# fill what ScreenScraper missed (it is filename-fuzzy, so it must come second
+# and never overwrite correct checksum matches).
+SSCREDS_FILE="${SCREENSCRAPER_CREDS:-$SCRATCH/screenscraper-creds}"
+TGDBKEY_FILE="${TGDB_APIKEY_FILE:-$SCRATCH/tgdb-apikey}"
+
 # sys | libretro core | Skyscraper platform | collection title
 SYSTEMS=(
   "nes|fceumm|nes|Nintendo Entertainment System"
@@ -99,12 +109,64 @@ scrape_one() {
     # launch value unquoted so the embedded "{file.path}" quotes survive Qt INI
     # parsing verbatim (matches scripts/cartridge-scrape.sh).
     printf '[pegasus]\nlaunch=jupiter-retroarch -L %s "{file.path}"\n' "$core" > "$cfg"
+    # Build per-source credential args. ScreenScraper wants USERID:PASSWORD;
+    # TheGamesDB wants its private apikey (both passed via Skyscraper's -u).
+    local ss_args=() tgdb_args=()
+    if [ -s "$SSCREDS_FILE" ]; then
+      ss_args=(-u "$(cat "$SSCREDS_FILE")")
+    fi
+    if [ -s "$TGDBKEY_FILE" ]; then
+      tgdb_args=(-u "$(cat "$TGDBKEY_FILE")")
+    fi
+
+    # Phase 1a: ScreenScraper primary (CRC-exact). --flags unpack hashes the
+    # inner ROM inside each zip (No-Intro sets ship zipped); -t 1 honours the
+    # free-tier 1-thread cap. Skipped when no creds -> degrades to TGDB below.
+    if [ "${#ss_args[@]}" -gt 0 ]; then
+      log "$sys: scraping ScreenScraper (primary, CRC-exact, platform=$plat)"
+      QT_QPA_PLATFORM=offscreen "$SKY" -p "$plat" -s screenscraper \
+        -i "$CART/$sys" -d "$SKCACHE/$plat" -c "$cfg" \
+        "${ss_args[@]}" -t 1 --flags unattend,unpack
+    else
+      log "$sys: WARN no ScreenScraper creds -> TGDB-only (filename-fuzzy, partial)"
+    fi
+
+    # Phase 1b: TheGamesDB onlymissing (fills games SS didn't cache). Keyed
+    # when available (lifts the per-IP 429). onlymissing guarantees it never
+    # overwrites a correct checksum match with a fuzzy filename guess.
+    log "$sys: scraping TheGamesDB (secondary, onlymissing)"
     QT_QPA_PLATFORM=offscreen "$SKY" -p "$plat" -s thegamesdb \
-      -i "$CART/$sys" -d "$SKCACHE/$plat" -c "$cfg" --flags unattend
+      -i "$CART/$sys" -d "$SKCACHE/$plat" -c "$cfg" \
+      "${tgdb_args[@]}" --flags unattend,onlymissing
+
+    # Phase 2: compose Pegasus metadata + media from the cache. -d MUST point
+    # at the same cache phase-1 wrote to -- without it Skyscraper reads its
+    # default ~/.skyscraper/cache/<plat> (empty here) and emits zero game
+    # entries, which was the original root cause of the bare metadata files.
     QT_QPA_PLATFORM=offscreen "$SKY" -p "$plat" -f pegasus \
-      -i "$CART/$sys" -g "$CART/$sys" -c "$cfg" --flags unattend
-    touch "$STATE/$sys.scraped"
-    log "$sys: ENRICHED — full metadata + art written"
+      -i "$CART/$sys" -d "$SKCACHE/$plat" -g "$CART/$sys" -c "$cfg" --flags unattend
+
+    # Gate ".scraped" on real enrichment: only flag done if game: entries
+    # actually landed. A persistent failure (bad creds / broken source) would
+    # otherwise stall the serial queue forever, so after 3 zero-game attempts
+    # we flag it scraped to advance and log loudly for the operator.
+    local games attempts
+    games=$(grep -c '^game:' "$CART/$sys/metadata.pegasus.txt" 2>/dev/null || echo 0)
+    attempts=$(cat "$STATE/$sys.scrape_attempts" 2>/dev/null || echo 0)
+    if [ "${games:-0}" -gt 0 ]; then
+      touch "$STATE/$sys.scraped"
+      rm -f "$STATE/$sys.scrape_attempts"
+      log "$sys: ENRICHED — $games game entries + media written"
+    else
+      attempts=$((attempts + 1))
+      echo "$attempts" > "$STATE/$sys.scrape_attempts"
+      if [ "$attempts" -ge 3 ]; then
+        touch "$STATE/$sys.scraped"
+        log "$sys: GAVE UP after $attempts passes with 0 game entries — flagged scraped to advance the queue; clear $sys.scraped to retry"
+      else
+        log "$sys: scrape produced 0 game entries (attempt $attempts/3) — will retry next pass"
+      fi
+    fi
     return 0
   done
   return 1
