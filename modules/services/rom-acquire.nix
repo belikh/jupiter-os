@@ -302,8 +302,11 @@ in
   config = lib.mkIf cfg.enable {
     environment.systemPackages = [
       pkgs.aria2
+      pkgs.bzip2
       pkgs.igir
+      pkgs.p7zip
       pkgs.rsync
+      pkgs.unzip
       verifyScript
     ];
 
