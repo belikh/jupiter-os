@@ -76,6 +76,8 @@ let
         dsi)         printf '%s' '.*\.(nds|ids)$' ;;
         gamecube)    printf '%s' '.*\.(iso|gcm|gcz|elf|dol|ciso)$' ;;
         wii)         printf '%s' '.*\.(iso|wbfs|gcz|wad|ciso)$' ;;
+        ps1)         printf '%s' '.*\.(chd|cue|iso|m3u)$' ;;
+        ps2)         printf '%s' '.*\.(chd|iso|gi|m3u)$' ;;
         "3ds")       printf '%s' '.*\.(3ds|cia|cxi|cci|app|3dsx)$' ;;
         new3ds)      printf '%s' '.*\.(3ds|cia|cxi|cci|app|3dsx)$' ;;
         wiiu)        printf '%s' '.*\.(wua|rpx|wud|wux|iso)$' ;;
@@ -241,6 +243,8 @@ in
       default = [
         "gamecube"
         "wii"
+        "ps1"
+        "ps2"
       ];
       description = "Optical-bucket systems to inventory (disc images).";
     };

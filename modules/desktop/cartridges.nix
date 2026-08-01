@@ -142,7 +142,10 @@ let
       core = "desmume2015"; # no DSi mode; boots the NDS-compatible majority
       dataset = "cartridge";
     };
-    # --- optical (large disc images, Non-Redump Nintendo) ---
+    # --- optical (large disc images) ---
+    # Nintendo Non-Redump (GameCube/Wii) + Sony 1G1R (PlayStation/PS2, via the
+    # RetroAchievements one-rom-per-game sets). PS2 (pcsx2) is heavy — marginal
+    # on the HD 520 kiosks; PS1 (beetle-psx) is fine.
     gamecube = {
       collection = "Nintendo GameCube";
       shortname = "gamecube";
@@ -153,6 +156,18 @@ let
       collection = "Nintendo Wii";
       shortname = "wii";
       core = "dolphin";
+      dataset = "optical";
+    };
+    ps1 = {
+      collection = "Sony PlayStation";
+      shortname = "ps1";
+      core = "beetle-psx";
+      dataset = "optical";
+    };
+    ps2 = {
+      collection = "Sony PlayStation 2";
+      shortname = "ps2";
+      core = "pcsx2"; # heavy on HD 520; expect marginal performance
       dataset = "optical";
     };
     # --- modern (large disc/card images) ---

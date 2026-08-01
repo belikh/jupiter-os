@@ -105,6 +105,8 @@ in
         "dsi"
         "gamecube"
         "wii"
+        "ps1"
+        "ps2"
         "3ds"
         "new3ds"
         "wiiu"
@@ -163,6 +165,8 @@ in
         dsi = "cartridge";
         gamecube = "optical";
         wii = "optical";
+        ps1 = "optical";
+        ps2 = "optical";
         "3ds" = "modern";
         new3ds = "modern";
         wiiu = "modern";
