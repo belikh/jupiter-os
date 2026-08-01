@@ -100,6 +100,19 @@ for platform in "${PLATFORMS[@]}"; do
     continue
   fi
 
+  # An empty (ROM-less) dir makes Skyscraper write an empty db.xml, zeroing the
+  # cache. Count actual ROM files by extension — NOT "any file", or a stray
+  # .gitkeep/.dat/dotfile would falsely pass and still zero the cache (the exact
+  # regression this guards against). Recurse (no -maxdepth) so nested layouts
+  # (e.g. Wii U Loadiine <game>/code/*.rpx) count too.
+  rom_count=$(find "$platform_dir" -type f -regextype posix-extended \
+    -iregex '.*\.(zip|iso|chd|gcm|gcz|wbfs|wad|elf|dol|ciso|cue|bin|gi|m3u|3ds|cia|cxi|cci|app|3dsx|wua|rpx|wud|wux|fds|vb|min|mgw|nds|ids|nes|sfc|smc|gb|gbc|gba|z64|n64|v64)$' \
+    | wc -l)
+  if [ "$rom_count" -eq 0 ]; then
+    log "no ROM files in $platform_dir; skipping to protect Skyscraper cache"
+    continue
+  fi
+
   mkdir -p "$platform_cache"
 
   # Per-platform Skyscraper config. The [pegasus] launch line becomes the
