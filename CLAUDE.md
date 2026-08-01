@@ -100,6 +100,18 @@ refs (MQTT, builds) dial it by IP.
   `envsubst` + custom service pipeline.
 - **Git:** always `git push` after committing — the user wants every commit
   pushed to the remote immediately, no holding locally.
+- **Deploying to a host:** ALWAYS `ssh root@<host>` and run
+  `nixos-rebuild switch --flake github:belikh/jupiter-os#<host>` ON the host
+  itself. Root SSH works on every host; `io` has no passwordless sudo, so do
+  NOT use `io`+sudo or `--target-host`/`--use-remote-sudo` from a laptop. The
+  host pulls the flake straight from GitHub (`github:belikh/jupiter-os` tracks
+  `origin/main`), so a change MUST be committed + pushed before it is
+  deployable. Untuned hosts substitute their whole closure from
+  cache.nixos.org (no heavy local compile), which is why on-host `switch` is
+  safe even on the 7.6GB kiosks; microarch-tuned hosts that can't substitute
+  build on callisto/pallene and push to attic first, then `switch` substitutes
+  from there. Verify by observation afterward (read the changed file/state on
+  the host, restart the relevant service), never by assertion.
 
 ## Fable-Domain: Jupiter-OS Infrastructure Workflow
 
@@ -127,6 +139,10 @@ make build-all          # build the 4 kiosk closures (the untuned hosts)
 make test-<host>        # build & boot a host in a QEMU VM
 make boot-smoke-<host>  # headless CI-style boot test
 make fmt                # format all Nix (nixfmt-rfc-style); fmt-check to verify
+
+# Deploy a host (run ON the target host, as root, from the pushed GitHub flake;
+# commit + push BEFORE deploying — the host pulls github:belikh/jupiter-os):
+ssh root@<host> -- nixos-rebuild switch --flake github:belikh/jupiter-os#<host>
 ```
 
 ## Roadmap (bring-up order)
