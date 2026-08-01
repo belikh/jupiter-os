@@ -44,7 +44,8 @@ Seven hosts are wired into the flake today:
   kernel-build fix (see `hosts/europa/configuration.nix`). Also runs the PXE
   server callisto netboots from (ganymede's role in the old design, moved
   here since ganymede isn't registered), the jupiterOS Arcade ROM pipeline,
-  and the Attic binary cache (`attic.jupiter.au`).
+  and the Harmonia binary cache (`:5000`, fed by CI over WG — see
+  `docs/ci-harmonia-push-runbook.md`).
 - **callisto** — netboot compute node (HP EliteDesk 800 G4 DM, i5-8500T
   Coffee Lake 6c/6t, 64GB RAM; the box destroyed NVMe drives repeatedly, so
   root lives on ext4-over-iSCSI instead of local disk), the fleet's shared
@@ -53,8 +54,8 @@ Seven hosts are wired into the flake today:
   (every kiosk's ha-agent publishes here, moved from amalthea 2026-07-24).
   Live at `10.1.1.3` on a kexec-netboot closure europa PXE-serves.
   `jupiter.build.microarch = "skylake"` is committed as a roadmap entry only
-  — pallene must build and push the skylake-tagged closure to attic before
-  callisto's next deploy.
+  — pallene must build and push the skylake-tagged closure to the Harmonia
+  cache before callisto's next deploy.
 - **pallene** — Kamatera VPS build server (persistent, disk-booted). Not a
   fleet member; the raw disk image is built with `nix build .#pallene-raw`,
   compressed, and served to Kamatera's image library via europa's

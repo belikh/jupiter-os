@@ -19,7 +19,7 @@
     ./boot/fallout-splash.nix
     ./core/build-tuning.nix
     ./core/build-machines.nix
-    ./core/attic-substituter.nix
+    ./core/harmonia-substituter.nix
     ./core/branding.nix
     ./storage/zfs-profiles.nix
   ];
