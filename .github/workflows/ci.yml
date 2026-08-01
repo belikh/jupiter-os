@@ -35,6 +35,25 @@ jobs:
         host: [amalthea, metis, adrastea, thebe]
     steps:
       - uses: actions/checkout@v4
+      # Free ~30 GiB before building. Each matrix job realises a full kiosk
+      # closure (desktop + Jovian gaming stack + retroarch cores) and then lays
+      # down a ~15 GiB QEMU disk image that embeds a copy of that store, which
+      # together overflow ubuntu-latest's ~14-22 GiB free (issue #57). MUST run
+      # before install-nix-action. tool-cache is safe here: nothing downstream
+      # in this job uses Node/Go/Python setup actions.
+      - name: Free disk space
+        # Pinned to a SHA: this action has no moving 'v1' major tag (only
+        # v1.0.0..v1.3.1), so '@v1' is an unresolvable ref. No Dependabot in
+        # this repo, so bump the pin manually when re-pinning.
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be  # v1.3.1
+        with:
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+          tool-cache: true
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
