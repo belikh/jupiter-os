@@ -10,79 +10,32 @@ only when the machine that needs them is brought up.
 
 ## Current state
 
-Registered hosts: the 4 TCx Wave dashboard kiosks — `amalthea`
-(jupiter-bedroom, the bootstrap machine and canonical template), `metis`
-(kitchen), `adrastea` (office), `thebe` (robbie-room) — plus `europa` (HPE
-MicroServer Gen10, the ZFS NAS + data hub + PXE server), `callisto` (HP
-EliteDesk 800 G4 DM, fleet's shared Nix remote builder AND MQTT broker,
-i5-8500T Coffee Lake 6c/6t, 64GB RAM, **persistent iSCSI root on europa's
-zvol**), and `pallene` (Kamatera VPS build server — persistent, disk-booted
-from a raw image built via `nix build .#pallene-raw`; not a fleet member). `amalthea`, `thebe`, `europa`, `callisto`, and `metis` are physically
-live today; `adrastea` is registered and CI-green but still on a placeholder
-disk (`REPLACE-ME` diskId) and a placeholder sops age key (not derived from
-its real SSH host key), awaiting physical install (see `.sops.yaml`). All 4
-kiosks share the `modules/desktop/tcxwave-kiosk.nix` profile, each with its
-own hostName/hostId/dashboard URL/disk. `metis` was installed 2026-07-20 with
-a real disk; its `.sops.yaml` recipient was the install-time placeholder age
-key until 2026-07-24 (secrets never decrypted there until then,
-`ha-linux-agent` crash-looping on the missing MQTT password file) — fixed by
-swapping in its real key and running `sops updatekeys`. `callisto` is live at
-`10.1.1.3` with a persistent ext4 root over iSCSI (on europa's zvol, see
-`hosts/callisto/configuration.nix`); sops decrypts fine at activation —
-confirmed live 2026-07-24 deploying the MQTT broker move. Its
-`jupiter.build.microarch = "skylake"` remains a **roadmap entry only** —
-pallene must build and push the skylake-tagged closure to attic before
-callisto's next `nixos-rebuild`. **Note:** `.sops.yaml` also contains age
-keys for `ganymede` and `himalia` (roadmap hosts), but they are **not yet
-registered in `flake.nix`**.
+> ⚠️ **Staleness:** *git-committed* config, not live hosts — verify liveness
+> empirically (ping/ssh); >~30 days may be stale. History: `docs/host-bringup-history.md`.
 
-**callisto as MQTT broker:** every kiosk's ha-agent, plus the external Home
-Assistant instance, publishes to mosquitto on callisto
-(`modules/services/mqtt.nix`, wired in `hosts/callisto/configuration.nix`).
-Moved here from amalthea 2026-07-24 so the broker isn't coupled to a kiosk's
-impermanent/appliance lifecycle. Kiosks address it by the static
-`10.1.1.3` reservation (`modules/desktop/tcxwave-kiosk.nix`'s `mqttHost`
-default) since callisto has no DNS/mDNS resolution yet — same reason
-`jupiter.core.buildMachines` also dials it by IP.
+### STATUS
 
-**callisto as build server:** every other host delegates eligible builds to
-it via `jupiter.core.buildMachines` (`modules/core/build-machines.nix`,
-default-on) — it advertises `gccarch-btver2`/`gccarch-skylake` so it can
-build europa's and any future tuned-kiosk closures without being tuned
-itself. Its daemon is tuned `cores=6 max-jobs=1` (the opposite of pallene's
-`cores=1 max-jobs=auto`) — callisto's workload is incremental shared builds
-(low concurrency, larger per-package work) rather than pallene's
-full-closure rebuilds (many small packages in parallel). PXE serving for
-callisto's netboot lives on europa (`modules/network/pxe-server.nix`, wired
-via `flake.nix`'s `pxeModule`) — ganymede's role in the old design, moved
-here since ganymede isn't registered yet, same deviation as
-`cloudflareTunnel`.
+| Host | Role / IP | State | Verified |
+|---|---|---|---|
+| `amalthea` | kiosk — bedroom (bootstrap template) | ✅ live | — |
+| `metis` | kiosk — kitchen | ✅ live | 2026-07-24 |
+| `thebe` | kiosk — robbie-room | ✅ live | — |
+| `adrastea` | kiosk — office | registered/CI-green; placeholder disk (`REPLACE-ME`) + age key, awaiting install | — |
+| `europa` | `10.1.1.2` — ZFS NAS + data hub + PXE | ✅ live, **untuned** (btver2 rolled back) | — |
+| `callisto` | `10.1.1.3` — shared builder + MQTT broker | ✅ live; iSCSI root on europa zvol; `skylake` microarch roadmap-only | 2026-07-24 |
+| `pallene` | Kamatera VPS build server (not fleet) | persistent, disk-booted via `.#pallene-raw` | — |
 
-**europa:** live at `10.1.1.2` running the **untuned** closure from
-cache.nixos.org. The `btver2` tuning (`jupiter.build.microarch = "btver2"`)
-was rolled back (`e10a46a`) — ZFS 2.4.3 has a kernel build issue with btver2
-on nixpkgs 26.11, so it was disabled to unblock the arcade bring-up; the line
-sits commented-out with a TODO in `hosts/europa/configuration.nix`. Re-enable
-once the ZFS/nixpkgs compat clears. europa's Attic (`attic.jupiter.au` /
-`neptune.jupiter.au:8080` port-forward) and substituter wiring stay in place
-for when btver2 comes back online.
+`.sops.yaml` also holds `ganymede`/`himalia` age keys (roadmap, not in
+`flake.nix`). Kiosks share `modules/desktop/tcxwave-kiosk.nix` (per-host
+hostName/hostId/dashboard URL/disk); callisto has no DNS/MDNS, so cross-host
+refs (MQTT, builds) dial it by IP.
 
-**callisto bring-up:** live at `10.1.1.3` on a persistent iSCSI-root closure
-(nixpkgs `26.11.20260616.567a49d`, HP EliteDesk 800 G4 DM, i5-8500T
-Coffee Lake 6c/6t, 64GB RAM, ext4 root on europa's zvol). Tuning for its
-shared-builder workload (`cores=6 max-jobs=1`) is in git; the running closure
-is stale relative to HEAD and needs a deploy to take effect. Microarch roadmap
-entry (`jupiter.build.microarch = "skylake"`) is committed but NOT deployed —
-pallene must build and push the skylake-tagged closure to attic first (same
-sequence europa's btver2 closure followed).
+### TOPOLOGY — cross-host wiring
 
-Everything must keep building from cache.nixos.org with `nix flake check`.
-Note: when a host sets `jupiter.build.microarch`, its closure's derivations
-carry `requiredSystemFeatures=["gccarch-<arch>"]` and can't build on a dev
-machine without the matching system-feature + the private Attic substituter —
-but `nix flake check` is eval-only and never realizes derivations, so
-`make check` (which runs it `--no-build`) still passes fleet-wide and is the
-fast local iteration path.
+- **MQTT → callisto `10.1.1.3`** (`modules/services/mqtt.nix`): kiosk ha-agents + Home Assistant → mosquitto (static `mqttHost`).
+- **Build delegation → callisto** (`modules/core/build-machines.nix`, default-on): advertises `gccarch-btver2`/`skylake` to build *others'* tuned closures while its own stays untuned; `cores=6 max-jobs=1`. Pallene inverts it (`cores=1 max-jobs=auto`) and pushes tuned closures to attic.
+- **PXE netboot → europa** (`modules/network/pxe-server.nix` via `flake.nix` `pxeModule`): serves callisto's netboot — ganymede's old role (same deviation as `cloudflareTunnel`).
+- **Attic → europa**: `attic.jupiter.au` / `neptune.jupiter.au:8080`.
 
 ## Layout
 
@@ -126,6 +79,12 @@ fast local iteration path.
   - A new flake input must be justified by a registered host that uses it.
   - No cross-host closure wiring (PXE, backup-hub scans) until both ends of
     the wire are registered and building.
+- Everything must keep building from cache.nixos.org (`nix flake check`). A
+  host that sets `jupiter.build.microarch` emits derivations tagged with
+  `requiredSystemFeatures=["gccarch-<arch>"]` — those need the matching
+  system-feature + the private Attic substituter to actually build, but `nix
+  flake check` is eval-only and never realizes derivations, so `make check`
+  (it runs `--no-build`) stays green fleet-wide and is the fast local path.
 - sops secrets are read at **activation**, not build time — `nix build`, CI,
   and `nix flake check` work without the age key.
 - **Find the accepted "modern method" first.** Before wiring up any NixOS
