@@ -31,6 +31,20 @@ let
   scrapeScript = pkgs.writeShellScriptBin "jupiter-cartridge-scrape" (
     builtins.readFile ../../scripts/cartridge-scrape.sh
   );
+
+  # Bucket -> ROM-tree root, so each platform scrapes from the dataset its ROMs
+  # were promoted into (mirrors rom-acquire.nix's bucketDir). cartridge-scrape.sh
+  # takes a single <romRoot> per invocation, so the service below calls it once
+  # per bucket with that bucket's root + its platforms.
+  bucketRoot = {
+    cartridge = cfg.romRoot;
+    optical = cfg.opticalRoot;
+    modern = cfg.modernRoot;
+  };
+  datasetFor = platform: cfg.platformDatasets.${platform} or "cartridge";
+  # Distinct buckets among the enabled platforms, in stable order.
+  scrapeBuckets = lib.unique (map datasetFor cfg.platforms);
+  platformsInBucket = bucket: lib.filter (p: datasetFor p == bucket) cfg.platforms;
 in
 {
   options.jupiter.services.romScraper = {
@@ -43,10 +57,25 @@ in
       type = lib.types.str;
       default = "/tank/archive/retro/games/cartridge";
       description = ''
-        Root of the cartridge ROM tree. Each platform lives in its own
-        subdirectory (<romRoot>/<platform>/) holding the ROMs; the scraper
-        writes metadata.pegasus.txt and a media/ sibling into each.
+        Root of the cartridge-bucket ROM tree. Each cartridge platform lives in
+        its own subdirectory (<romRoot>/<platform>/) holding the ROMs; the
+        scraper writes metadata.pegasus.txt and a media/ sibling into each. See
+        <option>opticalRoot</option> / <option>modernRoot</option> for the other
+        two buckets, and <option>platformDatasets</option> for which bucket a
+        given platform is scraped from.
       '';
+    };
+
+    opticalRoot = lib.mkOption {
+      type = lib.types.str;
+      default = "/tank/archive/retro/games/optical";
+      description = "Root of the optical-bucket ROM tree (GameCube/Wii).";
+    };
+
+    modernRoot = lib.mkOption {
+      type = lib.types.str;
+      default = "/tank/archive/retro/games/modern";
+      description = "Root of the modern-bucket ROM tree (3DS/Wii U).";
     };
 
     cacheDir = lib.mkOption {
@@ -68,10 +97,28 @@ in
         "gbc"
         "gba"
         "n64"
+        "fds"
+        "virtualboy"
+        "pokemonmini"
+        "gameandwatch"
+        "nds"
+        "dsi"
+        "gamecube"
+        "wii"
+        "3ds"
+        "new3ds"
+        "wiiu"
       ];
       description = ''
-        Skyscraper platform names to scrape. Defaults to the six cartridge
-        systems the kiosks expose.
+        Skyscraper platform names to scrape (one per system subdir under
+        <romRoot>). Defaults to every console system the kiosks expose. These
+        are passed straight to `Skyscraper -p <platform>`, so each name must be
+        a platform Skyscraper recognises; an unrecognised alias is logged and
+        skipped by cartridge-scrape.sh (scraping is best-effort — the kiosk
+        launch wiring works regardless of whether metadata was generated).
+        Verify Skyscraper aliases for the obscure platforms (fds, virtualboy,
+        pokemonmini, gameandwatch, dsi, new3ds, wiiu) on first run and adjust
+        here if a name differs.
       '';
     };
 
@@ -90,6 +137,44 @@ in
         `thegamesdb` (no credentials). Use `screenscraper` for the
         ScreenScraper source (credentials via the optional sops secret; see
         SCREENSCRAPER_CREDS below).
+      '';
+    };
+
+    platformDatasets = lib.mkOption {
+      type = lib.types.attrsOf (
+        lib.types.enum [
+          "cartridge"
+          "optical"
+          "modern"
+        ]
+      );
+      default = {
+        nes = "cartridge";
+        snes = "cartridge";
+        gb = "cartridge";
+        gbc = "cartridge";
+        gba = "cartridge";
+        n64 = "cartridge";
+        fds = "cartridge";
+        virtualboy = "cartridge";
+        pokemonmini = "cartridge";
+        gameandwatch = "cartridge";
+        nds = "cartridge";
+        dsi = "cartridge";
+        gamecube = "optical";
+        wii = "optical";
+        "3ds" = "modern";
+        new3ds = "modern";
+        wiiu = "modern";
+      };
+      description = ''
+        Which dataset (cartridge/optical/modern) each platform's ROMs live on.
+        The scraper resolves each platform's ROM dir as
+        `<root of its bucket>/<platform>/`, so optical platforms scrape from
+        <option>opticalRoot</option> and modern from <option>modernRoot</option>
+        (mirroring the per-bucket verify routing in rom-acquire.nix). Keep in
+        sync with rom-acquire.nix's per-system `bucket` and cartridges.nix's
+        per-system `dataset`.
       '';
     };
 
@@ -121,10 +206,14 @@ in
         sops.secrets.tgdb_apikey = { };
 
         systemd.services.jupiter-rom-scrape = {
-          description = "Scrape cartridge ROMs into Pegasus metadata with Skyscraper";
+          description = "Scrape console ROMs into Pegasus metadata with Skyscraper";
           serviceConfig.Type = "oneshot";
-          # Never run before the pool/dataset holding the ROM tree is mounted.
-          unitConfig.RequiresMountsFor = [ cfg.romRoot ];
+          # Never run before every dataset holding a scraped platform is mounted.
+          unitConfig.RequiresMountsFor = [
+            cfg.romRoot
+            cfg.opticalRoot
+            cfg.modernRoot
+          ];
           environment = {
             # Skyscraper is Qt6; without this the headless service cannot
             # construct a platform offscreen surface and aborts.
@@ -136,12 +225,22 @@ in
             SCREENSCRAPER_CREDS = "${config.sops.secrets.screenscraper_creds.path}";
             TGDB_APIKEY_FILE = "${config.sops.secrets.tgdb_apikey.path}";
           };
+          # cartridge-scrape.sh takes a single <romRoot> per invocation, so call
+          # it once per bucket with that bucket's root + its platforms. An empty
+          # bucket (no platforms) is skipped; a failed bucket doesn't skip the
+          # rest (matching cartridge-scrape.sh's own per-platform resilience).
           script = ''
-            exec ${lib.getExe scrapeScript} \
-              '${cfg.romRoot}' \
-              '${cfg.cacheDir}' \
-              '${cfg.source}' \
-              ${lib.concatStringsSep " " cfg.platforms}
+            set -uo pipefail
+            rc=0
+            ${lib.concatMapStringsSep "\n" (bucket: ''
+              echo "jupiter-rom-scrape: bucket '${bucket}' -> ${bucketRoot.${bucket}}"
+              ${lib.getExe scrapeScript} \
+                '${bucketRoot.${bucket}}' \
+                '${cfg.cacheDir}' \
+                '${cfg.source}' \
+                ${lib.concatStringsSep " " (platformsInBucket bucket)} || rc=1
+            '') scrapeBuckets}
+            exit "$rc"
           '';
         };
 

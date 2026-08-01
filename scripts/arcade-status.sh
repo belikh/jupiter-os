@@ -47,7 +47,22 @@ table=$(
       end;
 
     (["SYSTEM", "ROMS", "SIZE", "ART%"] | @tsv),
+    (["— cartridge —", "", "", ""] | @tsv),
     (.cartridge // {} | to_entries[]
+      | [ .key,
+          (.value.count | tostring),
+          ((.value.size_bytes // 0) | human),
+          "—"
+        ] | @tsv),
+    (["— optical —", "", "", ""] | @tsv),
+    (.optical // {} | to_entries[]
+      | [ .key,
+          (.value.count | tostring),
+          ((.value.size_bytes // 0) | human),
+          "—"
+        ] | @tsv),
+    (["— modern —", "", "", ""] | @tsv),
+    (.modern // {} | to_entries[]
       | [ .key,
           (.value.count | tostring),
           ((.value.size_bytes // 0) | human),

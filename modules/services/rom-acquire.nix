@@ -5,7 +5,7 @@
   ...
 }:
 
-# No-Intro Nintendo cartridge ROM acquisition + verification (europa-side).
+# No-Intro Nintendo console ROM acquisition + verification (europa-side).
 #
 # Declarifies the old transient `ninty-rom-dl` unit that ran aria2 by hand
 # against the 17 Minerva/Myrient No-Intro Nintendo torrents. Two manual
@@ -29,38 +29,122 @@
 let
   cfg = config.jupiter.services.romAcquire;
 
-  # Canonical Minerva/Myrient No-Intro Nintendo cartridge torrent basenames
-  # (the leaf name under Myrient's No-Intro/Nintendo/ tree, prefixed with the
-  # Minerva naming scheme). NES is the Headerless set per the fleet choice; the
-  # rest follow the standard Myrient No-Intro Nintendo leaf names.
+  # Canonical Minerva/Myrient No-Intro Nintendo torrent basenames (the leaf name
+  # under Myrient's tree, prefixed with the Minerva naming scheme). NES is the
+  # Headerless set per the fleet choice; the rest follow the standard Myrient
+  # leaf names. Cartridge-era systems sit under "No-Intro - Nintendo -"; optical
+  # (GameCube/Wii) and Wii U sit under "No-Intro - Non-Redump - Nintendo -".
+  # `bucket` routes the verify oneshot's promotion destination: cartridge-bucket
+  # ROMs go to games/cartridge/<sys>, optical to games/optical/<sys>, modern to
+  # games/modern/<sys> — matching the ZFS datasets in modules/storage/zfs-nas.nix
+  # and the kiosk-side mounts in modules/desktop/cartridges.nix. `core` is
+  # informational (the kiosk-side cartridges.nix systems map is the source of
+  # truth for which libretro core each system uses); null for Wii U (Cemu
+  # standalone, no libretro core).
   defaultSystems = {
+    # --- cartridge bucket (small leaf ROMs, 64K dataset) ---
     nes = {
       torrent = "Minerva_Myrient - No-Intro - Nintendo - Nintendo Entertainment System (Headerless).torrent";
       core = "fceumm";
+      bucket = "cartridge";
     };
     snes = {
       torrent = "Minerva_Myrient - No-Intro - Nintendo - Super Nintendo Entertainment System.torrent";
       core = "snes9x";
+      bucket = "cartridge";
     };
     gb = {
       torrent = "Minerva_Myrient - No-Intro - Nintendo - Game Boy.torrent";
       core = "gambatte";
+      bucket = "cartridge";
     };
     gbc = {
       torrent = "Minerva_Myrient - No-Intro - Nintendo - Game Boy Color.torrent";
       core = "gambatte";
+      bucket = "cartridge";
     };
     gba = {
       torrent = "Minerva_Myrient - No-Intro - Nintendo - Game Boy Advance.torrent";
       core = "mgba";
+      bucket = "cartridge";
     };
     n64 = {
       torrent = "Minerva_Myrient - No-Intro - Nintendo - Nintendo 64 (BigEndian).torrent";
       core = "mupen64plus";
+      bucket = "cartridge";
+    };
+    fds = {
+      torrent = "Minerva_Myrient - No-Intro - Nintendo - Family Computer Disk System (FDS).torrent";
+      core = "fceumm"; # needs disksys.rom BIOS on the kiosk (see cartridges.nix)
+      bucket = "cartridge";
+    };
+    virtualboy = {
+      torrent = "Minerva_Myrient - No-Intro - Nintendo - Virtual Boy.torrent";
+      core = "beetle-vb";
+      bucket = "cartridge";
+    };
+    pokemonmini = {
+      torrent = "Minerva_Myrient - No-Intro - Nintendo - Pokemon Mini.torrent";
+      core = "pokemini";
+      bucket = "cartridge";
+    };
+    gameandwatch = {
+      torrent = "Minerva_Myrient - No-Intro - Nintendo - Game & Watch.torrent";
+      core = "gw";
+      bucket = "cartridge";
+    };
+    nds = {
+      torrent = "Minerva_Myrient - No-Intro - Nintendo - Nintendo DS (Decrypted).torrent";
+      core = "desmume2015";
+      bucket = "cartridge";
+    };
+    dsi = {
+      torrent = "Minerva_Myrient - No-Intro - Nintendo - Nintendo DSi (Decrypted).torrent";
+      core = "desmume2015"; # no DSi mode; boots the NDS-compatible majority
+      bucket = "cartridge";
+    };
+    # --- optical bucket (large disc images, 1M dataset) ---
+    gamecube = {
+      torrent = "Minerva_Myrient - No-Intro - Non-Redump - Nintendo - Nintendo GameCube.torrent";
+      core = "dolphin";
+      bucket = "optical";
+    };
+    wii = {
+      torrent = "Minerva_Myrient - No-Intro - Non-Redump - Nintendo - Wii.torrent";
+      core = "dolphin";
+      bucket = "optical";
+    };
+    # --- modern bucket (large disc/card images, 1M dataset) ---
+    "3ds" = {
+      torrent = "Minerva_Myrient - No-Intro - Nintendo - Nintendo 3DS (Decrypted).torrent";
+      core = "citra"; # libretro citra core is unmaintained but builds here
+      bucket = "modern";
+    };
+    new3ds = {
+      torrent = "Minerva_Myrient - No-Intro - Nintendo - New Nintendo 3DS (Decrypted).torrent";
+      core = "citra";
+      bucket = "modern";
+    };
+    wiiu = {
+      torrent = "Minerva_Myrient - No-Intro - Non-Redump - Nintendo - Wii U.torrent";
+      core = null; # Cemu standalone, no libretro core
+      bucket = "modern";
     };
   };
 
   systemKeys = lib.attrNames cfg.systems;
+
+  # Bucket -> destination tree root on the pool. The verify oneshot promotes
+  # each system's staged ROMs into <root>/<sys>/, so the bucket a system is
+  # assigned decides which ZFS dataset (and thus NFS export + recordsize) it
+  # lands on. Matches the kiosk-side per-dataset mounts in cartridges.nix.
+  bucketDir = {
+    cartridge = cfg.cartridgeDir;
+    optical = cfg.opticalDir;
+    modern = cfg.modernDir;
+  };
+  usedBuckets = lib.unique (map (name: cfg.systems.${name}.bucket) systemKeys);
+  systemsInBucket = bucket: lib.filter (name: cfg.systems.${name}.bucket == bucket) systemKeys;
 
   # Inlined from scripts/ (single source of truth) exactly the way exodos/
   # romScraper wrap their driver scripts, so the store path carries the
@@ -76,18 +160,21 @@ let
     cfg.torrentDir
     cfg.datDir
     cfg.cartridgeDir
+    cfg.opticalDir
+    cfg.modernDir
     cfg.scratchDir
   ];
 in
 {
   options.jupiter.services.romAcquire = {
     enable = lib.mkEnableOption ''
-      No-Intro Nintendo cartridge ROM acquisition + verification: an aria2
+      No-Intro Nintendo console ROM acquisition + verification: an aria2
       oneshot that fetches each declared system's Minerva/Myrient torrent into
       its own incoming subdir, and an igir-backed verify oneshot that
       hash-checks each staged set against its No-Intro DAT, quarantines
-      failures, and promotes the verified ROMs into the cartridge games tree.
-      Acquisition is manual (no timer) - start the units explicitly
+      failures, and promotes the verified ROMs into the matching dataset tree
+      (cartridge/optical/modern). Acquisition is manual (no timer) - start the
+      units explicitly
     '';
 
     incomingDir = lib.mkOption {
@@ -113,8 +200,27 @@ in
       type = lib.types.str;
       default = "/tank/archive/retro/games/cartridge";
       description = ''
-        Verified-playable destination tree: verified ROMs for a system land in
-        <dir>/<system>/.
+        Verified-playable destination tree for the cartridge bucket: verified
+        ROMs for a system land in <dir>/<system>/. Each system's `bucket`
+        decides which destination root it promotes into.
+      '';
+    };
+
+    opticalDir = lib.mkOption {
+      type = lib.types.str;
+      default = "/tank/archive/retro/games/optical";
+      description = ''
+        Verified-playable destination tree for the optical bucket (GameCube/Wii
+        disc images): verified ROMs land in <dir>/<system>/.
+      '';
+    };
+
+    modernDir = lib.mkOption {
+      type = lib.types.str;
+      default = "/tank/archive/retro/games/modern";
+      description = ''
+        Verified-playable destination tree for the modern bucket (3DS/Wii U):
+        verified ROMs land in <dir>/<system>/.
       '';
     };
 
@@ -149,11 +255,30 @@ in
               '';
             };
             core = lib.mkOption {
-              type = lib.types.str;
+              type = lib.types.nullOr lib.types.str;
+              default = null;
               description = ''
                 libretro/RetroArch core identifier for this system
-                (informational; consumed by a future frontend module). Defaults
-                follow the conventional libretro core per system.
+                (informational; the kiosk-side modules/desktop/cartridges.nix
+                systems map is the source of truth for cores). Defaults follow
+                the conventional libretro core per system. null for systems with
+                no libretro core (Wii U -> standalone Cemu).
+              '';
+            };
+            bucket = lib.mkOption {
+              type = lib.types.enum [
+                "cartridge"
+                "optical"
+                "modern"
+              ];
+              default = "cartridge";
+              description = ''
+                Which destination tree this system promotes into on verify:
+                cartridge (<option>cartridgeDir</option>), optical
+                (<option>opticalDir</option>), or modern
+                (<option>modernDir</option>). Matches the ZFS datasets in
+                modules/storage/zfs-nas.nix and the kiosk-side per-dataset NFS
+                mounts in modules/desktop/cartridges.nix.
               '';
             };
           };
@@ -161,10 +286,15 @@ in
       );
       default = defaultSystems;
       description = ''
-        Cartridge systems to acquire + verify. Keys are short system names used
-        for the incoming/cartridge/DAT subdirs; each value names its torrent
-        basename and libretro core. Defaults to the six cartridge systems
-        (nes, snes, gb, gbc, gba, n64).
+        Console systems to acquire + verify. Keys are short system names used
+        for the incoming/destination/DAT subdirs; each value names its torrent
+        basename, libretro core (informational), and the bucket whose
+        destination tree its verified ROMs promote into. Defaults to the full
+        No-Intro Nintendo console set the fleet stages: the six original
+        cartridge systems (nes, snes, gb, gbc, gba, n64), the cartridge-era
+        extras (fds, virtualboy, pokemonmini, gameandwatch, nds, dsi), the
+        optical disc systems (gamecube, wii), and the modern systems
+        (3ds, new3ds, wiiu).
       '';
     };
   };
@@ -178,7 +308,7 @@ in
     ];
 
     systemd.services.jupiter-rom-acquire = {
-      description = "No-Intro Nintendo cartridge ROM acquisition (aria2)";
+      description = "No-Intro Nintendo console ROM acquisition (aria2)";
       serviceConfig.Type = "oneshot";
       unitConfig.RequiresMountsFor = poolPaths;
       environment = {
@@ -225,21 +355,32 @@ in
     };
 
     systemd.services.jupiter-rom-verify = {
-      description = "No-Intro Nintendo cartridge ROM verification + promotion (igir)";
+      description = "No-Intro Nintendo console ROM verification + promotion (igir)";
       serviceConfig.Type = "oneshot";
       unitConfig.RequiresMountsFor = poolPaths;
       # Both pool paths and the igir/rsync store paths are handed to the script
-      # explicitly so it is robust to a sanitized PATH.
+      # explicitly so it is robust to a sanitized PATH. CARTRIDGE_DIR is set
+      # per-bucket in the script (not here) so each bucket promotes into its own
+      # destination tree (cartridge/optical/modern).
       environment = {
         INCOMING_DIR = cfg.incomingDir;
         DAT_DIR = cfg.datDir;
-        CARTRIDGE_DIR = cfg.cartridgeDir;
         SCRATCH_DIR = cfg.scratchDir;
         IGIR = lib.getExe pkgs.igir;
         RSYNC = lib.getExe pkgs.rsync;
       };
       script = ''
-        exec ${lib.getExe verifyScript} ${lib.concatStringsSep " " systemKeys}
+        set -uo pipefail
+        rc=0
+        ${lib.concatMapStringsSep "\n" (bucket: ''
+          # cartridge-verify.sh reads CARTRIDGE_DIR from its env to pick the
+          # destination root for this bucket's systems. Run each bucket in turn
+          # so an empty bucket (nothing staged) is a no-op and a failure in one
+          # bucket does not skip the rest (matching the script's own resilience).
+          echo "jupiter-rom-verify: bucket '${bucket}' -> ${bucketDir.${bucket}}"
+          CARTRIDGE_DIR="${bucketDir.${bucket}}" ${lib.getExe verifyScript} ${lib.concatStringsSep " " (systemsInBucket bucket)} || rc=1
+        '') usedBuckets}
+        exit "$rc"
       '';
     };
   };

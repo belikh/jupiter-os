@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# cartridge-scrape: headless Skyscraper driver for the cartridge ROM
-# collections on europa. Emits Pegasus frontend metadata (metadata.pegasus.txt
-# + media/) for each cartridge system, with launch lines that hand off to the
-# kiosk-side `jupiter-retroarch` wrapper (see modules/desktop/cartridges.nix):
+# cartridge-scrape: headless Skyscraper driver for the console ROM collections
+# on europa. Emits Pegasus frontend metadata (metadata.pegasus.txt + media/)
+# for each console system, with launch lines that hand off to the kiosk-side
+# launch wrappers (see modules/desktop/cartridges.nix): `jupiter-retroarch
+# -L <core>` for the 16 libretro systems, `jupiter-cemu` for Wii U:
 #
 #     launch: jupiter-retroarch -L <core> "{file.path}"
 #
@@ -53,23 +54,38 @@ PLATFORMS=("$@")
 
 SKYSCRAPER=${SKYSCRAPER:-Skyscraper}
 
-# system -> libretro core (the value passed to `jupiter-retroarch -L`).
-# Keep in sync with modules/desktop/cartridges.nix's core wiring.
-declare -A CORES=(
-  [nes]=fceumm
-  [snes]=snes9x
-  [gb]=gambatte
-  [gbc]=gambatte
-  [gba]=mgba
-  [n64]=mupen64plus
+# system -> launch command prefix (the Pegasus `launch:` line written into each
+# collection's metadata.pegasus.txt). 16 of 17 systems use the uniform
+# `jupiter-retroarch -L <core>` path; Wii U has no libretro core, so it launches
+# through the standalone `jupiter-cemu` wrapper instead. Keep in sync with
+# modules/desktop/cartridges.nix's systems catalogue (the source of truth for
+# cores + the cemu wrapper).
+declare -A LAUNCH=(
+  [nes]=jupiter-retroarch\ -L\ fceumm
+  [snes]=jupiter-retroarch\ -L\ snes9x
+  [gb]=jupiter-retroarch\ -L\ gambatte
+  [gbc]=jupiter-retroarch\ -L\ gambatte
+  [gba]=jupiter-retroarch\ -L\ mgba
+  [n64]=jupiter-retroarch\ -L\ mupen64plus
+  [fds]=jupiter-retroarch\ -L\ fceumm
+  [virtualboy]=jupiter-retroarch\ -L\ beetle-vb
+  [pokemonmini]=jupiter-retroarch\ -L\ pokemini
+  [gameandwatch]=jupiter-retroarch\ -L\ gw
+  [nds]=jupiter-retroarch\ -L\ desmume2015
+  [dsi]=jupiter-retroarch\ -L\ desmume2015
+  [gamecube]=jupiter-retroarch\ -L\ dolphin
+  [wii]=jupiter-retroarch\ -L\ dolphin
+  ["3ds"]=jupiter-retroarch\ -L\ citra
+  [new3ds]=jupiter-retroarch\ -L\ citra
+  [wiiu]=jupiter-cemu
 )
 
 log() { printf '[cartridge-scrape] %s\n' "$*" >&2; }
 
 for platform in "${PLATFORMS[@]}"; do
-  core=${CORES[$platform]:-}
-  if [ -z "$core" ]; then
-    log "no core mapped for platform '$platform'; skipping"
+  launch=${LAUNCH[$platform]:-}
+  if [ -z "$launch" ]; then
+    log "no launch mapped for platform '$platform'; skipping"
     continue
   fi
 
@@ -93,10 +109,10 @@ for platform in "${PLATFORMS[@]}"; do
   # "{file.path}".
   cat > "$config_ini" <<INI
 [pegasus]
-launch=jupiter-retroarch -L ${core} \"{file.path}\"
+launch=${launch} \"{file.path}\"
 INI
 
-  log "scraping $platform (core=$core) -> $platform_dir"
+  log "scraping $platform (launch=${launch}) -> $platform_dir"
 
   # Phase 1: gather resources into the cache. ScreenScraper is primary when
   # creds are present (CRC-exact for No-Intro zips via --flags unpack, -t 1 for

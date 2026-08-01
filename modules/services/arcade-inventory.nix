@@ -1,9 +1,10 @@
 # Fleet arcade inventory — europa-side snapshot of the retro game library.
 #
 # Not an always-on daemon. A 15-minute systemd timer fires a oneshot that
-# walks the cartridge tree (per-system ROM counts + du -sb), the three eXo
-# curated collections (game vs. box_front line coverage in each
-# metadata.pegasus.txt), and the current rom-acquire unit state, then writes
+# walks the console trees across all three datasets (cartridge/optical/modern:
+# per-system ROM counts + du -sb), the three eXo curated collections (game vs.
+# box_front line coverage in each metadata.pegasus.txt), and the current
+# rom-acquire unit state, then writes
 # a single JSON document to the retro state dir. kiosks and operators read
 # that file; nothing polls europa.
 #
@@ -32,8 +33,10 @@ let
 
     STATE_FILE="${cfg.stateFile}"
     CARTRIDGE_ROOT="${cfg.cartridgeRoot}"
+    OPTICAL_ROOT="${cfg.opticalRoot}"
+    MODERN_ROOT="${cfg.modernRoot}"
     EXO_ROOT="${cfg.exoRoot}"
-    PUBLISH_MQTT=${lib.boolToString cfg.publishMqtt}
+    PUBLISH_MQTT=${if cfg.publishMqtt then "1" else "0"}
     MQTT_HOST="${cfg.mqttHost}"
     # MQTT_PASSWORD_FILE is handed in via the service environment (conditionally,
     # only when publishMqtt is on) so this script never forces a reference to a
@@ -41,6 +44,8 @@ let
     : "''${MQTT_PASSWORD_FILE:=}"
     ROM_ACQUIRE_UNIT="jupiter-rom-acquire.service"
     SYSTEMS=(${lib.escapeShellArgs cfg.cartridgeSystems})
+    OPT_SYSTEMS=(${lib.escapeShellArgs cfg.opticalSystems})
+    MOD_SYSTEMS=(${lib.escapeShellArgs cfg.modernSystems})
     EXO_COLLECTIONS=(dos win3x win9x)
 
     JQ="${pkgs.jq}/bin/jq"
@@ -54,34 +59,55 @@ let
 
     mkdir -p "$(dirname "''${STATE_FILE}")"
 
-    # Full-path posix-extended regex for each known cartridge system.
+    # Full-path posix-extended regex for each known console system.
     pattern_for() {
       case "''$1" in
-        nes)  printf '%s' '.*\.nes$' ;;
-        snes) printf '%s' '.*\.(sfc|smc)$' ;;
-        gb)   printf '%s' '.*\.gb$' ;;
-        gbc)  printf '%s' '.*\.gbc$' ;;
-        gba)  printf '%s' '.*\.gba$' ;;
-        n64)  printf '%s' '.*\.(z64|n64|v64)$' ;;
-        *)    : ;; # unknown system → empty pattern, skipped below
+        nes)         printf '%s' '.*\.nes$' ;;
+        snes)        printf '%s' '.*\.(sfc|smc)$' ;;
+        gb)          printf '%s' '.*\.gb$' ;;
+        gbc)         printf '%s' '.*\.gbc$' ;;
+        gba)         printf '%s' '.*\.gba$' ;;
+        n64)         printf '%s' '.*\.(z64|n64|v64)$' ;;
+        fds)         printf '%s' '.*\.fds$' ;;
+        virtualboy)  printf '%s' '.*\.vb$' ;;
+        pokemonmini) printf '%s' '.*\.min$' ;;
+        gameandwatch)printf '%s' '.*\.mgw$' ;;
+        nds)         printf '%s' '.*\.(nds|ids)$' ;;
+        dsi)         printf '%s' '.*\.(nds|ids)$' ;;
+        gamecube)    printf '%s' '.*\.(iso|gcm|gcz|elf|dol|ciso)$' ;;
+        wii)         printf '%s' '.*\.(iso|wbfs|gcz|wad|ciso)$' ;;
+        "3ds")       printf '%s' '.*\.(3ds|cia|cxi|cci|app|3dsx)$' ;;
+        new3ds)      printf '%s' '.*\.(3ds|cia|cxi|cci|app|3dsx)$' ;;
+        wiiu)        printf '%s' '.*\.(wua|rpx|wud|wux|iso)$' ;;
+        *)           : ;; # unknown system → empty pattern, skipped below
       esac
     }
 
-    # --- cartridge systems: per-system ROM count + du -sb ---
-    cart='{}'
-    for sys in "''${SYSTEMS[@]}"; do
-      dir="''${CARTRIDGE_ROOT}/''${sys}"
-      pat="''$(pattern_for "''${sys}")"
-      count=0
-      size=0
-      if [ -d "''${dir}" ] && [ -n "''${pat}" ]; then
-        count=$("''${FIND}" "''${dir}" -type f -regextype posix-extended -iregex "''${pat}" 2>/dev/null | "''${WC}" -l || echo 0)
-        size=$("''${DU}" -sb "''${dir}" 2>/dev/null | "''${CUT}" -f1 || echo 0)
-      fi
-      cart="$(printf '%s' "''${cart}" | "''${JQ}" \
-        --arg k "''${sys}" --argjson n "''${count:-0}" --argjson b "''${size:-0}" \
-        '. + {($k): {count:$n, size_bytes:$b}}')"
-    done
+    # Count one bucket: per-system ROM count + du -sb under <root>/<sys>/.
+    # Prints a jq object { "<sys>": {count, size_bytes}, ... } on stdout.
+    count_bucket() {
+      local root="$1"; shift
+      local out='{}' sys dir pat count size
+      for sys in "$@"; do
+        dir="''${root}/''${sys}"
+        pat="''$(pattern_for "''${sys}")"
+        count=0
+        size=0
+        if [ -d "''${dir}" ] && [ -n "''${pat}" ]; then
+          count=$("''${FIND}" "''${dir}" -type f -regextype posix-extended -iregex "''${pat}" 2>/dev/null | "''${WC}" -l || echo 0)
+          size=$("''${DU}" -sb "''${dir}" 2>/dev/null | "''${CUT}" -f1 || echo 0)
+        fi
+        out="$(printf '%s' "''${out}" | "''${JQ}" \
+          --arg k "''${sys}" --argjson n "''${count:-0}" --argjson b "''${size:-0}" \
+          '. + {($k): {count:$n, size_bytes:$b}}')"
+      done
+      printf '%s' "''${out}"
+    }
+
+    # --- console systems across all three datasets ---
+    cart="$(count_bucket "''${CARTRIDGE_ROOT}" "''${SYSTEMS[@]}")"
+    opt="$(count_bucket "''${OPTICAL_ROOT}" "''${OPT_SYSTEMS[@]}")"
+    mod="$(count_bucket "''${MODERN_ROOT}" "''${MOD_SYSTEMS[@]}")"
 
     # --- eXo curated collections: game vs. box_front coverage ---
     exo='{}'
@@ -109,11 +135,15 @@ let
     "''${JQ}" -n \
       --arg generated_at "''${now}" \
       --argjson cartridge "''${cart}" \
+      --argjson optical "''${opt}" \
+      --argjson modern "''${mod}" \
       --argjson exo "''${exo}" \
       --arg active_state "''${active_state}" \
       --arg unit "''${ROM_ACQUIRE_UNIT}" \
       '{generated_at:$generated_at,
         cartridge:$cartridge,
+        optical:$optical,
+        modern:$modern,
         exo:$exo,
         rom_acquire:{unit:$unit, active_state:$active_state}}' > "''${tmp}"
     mv "''${tmp}" "''${STATE_FILE}"
@@ -151,8 +181,27 @@ in
       default = "/tank/archive/retro/games/cartridge";
       description = ''
         Root of the playable cartridge tree. Each enabled system is expected
-        at `<cartridgeRoot>/<sys>/` (nes, snes, gb, gbc, gba, n64). Missing
-        systems are reported as count 0 / size 0.
+        at `<cartridgeRoot>/<sys>/` (nes, snes, gb, gbc, gba, n64, fds,
+        virtualboy, pokemonmini, gameandwatch, nds, dsi). Missing systems are
+        reported as count 0 / size 0.
+      '';
+    };
+
+    opticalRoot = lib.mkOption {
+      type = lib.types.path;
+      default = "/tank/archive/retro/games/optical";
+      description = ''
+        Root of the playable optical (disc-image) tree. Each enabled system is
+        expected at `<opticalRoot>/<sys>/` (gamecube, wii).
+      '';
+    };
+
+    modernRoot = lib.mkOption {
+      type = lib.types.path;
+      default = "/tank/archive/retro/games/modern";
+      description = ''
+        Root of the playable modern tree. Each enabled system is expected at
+        `<modernRoot>/<sys>/` (3ds, new3ds, wiiu).
       '';
     };
 
@@ -174,11 +223,36 @@ in
         "gbc"
         "gba"
         "n64"
+        "fds"
+        "virtualboy"
+        "pokemonmini"
+        "gameandwatch"
+        "nds"
+        "dsi"
       ];
       description = ''
-        Cartridge systems to inventory. Only these six have known ROM
-        extensions; an unknown system here yields count 0 / size 0.
+        Cartridge-bucket systems to inventory (leaf ROMs on the cartridge
+        dataset). An unknown system here yields count 0 / size 0.
       '';
+    };
+
+    opticalSystems = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [
+        "gamecube"
+        "wii"
+      ];
+      description = "Optical-bucket systems to inventory (disc images).";
+    };
+
+    modernSystems = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [
+        "3ds"
+        "new3ds"
+        "wiiu"
+      ];
+      description = "Modern-bucket systems to inventory (3DS/Wii U images).";
     };
 
     publishMqtt = lib.mkOption {
