@@ -15,6 +15,16 @@
 # This host is never a persistent member of the fleet: it has no storage
 # profile, no backup, no branding, no desktop. Everything here is scoped to
 # running once, unattended, then disappearing.
+#
+# NOTE (#63 follow-up, 2026-08): the atticd push target this module drives
+# (`attic push ${cfg.atticCache}`) was DECOMMISSIONED in the Attic → Harmonia
+# migration. This code is DORMANT — europa's btver2 tuned-closure pipeline is
+# rolled back (europa runs untuned from cache.nixos.org), so pallene is not
+# currently provisioning/pushing anything. It still evaluates because
+# pkgs.attic-client is an ordinary nixpkgs package, but a real run would fail
+# at the push step against the now-absent atticd. When btver2 is re-enabled,
+# rework the push path to `nix copy --to ssh://europa` (into Harmonia's served
+# store), mirroring the GitHub Actions path in scripts/ci/cache-drainer.sh.
 
 let
   cfg = config.jupiter.services.buildServer;

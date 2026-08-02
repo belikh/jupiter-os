@@ -33,9 +33,9 @@ refs (MQTT, builds) dial it by IP.
 ### TOPOLOGY — cross-host wiring
 
 - **MQTT → callisto `10.1.1.3`** (`modules/services/mqtt.nix`): kiosk ha-agents + Home Assistant → mosquitto (static `mqttHost`).
-- **Build delegation → callisto** (`modules/core/build-machines.nix`, default-on): advertises `gccarch-btver2`/`skylake` to build *others'* tuned closures while its own stays untuned; `cores=6 max-jobs=1`. Pallene inverts it (`cores=1 max-jobs=auto`) and pushes tuned closures to attic.
+- **Build delegation → callisto** (`modules/core/build-machines.nix`, default-on): advertises `gccarch-btver2`/`skylake` to build *others'* tuned closures while its own stays untuned; `cores=6 max-jobs=1`. Pallene inverts it (`cores=1 max-jobs=auto`) and pushes tuned closures to the Harmonia cache (Attic decommissioned — #63; pallene's push path is dormant pending a `nix copy` rework, see `modules/services/build-server.nix` header).
 - **PXE netboot → europa** (`modules/network/pxe-server.nix` via `flake.nix` `pxeModule`): serves callisto's netboot — ganymede's old role (same deviation as `cloudflareTunnel`).
-- **Attic → europa**: `attic.jupiter.au` / `neptune.jupiter.au:8080`.
+- **Harmonia → europa** (`services.harmonia` on `:5000`): read-only binary cache serving europa's `/nix/store`. GitHub Actions builds the kiosk closures on free `ubuntu-latest` CPU and pushes them in over the UDM WG road-warrior (`nix copy --to ssh://europa` as `jupiter-ci`, **main-only**, incremental via a post-build-hook, last 3 main builds/host pinned as GC roots) — see `docs/ci-harmonia-push-runbook.md`. Replaces the decommissioned Attic (#63).
 
 ## Layout
 

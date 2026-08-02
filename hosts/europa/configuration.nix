@@ -11,15 +11,16 @@
 # Crucial MX500 500GB SSD (OS), 2× WD 18TB (tank pool / file transfer).
 #
 # Phase 1: untuned NixOS from cache.nixos.org (stock kernel, no microarch
-# flags). Gets the machine running with ZFS, Samba, NFS, Attic, Syncthing,
+# flags). Gets the machine running with ZFS, Samba, NFS, Harmonia, Syncthing,
 # and SMART monitoring.
 #
 # Phase 2 (active): jupiter.build.microarch = "btver2" tunes the closure for
 # this exact CPU (Puma core, ISA-equivalent to Jaguar). The BinaryLane build
-# server (pallene) compiles it and pushes to europa's own Attic; europa then
+# server (pallene) compiles it and pushes to europa's own store (served by
+# Harmonia); europa then
 # substitutes from localhost:8080 ahead of cache.nixos.org. This is the
 # deliberate, mitigated exception to the "no microarch" buildability rule —
-# the private Attic cache exists precisely to serve what cache.nixos.org
+# the private Harmonia cache exists precisely to serve what cache.nixos.org
 # cannot once gcc.arch is set.
 {
   imports = [
@@ -34,7 +35,10 @@
     # reachable from a plain host module (see flake.nix, CLAUDE.md's "avoid
     # specialArgs" note). This import just brings the option in scope.
     ../../modules/network/pxe-server.nix
-    ../../modules/services/attic-server.nix
+    # GitHub Actions CI nix-copy receiver (jupiter-ci user + per-build GC
+    # roots). CI builds on free GHA CPU, then `nix copy --to ssh://europa`
+    # over the UDM WireGuard road-warrior; Harmonia (below) serves the result.
+    ../../modules/core/ci-cache-receiver.nix
     ../../modules/services/syncthing.nix
     ../../modules/services/smart-monitoring.nix
     ../../modules/services/console-screensaver.nix
@@ -142,9 +146,22 @@
   jupiter.nas.bond.enable = false;
 
   # ---- Services ------------------------------------------------------------
-  # Binary cache for the BinaryLane "rebuild the world" build server.
-  # Storage on tank/services/attic (created by the zfs-nas dataset service).
-  jupiter.services.attic.enable = true;
+  # Harmonia binary cache: serves europa's own /nix/store over HTTP so the
+  # fleet (and the next CI run) can substitute closures CI pushed here. Read-
+  # only by design (issue #63 — replaces the decommissioned atticd, which had
+  # its own store). CI populates the store via `nix copy --to ssh://europa`
+  # (jupiter-ci user, see modules/core/ci-cache-receiver.nix); fleet hosts
+  # consume it via modules/core/harmonia-substituter.nix. The signing key is
+  # generated once via nix-store --generate-binary-cache-key (see
+  # docs/ci-harmonia-push-runbook.md) and held in the harmonia_sign_key sops
+  # secret; without it europa's activation fails, so it must be added first.
+  services.harmonia.cache.enable = true;
+  services.harmonia.cache.signKeyPaths = [ config.sops.secrets.harmonia_sign_key.path ];
+  networking.firewall.allowedTCPPorts = [ 5000 ];
+
+  # Receiving side for CI's `nix copy` pushes (jupiter-ci trusted user +
+  # per-build GC roots, keep last 3 main builds).
+  jupiter.core.ciCacheReceiver.enable = true;
 
   # Syncthing hub — canonical synced copy lives on tank/personal (mirror +
   # sanoid snapshots + future restic offsite).
@@ -162,11 +179,12 @@
   # yields to real NAS work.
   jupiter.consoleScreensaver.enable = true;
 
-  # Cloudflare Tunnel — exposes atticd at attic.jupiter.au so the remote
-  # BinaryLane build server (pallene) can push tuned closures and future
-  # roaming hosts can pull them, without opening a router port. Runs on
-  # europa itself because no other always-on server host is registered yet
-  # (master ran it on ganymede). Uses the cloudflare_cert sops secret.
+  # Cloudflare Tunnel — historically exposed atticd at attic.jupiter.au for
+  # the remote build server. atticd is now decommissioned (issue #63, served
+  # by Harmonia on :5000 instead), so that ingress route is currently dead;
+  # CI reaches Harmonia over the UDM WireGuard road-warrior (10.1.1.2:5000),
+  # not the tunnel. The tunnel + its attic ingress are left in place pending
+  # a follow-up that repurposes or removes the attic.jupiter.au hostname.
   jupiter.services.cloudflareTunnel = {
     enable = true;
     # Cloudflare tunnel UUID (from ~/.cloudflared/<id>.json / the dashboard).
@@ -201,8 +219,9 @@
   jupiter.services.arcadeInventory.enable = true;
 
   # ---- sops secrets --------------------------------------------------------
-  # attic_server_token_secret: RS256 JWT signing key for atticd.
+  # harmonia_sign_key: private Nix binary-cache signing key for Harmonia
+  # (generated via nix-store --generate-binary-cache-key). Must be added to
+  # secrets/secrets.yaml before first deploy or Harmonia's activation fails.
   # binarylane_api_token: consumed by jupiter.services.palleneWatchdog.
-  # Must be added to secrets/secrets.yaml before first deploy.
-  sops.secrets.attic_server_token_secret = { };
+  sops.secrets.harmonia_sign_key = { };
 }
