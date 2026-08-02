@@ -82,6 +82,19 @@ declare -A LAUNCH=(
   [wiiu]=jupiter-cemu
 )
 
+# system (dir key) -> Skyscraper `-p` platform handle. Skyscraper's platform
+# keys (peas.json) differ from our dir keys for some systems: ps1->psx,
+# gamecube->gc, pokemonmini->pokemini; and there is no separate Skyscraper
+# handle for new3ds (scrapes under 3ds) or dsi (scrapes under nds). The ROM dir
+# + cache dir keep our key; only the Skyscraper -p handle is mapped.
+declare -A SKYPLATFORM=(
+  [ps1]=psx
+  [gamecube]=gc
+  [pokemonmini]=pokemini
+  [new3ds]=3ds
+  [dsi]=nds
+)
+
 log() { printf '[cartridge-scrape] %s\n' "$*" >&2; }
 
 for platform in "${PLATFORMS[@]}"; do
@@ -90,6 +103,7 @@ for platform in "${PLATFORMS[@]}"; do
     log "no launch mapped for platform '$platform'; skipping"
     continue
   fi
+  skyplatform=${SKYPLATFORM[$platform]:-$platform}
 
   platform_dir="$ROM_ROOT/$platform"
   platform_cache="$CACHE_DIR/$platform"
@@ -127,7 +141,7 @@ for platform in "${PLATFORMS[@]}"; do
 launch=${launch} \"{file.path}\"
 INI
 
-  log "scraping $platform (launch=${launch}) -> $platform_dir"
+  log "scraping $platform (skyscraper=$skyplatform, launch=${launch}) -> $platform_dir"
 
   # Phase 1: gather resources into the cache. ScreenScraper is primary when
   # creds are present (CRC-exact for No-Intro zips via --flags unpack, -t 1 for
@@ -143,7 +157,7 @@ INI
     have_ss=1
     log "  primary: ScreenScraper (CRC-exact)"
     "$SKYSCRAPER" \
-      -p "$platform" \
+      -p "$skyplatform" \
       -s screenscraper \
       -i "$platform_dir" \
       -d "$platform_cache" \
@@ -168,7 +182,7 @@ INI
     src_args=(-u "$(cat "$TGDB_APIKEY_FILE")")
   fi
   "$SKYSCRAPER" \
-    -p "$platform" \
+    -p "$skyplatform" \
     -s "$SOURCE" \
     -i "$platform_dir" \
     -d "$platform_cache" \
@@ -183,7 +197,7 @@ INI
   # reads its default ~/.skyscraper/cache/<platform> (empty here) and emits
   # zero game entries.
   "$SKYSCRAPER" \
-    -p "$platform" \
+    -p "$skyplatform" \
     -f pegasus \
     -i "$platform_dir" \
     -d "$platform_cache" \
