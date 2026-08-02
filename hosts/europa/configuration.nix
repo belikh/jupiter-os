@@ -180,10 +180,10 @@
   jupiter.consoleScreensaver.enable = true;
 
   # Cloudflare Tunnel — now fronts the Harmonia cache at cache.jupiter.au.
-# atticd is decommissioned (issue #63); Harmonia serves the read-only cache.
-# CI and fleet hosts can reach it via the Cloudflare Tunnel (public) or
-# the UDM WireGuard road-warrior (LAN/WG).
-jupiter.services.cloudflareTunnel = {
+  # atticd is decommissioned (issue #63); Harmonia serves the read-only cache.
+  # CI and fleet hosts can reach it via the Cloudflare Tunnel (public) or
+  # the UDM WireGuard road-warrior (LAN/WG).
+  jupiter.services.cloudflareTunnel = {
     enable = true;
     # Cloudflare tunnel UUID (from ~/.cloudflared/<id>.json / the dashboard).
     # The cloudflare_cert sops secret is this tunnel's credentials JSON.
