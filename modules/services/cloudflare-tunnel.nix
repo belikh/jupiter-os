@@ -9,12 +9,11 @@
 # (the master branch ran it on ganymede, which isn't registered here yet); the
 # deferred-followup is to move it back to ganymede once that host exists.
 #
-# The tunnel's original use case (fronting the decommissioned atticd at
-# attic.jupiter.au) was removed in issue #63's Attic->Harmonia migration:
-# Harmonia is reached over the UDM WireGuard road-warrior (10.1.1.2:5000), not
-# the tunnel. The tunnel is retained for future public ingress (add routes via
-# jupiter.services.cloudflareTunnel.extraIngress). Credentials live in the
-# cloudflare_cert sops secret (already in secrets/secrets.yaml).
+# The primary use case today: europa's atticd (modules/services/attic-server.nix)
+# is reached at attic.jupiter.au so the remote BinaryLane build server
+# (pallene) can push tuned closures and future roaming hosts can pull them.
+# The tunnel credentials live in the cloudflare_cert sops secret (already in
+# secrets/secrets.yaml).
 
 let
   cfg = config.jupiter.services.cloudflareTunnel;
@@ -32,6 +31,18 @@ in
         configured on the Cloudflare dashboard side (the tunnel's ingress).
         Confirm at first run.
       '';
+    };
+
+    atticHostname = lib.mkOption {
+      type = lib.types.str;
+      default = "attic.jupiter.au";
+      description = "Public hostname routing to europa's atticd (localhost:8080).";
+    };
+
+    atticPort = lib.mkOption {
+      type = lib.types.port;
+      default = 8080;
+      description = "Port atticd listens on locally (the tunnel's upstream).";
     };
 
     extraIngress = lib.mkOption {
@@ -52,6 +63,18 @@ in
       default = [ ];
       description = "Additional ingress rules for the tunnel: hostname → localhost:port";
     };
+
+    harmoniaHostname = lib.mkOption {
+      type = lib.types.str;
+      default = "cache.jupiter.au";
+      description = "Public hostname routing to europa's Harmonia cache (localhost:5000).";
+    };
+
+    harmoniaPort = lib.mkOption {
+      type = lib.types.port;
+      default = 5000;
+      description = "Port Harmonia listens on locally (the tunnel's upstream).";
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -61,9 +84,12 @@ in
       enable = true;
       tunnels.${cfg.tunnelId} = {
         credentialsFile = config.sops.secrets.cloudflare_cert.path;
-        # Routes from extraIngress; everything else 404. (The old atticd
-        # attic.jupiter.au route was removed in the Attic->Harmonia migration.)
-        ingress = builtins.listToAttrs (
+        # Route the Harmonia cache hostname to local Harmonia; everything else 404.
+        # Add more ingress rules here as services come back up.
+        ingress = {
+          ${cfg.harmoniaHostname} = "http://localhost:${toString cfg.harmoniaPort}";
+        }
+        // builtins.listToAttrs (
           map (rule: {
             name = rule.hostname;
             value = "http://localhost:${toString rule.port}";

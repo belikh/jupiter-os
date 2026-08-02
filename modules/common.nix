@@ -149,6 +149,13 @@
     # scripts/boot-smoke.sh's captured serial log.
     boot.kernelParams = [ "console=ttyS0" ];
 
+    # Ensure DNS works in the VM (QEMU user-mode networking provides DHCP
+    # at 10.0.2.3, but resolv.conf isn't populated by default).
+    networking.nameservers = [
+      "10.0.2.3"
+      "1.1.1.1"
+    ];
+
     users.users.io = {
       hashedPasswordFile = lib.mkForce null;
       password = lib.mkForce null;

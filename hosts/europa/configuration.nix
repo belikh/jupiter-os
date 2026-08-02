@@ -106,7 +106,7 @@
   # modules/core/build-tuning.nix for the SIGILL/march caveats.
   # TODO: ZFS 2.4.3 has kernel build issues with btver2 on nixpkgs 26.11;
   # temporarily disabled to get arcade system online. Re-enable once fixed.
-  # jupiter.build.microarch = "btver2"; # pallene (build server) compiles this host's closure -march=btver2 and pushes to the local Attic
+  jupiter.build.microarch = "btver2"; # pallene (build server) compiles this host's closure -march=btver2 and pushes to the local Attic
 
   # ---- nixpkgs overlays ----------------------------------------------------
   # bmake's `deptgt-interrupt` unit test is timing-sensitive (it asserts a
@@ -179,16 +179,17 @@
   # yields to real NAS work.
   jupiter.consoleScreensaver.enable = true;
 
-  # Cloudflare Tunnel — retained for future public ingress (no routes today).
-  # Its original purpose (fronting the decommissioned atticd at
-  # attic.jupiter.au) was removed in the Attic->Harmonia migration, issue #63:
-  # CI reaches Harmonia over the UDM WireGuard road-warrior (10.1.1.2:5000),
-  # not the tunnel. Add routes via jupiter.services.cloudflareTunnel.extraIngress.
+  # Cloudflare Tunnel — now fronts the Harmonia cache at cache.jupiter.au.
+  # atticd is decommissioned (issue #63); Harmonia serves the read-only cache.
+  # CI and fleet hosts can reach it via the Cloudflare Tunnel (public) or
+  # the UDM WireGuard road-warrior (LAN/WG).
   jupiter.services.cloudflareTunnel = {
     enable = true;
     # Cloudflare tunnel UUID (from ~/.cloudflared/<id>.json / the dashboard).
     # The cloudflare_cert sops secret is this tunnel's credentials JSON.
     tunnelId = "aa1088b8-a0e1-4073-8567-6a9bf5fb4bd7";
+    harmoniaHostname = "cache.jupiter.au";
+    harmoniaPort = 5000;
   };
 
   # External backstop for the pallene build server: destroys any BinaryLane
