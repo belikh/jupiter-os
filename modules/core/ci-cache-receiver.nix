@@ -35,7 +35,7 @@ in
 
     authorizedKey = lib.mkOption {
       type = lib.types.str;
-      default = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAAREPLACE-ME-CI-RUNNER-PUBLIC-KEY";
+      default = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL3B7HKhlapwb97py3c5Y1LTMBH1htrUSgY1GWQ5pqAq jupiter-ci@github-actions";
       description = ''
         The CI runner's PUBLIC ed25519 key (safe to commit). Generate the
         keypair, set the private half as the EUROPA_CI_SSH_KEY GitHub Actions

@@ -42,14 +42,20 @@ peer is a UniFi dashboard step.
    - public half → replace the `authorizedKey` placeholder in
      `modules/core/ci-cache-receiver.nix` + commit (it's public)
    - private half → GitHub Actions secret `EUROPA_CI_SSH_KEY`
-5. **Generate the runner WireGuard keypair** and add it as a UDM road-warrior
-   peer (UniFi): assign it a tunnel IP (e.g. `192.168.5.7/32`), allowed-ips
-   `10.1.1.0/24` (so it can reach europa at `10.1.1.2`). Then set the GitHub
-   Actions secrets:
-   - `WG_RUNNER_PRIVATE_KEY` = the runner's WG private key
-   - `WG_RUNNER_ADDRESS`    = `192.168.5.7/32` (the IP you assigned in UniFi)
-   - `WG_UDM_PUBLIC_KEY`    = `gw6gm9TpSBFOqifygp8XLfEEDGgebzD4tEFgXCSawE4=` (the UDM's WG pubkey — same one pallene uses)
-   - `WG_UDM_ENDPOINT`      = `neptune.jupiter.au:51820`
+5. **Runner WireGuard identity.** Two options:
+   - **Reuse pallene's peer (deployed choice — no UDM change needed):** the CI
+     runner borrows pallene's existing road-warrior identity, so the UDM needs
+     NO new peer. Set `WG_RUNNER_PRIVATE_KEY` = the value of the
+     `wireguard_pallene_private_key` sops secret, and `WG_RUNNER_ADDRESS` =
+     `192.168.5.2/32` (pallene's tunnel IP). Caveat: WG roaming means the UDM
+     routes to whichever of pallene/the-runner handshook last, so the two can't
+     push concurrently — fine in practice because pallene's build-server path is
+     dormant (europa btver2 rolled back) and CI builds are short.
+   - **Fresh peer (alternative):** generate a new WG keypair and add it as a UDM
+     road-warrior peer (UniFi) with its own tunnel IP (e.g. `192.168.5.7/32`),
+     allowed-ips `10.1.1.0/24`. Then `WG_RUNNER_PRIVATE_KEY` = the new private
+     key and `WG_RUNNER_ADDRESS` = the IP you assigned.
+   - Either way: `WG_UDM_PUBLIC_KEY` = `gw6gm9TpSBFOqifygp8XLfEEDGgebzD4tEFgXCSawE4=` (the UDM's WG pubkey — same one pallene uses) and `WG_UDM_ENDPOINT` = `neptune.jupiter.au:51820`.
 6. **Deploy europa** (the Harmonia sign key must be in sops first, or sops-nix
    fails at activation):
    ```sh

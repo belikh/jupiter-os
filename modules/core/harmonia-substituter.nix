@@ -59,7 +59,7 @@ in
 
     publicKey = lib.mkOption {
       type = lib.types.str;
-      default = "jupiter-cache-1:REPLACE-ME-generate-via-nix-store---generate-binary-cache-key=";
+      default = "jupiter-cache-1:5tPIwQSj5/mk53jBHqqsAk9IpcuTGz/2UQOdHvjTId0=";
       description = ''
         Harmonia cache public key. Minted once on europa via:
           nix-store --generate-binary-cache-key jupiter-cache-1 \
