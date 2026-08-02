@@ -18,6 +18,8 @@ timeout_secs="${2:-300}"
 
 echo ">> Building VM for ${host}..."
 nix build ".#nixosConfigurations.${host}.config.system.build.vm" \
+  --option substituters "https://cache.nixos.org" \
+  --option trusted-public-keys "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=" \
   --out-link "result-vm-${host}"
 
 runner="$(echo "result-vm-${host}"/bin/run-*-vm)"
