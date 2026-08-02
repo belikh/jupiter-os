@@ -22,37 +22,17 @@ jobs:
       - name: Flake check (evaluates every host)
         run: nix flake check --no-build
 
-  # Build each host's system closure, then boot it headless in QEMU and
-  # assert it reaches multi-user — catches bootloader / impermanence /
-  # unit-ordering regressions that a pure `nix build` of the toplevel
-  # can't. sops secrets are read at activation time, not build time, so no
-  # decryption key is needed here.
-  #
-  # On pushes to main (or a manual dispatch on main) the built closures are
-  # also pushed to europa over the UDM WireGuard road-warrior via
-  # `nix copy --to ssh://europa` (incremental, through a post-build-hook),
-  # where Harmonia serves them to the fleet + the next CI run; the last 3
-  # main builds per host are pinned as GC roots (see scripts/ci/). On PRs the
-  # WG/push/pin steps are skipped — unreviewed code never reaches the cache
-  # (issue #63, docs/ci-harmonia-push-runbook.md).
-  build-and-boot-test:
+  # Build each host's system closure sequentially, then boot test the kiosks.
+  # On pushes to main, also push closures to europa via WG + Harmonia.
+  build-and-test:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        host: [amalthea, metis, adrastea, thebe]
     steps:
       - uses: actions/checkout@v4
-      # Free ~30 GiB before building. Each matrix job realises a full kiosk
-      # closure (desktop + Jovian gaming stack + retroarch cores) and then lays
-      # down a ~15 GiB QEMU disk image that embeds a copy of that store, which
-      # together overflow ubuntu-latest's ~14-22 GiB free (issue #57). MUST run
-      # before install-nix-action. tool-cache is safe here: nothing downstream
-      # in this job uses Node/Go/Python setup actions.
+      # Free ~30 GiB before building. Each host realises a full kiosk
+      # closure (desktop + Jovian gaming stack + retroarch cores) and then
+      # lays down a ~15 GiB QEMU disk image that embeds a copy of that
+      # store, which together overflow ubuntu-latest's ~14-22 GiB free.
       - name: Free disk space
-        # Pinned to a SHA: this action has no moving 'v1' major tag (only
-        # v1.0.0..v1.3.1), so '@v1' is an unresolvable ref. No Dependabot in
-        # this repo, so bump the pin manually when re-pinning.
         uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be  # v1.3.1
         with:
           android: true
@@ -68,12 +48,7 @@ jobs:
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      # Stage the CI cache scripts before nix is installed, so the hook path
-      # exists when install-nix-action writes it into nix.conf below. /opt/ci
-      # (not $HOME) because the post-build-hook is exec'd by the nix daemon as
-      # root, whose HOME is /root — an absolute world-r-x path avoids that
-      # mismatch. The drainer + retain scripts run as the runner user and just
-      # need read+exec, which 0755 gives them.
+      # Stage the CI cache scripts before nix is installed.
       - name: Stage CI cache scripts
         run: |
           sudo install -d -m 755 /opt/ci
@@ -86,15 +61,9 @@ jobs:
             trusted-public-keys = ${{ secrets.HARMONIA_PUBLIC_KEY }} cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
             connect-timeout = 5
             post-build-hook = /opt/ci/post-build-hook.sh
-      # ---- main-only: bring up the UDM WireGuard road-warrior tunnel to
-      # europa (10.1.1.2), configure the jupiter-ci SSH alias, and start the
-      # background drainer that ships each built package into europa's store.
-      # Skipped on PRs so unreviewed code never populates the cache. ----
+      # ---- main-only: WireGuard + cache drainer ----
       - name: WireGuard up + ssh config (main only)
         if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        # Best-effort: a WG/ssh flake must NOT skip the build + boot-smoke
-        # gate below — the cache push is a bonus, the boot-test is the actual
-        # regression catcher. continue-on-error surfaces it as a warning.
         continue-on-error: true
         run: |
           sudo apt-get update && sudo apt-get install -y wireguard-tools
@@ -106,7 +75,6 @@ jobs:
           MTU        = 1280
 
           [Peer]
-          # UDM road-warrior (neptune.jupiter.au:51820) routes 10.1.1.0/24.
           PublicKey           = ${{ secrets.WG_UDM_PUBLIC_KEY }}
           Endpoint            = ${{ secrets.WG_UDM_ENDPOINT }}
           AllowedIPs          = 10.1.1.2/32
@@ -124,8 +92,6 @@ jobs:
           } >> "$HOME/.ssh/config"
           printf '%s\n' "${{ secrets.EUROPA_CI_SSH_KEY }}" > "$HOME/.ssh/europa_ci"
           chmod 600 "$HOME/.ssh/europa_ci"
-          # Reachability: Harmonia + the jupiter-ci login. Surface failures
-          # fast rather than letting the build push into a void.
           curl -fsS --max-time 15 http://10.1.1.2:5000/nix-cache-info \
             || { echo "::error::Harmonia unreachable over WG"; sudo wg show; exit 1; }
           ssh -o ConnectTimeout=15 europa-ci true
@@ -134,21 +100,30 @@ jobs:
         env:
           EUROPA_SSH: europa-ci
         run: nohup /opt/ci/cache-drainer.sh >/tmp/ci-drainer.log 2>&1 &
-      - name: Build ${{ matrix.host }}
-        run: nix build .#nixosConfigurations.${{ matrix.host }}.config.system.build.toplevel
-      # ---- main-only: pin this build as a GC root on europa and rotate to
-      # the last 3. The drainer already streamed deps incrementally; this
-      # guarantees the rooted toplevel + its closure are present. Best-effort
-      # (continue-on-error): a pin/WG flake warns but must not skip boot-smoke. ----
+      # ---- Build each host sequentially ----
+      - name: Build all hosts (closure only)
+        run: |
+          for host in europa callisto pallene amalthea metis adrastea thebe; do
+            echo "=== Building $host ==="
+            nix build .#nixosConfigurations.$host.config.system.build.toplevel
+          done
+      # ---- main-only: pin all builds ----
       - name: Pin + retain last 3 builds (main only)
         if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
         continue-on-error: true
         env:
-          BUILD_HOST: ${{ matrix.host }}
           BUILD_SHA: ${{ github.sha }}
-        run: /opt/ci/retain-recent.sh
-      - name: Boot smoke test ${{ matrix.host }}
-        run: ./scripts/boot-smoke.sh ${{ matrix.host }} 360
+        run: |
+          for host in europa callisto pallene amalthea metis adrastea thebe; do
+            BUILD_HOST=$host /opt/ci/retain-recent.sh
+          done
+      # ---- Boot smoke test kiosks only ----
+      - name: Boot smoke test kiosks
+        run: |
+          for host in amalthea metis adrastea thebe; do
+            echo "=== Boot testing $host ==="
+            ./scripts/boot-smoke.sh $host 360
+          done
       - name: Teardown tunnel + drainer
         if: always()
         run: |
