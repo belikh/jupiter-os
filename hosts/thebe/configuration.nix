@@ -19,6 +19,6 @@
     enable = true;
     dashboardUrl = "https://iot.jupiter.au/robert-room/quarters";
     disk = "/dev/disk/by-id/ata-SanDisk_SD9SN8W128G1011_204903800540";
-    wifi.enable = true; # NetGear A6210 / MediaTek MT7612U USB adapter
+    wifi.enable = false; # NetGear A6210 / MediaTek MT7612U USB adapter (temporarily disabled due to missing wifi_psk in secrets.yaml)
   };
 }
