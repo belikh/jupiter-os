@@ -63,6 +63,18 @@ in
       default = [ ];
       description = "Additional ingress rules for the tunnel: hostname → localhost:port";
     };
+
+    harmoniaHostname = lib.mkOption {
+      type = lib.types.str;
+      default = "cache.jupiter.au";
+      description = "Public hostname routing to europa's Harmonia cache (localhost:5000).";
+    };
+
+    harmoniaPort = lib.mkOption {
+      type = lib.types.port;
+      default = 5000;
+      description = "Port Harmonia listens on locally (the tunnel's upstream).";
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -72,10 +84,10 @@ in
       enable = true;
       tunnels.${cfg.tunnelId} = {
         credentialsFile = config.sops.secrets.cloudflare_cert.path;
-        # Route the attic hostname to the local atticd; everything else 404.
+        # Route the Harmonia cache hostname to local Harmonia; everything else 404.
         # Add more ingress rules here as services come back up.
         ingress = {
-          ${cfg.atticHostname} = "http://localhost:${toString cfg.atticPort}";
+          ${cfg.harmoniaHostname} = "http://localhost:${toString cfg.harmoniaPort}";
         }
         // builtins.listToAttrs (
           map (rule: {

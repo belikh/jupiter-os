@@ -179,17 +179,17 @@
   # yields to real NAS work.
   jupiter.consoleScreensaver.enable = true;
 
-  # Cloudflare Tunnel — historically exposed atticd at attic.jupiter.au for
-  # the remote build server. atticd is now decommissioned (issue #63, served
-  # by Harmonia on :5000 instead), so that ingress route is currently dead;
-  # CI reaches Harmonia over the UDM WireGuard road-warrior (10.1.1.2:5000),
-  # not the tunnel. The tunnel + its attic ingress are left in place pending
-  # a follow-up that repurposes or removes the attic.jupiter.au hostname.
-  jupiter.services.cloudflareTunnel = {
+  # Cloudflare Tunnel — now fronts the Harmonia cache at cache.jupiter.au.
+# atticd is decommissioned (issue #63); Harmonia serves the read-only cache.
+# CI and fleet hosts can reach it via the Cloudflare Tunnel (public) or
+# the UDM WireGuard road-warrior (LAN/WG).
+jupiter.services.cloudflareTunnel = {
     enable = true;
     # Cloudflare tunnel UUID (from ~/.cloudflared/<id>.json / the dashboard).
     # The cloudflare_cert sops secret is this tunnel's credentials JSON.
     tunnelId = "aa1088b8-a0e1-4073-8567-6a9bf5fb4bd7";
+    harmoniaHostname = "cache.jupiter.au";
+    harmoniaPort = 5000;
   };
 
   # External backstop for the pallene build server: destroys any BinaryLane
