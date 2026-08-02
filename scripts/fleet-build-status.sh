@@ -4,7 +4,7 @@
 # build host, the coordinator, and the deploy target concurrently via SSH,
 # then prints a one-screen summary. Designed for the europa bring-up style
 # of monitoring (callisto coordinating distributed kiosk builds, NFS-backed
-# /nix/store, attic substituter, ZFS ARC health on the kiosks).
+# /nix/store, Harmonia substituter, ZFS ARC health on the kiosks).
 #
 # What it reports per host:
 #   - uptime / load / memory / swap
@@ -30,7 +30,7 @@ set -uo pipefail
 
 # -- Fleet definition ----------------------------------------------------------
 COORDINATOR="10.1.1.3"          # callisto — diskless netboot build coordinator
-TARGET="10.1.1.2"               # europa — ZFS NAS, deploy target, NFS+attic server
+TARGET="10.1.1.2"               # europa — ZFS NAS, deploy target, NFS+Harmonia server
 KIOSKS=("amalthea.localdomain" "metis.localdomain" "thebe.localdomain" "adrastea.localdomain")
 
 SSH_OPTS=(-o StrictHostKeyChecking=no -o ConnectTimeout=6 -o BatchMode=yes)
@@ -169,28 +169,21 @@ probe_target_extras() {
   " 2>&1
 }
 
-# -- Attic push check (any host) -----------------------------------------------
-probe_attic() {
-  local result=""
-  for h in "${KIOSKS[@]}" "$COORDINATOR"; do
-    # Skip if host is offline — we don't want a 6s timeout per dead host
-    if ! ssh "${SSH_OPTS[@]}" -o ConnectTimeout=2 "root@${h}" "true" 2>/dev/null; then
-      continue
-    fi
-    local r
-    r=$(ssh "${SSH_OPTS[@]}" -o ConnectTimeout=2 "root@${h}" "
-      pid=\$(pgrep -f '[a]ttic.*push' | head -1)
-      if [ -n \"\$pid\" ]; then
-        etime=\$(ps -o etime= -p \"\$pid\" | tr -d ' ')
-        cmd=\$(ps -o cmd= -p \"\$pid\" | sed 's|.*/nix/store/[a-z0-9]*-||; s|/nix/store/[a-z0-9]*-||g' | cut -c1-80)
-        printf 'running pid=%s etime=%s :: %s' \"\$pid\" \"\$etime\" \"\$cmd\"
-      fi
-    " 2>/dev/null)
-    if [ -n "$r" ]; then
-      result="${result}${h}: ${r}; "
-    fi
-  done
-  echo "${result:-no attic push running anywhere}"
+# -- Harmonia cache check (europa :5000, read-only) ----------------------------
+probe_harmonia() {
+  # Harmonia serves europa's /nix/store read-only on :5000; CI populates it via
+  # `nix copy --to ssh://europa` from the GHA runner over WireGuard (issue #63).
+  # Replaces the old attic push-process probe: Harmonia has no push API, so
+  # there is no per-host push process to find -- instead report liveness + how
+  # many CI builds are pinned as GC roots (keep-last-3 per host).
+  local nroots
+  if curl -fsS --max-time 4 "http://${TARGET}:5000/nix-cache-info" >/dev/null 2>&1; then
+    nroots=$(ssh "${SSH_OPTS[@]}" -o ConnectTimeout=3 "root@${TARGET}" \
+      'ls /nix/var/nix/gcroots/per-user/jupiter-ci/ 2>/dev/null | wc -l' 2>/dev/null)
+    echo "up on :5000; ${nroots:-0} CI gcroot(s) pinned"
+  else
+    echo "DOWN (no :5000/nix-cache-info -- Harmonia not running / unreachable)"
+  fi
 }
 
 # -- Render --------------------------------------------------------------------
@@ -221,9 +214,9 @@ render() {
   done
   for p in "${pids[@]}"; do wait "$p"; done
 
-  # Attic check (sequential, but fast — just pgrep over SSH)
-  local attic_state
-  attic_state=$(probe_attic)
+  # Harmonia cache check (europa :5000 -- one curl + one SSH for gcroots)
+  local cache_state
+  cache_state=$(probe_harmonia)
 
   # -- Print ------------------------------------------------------------------
   clear 2>/dev/null || true
@@ -329,9 +322,9 @@ render() {
     echo
   done
 
-  # Attic
-  echo "[ATTIC]"
-  echo "  ${attic_state}"
+  # Harmonia cache
+  echo "[HARMONIA]"
+  echo "  ${cache_state}"
   echo
 }
 

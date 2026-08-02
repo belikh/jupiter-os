@@ -95,10 +95,11 @@ rebuilt.
   the same change window.
 - **Trust model / branch protection.** Whatever lands on `main` gets built,
   `nix copy`'d into europa's store, signed with the Harmonia key, and served to
-  the fleet. So `main` must be merge-only-with-review — enable GitHub branch
-  protection (require the `build-and-boot-test` check, require review) so a
-  direct push can't become a signed backdoor. PR runs build+boot but never
-  push, so unreviewed code can't reach the cache.
+  the fleet. `main` is therefore under the `protect-main` ruleset (Settings ->
+  Rules -> Rulesets): require a PR + the `check` and `build-and-boot-test`
+  status checks, block force-push/deletion, 0 required reviews (solo-dev; bump
+  to 1 if a collaborator joins). PR runs build+boot but never push, so
+  unreviewed code can't reach the cache.
 - **Only the 4 kiosks** are in the CI matrix; europa/callisto closures aren't
   CI-pushed yet (callisto is iSCSI-root, europa is the cache host). Add them to
   the matrix when wanted.
@@ -111,7 +112,3 @@ rebuilt.
   europa; the keep-3 rotation bounds it but the dataset is now shared with the
   NAS. The old `tank/services/attic` dataset is left in place (removing it is
   destructive; clean up out of band if desired).
-- **`attic.jupiter.au` Cloudflare route** is now dead (atticd gone); reuse or
-  remove the hostname in a follow-up.
-- **`scripts/fleet-build-status.sh`** still probes the old attic endpoint;
-  repoint it to Harmonia (`:5000/nix-cache-info`) in a follow-up.

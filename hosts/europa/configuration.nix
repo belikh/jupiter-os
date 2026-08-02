@@ -179,12 +179,11 @@
   # yields to real NAS work.
   jupiter.consoleScreensaver.enable = true;
 
-  # Cloudflare Tunnel — historically exposed atticd at attic.jupiter.au for
-  # the remote build server. atticd is now decommissioned (issue #63, served
-  # by Harmonia on :5000 instead), so that ingress route is currently dead;
+  # Cloudflare Tunnel — retained for future public ingress (no routes today).
+  # Its original purpose (fronting the decommissioned atticd at
+  # attic.jupiter.au) was removed in the Attic->Harmonia migration, issue #63:
   # CI reaches Harmonia over the UDM WireGuard road-warrior (10.1.1.2:5000),
-  # not the tunnel. The tunnel + its attic ingress are left in place pending
-  # a follow-up that repurposes or removes the attic.jupiter.au hostname.
+  # not the tunnel. Add routes via jupiter.services.cloudflareTunnel.extraIngress.
   jupiter.services.cloudflareTunnel = {
     enable = true;
     # Cloudflare tunnel UUID (from ~/.cloudflared/<id>.json / the dashboard).
