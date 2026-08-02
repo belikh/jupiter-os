@@ -102,38 +102,24 @@ jobs:
           for arch in btver2 skylake; do
             echo "=== Building bootstrap for $arch ==="
             # Build a minimal closure that pulls in the heavy bootstrap packages
+            # Build bootstrap packages for both microarchs
+      - name: Build bootstrap packages (btver2 + skylake)
+        run: |
+          # Build minimal bootstrap packages that are common dependencies
+          # for both microarchs. This warms the cache for gcc, rust, glibc, etc.
+          for arch in btver2 skylake; do
+            echo "=== Building bootstrap for $arch ==="
             nix build --impure --expr "
               let
-                pkgs = import <nixpkgs> {
-                  system = \"x86_64-linux\";
-                  config = {
-                    gcc.arch = \"$arch\";
-                    gcc.tune = \"$arch\";
-                  };
-                };
+                pkgs = import (builtins.fetchTarball {
+                  url = \"https://github.com/NixOS/nixpkgs/archive/nixos-26.11.tar.gz\";
+                  sha256 = \"sha256-3eA7/RkgAZji9pv1rENhYxB+ElXWcEBlgAaM2JFQtnE=\";
+                }) { inherit system; config = { gcc.arch = \"$arch\"; gcc.tune = \"$arch\"; }; };
               in
               pkgs.buildEnv {
                 name = \"bootstrap-$arch\";
                 paths = with pkgs; [
-                  gcc
-                  rustc
-                  cargo
-                  glibc
-                  binutils
-                  coreutils
-                  findutils
-                  diffutils
-                  gawk
-                  gnugrep
-                  gnused
-                  bash
-                  zlib
-                  openssl
-                  libiconv
-                  gettext
-                  python3
-                  cmake
-                  pkg-config
+                  gcc rustc cargo glibc binutils coreutils findutils diffutils gawk gnugrep gnused bash zlib openssl libiconv gettext python3 cmake pkg-config
                 ];
               }
             "
