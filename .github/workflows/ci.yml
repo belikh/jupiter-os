@@ -22,9 +22,139 @@ jobs:
       - name: Flake check (evaluates every host)
         run: nix flake check --no-build
 
+  # Pre-seed bootstrap packages for both microarchs into Harmonia.
+  # Runs before the main build so bootstrap packages (gcc, rust, glibc, etc.)
+  # are already cached when the main build starts.
+  bootstrap-seed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be  # v1.3.1
+        with:
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+          tool-cache: true
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Stage CI cache scripts
+        run: |
+          sudo install -d -m 755 /opt/ci
+          sudo cp scripts/ci/post-build-hook.sh scripts/ci/cache-drainer.sh scripts/ci/retain-recent.sh /opt/ci/
+          sudo chmod 755 /opt/ci/*.sh
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            substituters = https://cache.jupiter.au https://cache.nixos.org
+            trusted-public-keys = ${{ secrets.HARMONIA_PUBLIC_KEY }} cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+            connect-timeout = 5
+            post-build-hook = /opt/ci/post-build-hook.sh
+            system-features = gccarch-btver2 gccarch-skylake
+      - name: WireGuard up + ssh config
+        continue-on-error: true
+        run: |
+          sudo apt-get update && sudo apt-get install -y wireguard-tools
+          sudo install -d -m 700 /etc/wireguard
+          sudo tee /etc/wireguard/wg0.conf >/dev/null <<EOF
+          [Interface]
+          PrivateKey = ${{ secrets.WG_RUNNER_PRIVATE_KEY }}
+          Address    = ${{ secrets.WG_RUNNER_ADDRESS }}
+          MTU        = 1280
+
+          [Peer]
+          PublicKey           = ${{ secrets.WG_UDM_PUBLIC_KEY }}
+          Endpoint            = ${{ secrets.WG_UDM_ENDPOINT }}
+          AllowedIPs          = 10.1.1.2/32
+          PersistentKeepalive = 25
+          EOF
+          sudo wg-quick up wg0
+          sudo wg show
+          install -m 700 -d "$HOME/.ssh"
+          {
+            echo "Host europa-ci"
+            echo "  HostName 10.1.1.2"
+            echo "  User jupiter-ci"
+            echo "  IdentityFile $HOME/.ssh/europa_ci"
+            echo "  StrictHostKeyChecking accept-new"
+          } >> "$HOME/.ssh/config
+          printf '%s\n' "${{ secrets.EUROPA_CI_SSH_KEY }}" > "$HOME/.ssh/europa_ci"
+          chmod 600 "$HOME/.ssh/europa_ci"
+          curl -fsS --max-time 15 http://10.1.1.2:5000/nix-cache-info \
+            || { echo "::error::Harmonia unreachable over WG"; sudo wg show; exit 1; }
+          ssh -o ConnectTimeout=15 europa-ci true
+      - name: Start cache drainer
+        env:
+          EUROPA_SSH: europa-ci
+        run: nohup /opt/ci/cache-drainer.sh >/tmp/ci-drainer.log 2>&1 &
+      # Build bootstrap packages for both microarchs
+      - name: Build bootstrap packages (btver2 + skylake)
+        run: |
+          # Build minimal bootstrap packages that are common dependencies
+          # for both microarchs. This warms the cache for gcc, rust, glibc, etc.
+          for arch in btver2 skylake; do
+            echo "=== Building bootstrap for $arch ==="
+            # Build a minimal closure that pulls in the heavy bootstrap packages
+            nix build --impure --expr "
+              let
+                pkgs = import <nixpkgs> {
+                  system = \"x86_64-linux\";
+                  config = {
+                    gcc.arch = \"$arch\";
+                    gcc.tune = \"$arch\";
+                  };
+                };
+              in
+              pkgs.buildEnv {
+                name = \"bootstrap-$arch\";
+                paths = with pkgs; [
+                  gcc
+                  rustc
+                  cargo
+                  glibc
+                  binutils
+                  coreutils
+                  findutils
+                  diffutils
+                  gawk
+                  gnugrep
+                  gnused
+                  bash
+                  zlib
+                  openssl
+                  libiconv
+                  gettext
+                  python3
+                  cmake
+                  pkg-config
+                ];
+              }
+            "
+          done
+      - name: Pin + retain bootstrap builds
+        env:
+          BUILD_SHA: bootstrap-${{ github.sha }}
+        run: |
+          for arch in btver2 skylake; do
+            BUILD_HOST=bootstrap-$arch /opt/ci/retain-recent.sh
+          done
+      - name: Teardown tunnel + drainer
+        if: always()
+        run: |
+          pkill -f cache-drainer.sh || true
+          sudo wg-quick down wg0 || true
+
   # Build each host's system closure sequentially, then boot test the kiosks.
   # On pushes to main, also push closures to europa via WG + Harmonia.
   build-and-test:
+    needs: bootstrap-seed
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -107,7 +237,7 @@ jobs:
             echo "=== Building $host ==="
             nix build .#nixosConfigurations.$host.config.system.build.toplevel
           done
-# ---- main-only: pin all builds ----
+      # ---- main-only: pin all builds ----
       - name: Pin + retain last 3 builds (main only)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         continue-on-error: true
