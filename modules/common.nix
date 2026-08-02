@@ -131,23 +131,27 @@
   # scripts/boot-smoke.sh). io and root intentionally share the same hardcoded
   # hash ("test") — this variant only ever runs as an ephemeral local QEMU VM,
   # never deployed.
-  virtualisation.vmVariant = {
-    # The Fallout splash is pointless in the headless serial QEMU VM (no
-    # display to render to) and just bloats the initrd, so force it off for
-    # `make test-<host>` / boot-smoke runs.
-    jupiter.boot.falloutSplash.enable = lib.mkForce false;
-    # Test the full UEFI bootloader path in the VM instead of direct kernel
-    # boot — matches real hardware (disko's ESP is an EF00 UEFI System
-    # Partition). Forcing legacy BIOS here would test a GPT disk with no BIOS
-    # boot partition, which hangs at the bootloader.
-    virtualisation.useBootLoader = true;
-    virtualisation.useEFIBoot = true;
-    virtualisation.diskSize = 4096;
+virtualisation.vmVariant = {
+      # The Fallout splash is pointless in the headless serial QEMU VM (no
+      # display to render to) and just bloats the initrd, so force it off for
+      # `make test-<host>` / boot-smoke runs.
+      jupiter.boot.falloutSplash.enable = lib.mkForce false;
+      # Test the full UEFI bootloader path in the VM instead of direct kernel
+      # boot — matches real hardware (disko's ESP is an EF00 UEFI System
+      # Partition). Forcing legacy BIOS here would test a GPT disk with no BIOS
+      # boot partition, which hangs at the bootloader.
+      virtualisation.useBootLoader = true;
+      virtualisation.useEFIBoot = true;
+      virtualisation.diskSize = 4096;
 
-    # With useBootLoader, only kernelParams baked into the boot entries reach
-    # the kernel — this is what makes boot output visible to
-    # scripts/boot-smoke.sh's captured serial log.
-    boot.kernelParams = [ "console=ttyS0" ];
+      # With useBootLoader, only kernelParams baked into the boot entries reach
+      # the kernel — this is what makes boot output visible to
+      # scripts/boot-smoke.sh's captured serial log.
+      boot.kernelParams = [ "console=ttyS0" ];
+
+      # Ensure DNS works in the VM (QEMU user-mode networking provides DHCP
+      # at 10.0.2.3, but resolv.conf isn't populated by default).
+      networking.nameservers = [ "10.0.2.3" "1.1.1.1" ];
 
     users.users.io = {
       hashedPasswordFile = lib.mkForce null;
