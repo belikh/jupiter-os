@@ -6,19 +6,14 @@
 
 # The Jupiter build-mesh WireGuard interface.
 #
-# Why this exists: the Cloudflare Tunnel that fronts europa's atticd
-# (attic.jupiter.au) has a hard ~100s origin timeout — it returns HTTP 524 on
-# any single NAR upload/download larger than what fits in that window, which
-# means gcc/glibc/rustc-class paths can NEVER move over the tunnel. The first
-# "rebuild the world" run banked only the small paths and lost every big one.
-#
-# This interface gives the ephemeral build server (pallene) a DIRECT route to
-# europa (the attic host), bypassing the tunnel entirely for attic push/pull.
+# Why this exists: the Cloudflare Tunnel that fronts europa's Harmonia cache
+# (cache.jupiter.au) is fine for most paths, but the direct mesh gives the
+# ephemeral build server (pallene) a low-latency route to europa for any
+# large NAR transfers that might otherwise time out over the tunnel.
 # europa is the always-on server peer (listen on wireguardPort, forwarded from
 # the home router); pallene is the roaming client peer that dials europa's
 # public endpoint. Once the interface is up, pallene reaches europa at
-# europa's mesh IP (e.g. 10.10.0.1), and build-server.nix points attic at
-# http://<europa-mesh-ip>:8080 instead of https://attic.jupiter.au.
+# europa's mesh IP (e.g. 10.10.0.1) for direct store access.
 #
 # Ops prerequisite (one-time, manual): forward wireguardPort/UDP on the home
 # router to europa, and set pallene's peer `endpoint` to europa's public WG

@@ -106,7 +106,7 @@
             # packages resolvable (gamescope-session, steamos-manager, …) by
             # applying its overlay to this host's pkgs. Gated so
             # europa/callisto/pallene never see it (buildability: keep their
-            # closures substitutable from cache.nixos.org + attic, untouched by
+            # closures substitutable from cache.nixos.org + Harmonia, untouched by
             # a gaming overlay). The `or` guards handle the hosts that don't
             # import console.nix (so `jupiter.gaming` is absent).
             #

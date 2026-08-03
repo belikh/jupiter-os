@@ -9,9 +9,8 @@
 # (the master branch ran it on ganymede, which isn't registered here yet); the
 # deferred-followup is to move it back to ganymede once that host exists.
 #
-# The primary use case today: europa's atticd (modules/services/attic-server.nix)
-# is reached at attic.jupiter.au so the remote BinaryLane build server
-# (pallene) can push tuned closures and future roaming hosts can pull them.
+# The primary use case today: europa's Harmonia cache (services.harmonia on :5000)
+# is reached at cache.jupiter.au so the fleet and roaming hosts can pull from it.
 # The tunnel credentials live in the cloudflare_cert sops secret (already in
 # secrets/secrets.yaml).
 
@@ -33,16 +32,16 @@ in
       '';
     };
 
-    atticHostname = lib.mkOption {
+    harmoniaHostname = lib.mkOption {
       type = lib.types.str;
-      default = "attic.jupiter.au";
-      description = "Public hostname routing to europa's atticd (localhost:8080).";
+      default = "cache.jupiter.au";
+      description = "Public hostname routing to europa's Harmonia cache (localhost:5000).";
     };
 
-    atticPort = lib.mkOption {
+    harmoniaPort = lib.mkOption {
       type = lib.types.port;
-      default = 8080;
-      description = "Port atticd listens on locally (the tunnel's upstream).";
+      default = 5000;
+      description = "Port Harmonia listens on locally (the tunnel's upstream).";
     };
 
     extraIngress = lib.mkOption {
@@ -62,18 +61,6 @@ in
       );
       default = [ ];
       description = "Additional ingress rules for the tunnel: hostname → localhost:port";
-    };
-
-    harmoniaHostname = lib.mkOption {
-      type = lib.types.str;
-      default = "cache.jupiter.au";
-      description = "Public hostname routing to europa's Harmonia cache (localhost:5000).";
-    };
-
-    harmoniaPort = lib.mkOption {
-      type = lib.types.port;
-      default = 5000;
-      description = "Port Harmonia listens on locally (the tunnel's upstream).";
     };
   };
 

@@ -46,11 +46,6 @@ let
       recordsize = "128K";
     }
     {
-      name = "tank/services/attic";
-      mountpoint = "/tank/services/attic";
-      recordsize = "256K";
-    }
-    {
       name = "tank/surveillance";
       mountpoint = "/tank/surveillance";
       recordsize = "1M";

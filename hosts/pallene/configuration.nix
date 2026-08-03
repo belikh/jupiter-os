@@ -9,12 +9,12 @@
 # needs rebuilding when this file, build-server.nix, or wireguard.nix itself
 # changes), it rebuilds whatever hosts and git ref it's told at server-create
 # time (see modules/services/build-server.nix's runtime-parameters block),
-# pushes the result(s) to the attic cache, then deletes itself. No storage
+# pushes the result(s) to Harmonia, then deletes itself. No storage
 # profile, no impermanence, no backup, no branding, no desktop — as minimal
 # as the stock installer media allows, plus the one module that does the
 # actual work.
 #
-# Zero secrets baked into the Nix store: BinaryLane API token, attic push
+# Zero secrets baked into the Nix store: BinaryLane API token, push
 # token, R2 credentials, and the WireGuard mesh key all arrive via cloud-init
 # user_data at boot (scripts/binarylane-build-server.sh builds and sends that
 # blob) — this ISO is safe to keep in R2 indefinitely with nothing sensitive
@@ -58,8 +58,8 @@
 
   jupiter.services.buildServer = {
     enable = true;
-    # europa's atticd reached via a UDM port-forward (WAN:8080 -> 10.1.1.2:8080,
-    # "europa-attic" rule) directly to neptune.jupiter.au, NOT via the
+    # europa's Harmonia cache reached via UDM port-forward (WAN:8080 -> 10.1.1.2:8080,
+    # "europa-harmonia" rule) directly to neptune.jupiter.au, NOT via the
     # Cloudflare Tunnel and NOT via the WireGuard build mesh (jupwg) below.
     # Tried both of those first:
     #   - Cloudflare Tunnel: returns HTTP 524 on any NAR that takes >100s to
@@ -71,15 +71,15 @@
     #     tests (a 20MB curl PUT over the mesh didn't complete in 30s; the same
     #     test via europa's own localhost was instant) and `ss` showing
     #     multi-MB Send-Q backlogs on genuinely fresh connections. This caused
-    #     repeated attic-push stalls AND, on the read side, nix's own
+    #     repeated push stalls AND, on the read side, nix's own
     #     substituter downloads timing out mid-transfer and getting disabled
     #     for large paths (llvm-src/gcc/binutils-class), forcing wasteful
     #     rebuilds of things already cached.
     # The port-forward bypasses jupwg entirely — same public-internet path
     # class as the build's own git-clone/R2 traffic, no WG software-crypto
-    # bottleneck. ATTIC_SERVER in user-data can override this per-run (see
-    # atticServer's option doc in build-server.nix) without an ISO rebuild —
-    # e.g. to fall back to the mesh IP if the port-forward or DNS ever break.
+    # bottleneck. HARMONIA_SERVER in user-data can override this per-run
+    # without an ISO rebuild — e.g. to fall back to the mesh IP if the
+    # port-forward or DNS ever break.
     atticServer = "http://neptune.jupiter.au:8080";
 
     # ---- WireGuard build mesh: deliberately NOT the shared
@@ -106,7 +106,7 @@
     wireguardPeerPublicKey = "gw6gm9TpSBFOqifygp8XLfEEDGgebzD4tEFgXCSawE4=";
     wireguardEndpoint = "neptune.jupiter.au:51820";
     wireguardAllowedIPs = [
-      "10.1.1.0/24" # home LAN — europa/attic lives here at 10.1.1.2
+      "10.1.1.0/24" # home LAN — europa/Harmonia lives here at 10.1.1.2
       "192.168.5.0/24" # the WG mesh itself
     ];
   };

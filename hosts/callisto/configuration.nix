@@ -136,7 +136,7 @@
   #
   # callisto is a SHARED incremental builder for the fleet: when any host
   # does `nixos-rebuild`, only the few packages that actually changed get
-  # dispatched here (the rest substitute from cache.nixos.org / attic). Low
+  # dispatched here (the rest substitute from cache.nixos.org / Harmonia). Low
   # concurrency, larger per-package work. For that shape, cores=N +
   # max-jobs=1 wins: each derivation gets all 6 cores for its internal
   # `make -j$NIX_BUILD_CORES`, so even single big packages (a stale LLVM, a
@@ -190,12 +190,12 @@
   # requiredSystemFeatures=["gccarch-skylake"], which invalidates
   # cache.nixos.org for it. Pallene (modules/services/build-server.nix,
   # which now lists callisto in `hosts` and "skylake" in `microarchs`) must
-  # build and push this closure to attic FIRST. Only then can callisto
-  # safely `nixos-rebuild` — and even then, only if attic already has the
+  # build and push this closure to Harmonia FIRST. Only then can callisto
+  # safely `nixos-rebuild` — and even then, only if Harmonia already has the
   # paths.
   # Verify pre-deploy with `nix path-info --substituters
-  # http://10.1.1.2:8080/jupiter-os <toplevel>` from callisto — every path
-  # must resolve from attic before `switch`.
+  # http://10.1.1.2:5000 <toplevel>` from callisto — every path
+  # must resolve from Harmonia before `switch`.
   #
   # DISABLED 2026-07-22: this was committed ahead of pallene actually doing
   # the required build+push. Consequence discovered during europa's PXE
@@ -203,7 +203,7 @@
   # path (for the kexec init= cmdline), so ANYTHING that evaluates
   # nixosConfigurations.callisto — including an unrelated europa rebuild —
   # was forced to build callisto's *entire* skylake-tagged closure from
-  # scratch, since nothing skylake-tagged exists in attic or cache.nixos.org.
+  # scratch, since nothing skylake-tagged exists in Harmonia or cache.nixos.org.
   # Re-enable only after pallene has actually pushed a skylake closure.
   # jupiter.build.microarch = "skylake";
 

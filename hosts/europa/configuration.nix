@@ -153,8 +153,8 @@
   # ---- Services ------------------------------------------------------------
   # Harmonia binary cache: serves europa's own /nix/store over HTTP so the
   # fleet (and the next CI run) can substitute closures CI pushed here. Read-
-  # only by design (issue #63 — replaces the decommissioned atticd, which had
-  # its own store). CI populates the store via `nix copy --to ssh://europa`
+  # only by design (issue #63 — replaces the decommissioned attic cache, which
+  # had its own store dataset). CI populates the store via `nix copy --to ssh://europa`
   # (jupiter-ci user, see modules/core/ci-cache-receiver.nix); fleet hosts
   # consume it via modules/core/harmonia-substituter.nix. The signing key is
   # generated once via nix-store --generate-binary-cache-key (see
@@ -190,9 +190,8 @@
   jupiter.consoleScreensaver.enable = true;
 
   # Cloudflare Tunnel — now fronts the Harmonia cache at cache.jupiter.au.
-  # atticd is decommissioned (issue #63); Harmonia serves the read-only cache.
-  # CI and fleet hosts can reach it via the Cloudflare Tunnel (public) or
-  # the UDM WireGuard road-warrior (LAN/WG).
+  # Harmonia serves the read-only cache. CI and fleet hosts can reach it via
+  # the Cloudflare Tunnel (public) or the UDM WireGuard road-warrior (LAN/WG).
   jupiter.services.cloudflareTunnel = {
     enable = true;
     # Cloudflare tunnel UUID (from ~/.cloudflared/<id>.json / the dashboard).
