@@ -97,7 +97,7 @@ jobs:
         if: github.ref == 'refs/heads/main'
         env:
           EUROPA_SSH: europa-ci
-        run: nohup /opt/ci/cache-drainer.sh >/tmp/ci-drainer.log 2>&1 &
+        run: nohup /opt/ci/cache-drainer.sh 2>&1 | tee /tmp/ci-drainer.log &
       # ---- Build fleet (all hosts in one derivation) ----
       - name: Build fleet (all hosts)
         run: |
@@ -115,5 +115,6 @@ jobs:
       - name: Teardown tunnel + drainer
         if: always()
         run: |
+          cat /tmp/ci-drainer.log || true
           pkill -f cache-drainer.sh || true
           sudo wg-quick down wg0 || true

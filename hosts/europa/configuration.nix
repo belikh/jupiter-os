@@ -106,7 +106,7 @@
   # modules/core/build-tuning.nix for the SIGILL/march caveats.
   # TODO: ZFS 2.4.3 has kernel build issues with btver2 on nixpkgs 26.11;
   # temporarily disabled to get arcade system online. Re-enable once fixed.
-  jupiter.build.microarch = "btver2"; # pallene (build server) compiles this host's closure -march=btver2 and pushes to the local Attic
+  # jupiter.build.microarch = "btver2"; # pallene (build server) compiles this host's closure -march=btver2 and pushes to the local Attic
 
   # ---- nixpkgs overlays ----------------------------------------------------
   # bmake's `deptgt-interrupt` unit test is timing-sensitive (it asserts a
@@ -157,6 +157,11 @@
   # secret; without it europa's activation fails, so it must be added first.
   services.harmonia.cache.enable = true;
   services.harmonia.cache.signKeyPaths = [ config.sops.secrets.harmonia_sign_key.path ];
+  services.harmonia.cache.settings = {
+    real_nix_store = "/nix/store";
+    nix_db_path = "/nix/var/nix/db/db.sqlite";
+  };
+  systemd.services.harmonia.serviceConfig.ReadOnlyPaths = [ "/nix/store" ];
   networking.firewall.allowedTCPPorts = [ 5000 ];
 
   # Receiving side for CI's `nix copy` pushes (jupiter-ci trusted user +
