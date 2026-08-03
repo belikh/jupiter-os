@@ -124,6 +124,7 @@
   # rewrite EUROPA's own boot entries during that cross-machine install.
   boot.loader.efi.canTouchEfiVariables = lib.mkForce false;
   boot.loader.systemd-boot.enable = false; # iSCSI LUN has no ESP; PXE boots kernel+initrd directly
+  boot.loader.grub.enable = false; # no bootloader on iSCSI LUN
 
   # ---- Build daemon tuning for the shared-builder workload ----------------
   # callisto's actual workload is the OPPOSITE of pallene's
