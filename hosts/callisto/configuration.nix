@@ -54,7 +54,6 @@
     ../../modules/common.nix
     ../../modules/services/console-screensaver.nix
     ../../modules/services/mqtt.nix
-    ../../modules/services/llama-server.nix
   ];
 
   networking.hostName = "callisto";
@@ -251,13 +250,17 @@
   # ---- Local model server (jupiter.services.llm) ---------------------------
   # Serves Qwen3-Coder-30B-A3B (a 3B-active MoE — the sweet spot for this
   # CPU-only, 6-thread, no-AVX-512 box with ~62Gi RAM) via llama-server on
-  # localhost:8081. Crush on this host picks it up automatically through
-  # modules/core/crush.nix (llamacpp provider, auto-discovery). Bound to
-  # 127.0.0.1 only by default — code/prompts stay on this machine, and it
-  # never competes for firewall ports or LAN exposure. It WILL share the CPU
-  # with the fleet builder workload (nix builds already use all 6 threads),
-  # so nThreads is kept at 6 but is operator-tunable down if builds suffer.
-  # The GGUF is self-downloaded on first start (--hf-repo/--hf-file) into
-  # llama-server's StateDirectory; nothing model-sized enters the nix store.
+  # port 8081. This is the fleet's only model server: every other host's crush
+  # dials it over the LAN (modules/common.nix defaults clientUrl to callisto's
+  # static IP). We bind 0.0.0.0 + open the firewall for those hosts, then pin
+  # our own clientUrl back to localhost so crush here skips the LAN hop. It
+  # WILL share the CPU with the fleet builder workload (nix builds already use
+  # all 6 threads), so nThreads is kept at 6 but is operator-tunable down if
+  # builds suffer. The GGUF is self-downloaded on first start
+  # (--hf-repo/--hf-file) into llama-server's StateDirectory; nothing
+  # model-sized enters the nix store.
   jupiter.services.llm.enable = true;
+  jupiter.services.llm.host = "0.0.0.0";
+  jupiter.services.llm.exposeLan = true;
+  jupiter.services.llm.clientUrl = "http://127.0.0.1:8081";
 }

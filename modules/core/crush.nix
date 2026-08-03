@@ -53,13 +53,14 @@ let
   # Same z.ai coding-plan provider as modules/core/zed.nix's zed-wrapped —
   # it's the only LLM API key in secrets/secrets.yaml.
   #
-  # When a host also runs the local model server (modules/services/llama-server.nix,
-  # jupiter.services.llm.enable), add it as a `llamacpp` provider. Crush
-  # auto-discovers /v1/models from that endpoint (discover_models defaults to
-  # true and the provider carries no explicit models list), so the local
-  # Qwen3-Coder model shows up in Crush's model picker alongside GLM-4.6
-  # without hard-coding the GGUF here. The `or false` guard keeps this fleet-
-  # wide module eval-ing on hosts that don't even define the llm option.
+  # The fleet model server (modules/services/llama-server.nix) is wired up as
+  # a `llamacpp` provider on EVERY host that enables crush. jupiter.services.llm.clientUrl
+  # defaults to the local llama-server when one runs here; common.nix sets it
+  # fleet-wide to callisto's static LAN address for hosts that only consume
+  # the shared server. Crush auto-discovers /v1/models from that endpoint
+  # (discover_models defaults to true and the provider carries no explicit
+  # models list), so Qwen3-Coder shows up in Crush's model picker alongside
+  # GLM-4.6 without hard-coding the GGUF here.
   crushSettings = pkgs.writeText "crush.json" (
     builtins.toJSON {
       "$schema" = "https://charm.land/crush.json";
@@ -77,13 +78,10 @@ let
             }
           ];
         };
-      }
-      // lib.optionalAttrs (config.jupiter.services.llm.enable or false) {
-        # ssh HostKey port match: the local server's port (default 8081)
         "qwen-local" = {
           type = "llamacpp";
           name = "Qwen3-Coder (local)";
-          base_url = "http://${config.jupiter.services.llm.host}:${toString config.jupiter.services.llm.port}";
+          base_url = config.jupiter.services.llm.clientUrl;
         };
       };
     }

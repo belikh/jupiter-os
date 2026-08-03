@@ -5,13 +5,20 @@
   ...
 }:
 
-# Local model host for the fleet. Serves the Qwen3-Coder-30B-A3B GGUF on a
-# localhost-only OpenAI-compatible API for agentic clients (Crush, Zed), so
-# code and prompts never leave the LAN. Wraps nixpkgs' own `services.llama-cpp`
-# (llama-server) rather than hand-rolling a service — that is the blessed
-# path, and it satisfies buildability rule 2: nothing heavy (~19GB model)
-# enters the nix store / closure. llama-server downloads the GGUF from
-# HuggingFace on first start via --hf-repo / --hf-file into its StateDirectory.
+# Fleet model service — one option set, two roles:
+#   * server — `jupiter.services.llm.enable` runs llama-server locally. Only
+#     callisto enables it: it is the sole host with enough RAM (~62Gi) to hold
+#     the Qwen3-Coder-30B-A3B GGUF alongside its build-server workload.
+#   * client — `jupiter.services.llm.clientUrl` is the base URL OpenAI-
+#     compatible clients (crush's `llamacpp` provider) use to reach the model.
+#     common.nix defaults it fleet-wide to callisto's static LAN address so
+#     every host dials the shared server; callisto pins it back to localhost
+#     to skip the LAN hop. Code/prompts never leave the trusted LAN.
+# Wraps nixpkgs' own `services.llama-cpp` (llama-server) rather than
+# hand-rolling a service — that is the blessed path, and it satisfies
+# buildability rule 2: nothing heavy (~19GB model) enters the nix store /
+# closure. llama-server downloads the GGUF from HuggingFace on first start via
+# --hf-repo / --hf-file into its StateDirectory.
 #
 # Model choice (research, 2026-07): Qwen 3B-active MoE is the sweet spot for
 # callisto — 6-thread, CPU-only, no AVX-512, ~62Gi usable RAM, and it doubles
@@ -51,6 +58,18 @@ in
       type = lib.types.port;
       default = 8081;
       description = "Port llama-server listens on.";
+    };
+
+    clientUrl = lib.mkOption {
+      type = lib.types.str;
+      default = "http://${cfg.host}:${toString cfg.port}";
+      defaultText = lib.literalExpression ''"http://\${config.jupiter.services.llm.host}:\${toString config.jupiter.services.llm.port}"'';
+      description = ''
+        Base URL that client agents (crush's `llamacpp` provider) use to reach
+        the model. Defaults to the local server address; hosts that only
+        consume the fleet server (modules/core/crush.nix sets this fleet-wide
+        in common.nix) point it at the host that actually runs it.
+      '';
     };
 
     exposeLan = lib.mkOption {

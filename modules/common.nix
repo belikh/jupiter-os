@@ -21,6 +21,7 @@
     # ./core/build-machines.nix  # disabled; enable per-host if needed
     ./core/harmonia-substituter.nix
     ./core/branding.nix
+    ./services/llama-server.nix
     ./storage/zfs-profiles.nix
   ];
 
@@ -32,6 +33,14 @@
   jupiter.core.crush.enable = lib.mkDefault true;
   jupiter.core.antigravity.enable = lib.mkDefault true;
   jupiter.core.branding.enable = true;
+
+  # The fleet model server (modules/services/llama-server.nix) runs on
+  # callisto — the only host with enough RAM to host the Qwen3-Coder-30B-A3B
+  # GGUF alongside its build-server workload. Every host's crush dials it by
+  # callisto's static DHCP-reserved IP (same pattern as the broker address in
+  # modules/services/customer-display.nix / arcade-inventory.nix). callisto
+  # itself overrides clientUrl back to localhost in its own config.
+  jupiter.services.llm.clientUrl = lib.mkDefault "http://10.1.1.3:8081";
 
   nixpkgs.config.allowUnfree = true;
   hardware.enableRedistributableFirmware = lib.mkDefault true;
