@@ -123,6 +123,7 @@
   # disk — leaving canTouchEfiVariables at common.nix's default would try to
   # rewrite EUROPA's own boot entries during that cross-machine install.
   boot.loader.efi.canTouchEfiVariables = lib.mkForce false;
+  boot.loader.systemd-boot.enable = false; # iSCSI LUN has no ESP; PXE boots kernel+initrd directly
 
   # ---- Build daemon tuning for the shared-builder workload ----------------
   # callisto's actual workload is the OPPOSITE of pallene's
