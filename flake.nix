@@ -288,12 +288,12 @@
         builtins.foldl'
           (
             acc: host:
-            pkgs.buildEnv {
+            nixpkgs.legacyPackages.x86_64-linux.buildEnv {
               name = "fleet";
               paths = acc.paths ++ [ host.config.system.build.toplevel ];
             }
           )
-          (pkgs.buildEnv {
+          (nixpkgs.legacyPackages.x86_64-linux.buildEnv {
             name = "fleet-empty";
             paths = [ ];
           })
