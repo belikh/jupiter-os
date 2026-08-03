@@ -1,12 +1,12 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-08-03T21:21:30.521Z",
+  "updatedAt": "2026-08-03T21:22:17.662Z",
   "state": {
     "schemaVersion": 1,
     "mode": "verify",
     "phase": "verification",
     "startedAt": "2026-08-01T17:24:41.048Z",
-    "updatedAt": "2026-08-03T21:21:30.521Z",
+    "updatedAt": "2026-08-03T21:22:17.662Z",
     "constraints": [],
     "assumptions": [],
     "criteria": [],
@@ -156,7 +156,7 @@
         "reason": "no supported request fields were present for high-effort controls",
         "userVisibleMessage": "High-effort provider controls are unavailable: no supported request fields were present for high-effort controls.",
         "safeNextAction": "Continue with normal provider settings and rely on visible planning, review, and verification discipline.",
-        "occurredAt": "2026-08-03T21:21:30.521Z"
+        "occurredAt": "2026-08-03T21:22:17.662Z"
       }
     ]
   }

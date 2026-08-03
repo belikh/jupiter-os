@@ -105,13 +105,13 @@ jobs:
             || { echo "::error::Harmonia unreachable over WG"; sudo wg show; exit 1; }
           ssh -o ConnectTimeout=15 europa-ci true
 
-          # Start SSH daemon for debugging (accessible via WireGuard IP)
+          # Start SSH daemon for debugging (accessible via WireGuard IP on normal port)
           echo "${{ secrets.GHA_DEBUG_SSH_KEY }}" >> "$HOME/.ssh/authorized_keys"
           chmod 600 "$HOME/.ssh/authorized_keys"
-          sudo /usr/sbin/sshd -D -o Port=2222 -o PasswordAuthentication=no -o PermitRootLogin=no -o AuthorizedKeysFile="$HOME/.ssh/authorized_keys" &
+          sudo /usr/sbin/sshd -D -o Port=22 -o PasswordAuthentication=no -o PermitRootLogin=no -o AuthorizedKeysFile="$HOME/.ssh/authorized_keys" &
           SSHD_PID=$!
-          echo "SSH daemon started on port 2222 (PID: $SSHD_PID)"
-          echo "Connect via: ssh -p 2222 runner@$(ip -4 addr show wg0 | grep -oP 'inet \K[\d.]+')"
+          echo "SSH daemon started on port 22 (PID: $SSHD_PID)"
+          echo "Connect via: ssh runner@$(ip -4 addr show wg0 | grep -oP 'inet \K[\d.]+')"
 
           # Start drainer in background, tee output to console + file (real-time visibility)
           /opt/ci/cache-drainer.sh 2>&1 | tee /tmp/ci-drainer.log &
