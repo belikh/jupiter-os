@@ -59,11 +59,15 @@ jobs:
             connect-timeout = 5
             post-build-hook = ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && '/opt/ci/post-build-hook.sh' || '' }}
             system-features = gccarch-btver2 gccarch-skylake
-      # ---- main-only: WireGuard + cache drainer ----
-      - name: WireGuard up + ssh config (main only)
+      # ---- main-only: WireGuard + cache drainer + build ----
+      - name: WireGuard up + build fleet + drainer (main only)
         if: github.ref == 'refs/heads/main'
         continue-on-error: true
+        env:
+          EUROPA_SSH: europa-ci
+          BUILD_SHA: ${{ github.sha }}
         run: |
+          # WireGuard setup
           sudo apt-get update && sudo apt-get install -y wireguard-tools
           sudo install -d -m 700 /etc/wireguard
           sudo tee /etc/wireguard/wg0.conf >/dev/null <<EOF
@@ -93,28 +97,32 @@ jobs:
           curl -fsS --max-time 15 http://10.1.1.2:5000/nix-cache-info \
             || { echo "::error::Harmonia unreachable over WG"; sudo wg show; exit 1; }
           ssh -o ConnectTimeout=15 europa-ci true
-      - name: Start cache drainer (main only)
-        if: github.ref == 'refs/heads/main'
-        env:
-          EUROPA_SSH: europa-ci
-        run: nohup /opt/ci/cache-drainer.sh 2>&1 | tee /tmp/ci-drainer.log &
-      # ---- Build fleet (all hosts in one derivation) ----
-      - name: Build fleet (all hosts)
-        run: |
+
+          # Start drainer in background, capture PID
+          /opt/ci/cache-drainer.sh >/tmp/ci-drainer.log 2>&1 &
+          DRAINER_PID=$!
+          echo "Started cache drainer (PID: $DRAINER_PID)"
+
+          # Build fleet (this will enqueue paths for the drainer)
           nix build .#fleet
-      # ---- main-only: pin all builds ----
-      - name: Pin + retain last 3 builds (main only)
-        if: github.ref == 'refs/heads/main'
-        continue-on-error: true
-        env:
-          BUILD_SHA: ${{ github.sha }}
-        run: |
+          BUILD_EXIT=$?
+
+          # Pin + retain last 3 builds
           for host in europa callisto pallene amalthea metis adrastea thebe; do
             BUILD_HOST=$host /opt/ci/retain-recent.sh
           done
-      - name: Teardown tunnel + drainer
-        if: always()
-        run: |
+
+          # Wait a bit for drainer to finish processing queue
+          sleep 10
+
+          # Show drainer logs
           cat /tmp/ci-drainer.log || true
-          pkill -f cache-drainer.sh || true
+
+          # Stop drainer
+          kill $DRAINER_PID 2>/dev/null || true
+          pkill -f cache-drainer.sh 2>/dev/null || true
+
+          # Teardown WireGuard
           sudo wg-quick down wg0 || true
+
+          exit $BUILD_EXIT
