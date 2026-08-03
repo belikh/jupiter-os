@@ -103,9 +103,12 @@ jobs:
           DRAINER_PID=$!
           echo "Started cache drainer (PID: $DRAINER_PID)"
 
-          # Build fleet (this will enqueue paths for the drainer)
-          nix build .#fleet
-          BUILD_EXIT=$?
+          # Build each host individually (this will enqueue paths for the drainer)
+          for host in europa callisto pallene amalthea metis adrastea thebe; do
+            echo "Building $host..."
+            nix build ".#nixosConfigurations.$host.config.system.build.toplevel" || exit 1
+          done
+          BUILD_EXIT=0
 
           # Pin + retain last 3 builds
           for host in europa callisto pallene amalthea metis adrastea thebe; do
