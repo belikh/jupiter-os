@@ -45,6 +45,13 @@ jobs:
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      # Cache Nix store by nixpkgs commit (flake.lock hash)
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/nix
+          key: nix-${{ runner.os }}-nixpkgs-${{ hashFiles('flake.lock') }}-${{ github.run_id }}
+          restore-keys: |
+            nix-${{ runner.os }}-nixpkgs-${{ hashFiles('flake.lock') }}-
       # Stage the CI cache scripts before nix is installed.
       - name: Stage CI cache scripts
         run: |
