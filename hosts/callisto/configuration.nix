@@ -205,7 +205,7 @@
   # was forced to build callisto's *entire* skylake-tagged closure from
   # scratch, since nothing skylake-tagged exists in attic or cache.nixos.org.
   # Re-enable only after pallene has actually pushed a skylake closure.
-  jupiter.build.microarch = "skylake";
+  # jupiter.build.microarch = "skylake";
 
   # Console screensaver — Matrix rain on tty1 for the (rare) moments a
   # monitor is plugged into this host. Same module as europa; Nice=19 is
