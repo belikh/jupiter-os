@@ -18,7 +18,7 @@
     ./core/crush.nix
     ./boot/fallout-splash.nix
     ./core/build-tuning.nix
-    ./core/build-machines.nix
+    # ./core/build-machines.nix  # disabled fleet-wide; enable per-host if needed
     ./core/harmonia-substituter.nix
     ./core/branding.nix
     ./storage/zfs-profiles.nix

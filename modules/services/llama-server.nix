@@ -71,9 +71,6 @@ in
       description = "GPU layers offloaded. 0 = CPU-only (callisto has no discrete GPU).";
     };
 
-    # The agentic reasoner shares CPU with nix builds on this box, so default
-    # to a sub-set of the cores and let operators tune up if the box is quiet.
-    # A best-fit heuristic is the physical cores (callisto: 6).
     nThreads = lib.mkOption {
       type = lib.types.int;
       default = 6;
@@ -91,11 +88,11 @@ in
         "hf-repo" = cfg.hfRepo;
         "hf-file" = cfg.hfFile;
         "ctx-size" = cfg.contextSize;
-        "n-gpu-layers" = cfg.cpusLayers; # set via jupiter option below
+        "n-gpu-layers" = cfg.gpuLayers;
         threads = cfg.nThreads;
       };
     };
 
-    networking.firewall.allowedTCPPorts = lib.optional cfg.lanOpen cfg.port;
+    networking.firewall.allowedTCPPorts = lib.optional cfg.exposeLan cfg.port;
   };
 }
