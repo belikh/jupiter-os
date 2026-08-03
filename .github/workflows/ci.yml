@@ -131,6 +131,10 @@ jobs:
           done
           BUILD_EXIT=0
 
+          # Push full build closure (including bootstrap tools, build deps)
+          echo "Pushing full build closure to europa..."
+          nix path-info -r $(nix path-info ".#nixosConfigurations.*" | grep toplevel) | nix copy --to "ssh-ng://europa-ci" --stdin || echo "WARNING: full closure push failed"
+
           # Pin + retain last 3 builds
           for host in europa callisto pallene amalthea metis adrastea thebe; do
             BUILD_HOST=$host /opt/ci/retain-recent.sh
