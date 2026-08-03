@@ -280,6 +280,18 @@
       # The output is result/nixos.img — compress with `xz -T0 -9` before serving.
       packages.x86_64-linux.pallene-raw = self.nixosConfigurations.pallene.config.system.build.raw;
 
+      # Fleet-wide closure that builds ALL host toplevels together.
+      # This creates a single derivation containing all host toplevels,
+      # so building it once caches all dependencies (including microarch-tuned
+      # packages for btver2/skylake) in one go.
+      packages.x86_64-linux.fleet = builtins.foldl'
+        (acc: host: pkgs.buildEnv {
+          name = "fleet";
+          paths = acc.paths ++ [ host.config.system.build.toplevel ];
+        })
+        (pkgs.buildEnv { name = "fleet-empty"; paths = [ ]; })
+        self.nixosConfigurations;
+
       # The TFTP root europa serves callisto's netboot chain from — exposed
       # standalone (built with the untuned nixpkgs, see pxeModule above) so
       # it's independently checkable without pulling in europa's whole

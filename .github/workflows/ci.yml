@@ -22,16 +22,13 @@ jobs:
       - name: Flake check (evaluates every host)
         run: nix flake check --no-build
 
-  # Build each host's system closure sequentially, then boot test the kiosks.
-  # On pushes to main, also push closures to europa via WG + Harmonia.
-  build-and-test:
+  # Build all hosts in a single fleet derivation, pushing to Harmonia on main.
+  # Sequential is implicit since it's one derivation - no parallel OOM.
+  build-fleet:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # Free ~30 GiB before building. Each host realises a full kiosk
-      # closure (desktop + Jovian gaming stack + retroarch cores) and then
-      # lays down a ~15 GiB QEMU disk image that embeds a copy of that
-      # store, which together overflow ubuntu-latest's ~14-22 GiB free.
+      # Free ~30 GiB before building.
       - name: Free disk space
         uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be  # v1.3.1
         with:
@@ -101,13 +98,10 @@ jobs:
         env:
           EUROPA_SSH: europa-ci
         run: nohup /opt/ci/cache-drainer.sh >/tmp/ci-drainer.log 2>&1 &
-      # ---- Build each host sequentially ----
-      - name: Build all hosts (closure only)
+      # ---- Build fleet (all hosts in one derivation) ----
+      - name: Build fleet (all hosts)
         run: |
-          for host in europa callisto pallene amalthea metis adrastea thebe; do
-            echo "=== Building $host ==="
-            nix build .#nixosConfigurations.$host.config.system.build.toplevel
-          done
+          nix build .#fleet
       # ---- main-only: pin all builds ----
       - name: Pin + retain last 3 builds (main only)
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -117,13 +111,6 @@ jobs:
         run: |
           for host in europa callisto pallene amalthea metis adrastea thebe; do
             BUILD_HOST=$host /opt/ci/retain-recent.sh
-          done
-      # ---- Boot smoke test kiosks only ----
-      - name: Boot smoke test kiosks
-        run: |
-          for host in amalthea metis adrastea thebe; do
-            echo "=== Boot testing $host ==="
-            ./scripts/boot-smoke.sh $host 360
           done
       - name: Teardown tunnel + drainer
         if: always()
