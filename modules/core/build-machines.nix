@@ -88,7 +88,7 @@ in
   options.jupiter.core.buildMachines = {
     enable = lib.mkOption {
       type = lib.types.bool;
-      default = true;
+      default = false;
       description = "Delegate eligible builds to callisto + the dashboard kiosks as remote Nix builders.";
     };
   };
