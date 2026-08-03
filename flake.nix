@@ -297,7 +297,7 @@
             name = "fleet-empty";
             paths = [ ];
           })
-          self.nixosConfigurations;
+          (builtins.attrValues self.nixosConfigurations);
 
       # The TFTP root europa serves callisto's netboot chain from — exposed
       # standalone (built with the untuned nixpkgs, see pxeModule above) so
