@@ -92,6 +92,7 @@
   jupiter.core.antigravity.enable = false;
   jupiter.core.buildMachines.enable = false; # untuned host; builds locally from cache.nixos.org
   nix.distributedBuilds = false;
+  nix.buildMachines = [ ]; # force empty to prevent any delegation
 
   # ---- Storage profile (OS SSD) --------------------------------------------
   # Stateful root (no impermanence — the NAS needs persistent state).
