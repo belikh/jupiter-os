@@ -124,9 +124,6 @@
   # rewrite EUROPA's own boot entries during that cross-machine install.
   boot.loader.efi.canTouchEfiVariables = lib.mkForce false;
 
-  # Don't add a build-machine entry pointing at itself.
-  jupiter.core.buildMachines.enable = false;
-
   # ---- Build daemon tuning for the shared-builder workload ----------------
   # callisto's actual workload is the OPPOSITE of pallene's
   # (modules/services/build-server.nix). Pallene does full-closure

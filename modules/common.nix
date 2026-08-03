@@ -18,7 +18,7 @@
     ./core/crush.nix
     ./boot/fallout-splash.nix
     ./core/build-tuning.nix
-    ./core/build-machines.nix  # default=false; enables distributed builders per-host
+    # ./core/build-machines.nix  # disabled; enable per-host if needed
     ./core/harmonia-substituter.nix
     ./core/branding.nix
     ./storage/zfs-profiles.nix
