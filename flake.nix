@@ -284,13 +284,20 @@
       # This creates a single derivation containing all host toplevels,
       # so building it once caches all dependencies (including microarch-tuned
       # packages for btver2/skylake) in one go.
-      packages.x86_64-linux.fleet = builtins.foldl'
-        (acc: host: pkgs.buildEnv {
-          name = "fleet";
-          paths = acc.paths ++ [ host.config.system.build.toplevel ];
-        })
-        (pkgs.buildEnv { name = "fleet-empty"; paths = [ ]; })
-        self.nixosConfigurations;
+      packages.x86_64-linux.fleet =
+        builtins.foldl'
+          (
+            acc: host:
+            pkgs.buildEnv {
+              name = "fleet";
+              paths = acc.paths ++ [ host.config.system.build.toplevel ];
+            }
+          )
+          (pkgs.buildEnv {
+            name = "fleet-empty";
+            paths = [ ];
+          })
+          self.nixosConfigurations;
 
       # The TFTP root europa serves callisto's netboot chain from — exposed
       # standalone (built with the untuned nixpkgs, see pxeModule above) so
