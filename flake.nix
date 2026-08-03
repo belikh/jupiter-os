@@ -280,11 +280,11 @@
       # The output is result/nixos.img — compress with `xz -T0 -9` before serving.
       packages.x86_64-linux.pallene-raw = self.nixosConfigurations.pallene.config.system.build.raw;
 
-# The TFTP root europa serves callisto's netboot chain from — exposed
+      # The TFTP root europa serves callisto's netboot chain from — exposed
       # standalone (built with the untuned nixpkgs, see pxeModule above) so
       # it's independently checkable without pulling in europa's whole
       # (gccarch-btver2-tuned) system closure.
-      packages.x86_64-linux.pxe-tftproot = pxeTftproot;
+      packages.x86_64-linux.pxe-tftproot = pxeTftpRoot;
 
       # `nix flake check` builds every registered host closure — for a
       # single-host bootstrap that's cheap, and it's the whole point: prove
