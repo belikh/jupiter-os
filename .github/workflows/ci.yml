@@ -99,8 +99,8 @@ jobs:
             || { echo "::error::Harmonia unreachable over WG"; sudo wg show; exit 1; }
           ssh -o ConnectTimeout=15 europa-ci true
 
-          # Start drainer in background, capture PID
-          /opt/ci/cache-drainer.sh >/tmp/ci-drainer.log 2>&1 &
+          # Start drainer in background, tee output to console + file (real-time visibility)
+          /opt/ci/cache-drainer.sh 2>&1 | tee /tmp/ci-drainer.log &
           DRAINER_PID=$!
           echo "Started cache drainer (PID: $DRAINER_PID)"
 
@@ -118,9 +118,6 @@ jobs:
 
           # Wait a bit for drainer to finish processing queue
           sleep 10
-
-          # Show drainer logs
-          cat /tmp/ci-drainer.log || true
 
           # Stop drainer
           kill $DRAINER_PID 2>/dev/null || true
