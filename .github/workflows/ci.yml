@@ -54,14 +54,14 @@ jobs:
       - uses: cachix/install-nix-action@v31
         with:
           extra_nix_config: |
-            substituters = ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'http://10.1.1.2:5000' || 'https://cache.jupiter.au' }} https://cache.nixos.org
+            substituters = ${{ github.ref == 'refs/heads/main' && 'http://10.1.1.2:5000' || 'https://cache.jupiter.au' }} https://cache.nixos.org
             trusted-public-keys = ${{ secrets.HARMONIA_PUBLIC_KEY }} cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
             connect-timeout = 5
-            post-build-hook = ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && '/opt/ci/post-build-hook.sh' || '' }}
+            post-build-hook = ${{ github.ref == 'refs/heads/main' && '/opt/ci/post-build-hook.sh' || '' }}
             system-features = gccarch-btver2 gccarch-skylake
       # ---- main-only: WireGuard + cache drainer ----
       - name: WireGuard up + ssh config (main only)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main'
         continue-on-error: true
         run: |
           sudo apt-get update && sudo apt-get install -y wireguard-tools
@@ -94,7 +94,7 @@ jobs:
             || { echo "::error::Harmonia unreachable over WG"; sudo wg show; exit 1; }
           ssh -o ConnectTimeout=15 europa-ci true
       - name: Start cache drainer (main only)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main'
         env:
           EUROPA_SSH: europa-ci
         run: nohup /opt/ci/cache-drainer.sh >/tmp/ci-drainer.log 2>&1 &
@@ -104,7 +104,7 @@ jobs:
           nix build .#fleet
       # ---- main-only: pin all builds ----
       - name: Pin + retain last 3 builds (main only)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main'
         continue-on-error: true
         env:
           BUILD_SHA: ${{ github.sha }}
