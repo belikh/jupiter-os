@@ -90,6 +90,7 @@
   jupiter.core.crush.enable = false;
   jupiter.core.ecc.enable = false;
   jupiter.core.antigravity.enable = false;
+  jupiter.core.buildMachines.enable = false; # untuned host; builds locally from cache.nixos.org
 
   # ---- Storage profile (OS SSD) --------------------------------------------
   # Stateful root (no impermanence — the NAS needs persistent state).
