@@ -123,6 +123,11 @@ jobs:
           for host in europa callisto pallene amalthea metis adrastea thebe; do
             echo "Building $host..."
             nix build ".#nixosConfigurations.$host.config.system.build.toplevel" || exit 1
+            
+            # Force push this host's closure to europa immediately
+            echo "Pushing $host closure to europa..."
+            TOPO=$(nix path-info ".#nixosConfigurations.$host.config.system.build.toplevel")
+            nix copy --to "ssh-ng://europa-ci" "$TOPO" || echo "WARNING: push failed for $host"
           done
           BUILD_EXIT=0
 
