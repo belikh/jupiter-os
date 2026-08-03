@@ -109,8 +109,7 @@
   # deliberate, mitigated exception to the "no microarch" buildability rule —
   # the private Harmonia cache exists precisely to serve what cache.nixos.org
   # cannot once gcc.arch is set.
-  # NOTE: btver2 re-enabled on nixpkgs 148bab9 (2026-08-01) — ZFS 2.4.3 build issue fixed.
-  jupiter.build.microarch = "btver2"; # pallene compiles this host's closure -march=btver2 and pushes to Harmonia
+  jupiter.build.microarch = "btver2"; # GHA builds this host's closure with -march=btver2
 
   # ---- nixpkgs overlays ----------------------------------------------------
   # bmake's `deptgt-interrupt` unit test is timing-sensitive (it asserts a
