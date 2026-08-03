@@ -101,12 +101,15 @@
 
   # ---- Phase 2: CPU-tuned closure ------------------------------------------
   # Opteron X3216 is a "Cato" APU on the Puma core, ISA-equivalent to Jaguar,
-  # which GCC targets as btver2. The BinaryLane build server compiles this
-  # host's closure with -march=btver2 and pushes it to the local Attic; see
-  # modules/core/build-tuning.nix for the SIGILL/march caveats.
+  # which GCC targets as btver2. The BinaryLane build server (pallene) compiles
+  # this host's closure with -march=btver2 and pushes to Harmonia; europa then
+  # substitutes from its own cache ahead of cache.nixos.org. This is the
+  # deliberate, mitigated exception to the "no microarch" buildability rule —
+  # the private Harmonia cache exists precisely to serve what cache.nixos.org
+  # cannot once gcc.arch is set.
   # TODO: ZFS 2.4.3 has kernel build issues with btver2 on nixpkgs 26.11;
-  # temporarily disabled to get arcade system online. Re-enable once fixed.
-  # jupiter.build.microarch = "btver2"; # pallene (build server) compiles this host's closure -march=btver2 and pushes to the local Attic
+  # re-enable once fixed.
+  # jupiter.build.microarch = "btver2"; # pallene compiles this host's closure -march=btver2 and pushes to Harmonia
 
   # ---- nixpkgs overlays ----------------------------------------------------
   # bmake's `deptgt-interrupt` unit test is timing-sensitive (it asserts a
