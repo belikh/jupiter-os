@@ -69,7 +69,7 @@ jobs:
             system-features = gccarch-btver2 gccarch-skylake
             cores = 4
             max-jobs = 1
-            distributed-builds = true
+            builders-use-substitutes = true
             # Build machines configured via builders file below
       # Setup remote builders SSH key and known hosts
       - name: Setup remote builders SSH
