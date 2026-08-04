@@ -38,6 +38,9 @@ log_to_europa() {
     "mkdir -p /var/log/jupiter-ci && echo \"$msg\" >> $log_path" 2>/dev/null || true
 }
 
+# Use full path to nix since hook runs as root (nix-daemon) without user PATH
+NIX_BIN="/nix/var/nix/profiles/default/bin/nix"
+
 paths="$(printf '%s' "$OUT_PATHS" | tr ' ' '\n')"
 
 # Process each output path: try synchronous push first, fall back to queue on failure
@@ -47,8 +50,8 @@ while IFS= read -r path; do
   log_to_europa "[post-build-hook $(date -u +%H:%M:%S)] ===== START processing $path ====="
   
   # Capture full output of nix copy
-  log_to_europa "[post-build-hook $(date -u +%H:%M:%S)] running: timeout $COPY_TIMEOUT nix copy --to $ssh_target $path"
-  copy_output=$(timeout "$COPY_TIMEOUT" nix copy --to "$ssh_target" "$path" 2>&1)
+  log_to_europa "[post-build-hook $(date -u +%H:%M:%S)] running: timeout $COPY_TIMEOUT $NIX_BIN copy --to $ssh_target $path"
+  copy_output=$(timeout "$COPY_TIMEOUT" "$NIX_BIN" copy --to "$ssh_target" "$path" 2>&1)
   copy_rc=$?
   
   # Log the full output (truncated if too long)
@@ -77,6 +80,8 @@ while IFS= read -r path; do
     failure_reason="SIGKILL (OOM or timeout)"
   elif [ $copy_rc -eq 255 ]; then
     failure_reason="SSH connection failed"
+  elif [ $copy_rc -eq 127 ]; then
+    failure_reason="nix binary not found (PATH issue)"
   fi
   
   log_to_europa "[post-build-hook $(date -u +%H:%M:%S)] FAILURE: synchronous push failed for $path (rc=$copy_rc, reason: $failure_reason), queueing for drainer"
