@@ -95,6 +95,21 @@ jobs:
           sudo mkdir -p /root/.ssh
           sudo cp /etc/ssh/ssh_known_hosts /root/.ssh/known_hosts
           sudo chmod 644 /root/.ssh/known_hosts
+          # Bound the SSH connect Nix's remote-build scheduler makes to each
+          # builder. Nix's own connect/negotiate path has no timeout at all
+          # (a single, unpooled hook slot per worker - one stuck connect
+          # freezes dispatch to every builder, not just the one being tried;
+          # matches upstream NixOS/nix#2260 and #5701). Without this, a
+          # transient network hiccup reaching ONE builder can silently stall
+          # the whole build for minutes; with it, a stuck connect fails fast
+          # and Nix retries the next machine instead of hanging.
+          cat << 'EOF' | sudo tee -a /root/.ssh/config >/dev/null
+          Host 10.1.1.3 10.1.1.165 10.1.1.52 10.1.1.125
+            ConnectTimeout 10
+            ServerAliveInterval 5
+            ServerAliveCountMax 2
+          EOF
+          sudo chmod 644 /root/.ssh/config
           # Create builders file for distributed builds. Field order is
           # "<protocol>://<user>@<host> <system> <sshKey> <maxJobs>
           # <speedFactor> <supportedFeatures> <mandatoryFeatures>", per
