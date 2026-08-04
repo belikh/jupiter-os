@@ -1,0 +1,43 @@
+name: Deploy Documentation
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: nixos-and-flakes/nix-installer-action@v1
+
+      - name: Build Documentation Site
+        run: nix build .#docs
+
+      - name: Upload Static Website Artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./result
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

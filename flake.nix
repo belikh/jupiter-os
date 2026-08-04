@@ -1,5 +1,5 @@
 {
-  description = "Jupiter OS - NixOS monorepo (bootstrap rebuild, starting from amalthea)";
+  description = "Jupiter OS";
 
   # Deliberately minimal input set. The previous tree (see the master branch)
   # pulled in chaotic-nyx, jovian, home-manager, deploy-rs, terranix and a
@@ -292,6 +292,126 @@
       checks.x86_64-linux = builtins.mapAttrs (
         _: host: host.config.system.build.toplevel
       ) self.nixosConfigurations;
+
+      # Documentation site: auto-generated from all jupiter.* modules
+      # Uses an existing host configuration (amalthea) which already has all
+      # modules properly imported and evaluated with correct defaults.
+      docs =
+        let
+          # Get the options from the amalthea host configuration
+          # This includes all jupiter.* options plus all NixOS base options
+          eval = self.nixosConfigurations.amalthea;
+          optionsDoc = untunedPkgs.nixosOptionsDoc { options = eval.options; };
+          allOptionsMarkdown = optionsDoc.optionsCommonMark;
+          lib = untunedPkgs.lib;
+          modulesDir = ./modules;
+          # Get subdirectories of modules/ (these are the categories), exclude files
+          categoryDirs = builtins.filter (
+            d: builtins.pathExists (modulesDir + "/${d}") && !lib.strings.hasSuffix ".nix" d
+          ) (builtins.attrNames (builtins.readDir modulesDir));
+          # Generate timestamp and commit at build time via shell
+          timestamp = "";
+          commit = "";
+        in
+        untunedPkgs.stdenv.mkDerivation {
+          name = "jupiter-os-docs";
+          src = ./.;
+          nativeBuildInputs = [ untunedPkgs.mdbook ];
+          buildPhase = ''
+                      mkdir -p src
+
+                      # book.toml
+                      cat > book.toml <<'BOOK_EOF'
+            [book]
+            title = "Jupiter OS — Module Reference"
+            description = "Auto-generated documentation for all jupiter.* NixOS modules"
+            authors = ["Jupiter OS Maintainers"]
+            src = "src"
+            language = "en"
+
+            [build]
+            build-dir = "book"
+
+            [output.html]
+            default-theme = "light"
+            preferred-dark-theme = "dark"
+            curly-quotes = true
+            mathjax = false
+            additional-css = []
+            additional-js = []
+            fold = { enable = true, level = 2 }
+            site-url = "https://belikh.github.io/jupiter-os/"
+            git-repository-url = "https://github.com/belikh/jupiter-os/"
+            edit-url-template = "https://github.com/belikh/jupiter-os/edit/main/{path}"
+
+            [output.html.favicon]
+            # Use the Fallout splash icon if available
+            BOOK_EOF
+
+                      # index.md — landing page
+                      cat > src/index.md <<'INDEX_EOF'
+            # Jupiter OS Module Reference
+
+            Welcome to the auto-generated reference for all **jupiter.\*** NixOS modules in the Jupiter OS fleet.
+
+            > **Jupiter OS** is a declarative, ZFS-backed NixOS monorepo for the Jupiter home/lab infrastructure — currently 7 registered hosts (4 TCx Wave dashboard kiosks, 1 ZFS NAS, 1 build server, 1 VPS builder), rebuilt from scratch one machine at a time.
+
+            ---
+
+            ## Quick Links
+
+            - **Repository**: [github.com/belikh/jupiter-os](https://github.com/belikh/jupiter-os)
+            - **Fleet Status**: See `STATUS` table in [CLAUDE.md](https://github.com/belikh/jupiter-os/blob/main/CLAUDE.md)
+            - **Architecture**: [jupiterOS domain reference](references/domains/jupiterOS.md)
+
+            ---
+
+            ## Module Categories
+
+            Each category below contains modules that define `jupiter.<category>.*` options. Browse the full options reference on the **Options Reference** page.
+
+            INDEX_EOF
+
+                      # Add category links to index.md
+                      for cat in ${toString categoryDirs}; do
+                        echo "- [$cat](options.html)" >> src/index.md
+                      done
+
+                      # Generate timestamp and commit for the landing page
+                      timestamp=$(date -u +"%Y-%m-%d %H:%M UTC")
+                      commit=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+
+                      cat >> src/index.md <<INDEX_EOF2
+
+            ---
+
+            ## Generation Info
+
+            - **Generated from**: \`flake.nix\` \`docs\` package
+            - **Toolchain**: \`nixosOptionsDoc\` + \`mdBook\`
+            - **Last updated**: $timestamp
+            - **Commit**: $commit
+
+            > This documentation is regenerated on every push to \`main\` via GitHub Actions.
+            INDEX_EOF2
+
+                      # SUMMARY.md - single options reference page with folded sections
+                      cat > src/SUMMARY.md <<'SUMMARY_EOF'
+            - [Overview](index.md)
+            - [Options Reference](options.md)
+            SUMMARY_EOF
+
+                      # Copy the generated CommonMark to src/
+                      cp ${allOptionsMarkdown} src/options.md
+
+                      # Build the site
+                      mdbook build
+          '';
+          installPhase = ''
+            mkdir -p $out
+            cp -r book/* $out/
+          '';
+        };
 
       formatter.x86_64-linux = nixpkgs.legacyPackages.x86_64-linux.nixfmt-rfc-style;
 

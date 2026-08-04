@@ -1,4 +1,4 @@
-.PHONY: build-all check update fmt fmt-check verify-arcade status-arcade
+.PHONY: build-all check update fmt fmt-check verify-arcade status-arcade docs docs-serve
 
 # Build every registered host closure (the 4 dashboard kiosks).
 build-all:
@@ -8,6 +8,17 @@ build-all:
 	nix build .#nixosConfigurations.adrastea.config.system.build.toplevel
 	nix build .#nixosConfigurations.thebe.config.system.build.toplevel
 	@echo "All builds completed successfully!"
+
+# Build documentation site (mdBook) from all jupiter.* modules
+docs:
+	nix build .#docs
+	@echo "Documentation built at ./result/index.html"
+
+# Serve documentation locally with mdbook serve
+docs-serve: docs
+	@echo "Serving documentation at http://localhost:3000"
+	@echo "Press Ctrl+C to stop"
+	nix run nixpkgs#mdbook -- serve ./result
 
 # Build and run a QEMU virtual machine for a specific host
 # Usage: make test-amalthea
