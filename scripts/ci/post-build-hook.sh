@@ -53,7 +53,7 @@ while IFS= read -r path; do
   log_to_europa "[post-build-hook $(date -u +%H:%M:%S)] running: timeout $COPY_TIMEOUT $NIX_BIN copy --to $ssh_target $path"
   copy_stderr=$(mktemp)
   copy_stdout=$(mktemp)
-  timeout "$COPY_TIMEOUT" "$NIX_BIN" copy --to "$ssh_target" "$path" >"$copy_stdout" 2>"$copy_stderr"
+  timeout "$COPY_TIMEOUT" "$NIX_BIN" copy --debug --to "$ssh_target" "$path" >"$copy_stdout" 2>"$copy_stderr"
   copy_rc=$?
   
   # Log stdout
