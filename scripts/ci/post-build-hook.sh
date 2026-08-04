@@ -44,15 +44,43 @@ paths="$(printf '%s' "$OUT_PATHS" | tr ' ' '\n')"
 while IFS= read -r path; do
   [ -z "$path" ] && continue
 
-  # Synchronous push with timeout. Uses root's SSH config with ControlMaster
-  # for fast connection reuse (avoids ~26min stall from per-push SSH handshake).
-  if timeout "$COPY_TIMEOUT" nix copy --to "$ssh_target" "$path" 2>&1; then
-    log_to_europa "[post-build-hook $(date -u +%H:%M:%S)] pushed $path synchronously"
+  log_to_europa "[post-build-hook $(date -u +%H:%M:%S)] ===== START processing $path ====="
+  
+  # Capture full output of nix copy
+  log_to_europa "[post-build-hook $(date -u +%H:%M:%S)] running: timeout $COPY_TIMEOUT nix copy --to $ssh_target $path"
+  copy_output=$(timeout "$COPY_TIMEOUT" nix copy --to "$ssh_target" "$path" 2>&1)
+  copy_rc=$?
+  
+  # Log the full output (truncated if too long)
+  if [ -n "$copy_output" ]; then
+    # Log each line of output
+    echo "$copy_output" | while IFS= read -r line; do
+      log_to_europa "[post-build-hook $(date -u +%H:%M:%S)] nix-copy: $line"
+    done
+  else
+    log_to_europa "[post-build-hook $(date -u +%H:%M:%S)] nix-copy: (no output)"
+  fi
+  
+  log_to_europa "[post-build-hook $(date -u +%H:%M:%S)] nix copy exited with rc=$copy_rc"
+
+  if [ $copy_rc -eq 0 ]; then
+    log_to_europa "[post-build-hook $(date -u +%H:%M:%S)] SUCCESS: pushed $path synchronously"
+    log_to_europa "[post-build-hook $(date -u +%H:%M:%S)] ===== END processing $path (SUCCESS) ====="
     continue
   fi
 
-  rc=$?
-  log_to_europa "[post-build-hook $(date -u +%H:%M:%S)] synchronous push failed for $path (rc=$rc), queueing for drainer"
+  # Determine failure reason
+  failure_reason="unknown"
+  if [ $copy_rc -eq 124 ]; then
+    failure_reason="timeout (${COPY_TIMEOUT}s)"
+  elif [ $copy_rc -eq 137 ]; then
+    failure_reason="SIGKILL (OOM or timeout)"
+  elif [ $copy_rc -eq 255 ]; then
+    failure_reason="SSH connection failed"
+  fi
+  
+  log_to_europa "[post-build-hook $(date -u +%H:%M:%S)] FAILURE: synchronous push failed for $path (rc=$copy_rc, reason: $failure_reason), queueing for drainer"
+  log_to_europa "[post-build-hook $(date -u +%H:%M:%S)] ===== END processing $path (FAILED) ====="
 
   # Fallback: append to queue for background drainer
   exec 9>"$lock"
