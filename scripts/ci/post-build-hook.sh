@@ -15,6 +15,10 @@
 # Logs are written directly to europa via SSH so they persist and are observable.
 set -uo pipefail
 
+# Local log file for debugging (in case europa SSH fails)
+LOCAL_LOG="/tmp/post-build-hook-local.log"
+echo "[$(date -u +%H:%M:%S)] post-build-hook START, OUT_PATHS='$OUT_PATHS'" >>"$LOCAL_LOG"
+
 # Timeout for each synchronous nix copy (seconds). Large bootstrap packages
 # (gcc ~500MB) can take 60-120s over WireGuard; 180s provides margin.
 COPY_TIMEOUT="${COPY_TIMEOUT:-180}"
@@ -25,7 +29,9 @@ ssh_target="ssh-ng://europa-ci"
 ssh_host="europa-ci"
 log_path="/var/log/jupiter-ci/post-build-hook.log"
 
-[ -z "${OUT_PATHS:-}" ] && exit 0
+[ -z "${OUT_PATHS:-}" ] && { echo "[$(date -u +%H:%M:%S)] OUT_PATHS empty, exiting" >>"$LOCAL_LOG"; exit 0; }
+
+echo "[$(date -u +%H:%M:%S)] Processing paths: $OUT_PATHS" >>"$LOCAL_LOG"
 
 # Ensure queue/lock exist and are world-writable for cross-user access (drainer runs as runner user)
 touch "$queue" "$lock"
@@ -109,4 +115,5 @@ while IFS= read -r path; do
   exec 9>&-
 done <<<"$paths"
 
+echo "[$(date -u +%H:%M:%S)] post-build-hook END" >>"$LOCAL_LOG"
 exit 0
