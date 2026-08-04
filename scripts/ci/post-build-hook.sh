@@ -41,6 +41,9 @@ log_to_europa() {
 # Use full path to nix since hook runs as root (nix-daemon) without user PATH
 NIX_BIN="/nix/var/nix/profiles/default/bin/nix"
 
+# Ensure SSH uses ControlMaster from CI workflow
+export NIX_SSHOPTS="-o ControlMaster=auto -o ControlPath=/root/.ssh/controlmasters/%r@%h:%p -o ControlPersist=30m"
+
 paths="$(printf '%s' "$OUT_PATHS" | tr ' ' '\n')"
 
 # Process each output path: try synchronous push first, fall back to queue on failure
@@ -53,7 +56,7 @@ while IFS= read -r path; do
   log_to_europa "[post-build-hook $(date -u +%H:%M:%S)] running: timeout $COPY_TIMEOUT $NIX_BIN copy --to $ssh_target $path"
   copy_stderr=$(mktemp)
   copy_stdout=$(mktemp)
-  timeout "$COPY_TIMEOUT" "$NIX_BIN" copy --debug --to "$ssh_target" "$path" >"$copy_stdout" 2>"$copy_stderr"
+  timeout "$COPY_TIMEOUT" "$NIX_BIN" copy --debug --verbose --to "$ssh_target" "$path" >"$copy_stdout" 2>"$copy_stderr"
   copy_rc=$?
   
   # Log stdout
