@@ -68,6 +68,8 @@ in
     # Allow the daemon to accept store-path imports over this SSH user's
     # `nix copy --to ssh://...`. Merges with any other trusted-users entries.
     nix.settings.trusted-users = [ cfg.user ];
+    # Allow unsigned paths from CI (built on runner, not signed by Harmonia key)
+    nix.settings.require-sigs = false;
 
     # Per-user GC-roots dir owned by the receiver, where CI registers one
     # indirect root per build (<host>.<sha>) for the retain-recent rotation.
