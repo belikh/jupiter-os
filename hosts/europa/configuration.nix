@@ -109,7 +109,8 @@
   # deliberate, mitigated exception to the "no microarch" buildability rule —
   # the private Harmonia cache exists precisely to serve what cache.nixos.org
   # cannot once gcc.arch is set.
-  jupiter.build.microarch = "btver2"; # GHA builds this host's closure with -march=btver2
+  # TEMPORARILY DISABLED: build untuned from cache.nixos.org to deploy require-sigs=false fix
+  # jupiter.build.microarch = "btver2";
 
   # ---- nixpkgs overlays ----------------------------------------------------
   # bmake's `deptgt-interrupt` unit test is timing-sensitive (it asserts a
