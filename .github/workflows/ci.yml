@@ -130,7 +130,7 @@ jobs:
           [Interface]
           PrivateKey = ${{ secrets.WG_RUNNER_PRIVATE_KEY }}
           Address    = ${{ secrets.WG_RUNNER_ADDRESS }}
-          MTU        = 1280
+          MTU        = 1420
 
           [Peer]
           PublicKey           = ${{ secrets.WG_UDM_PUBLIC_KEY }}
