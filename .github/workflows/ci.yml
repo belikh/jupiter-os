@@ -93,15 +93,28 @@ jobs:
           sudo wg-quick up wg0
           sudo wg show
           install -m 700 -d "$HOME/.ssh"
+          mkdir -p "$HOME/.ssh/controlmasters"
           {
             echo "Host europa-ci"
             echo "  HostName 10.1.1.2"
             echo "  User jupiter-ci"
             echo "  IdentityFile $HOME/.ssh/europa_ci"
             echo "  StrictHostKeyChecking accept-new"
+            echo "  ControlMaster auto"
+            echo "  ControlPath $HOME/.ssh/controlmasters/%r@%h:%p"
+            echo "  ControlPersist 30m"
           } >> "$HOME/.ssh/config"
           printf '%s\n' "${{ secrets.EUROPA_CI_SSH_KEY }}" > "$HOME/.ssh/europa_ci"
           chmod 600 "$HOME/.ssh/europa_ci"
+          # Establish persistent SSH ControlMaster connection for fast nix copy in post-build-hook
+          ssh -o ConnectTimeout=15 -o ControlMaster=auto -o ControlPath="$HOME/.ssh/controlmasters/%r@%h:%p" -o ControlPersist=30m europa-ci true
+          # Also set up for root (post-build-hook runs as nix-daemon user = root)
+          sudo mkdir -p /root/.ssh/controlmasters
+          sudo cp "$HOME/.ssh/config" /root/.ssh/config
+          sudo cp "$HOME/.ssh/europa_ci" /root/.ssh/europa_ci
+          sudo chmod 600 /root/.ssh/europa_ci
+          sudo chmod 600 /root/.ssh/config
+          sudo ssh -o ConnectTimeout=15 -o ControlMaster=auto -o ControlPath="/root/.ssh/controlmasters/%r@%h:%p" -o ControlPersist=30m europa-ci true
           curl -fsS --max-time 15 http://10.1.1.2:5000/nix-cache-info \
             || { echo "::error::Harmonia unreachable over WG"; sudo wg show; exit 1; }
           ssh -o ConnectTimeout=15 europa-ci true
