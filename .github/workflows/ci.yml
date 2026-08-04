@@ -65,7 +65,7 @@ jobs:
             substituters = https://cache.jupiter.au https://cache.nixos.org
             trusted-public-keys = ${{ secrets.HARMONIA_PUBLIC_KEY }} cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
             connect-timeout = 5
-            post-build-hook = ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && '/opt/ci/post-build-hook.sh' || '' }}
+            post-build-hook = ${{ github.ref == 'refs/heads/main' && '/opt/ci/post-build-hook.sh' || '' }}
             system-features = gccarch-btver2 gccarch-skylake
             cores = 4
             max-jobs = 1
