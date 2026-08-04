@@ -49,20 +49,32 @@ while IFS= read -r path; do
 
   log_to_europa "[post-build-hook $(date -u +%H:%M:%S)] ===== START processing $path ====="
   
-  # Capture full output of nix copy
+  # Capture full output of nix copy (stdout and stderr separately)
   log_to_europa "[post-build-hook $(date -u +%H:%M:%S)] running: timeout $COPY_TIMEOUT $NIX_BIN copy --to $ssh_target $path"
-  copy_output=$(timeout "$COPY_TIMEOUT" "$NIX_BIN" copy --to "$ssh_target" "$path" 2>&1)
+  copy_stderr=$(mktemp)
+  copy_stdout=$(mktemp)
+  timeout "$COPY_TIMEOUT" "$NIX_BIN" copy --to "$ssh_target" "$path" >"$copy_stdout" 2>"$copy_stderr"
   copy_rc=$?
   
-  # Log the full output (truncated if too long)
-  if [ -n "$copy_output" ]; then
-    # Log each line of output
-    echo "$copy_output" | while IFS= read -r line; do
-      log_to_europa "[post-build-hook $(date -u +%H:%M:%S)] nix-copy: $line"
-    done
+  # Log stdout
+  if [ -s "$copy_stdout" ]; then
+    while IFS= read -r line; do
+      log_to_europa "[post-build-hook $(date -u +%H:%M:%S)] nix-copy-out: $line"
+    done <"$copy_stdout"
   else
-    log_to_europa "[post-build-hook $(date -u +%H:%M:%S)] nix-copy: (no output)"
+    log_to_europa "[post-build-hook $(date -u +%H:%M:%S)] nix-copy-out: (empty)"
   fi
+  
+  # Log stderr
+  if [ -s "$copy_stderr" ]; then
+    while IFS= read -r line; do
+      log_to_europa "[post-build-hook $(date -u +%H:%M:%S)] nix-copy-err: $line"
+    done <"$copy_stderr"
+  else
+    log_to_europa "[post-build-hook $(date -u +%H:%M:%S)] nix-copy-err: (empty)"
+  fi
+  
+  rm -f "$copy_stdout" "$copy_stderr"
   
   log_to_europa "[post-build-hook $(date -u +%H:%M:%S)] nix copy exited with rc=$copy_rc"
 
