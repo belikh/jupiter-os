@@ -87,7 +87,7 @@ jobs:
           [Peer]
           PublicKey           = ${{ secrets.WG_UDM_PUBLIC_KEY }}
           Endpoint            = ${{ secrets.WG_UDM_ENDPOINT }}
-          AllowedIPs          = 10.1.1.2/32
+          AllowedIPs          = 10.1.1.0/24
           PersistentKeepalive = 25
           EOF
           sudo wg-quick up wg0
