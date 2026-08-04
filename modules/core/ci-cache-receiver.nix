@@ -71,8 +71,10 @@ in
 
     # Per-user GC-roots dir owned by the receiver, where CI registers one
     # indirect root per build (<host>.<sha>) for the retain-recent rotation.
+    # Log directory for post-build-hook (written by CI via SSH).
     systemd.tmpfiles.rules = [
       "d /nix/var/nix/gcroots/per-user/${cfg.user} 0755 ${cfg.user} ${cfg.user} - -"
+      "d /var/log/jupiter-ci 0755 ${cfg.user} ${cfg.user} - -"
     ];
   };
 }
