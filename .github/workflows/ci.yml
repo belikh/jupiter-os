@@ -67,6 +67,8 @@ jobs:
             connect-timeout = 5
             post-build-hook = ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && '/opt/ci/post-build-hook.sh' || '' }}
             system-features = gccarch-btver2 gccarch-skylake
+            cores = 4
+            max-jobs = 1
       # ---- main-only: WireGuard + cache drainer + build ----
       - name: WireGuard up + build fleet + drainer (main only)
         if: github.ref == 'refs/heads/main'
