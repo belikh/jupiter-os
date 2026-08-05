@@ -89,13 +89,12 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    # Tailscale service (using systemd)
-    systemd.services.tailscale = {
-      description = "Tailscale client (Jupiter tailnet)";
+    # Main tailscaled daemon service
+    systemd.services.tailscaled = {
+      description = "Tailscale daemon (Jupiter tailnet)";
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
       serviceConfig = {
-        ExecStartPre = [ upArgs ];
         ExecStart = "${pkgs.tailscale}/bin/tailscaled --state=${cfg.stateDir}/tailscaled.state --socket=${cfg.stateDir}/tailscaled.sock --port=41641";
         Restart = "on-failure";
         RestartSec = 5;
@@ -105,9 +104,11 @@ in
       };
     };
 
-    # Tailscale CLI helper service (for `tailscale` commands)
-    systemd.services."tailscale-cli" = {
-      description = "Tailscale CLI helper";
+    # Tailscale up service (runs after tailscaled is ready)
+    systemd.services.tailscale-up = {
+      description = "Tailscale registration (Jupiter tailnet)";
+      after = [ "network-online.target" "tailscaled.service" ];
+      wants = [ "network-online.target" "tailscaled.service" ];
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
@@ -121,7 +122,8 @@ in
     ];
 
     # Enable services
-    systemd.services.tailscale.enable = true;
+    systemd.services.tailscaled.enable = true;
+    systemd.services.tailscale-up.enable = true;
 
     # Firewall - allow Tailscale traffic
     networking.firewall.allowedTCPPorts = lib.mkAfter [ 41641 ];

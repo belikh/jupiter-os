@@ -7,6 +7,48 @@
 
 let
   cfg = config.jupiter.services.headscale;
+
+  # Generate headscale config.yaml
+  configYaml = ''
+    server_url: ${cfg.serverUrl}
+    listen_addr: ${cfg.listenAddr}
+    metrics_listen_addr: ${cfg.metricsListenAddr}
+    database:
+      type: ${cfg.database.type}
+      url: ${cfg.database.url}
+    noise:
+      private_key_path: /var/lib/headscale/noise_private.key
+    derp:
+      server:
+        enabled: ${cfg.derp.server.enabled}
+        region_id: ${cfg.derp.server.regionId}
+        region_code: ${cfg.derp.server.regionCode}
+        region_name: ${cfg.derp.server.regionName}
+        stun_port: ${cfg.derp.server.stunPort}
+      urls: ${lib.concatStringsSep "\n  " (lib.map (u: "- ${u}") (cfg.derp.urls or [ ]))}
+      paths: ${lib.concatStringsSep "\n  " (lib.map (p: "- ${p}") (cfg.derp.paths or [ ]))}
+      prefer_derp: ${cfg.derp.preferDerp or "true"}
+    policy:
+      mode: ${cfg.policy.mode}
+      path: ${cfg.policy.path}
+    ephemeral_node:
+      enabled: ${cfg.ephemeralNode.enabled}
+      reusable: ${cfg.ephemeralNode.reusable}
+    dns:
+      enabled: ${cfg.dns.enabled}
+      nameservers:
+        global: ${lib.concatStringsSep "\n        - " (lib.splitString "," cfg.dns.upstream)}
+      magic_dns: ${cfg.dns.enabled}
+    log:
+      level: ${cfg.logLevel}
+      format: text
+    tls:
+      cert_path: ${cfg.tls.certPath}
+      key_path: ${cfg.tls.keyPath}
+      letsencrypt:
+        enabled: ${cfg.tls.letsencrypt or "false"}
+        listen: ${cfg.tls.letsencryptListen or ":443"}
+  '';
 in
 {
   options.jupiter.services.headscale = {
@@ -160,7 +202,10 @@ in
       ];
     };
 
-    # Headscale service
+    # Headscale config file
+    environment.etc."headscale/config.yaml".text = configYaml;
+
+    # Generate noise private key if not exists
     systemd.services.headscale = {
       description = "Headscale control plane server";
       after = [ "network-online.target" ];
@@ -169,33 +214,13 @@ in
         User = "headscale";
         Group = "headscale";
         WorkingDirectory = "/var/lib/headscale";
-        Environment = [
-          "HEADSCALE_SERVER_URL=${cfg.serverUrl}"
-          "HEADSCALE_LISTEN_ADDR=${cfg.listenAddr}"
-          "HEADSCALE_METRICS_LISTEN_ADDR=${cfg.metricsListenAddr}"
-          "HEADSCALE_DATABASE_TYPE=${cfg.database.type}"
-          "HEADSCALE_DATABASE_URL=${cfg.database.url}"
-          "HEADSCALE_DERP_SERVER_ENABLED=${cfg.derp.server.enabled}"
-          "HEADSCALE_DERP_SERVER_REGION_ID=${cfg.derp.server.regionId}"
-          "HEADSCALE_DERP_SERVER_REGION_CODE=${cfg.derp.server.regionCode}"
-          "HEADSCALE_DERP_SERVER_REGION_NAME=${cfg.derp.server.regionName}"
-          "HEADSCALE_DERP_SERVER_STUN_PORT=${cfg.derp.server.stunPort}"
-          "HEADSCALE_DERP_URLS=${lib.concatStringsSep " " (cfg.derp.urls or [ ])}"
-          "HEADSCALE_DERP_PATHS=${lib.concatStringsSep " " (cfg.derp.paths or [ ])}"
-          "HEADSCALE_DERP_PREFER_DERP=${cfg.derp.preferDerp or "true"}"
-          "HEADSCALE_POLICY_MODE=${cfg.policy.mode}"
-          "HEADSCALE_POLICY_PATH=${cfg.policy.path}"
-          "HEADSCALE_EPHEMERAL_ENABLED=${cfg.ephemeralNode.enabled}"
-          "HEADSCALE_EPHEMERAL_REUSABLE=${cfg.ephemeralNode.reusable}"
-          "HEADSCALE_DNS_ENABLED=${cfg.dns.enabled}"
-          "HEADSCALE_DNS_UPSTREAM=${cfg.dns.upstream}"
-          "HEADSCALE_LOG_LEVEL=${cfg.logLevel}"
-          "HEADSCALE_TLS_CERT_PATH=${cfg.tls.certPath}"
-          "HEADSCALE_TLS_KEY_PATH=${cfg.tls.keyPath}"
-          "HEADSCALE_TLS_LETSENCRYPT=${cfg.tls.letsencrypt or "false"}"
-          "HEADSCALE_TLS_LETSENCRYPT_LISTEN=${cfg.tls.letsencryptListen or ":443"}"
+        ExecStartPre = [
+          # Generate noise private key if not exists
+          "mkdir -p /var/lib/headscale"
+          "chown headscale:headscale /var/lib/headscale"
+          "if [ ! -f /var/lib/headscale/noise_private.key ]; then headscale -c /etc/headscale/config.yaml noise genkey > /var/lib/headscale/noise_private.key; chown headscale:headscale /var/lib/headscale/noise_private.key; fi"
         ];
-        ExecStart = "${pkgs.headscale}/bin/headscale serve";
+        ExecStart = "${pkgs.headscale}/bin/headscale -c /etc/headscale/config.yaml serve";
         Restart = "on-failure";
         RestartSec = 5;
         # Hardening
