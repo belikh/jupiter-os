@@ -154,8 +154,28 @@ jobs:
           # Start Tailscale with auth key (pre-auth key for CI tag)
           # Uses reusable ephemeral key from Headscale (configured in headscale.nix)
           # Ephemeral is configured on the pre-auth key in headscale, not via CLI flag
+          #
+          # NOTE: the public https://headscale.jupiter.au (fronted by
+          # Cloudflare Tunnel) CANNOT carry the TS2021 noise protocol at
+          # all — cloudflared only supports GET-based WebSocket upgrades,
+          # and Tailscale/Headscale upgrades over POST, which cloudflared
+          # explicitly does not support (not a bug — confirmed by
+          # Cloudflare staff: github.com/cloudflare/cloudflared#883). Every
+          # request through the tunnel hits headscale's NoiseUpgradeHandler
+          # with the Upgrade header stripped ("no upgrade header in TS2021
+          # request"), no matter the ingress config.
+          #
+          # login-server instead hits the UDM's WAN IPv4 on a dedicated
+          # port-forward (neptune.jupiter.au:8080 -> europa:8080), added
+          # specifically because GitHub-hosted runners have no outbound
+          # IPv6 (github.com/actions/runner#402) — ruled out an IPv6-only
+          # port-forward (europa's other exposed ports, e.g. DERP/STUN, are
+          # IPv6-only) as unusable from CI. Confirmed by hand: the ts2021
+          # upgrade header survives this path intact (no "no upgrade
+          # header" warning in headscale's log), unlike the Cloudflare
+          # Tunnel path.
           sudo tailscale up \
-            --login-server=https://headscale.jupiter.au \
+            --login-server=http://neptune.jupiter.au:8080 \
             --authkey=${{ secrets.TAILSCALE_CI_AUTHKEY }} \
             --advertise-tags=tag:ci \
             --accept-routes
