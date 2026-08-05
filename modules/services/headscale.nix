@@ -272,6 +272,12 @@ in
       description = "Headscale control plane server";
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
+      # switch-to-configuration only auto-restarts a service when the UNIT
+      # itself changes — plain environment.etc content changes (this
+      # config.yaml) are invisible to it otherwise, so every config fix
+      # this file has had needed a manual `systemctl restart headscale` to
+      # actually take effect after a switch (confirmed live, repeatedly).
+      restartTriggers = [ config.environment.etc."headscale/config.yaml".source ];
       serviceConfig = {
         User = "headscale";
         Group = "headscale";
