@@ -94,6 +94,8 @@
   jupiter.core.crush.enable = false;
   jupiter.core.ecc.enable = false;
   jupiter.core.antigravity.enable = false;
+  # Disable Lix (needs >8GB RAM to build); use standard Nix instead
+  jupiter.core.lix.enable = false;
   nix.distributedBuilds = lib.mkForce false;
   nix.buildMachines = lib.mkForce [ ];
 
