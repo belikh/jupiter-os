@@ -22,10 +22,21 @@ jobs:
       - name: Flake check (evaluates every host)
         run: nix flake check --no-build
 
-  # Build all hosts in a single fleet derivation, pushing to Harmonia on main.
-  # Sequential is implicit since it's one derivation - no parallel OOM.
-  build-fleet:
+  # Build each host in parallel on separate runners, pushing to Harmonia on main.
+  build-host:
+    needs: check
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - host-group: "tuned"
+            hosts: "europa"
+          - host-group: "tuned"
+            hosts: "callisto"
+          - host-group: "kiosks"
+            hosts: "amalthea metis adrastea thebe"
     steps:
       - uses: actions/checkout@v4
       # Free ~30 GiB before building.
@@ -65,7 +76,7 @@ jobs:
             substituters = https://cache.jupiter.au https://cache.nixos.org
             trusted-public-keys = ${{ secrets.HARMONIA_PUBLIC_KEY }} cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
             connect-timeout = 5
-            post-build-hook = ${{ github.ref == 'refs/heads/main' && '/opt/ci/post-build-hook.sh' || '' }}
+            post-build-hook = /opt/ci/post-build-hook.sh
             system-features = gccarch-btver2 gccarch-skylake
             cores = 1
             max-jobs = 4
@@ -73,7 +84,6 @@ jobs:
             # Build machines configured via builders file below (overflow only)
       # Setup remote builders SSH key and known hosts
       - name: Setup remote builders SSH
-        if: github.ref == 'refs/heads/main'
         run: |
           sudo install -d -m 700 /run/secrets
           printf '%s\n' "${{ secrets.NIX_BUILD_SSH_KEY }}" | sudo tee /run/secrets/nix_build_ssh_key >/dev/null
@@ -130,13 +140,13 @@ jobs:
           # cached the old nix.conf at startup - it must restart to pick up
           # the builders setting we just appended.
           sudo systemctl restart nix-daemon
-      # ---- main-only: WireGuard + cache drainer + build ----
-      - name: WireGuard up + build fleet + drainer (main only)
-        if: github.ref == 'refs/heads/main'
-        continue-on-error: true
+      # ---- WireGuard + cache drainer + build ----
+      - name: WireGuard up + build + drainer
         env:
           EUROPA_SSH: europa-ci
           BUILD_SHA: ${{ github.sha }}
+          HOST_GROUP: ${{ matrix.host-group }}
+          HOSTS: ${{ matrix.hosts }}
         run: |
           # WireGuard setup
           sudo apt-get update && sudo apt-get install -y wireguard-tools
@@ -228,24 +238,18 @@ jobs:
           DRAINER_PID=$!
           echo "Started cache drainer as root (PID: $DRAINER_PID)"
 
-          # Build each host individually (this will enqueue paths for the drainer)
-          for host in europa callisto pallene amalthea metis adrastea thebe; do
+          # Build each host in this group
+          BUILD_EXIT=0
+          for host in $HOSTS; do
             echo "Building $host..."
-            nix build ".#nixosConfigurations.$host.config.system.build.toplevel" || exit 1
+            nix build ".#nixosConfigurations.$host.config.system.build.toplevel" || { BUILD_EXIT=1; break; }
             
             # Force push this host's closure to europa immediately
             echo "Pushing $host closure to europa..."
             TOPO=$(nix path-info ".#nixosConfigurations.$host.config.system.build.toplevel")
             nix copy --to "ssh-ng://europa-ci" "$TOPO" || echo "WARNING: push failed for $host"
-          done
-          BUILD_EXIT=0
-
-          # Push full build closure (including bootstrap tools, build deps)
-          echo "Pushing full build closure to europa..."
-          nix path-info -r $(nix path-info ".#nixosConfigurations.*" | grep toplevel) | nix copy --to "ssh-ng://europa-ci" --stdin || echo "WARNING: full closure push failed"
-
-          # Pin + retain last 3 builds
-          for host in europa callisto pallene amalthea metis adrastea thebe; do
+            
+            # Pin + retain last 3 builds for this host
             BUILD_HOST=$host /opt/ci/retain-recent.sh
           done
 
