@@ -92,6 +92,9 @@
     target = "iqn.2026-07.au.jupiter:europa:callisto-root";
   };
 
+  # Disable Lix (needs >8GB RAM to build); use standard Nix instead
+  jupiter.core.lix.enable = false;
+
   # Root over iSCSI: a plain ext4 filesystem on the whole LUN. NO ZFS layer
   # — europa already runs ZFS on the backing tank, and stacking ZFS on a
   # network block device is both redundant and fragile (ZFS expects direct
