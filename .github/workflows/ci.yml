@@ -187,9 +187,12 @@ jobs:
             --authkey=${{ secrets.TAILSCALE_CI_AUTHKEY }} \
             --accept-routes
           
-          # Verify connectivity to europa (Harmonia cache)
-          curl -fsS --max-time 15 http://europa:5000/nix-cache-info \
-            || { echo "::error::Harmonia unreachable over tailnet"; tailscale status; exit 1; }
+          # Verify Harmonia reachability via its existing public Cloudflare
+          # Tunnel endpoint, not the tailnet — cache.jupiter.au is a plain
+          # HTTPS GET path (no protocol upgrade involved), so it's unaffected
+          # by the TS2021/DERP POST-upgrade limitation Cloudflare Tunnel has.
+          curl -fsS --max-time 15 https://cache.jupiter.au/nix-cache-info \
+            || { echo "::error::Harmonia unreachable via cache.jupiter.au"; exit 1; }
           
           # SSH config for europa-ci (jupiter-ci user on europa via tailnet)
           install -m 700 -d "$HOME/.ssh"

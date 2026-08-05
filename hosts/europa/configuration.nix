@@ -159,7 +159,20 @@
   # Headscale control plane server (self-hosted Tailscale)
   jupiter.services.headscale = {
     enable = true;
-    serverUrl = "https://headscale.jupiter.au";
+    # NOT https://headscale.jupiter.au: that's Cloudflare-Tunnel-fronted and
+    # cloudflared cannot carry the TS2021/DERP protocols at all (both are
+    # HTTP-Upgrade-based over POST, which cloudflared only supports for GET
+    # — github.com/cloudflare/cloudflared#883, confirmed live: every
+    # request through the tunnel got its Upgrade header stripped). This
+    # also drives the DERP relay's advertised port (see serverUrl's option
+    # doc in modules/services/headscale.nix) — http://…:8080 makes the
+    # DERP node advertise plain-HTTP port 8080 (matching europa's real
+    # listener, which never terminates TLS itself) instead of the default
+    # 443-over-TLS that only Cloudflare Tunnel would serve.
+    # neptune.jupiter.au:8080 is a direct UDM port-forward to europa:8080,
+    # already required for CI's tailscale registration (GitHub-hosted
+    # runners have no outbound IPv6 for the equivalent IPv6-only forward).
+    serverUrl = "http://neptune.jupiter.au:8080";
     # Database on persistent ZFS dataset
     database = {
       type = "sqlite";
@@ -170,7 +183,14 @@
       certPath = "";
       keyPath = "";
     };
-    # DERP server for NAT traversal (needs UDP 3478 port-forward on router)
+    # DERP server for NAT traversal. UDP 3478 (STUN) is forwarded on both
+    # IPv6 (europa's other exposed ports) and IPv4 (neptune.jupiter.au,
+    # added specifically for IPv4-only clients like GitHub-hosted CI
+    # runners, which have no outbound IPv6 at all). ipv4 advertises
+    # neptune's public IPv4 in the DERP map so clients connect directly by
+    # IP rather than resolving HostName (which would otherwise still be
+    # server_url's host — see above for why that must NOT be the
+    # Cloudflare-Tunnel-fronted hostname).
     derp = {
       server = {
         enabled = "true";
@@ -178,6 +198,7 @@
         regionCode = "jupiter";
         regionName = "Jupiter DERP";
         stunPort = "3478";
+        ipv4 = "157.85.248.45"; # neptune.jupiter.au
       };
     };
   };

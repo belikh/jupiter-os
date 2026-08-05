@@ -31,6 +31,7 @@ let
         region_name: ${cfg.derp.server.regionName}
         stun_listen_addr: "0.0.0.0:${cfg.derp.server.stunPort}"
         private_key_path: /var/lib/headscale/derp_server_private.key
+        ${lib.optionalString (cfg.derp.server.ipv4 or "" != "") "ipv4: ${cfg.derp.server.ipv4}"}
       urls: ${lib.concatStringsSep "\n  " (lib.map (u: "- ${u}") (cfg.derp.urls or [ ]))}
       paths: ${lib.concatStringsSep "\n  " (lib.map (p: "- ${p}") (cfg.derp.paths or [ ]))}
       prefer_derp: ${cfg.derp.preferDerp or "true"}
@@ -79,7 +80,14 @@ in
       description = "headscale user identity for ACL group:admin and tag ownership.";
     };
 
-    # Server configuration
+    # Server configuration. NOTE: headscale derives the DERP relay's
+    # advertised port DIRECTLY from this URL's scheme+port (confirmed in
+    # hscontrol/derp/server/derp_server.go's GenerateRegion — no separate
+    # DERP-port option exists). https://headscale.jupiter.au implies
+    # DERPPort 443, which only the (Cloudflare-Tunnel-fronted, TLS-broken
+    # for this purpose) public hostname serves — unreachable for IPv4-only
+    # clients like GitHub-hosted CI runners. europa overrides this to the
+    # plain-HTTP direct port-forward instead (see hosts/europa).
     serverUrl = lib.mkOption {
       type = lib.types.str;
       default = "https://headscale.jupiter.au";
@@ -122,6 +130,11 @@ in
           regionCode = "jupiter";
           regionName = "Jupiter DERP";
           stunPort = "3478";
+          # Public IPv4 to advertise for the DERP relay, so clients connect
+          # directly by IP instead of resolving HostName (which is
+          # server_url's host — see serverUrl's doc comment on why that
+          # matters for CI reachability). Empty = omitted from config.yaml.
+          ipv4 = "";
         };
         urls = [ ];
         paths = [ ];
