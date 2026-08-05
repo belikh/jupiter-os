@@ -223,10 +223,10 @@ jobs:
           echo "SSH daemon started on port 22 (PID: $SSHD_PID)"
           echo "Connect via: ssh runner@$(ip -4 addr show wg0 | grep -oP 'inet \K[\d.]+')"
 
-          # Start drainer in background, tee output to console + file (real-time visibility)
-          /opt/ci/cache-drainer.sh 2>&1 | tee /tmp/ci-drainer.log &
+          # Start drainer in background as root (uses root's SSH ControlMaster sockets)
+          sudo /opt/ci/cache-drainer.sh 2>&1 | sudo tee /tmp/ci-drainer.log &
           DRAINER_PID=$!
-          echo "Started cache drainer (PID: $DRAINER_PID)"
+          echo "Started cache drainer as root (PID: $DRAINER_PID)"
 
           # Build each host individually (this will enqueue paths for the drainer)
           for host in europa callisto pallene amalthea metis adrastea thebe; do
