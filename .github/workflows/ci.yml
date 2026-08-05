@@ -182,8 +182,15 @@ jobs:
           echo "SSH daemon started on port 22 (PID: $SSHD_PID)"
           echo "Connect via: ssh runner@$(tailscale ip -4)"
 
-          # Start drainer in background as root (uses root's SSH ControlMaster sockets)
-          sudo /opt/ci/cache-drainer.sh 2>&1 | sudo tee /tmp/ci-drainer.log &
+          # Start drainer in background as root (uses root's SSH ControlMaster sockets).
+          # `sudo` resets PATH to its own secure_path by default, which does
+          # NOT include wherever install-nix-action put the nix binary —
+          # confirmed live via the drainer's own diagnostic logging:
+          # "env: 'nix': No such file or directory", every single attempt.
+          # Resolve nix's absolute path in THIS (unprivileged, correct-PATH)
+          # context and pass it through explicitly rather than depend on
+          # sudo's PATH policy at all.
+          sudo NIX_BIN="$(command -v nix)" /opt/ci/cache-drainer.sh 2>&1 | sudo tee /tmp/ci-drainer.log &
           DRAINER_PID=$!
           echo "Started cache drainer as root (PID: $DRAINER_PID)"
 

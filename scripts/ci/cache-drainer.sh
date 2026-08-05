@@ -19,6 +19,13 @@ queue="${QUEUE_FILE:-/tmp/ci-cache-queue.txt}"
 lock="${QUEUE_LOCK:-/tmp/ci-cache-queue.lock}"
 ssh="${EUROPA_SSH:-europa-ci}"   # ~/.ssh/config alias -> jupiter-ci@10.1.1.2
 log_path="/var/log/jupiter-ci/cache-drainer.log"
+# `sudo` (this script's invoker) resets PATH to its own secure_path, which
+# doesn't include wherever install-nix-action put `nix` — confirmed live:
+# "env: 'nix': No such file or directory" on every single attempt. `ssh`
+# works fine bare since /usr/bin is on secure_path; `nix` isn't. The caller
+# resolves and passes the real path; fall back to a bare name (PATH lookup)
+# if run standalone outside that wrapper.
+nix_bin="${NIX_BIN:-nix}"
 
 # Log to europa via SSH (uses ControlMaster from CI workflow)
 log_to_europa() {
@@ -73,7 +80,7 @@ while true; do
     err_file="$(mktemp)"
     if printf '%s\n' "$paths" | xargs -r -d '\n' timeout 600 env \
         NIX_SSHOPTS="-i /root/.ssh/europa_ci -o ControlPath=/root/.ssh/controlmasters/%r@%h:%p -o StrictHostKeyChecking=accept-new" \
-        nix copy --to "ssh-ng://jupiter-ci@europa" 2>"$err_file"; then
+        "$nix_bin" copy --to "ssh-ng://jupiter-ci@europa" 2>"$err_file"; then
       log "pushed $n path(s) on attempt $attempt"
       rm -f "$err_file"
       break
