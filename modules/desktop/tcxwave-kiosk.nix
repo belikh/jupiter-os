@@ -327,13 +327,16 @@ in
     #   '';
     # Left out until verified on hardware so we don't ship a wrong transform.
 
-    # Tailscale client for Jupiter tailnet
+    # Tailscale client for Jupiter tailnet. Reusable tag:fleet pre-auth key,
+    # shared fleet-wide via sops — self-registers on switch, no manual
+    # `headscale auth register` step needed.
+    sops.secrets.tailscale_fleet_authkey = { };
     jupiter.services.tailscale = {
       enable = true;
       serverUrl = "https://headscale.jupiter.au";
       tags = [ "tag:fleet" ];
       acceptRoutes = true;
-      # authKeyFile optional - uses headscale pre-auth keys by default
+      authKeyFile = config.sops.secrets.tailscale_fleet_authkey.path;
     };
 
     # ---- Idle-time distributed build server ---------------------------------

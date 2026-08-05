@@ -211,13 +211,16 @@
   # Re-enable only after pallene has actually pushed a skylake closure.
   # jupiter.build.microarch = "skylake";
 
-  # Tailscale client for Jupiter tailnet
+  # Tailscale client for Jupiter tailnet. Reusable (non-ephemeral) tag:fleet
+  # pre-auth key, shared fleet-wide via sops — self-registers on switch, no
+  # manual `headscale auth register` step needed.
+  sops.secrets.tailscale_fleet_authkey = { };
   jupiter.services.tailscale = {
     enable = true;
     serverUrl = "https://headscale.jupiter.au";
     tags = [ "tag:fleet" ];
     acceptRoutes = true;
-    # authKeyFile optional - uses headscale pre-auth keys by default
+    authKeyFile = config.sops.secrets.tailscale_fleet_authkey.path;
   };
 
   # Console screensaver — Matrix rain on tty1 for the (rare) moments a

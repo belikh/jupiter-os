@@ -182,13 +182,16 @@
     };
   };
 
-  # Tailscale client for this host (connects to local headscale)
+  # Tailscale client for this host (connects to local headscale). Reusable
+  # tag:fleet pre-auth key, shared fleet-wide via sops — self-registers on
+  # switch, no manual `headscale auth register` step needed.
+  sops.secrets.tailscale_fleet_authkey = { };
   jupiter.services.tailscale = {
     enable = true;
     serverUrl = "http://127.0.0.1:8080"; # Local headscale
     tags = [ "tag:fleet" ];
     acceptRoutes = true;
-    # authKeyFile optional - uses headscale pre-auth keys by default
+    authKeyFile = config.sops.secrets.tailscale_fleet_authkey.path;
   };
 
   # Cloudflare Tunnel — now fronts both Harmonia cache AND Headscale control plane.
