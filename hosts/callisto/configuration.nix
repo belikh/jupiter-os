@@ -54,6 +54,8 @@
     ../../modules/common.nix
     ../../modules/services/console-screensaver.nix
     ../../modules/services/mqtt.nix
+    # Tailscale client for Jupiter tailnet
+    ../../modules/services/tailscale.nix
   ];
 
   networking.hostName = "callisto";
@@ -205,6 +207,15 @@
   # scratch, since nothing skylake-tagged exists in Harmonia or cache.nixos.org.
   # Re-enable only after pallene has actually pushed a skylake closure.
   # jupiter.build.microarch = "skylake";
+
+  # Tailscale client for Jupiter tailnet
+  jupiter.services.tailscale = {
+    enable = true;
+    serverUrl = "https://headscale.jupiter.au";
+    authKeyFile = config.sops.secrets.tailscale_callisto_authkey.path;
+    tags = [ "tag:fleet" ];
+    acceptRoutes = true;
+  };
 
   # Console screensaver — Matrix rain on tty1 for the (rare) moments a
   # monitor is plugged into this host. Same module as europa; Nice=19 is

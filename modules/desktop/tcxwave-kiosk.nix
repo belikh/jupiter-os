@@ -56,6 +56,8 @@ in
     # payload verified against the real hardware, not just eval). See
     # modules/services/customer-msr.nix for the protocol notes.
     ../services/customer-msr.nix
+    # Tailscale client for Jupiter tailnet
+    ../../services/tailscale.nix
   ];
 
   options.jupiter.tcxWaveKiosk = {
@@ -324,6 +326,15 @@ in
     #     evdev:name:*Touch*:* ENV{LIBINPUT_CALIBRATION_MATRIX}="..."
     #   '';
     # Left out until verified on hardware so we don't ship a wrong transform.
+
+    # Tailscale client for Jupiter tailnet
+    jupiter.services.tailscale = {
+      enable = true;
+      serverUrl = "https://headscale.jupiter.au";
+      authKeyFile = config.sops.secrets.tailscale_kiosk_authkey.path;
+      tags = [ "tag:fleet" ];
+      acceptRoutes = true;
+    };
 
     # ---- Idle-time distributed build server ---------------------------------
     # A kiosk spends ~99.9999% of its life displaying a static dashboard and

@@ -140,70 +140,38 @@ jobs:
           # cached the old nix.conf at startup - it must restart to pick up
           # the builders setting we just appended.
           sudo systemctl restart nix-daemon
-      # ---- WireGuard + cache drainer + build ----
-      - name: WireGuard up + build + drainer
+      # ---- Tailscale + cache drainer + build ----
+      - name: Tailscale up + build + drainer
         env:
           EUROPA_SSH: europa-ci
           BUILD_SHA: ${{ github.sha }}
           HOST_GROUP: ${{ matrix.host-group }}
           HOSTS: ${{ matrix.hosts }}
         run: |
-          # WireGuard setup
-          sudo apt-get update && sudo apt-get install -y wireguard-tools
-          sudo install -d -m 700 /etc/wireguard
-          sudo tee /etc/wireguard/wg0.conf >/dev/null <<EOF
-          [Interface]
-          PrivateKey = ${{ secrets.WG_RUNNER_PRIVATE_KEY }}
-          Address    = ${{ secrets.WG_RUNNER_ADDRESS }}
-          MTU        = 1420
-
-          [Peer]
-          PublicKey           = ${{ secrets.WG_UDM_PUBLIC_KEY }}
-          Endpoint            = ${{ secrets.WG_UDM_ENDPOINT }}
-          AllowedIPs          = 10.1.1.0/24
-          PersistentKeepalive = 25
-          EOF
-          sudo wg-quick up wg0
-          sudo wg show
+          # Install Tailscale
+          curl -fsSL https://tailscale.com/install.sh | sudo sh
+          
+          # Start Tailscale with ephemeral auth key (pre-auth key for CI tag)
+          # Uses reusable ephemeral key from Headscale (configured in headscale.nix)
+          sudo tailscale up \
+            --login-server=https://headscale.jupiter.au \
+            --authkey=${{ secrets.TAILSCALE_CI_AUTHKEY }} \
+            --ephemeral \
+            --advertise-tags=tag:ci \
+            --accept-routes
+          
+          # Verify connectivity to europa (Harmonia cache)
+          curl -fsS --max-time 15 http://europa:5000/nix-cache-info \
+            || { echo "::error::Harmonia unreachable over tailnet"; tailscale status; exit 1; }
+          
+          # SSH config for europa-ci (jupiter-ci user on europa via tailnet)
           install -m 700 -d "$HOME/.ssh"
           mkdir -p "$HOME/.ssh/controlmasters"
           {
             echo "Host europa-ci"
-            echo "  HostName 10.1.1.2"
+            echo "  HostName europa"
             echo "  User jupiter-ci"
             echo "  IdentityFile $HOME/.ssh/europa_ci"
-            echo "  StrictHostKeyChecking accept-new"
-            echo "  ControlMaster auto"
-            echo "  ControlPath $HOME/.ssh/controlmasters/%r@%h:%p"
-            echo "  ControlPersist 30m"
-            echo ""
-            echo "Host callisto"
-            echo "  HostName 10.1.1.3"
-            echo "  User root"
-            echo "  StrictHostKeyChecking accept-new"
-            echo "  ControlMaster auto"
-            echo "  ControlPath $HOME/.ssh/controlmasters/%r@%h:%p"
-            echo "  ControlPersist 30m"
-            echo ""
-            echo "Host thebe"
-            echo "  HostName thebe"
-            echo "  User root"
-            echo "  StrictHostKeyChecking accept-new"
-            echo "  ControlMaster auto"
-            echo "  ControlPath $HOME/.ssh/controlmasters/%r@%h:%p"
-            echo "  ControlPersist 30m"
-            echo ""
-            echo "Host amalthea"
-            echo "  HostName amalthea"
-            echo "  User root"
-            echo "  StrictHostKeyChecking accept-new"
-            echo "  ControlMaster auto"
-            echo "  ControlPath $HOME/.ssh/controlmasters/%r@%h:%p"
-            echo "  ControlPersist 30m"
-            echo ""
-            echo "Host metis"
-            echo "  HostName metis"
-            echo "  User root"
             echo "  StrictHostKeyChecking accept-new"
             echo "  ControlMaster auto"
             echo "  ControlPath $HOME/.ssh/controlmasters/%r@%h:%p"
@@ -211,8 +179,10 @@ jobs:
           } >> "$HOME/.ssh/config"
           printf '%s\n' "${{ secrets.EUROPA_CI_SSH_KEY }}" > "$HOME/.ssh/europa_ci"
           chmod 600 "$HOME/.ssh/europa_ci"
+          
           # Establish persistent SSH ControlMaster connection for fast nix copy in post-build-hook
           ssh -o ConnectTimeout=15 -o ControlMaster=auto -o ControlPath="$HOME/.ssh/controlmasters/%r@%h:%p" -o ControlPersist=30m europa-ci true
+          
           # Also set up for root (post-build-hook runs as nix-daemon user = root)
           sudo mkdir -p /root/.ssh/controlmasters
           sudo cp "$HOME/.ssh/config" /root/.ssh/config
@@ -220,18 +190,15 @@ jobs:
           sudo chmod 600 /root/.ssh/europa_ci
           sudo chmod 600 /root/.ssh/config
           sudo ssh -o ConnectTimeout=15 -o ControlMaster=auto -o ControlPath="/root/.ssh/controlmasters/%r@%h:%p" -o ControlPersist=30m europa-ci true
-          curl -fsS --max-time 15 http://10.1.1.2:5000/nix-cache-info \
-            || { echo "::error::Harmonia unreachable over WG"; sudo wg show; exit 1; }
-          ssh -o ConnectTimeout=15 europa-ci true
 
-          # Start SSH daemon for debugging (accessible via WireGuard IP on normal port)
+          # Start SSH daemon for debugging (accessible via tailnet IP on normal port)
           echo "${{ secrets.GHA_DEBUG_SSH_KEY }}" >> "$HOME/.ssh/authorized_keys"
           chmod 600 "$HOME/.ssh/authorized_keys"
           sudo mkdir -p /run/sshd
           sudo /usr/sbin/sshd -D -o Port=22 -o PasswordAuthentication=no -o PermitRootLogin=no -o AuthorizedKeysFile="$HOME/.ssh/authorized_keys" &
           SSHD_PID=$!
           echo "SSH daemon started on port 22 (PID: $SSHD_PID)"
-          echo "Connect via: ssh runner@$(ip -4 addr show wg0 | grep -oP 'inet \K[\d.]+')"
+          echo "Connect via: ssh runner@$(tailscale ip -4)"
 
           # Start drainer in background as root (uses root's SSH ControlMaster sockets)
           sudo /opt/ci/cache-drainer.sh 2>&1 | sudo tee /tmp/ci-drainer.log &
@@ -263,7 +230,7 @@ jobs:
           # Stop SSH daemon
           kill $SSHD_PID 2>/dev/null || true
 
-          # Teardown WireGuard
-          sudo wg-quick down wg0 || true
+          # Teardown Tailscale
+          sudo tailscale down || true
 
           exit $BUILD_EXIT

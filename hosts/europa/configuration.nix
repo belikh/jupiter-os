@@ -37,7 +37,7 @@
     ../../modules/network/pxe-server.nix
     # GitHub Actions CI nix-copy receiver (jupiter-ci user + per-build GC
     # roots). CI builds on free GHA CPU, then `nix copy --to ssh://europa`
-    # over the UDM WireGuard road-warrior; Harmonia (below) serves the result.
+    # over the tailnet; Harmonia (below) serves the result.
     ../../modules/core/ci-cache-receiver.nix
     ../../modules/services/syncthing.nix
     ../../modules/services/smart-monitoring.nix
@@ -45,6 +45,10 @@
     ../../modules/services/cloudflare-tunnel.nix
     ../../modules/services/pallene-watchdog.nix
     ../../modules/services/iscsi-target.nix
+    # Headscale control plane (self-hosted Tailscale)
+    ../../modules/services/headscale.nix
+    # Tailscale client for this host
+    ../../modules/services/tailscale.nix
     # jupiterOS Arcade — europa-side cartridge ROM pipeline: bulk torrent
     # acquisition + igir hash verification (rom-acquire), headless Skyscraper
     # scraping into Pegasus metadata (rom-scraper), and a periodic library
@@ -102,6 +106,7 @@
   jupiter.nas.enable = true;
 
   # ---- Phase 2: CPU-tuned closure ------------------------------------------
+  # TEMPORARILY DISABLED for Headscale migration — re-enable after tailnet works.
   # Opteron X3216 is a "Cato" APU on the Puma core, ISA-equivalent to Jaguar,
   # which GCC targets as btver2. The BinaryLane build server (pallene) compiles
   # this host's closure with -march=btver2 and pushes to Harmonia; europa then
@@ -109,7 +114,7 @@
   # deliberate, mitigated exception to the "no microarch" buildability rule —
   # the private Harmonia cache exists precisely to serve what cache.nixos.org
   # cannot once gcc.arch is set.
-  jupiter.build.microarch = "btver2"; # GHA builds this host's closure with -march=btver2
+  # jupiter.build.microarch = "btver2"; # GHA builds this host's closure with -march=btver2
 
   # ---- nixpkgs overlays ----------------------------------------------------
   # bmake's `deptgt-interrupt` unit test is timing-sensitive (it asserts a
@@ -149,7 +154,56 @@
   jupiter.nas.bond.enable = false;
 
   # ---- Services ------------------------------------------------------------
-  # Harmonia binary cache: serves europa's own /nix/store over HTTP so the
+  # Headscale control plane server (self-hosted Tailscale)
+  jupiter.services.headscale = {
+    enable = true;
+    serverUrl = "https://headscale.jupiter.au";
+    # Database on persistent ZFS dataset
+    database = {
+      type = "sqlite3";
+      url = "file:/var/lib/headscale/db.sqlite?mode=rwc&_fk=1";
+    };
+    # Use Cloudflare Tunnel for HTTPS, so HTTP internally
+    tls = {
+      certPath = "";
+      keyPath = "";
+    };
+    # DERP server for NAT traversal (needs UDP 3478 port-forward on router)
+    derp = {
+      server = {
+        enabled = "true";
+        regionId = "999";
+        regionCode = "jupiter";
+        regionName = "Jupiter DERP";
+        stunPort = "3478";
+      };
+    };
+  };
+
+  # Tailscale client for this host (connects to local headscale)
+  jupiter.services.tailscale = {
+    enable = true;
+    serverUrl = "http://127.0.0.1:8080";  # Local headscale
+    authKeyFile = config.sops.secrets.tailscale_europa_authkey.path;
+    tags = [ "tag:fleet" ];
+    acceptRoutes = true;
+  };
+
+  # Cloudflare Tunnel — now fronts both Harmonia cache AND Headscale control plane.
+  # Harmonia serves the read-only cache at cache.jupiter.au.
+  # Headscale serves the Tailscale control plane at headscale.jupiter.au.
+  # Both reached via Cloudflare Tunnel (public) or direct tailnet (LAN).
+  jupiter.services.cloudflareTunnel = {
+    enable = true;
+    # Cloudflare tunnel UUID (from ~/.cloudflared/<id>.json / the dashboard).
+    # The cloudflare_cert sops secret is this tunnel's credentials JSON.
+    tunnelId = "aa1088b8-a0e1-4073-8567-6a9bf5fb4bd7";
+    harmoniaHostname = "cache.jupiter.au";
+    harmoniaPort = 5000;
+    extraIngress = [
+      { hostname = "headscale.jupiter.au"; port = 8080; }
+    ];
+  };
   # fleet (and the next CI run) can substitute closures CI pushed here. Read-
   # only by design (issue #63 — replaces the decommissioned attic cache, which
   # had its own store dataset). CI populates the store via `nix copy --to ssh://europa`
@@ -186,18 +240,6 @@
   # cmatrix at the lowest CPU priority (Nice=19) so the eye-candy always
   # yields to real NAS work.
   jupiter.consoleScreensaver.enable = true;
-
-  # Cloudflare Tunnel — now fronts the Harmonia cache at cache.jupiter.au.
-  # Harmonia serves the read-only cache. CI and fleet hosts can reach it via
-  # the Cloudflare Tunnel (public) or the UDM WireGuard road-warrior (LAN/WG).
-  jupiter.services.cloudflareTunnel = {
-    enable = true;
-    # Cloudflare tunnel UUID (from ~/.cloudflared/<id>.json / the dashboard).
-    # The cloudflare_cert sops secret is this tunnel's credentials JSON.
-    tunnelId = "aa1088b8-a0e1-4073-8567-6a9bf5fb4bd7";
-    harmoniaHostname = "cache.jupiter.au";
-    harmoniaPort = 5000;
-  };
 
   # External backstop for the pallene build server: destroys any BinaryLane
   # pallene* server still running past 4h, from a different host on a
