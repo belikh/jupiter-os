@@ -24,7 +24,8 @@ let
         region_id: ${cfg.derp.server.regionId}
         region_code: ${cfg.derp.server.regionCode}
         region_name: ${cfg.derp.server.regionName}
-        stun_port: ${cfg.derp.server.stunPort}
+        stun_listen_addr: "0.0.0.0:${cfg.derp.server.stunPort}"
+        private_key_path: /var/lib/headscale/derp_server_private.key
       urls: ${lib.concatStringsSep "\n  " (lib.map (u: "- ${u}") (cfg.derp.urls or [ ]))}
       paths: ${lib.concatStringsSep "\n  " (lib.map (p: "- ${p}") (cfg.derp.paths or [ ]))}
       prefer_derp: ${cfg.derp.preferDerp or "true"}
@@ -35,10 +36,12 @@ let
       enabled: ${cfg.ephemeralNode.enabled}
       reusable: ${cfg.ephemeralNode.reusable}
     dns:
-      enabled: ${cfg.dns.enabled}
+      magic_dns: ${cfg.dns.enabled}
+      base_domain: ${cfg.dns.baseDomain}
+      override_local_dns: true
       nameservers:
         global: ${lib.concatStringsSep "\n        - " (lib.splitString "," cfg.dns.upstream)}
-      magic_dns: ${cfg.dns.enabled}
+      search_domains: []
     log:
       level: ${cfg.logLevel}
       format: text
@@ -132,6 +135,10 @@ in
         enabled = "true";
         # Upstream DNS for tailnet
         upstream = "10.1.1.1,1.1.1.1";
+        # Base domain MagicDNS serves node names under (<node>.<baseDomain>).
+        # Deliberately distinct from serverUrl's headscale.jupiter.au to avoid
+        # the control-plane hostname colliding with the tailnet DNS zone.
+        baseDomain = "ts.jupiter.au";
       };
       description = "DNS/MagicDNS configuration.";
     };
@@ -197,6 +204,7 @@ in
       # Tag owners for ephemeral nodes
       tagOwners = {
         "tag:ci" = [ "admin@jupiter" ];
+        "tag:fleet" = [ "admin@jupiter" ];
       };
       # ACLs
       acls = [
