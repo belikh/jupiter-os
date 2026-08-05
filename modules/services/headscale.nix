@@ -68,10 +68,14 @@ in
     # granted admin ACL access and tag:ci/tag:fleet ownership. Was
     # previously the placeholder "admin@jupiter", which isn't a real
     # headscale user — tag:fleet registration failed with "requested tags
-    # [tag:fleet] are invalid or not permitted" until fixed.
+    # [tag:fleet] are invalid or not permitted" until fixed. Must be
+    # email-shaped: groups{} members fail policy parsing otherwise
+    # ("username must contain @") even though tagOwners accepts a bare
+    # name — confirmed live, a bare "io" parsed fine for tagOwners but
+    # broke groups.
     adminUser = lib.mkOption {
       type = lib.types.str;
-      default = "io";
+      default = "io@jupiter.au";
       description = "headscale user identity for ACL group:admin and tag ownership.";
     };
 
