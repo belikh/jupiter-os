@@ -190,54 +190,47 @@ in
       "d /etc/headscale 0750 headscale headscale - -"
     ];
 
-    # ACL policy file
+    # ACL policy file. headscale's v2 policy schema (confirmed against
+    # hscontrol/policy/v2/testdata/acl_results/*.hujson in the real repo,
+    # after "group must start with 'group:', got: \"admin\""):
+    #   - groups{} keys must be prefixed "group:", and members must be user
+    #     identities (emails) — NOT device hostnames or tags.
+    #   - hosts{} maps a name to a SINGLE CIDR/IP string (e.g.
+    #     "internal": "10.0.0.0/8"), not a list — it's for literal
+    #     IP/subnet aliases, not a way to group devices.
+    # The previous shape put device hostnames in groups.fleet and abused
+    # hosts{} (as list-valued) to alias "fleet"/"tag:ci" to a device list —
+    # invalid on every count. Since every fleet host already advertises
+    # tag:fleet (tagOwners below), ACLs reference tag:fleet/tag:ci directly
+    # instead — no groups{}/hosts{} indirection needed for devices at all.
     environment.etc."headscale/policy.hujson".text = builtins.toJSON {
       groups = {
-        admin = [ "admin@jupiter" ];
-        fleet = [
-          "europa"
-          "callisto"
-          "amalthea"
-          "metis"
-          "adrastea"
-          "thebe"
-        ];
-        ci = [ "tag:ci" ];
+        "group:admin" = [ "admin@jupiter" ];
       };
-      hosts = {
-        # Fleet hosts can talk to each other
-        "fleet" = [ "fleet" ];
-        # CI can talk to fleet (to push to europa's Harmonia)
-        "tag:ci" = [ "fleet" ];
-        # Admin can do everything
-        "admin" = [ "*" ];
-      };
-      # Tag owners for ephemeral nodes
       tagOwners = {
         "tag:ci" = [ "admin@jupiter" ];
         "tag:fleet" = [ "admin@jupiter" ];
       };
-      # ACLs
       acls = [
         # Fleet hosts can talk to each other on any port
         {
           action = "accept";
-          src = [ "fleet" ];
-          dst = [ "fleet:*" ];
+          src = [ "tag:fleet" ];
+          dst = [ "tag:fleet:*" ];
         }
         # CI can push to europa's Harmonia (port 5000) and SSH to fleet (port 22)
         {
           action = "accept";
           src = [ "tag:ci" ];
           dst = [
-            "fleet:5000"
-            "fleet:22"
+            "tag:fleet:5000"
+            "tag:fleet:22"
           ];
         }
         # Admin full access
         {
           action = "accept";
-          src = [ "admin" ];
+          src = [ "group:admin" ];
           dst = [ "*:*" ];
         }
       ];
