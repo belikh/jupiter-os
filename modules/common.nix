@@ -54,6 +54,7 @@
     jq
     wget
     curl
+    nix-output-monitor
   ];
 
   system.stateVersion = "26.05";
