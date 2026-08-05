@@ -245,10 +245,13 @@ in
         Group = "headscale";
         WorkingDirectory = "/var/lib/headscale";
         ExecStartPre = [
-          # Generate noise private key if not exists
-          "mkdir -p /var/lib/headscale"
-          "chown headscale:headscale /var/lib/headscale"
-          "if [ ! -f /var/lib/headscale/noise_private.key ]; then headscale -c /etc/headscale/config.yaml noise genkey > /var/lib/headscale/noise_private.key; chown headscale:headscale /var/lib/headscale/noise_private.key; fi"
+          # Generate noise private key if not exists. Bare command names
+          # aren't resolved via PATH for Exec*= under this hardened unit, and
+          # a compound `if` line isn't a single executable+args, so each step
+          # needs an absolute path / an explicit shell wrapper.
+          "${pkgs.coreutils}/bin/mkdir -p /var/lib/headscale"
+          "${pkgs.coreutils}/bin/chown headscale:headscale /var/lib/headscale"
+          "${pkgs.bash}/bin/sh -c 'if [ ! -f /var/lib/headscale/noise_private.key ]; then ${pkgs.headscale}/bin/headscale -c /etc/headscale/config.yaml noise genkey > /var/lib/headscale/noise_private.key; ${pkgs.coreutils}/bin/chown headscale:headscale /var/lib/headscale/noise_private.key; fi'"
         ];
         ExecStart = "${pkgs.headscale}/bin/headscale -c /etc/headscale/config.yaml serve";
         Restart = "on-failure";

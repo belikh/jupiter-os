@@ -113,7 +113,10 @@ in
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
-        ExecStart = upArgs;
+        # A list here would be interpreted as multiple ExecStart= directives
+        # (systemd's syntax for a command sequence), not one command with
+        # multiple args — collapse to a single quoted command line.
+        ExecStart = lib.escapeShellArgs upArgs;
       };
     };
 
