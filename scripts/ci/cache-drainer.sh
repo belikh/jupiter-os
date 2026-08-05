@@ -55,10 +55,21 @@ while true; do
   # xargs chunks to stay under ARG_MAX on a big backlog; timeout bounds each
   # transfer; retries absorb transient WG/NAR flakes. ssh-ng talks to europa's
   # nix daemon over the jupiter-ci SSH key.
+  #
+  # ssh-ng://$ssh where $ssh is "europa-ci" relies on that being an SSH
+  # CONFIG ALIAS (HostName europa) — not a real hostname. This script runs
+  # as root via `sudo` (nix-daemon's post-build-hook context); if the ssh
+  # subprocess nix copy spawns doesn't reliably pick up root's ~/.ssh/config
+  # in that context, "europa-ci" gets treated as a literal (non-resolving)
+  # hostname and fails fast. Bypass the alias entirely: target the real
+  # MagicDNS hostname directly with an explicit user, and pass the
+  # ControlMaster socket via NIX_SSHOPTS instead of relying on config-file
+  # lookup for it.
   for attempt in 1 2 3 4 5 6; do
     log "attempt $attempt: pushing $n path(s)"
-    if printf '%s\n' "$paths" | xargs -r -d '\n' timeout 600 \
-        nix copy --to "ssh-ng://$ssh" 2>>/tmp/ci-drainer.err; then
+    if printf '%s\n' "$paths" | xargs -r -d '\n' timeout 600 env \
+        NIX_SSHOPTS="-o ControlPath=/root/.ssh/controlmasters/%r@%h:%p -o StrictHostKeyChecking=accept-new" \
+        nix copy --to "ssh-ng://jupiter-ci@europa" 2>>/tmp/ci-drainer.err; then
       log "pushed $n path(s) on attempt $attempt"
       break
     else
