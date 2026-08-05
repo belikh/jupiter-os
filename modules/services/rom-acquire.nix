@@ -103,6 +103,11 @@ let
       core = "desmume2015"; # no DSi mode; boots the NDS-compatible majority
       bucket = "cartridge";
     };
+    acorn = {
+      torrent = "Minerva_Myrient - No-Intro - Acorn - Archimedes.torrent";
+      core = "mame";
+      bucket = "cartridge";
+    };
     # --- optical bucket (large disc images, 1M dataset) ---
     gamecube = {
       torrent = "Minerva_Myrient - No-Intro - Non-Redump - Nintendo - Nintendo GameCube.torrent";
@@ -112,6 +117,16 @@ let
     wii = {
       torrent = "Minerva_Myrient - No-Intro - Non-Redump - Nintendo - Wii.torrent";
       core = "dolphin";
+      bucket = "optical";
+    };
+    ps1 = {
+      torrent = "Minerva_Myrient - RetroAchievements - RA - Sony Playstation.torrent";
+      core = "beetle-psx";
+      bucket = "optical";
+    };
+    ps2 = {
+      torrent = "Minerva_Myrient - RetroAchievements - RA - Sony Playstation 2.torrent";
+      core = "pcsx2";
       bucket = "optical";
     };
     # --- modern bucket (large disc/card images, 1M dataset) ---
