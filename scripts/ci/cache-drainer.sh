@@ -70,14 +70,21 @@ while true; do
   # on alias resolution for anything.
   for attempt in 1 2 3 4 5 6; do
     log "attempt $attempt: pushing $n path(s)"
+    err_file="$(mktemp)"
     if printf '%s\n' "$paths" | xargs -r -d '\n' timeout 600 env \
         NIX_SSHOPTS="-i /root/.ssh/europa_ci -o ControlPath=/root/.ssh/controlmasters/%r@%h:%p -o StrictHostKeyChecking=accept-new" \
-        nix copy --to "ssh-ng://jupiter-ci@europa" 2>>/tmp/ci-drainer.err; then
+        nix copy --to "ssh-ng://jupiter-ci@europa" 2>"$err_file"; then
       log "pushed $n path(s) on attempt $attempt"
+      rm -f "$err_file"
       break
     else
       rc=$?
       log "attempt $attempt failed (rc=$rc); retry in $((attempt * 3))s"
+      # DIAGNOSTIC: ship the real stderr to europa's log — two prior "fixes"
+      # here both guessed wrong about the cause, so stop guessing and log
+      # the actual error text instead of just the wrapper's rc=123.
+      while IFS= read -r line; do log "  stderr: $line"; done < "$err_file"
+      rm -f "$err_file"
       sleep $((attempt * 3))
     fi
   done
