@@ -345,16 +345,25 @@ in
       authKeyFile = config.sops.secrets.tailscale_fleet_authkey.path;
     };
 
+    # ---- Own closure: tuned for the CPU --------------------------------------
+    # Skylake-class i5-6300U. CI (.github/workflows/ci.yml, main-only) builds
+    # and pushes this to Harmonia — the kiosk itself only ever substitutes the
+    # result, so the ~7.6GiB RAM caveat below (about ACCEPTING remote build
+    # jobs FROM other hosts) doesn't apply to tuning its own closure.
+    # Verify Harmonia has it before switching: `nix path-info --substituters
+    # http://10.1.1.2:5000 <toplevel>`.
+    jupiter.build.microarch = "skylake";
+
     # ---- Idle-time distributed build server ---------------------------------
     # A kiosk spends ~99.9999% of its life displaying a static dashboard and
     # idling — let the rest of the fleet borrow its Skylake CPU for builds.
     # Advertising gccarch-skylake lets it BUILD any other host's
-    # skylake-tagged closure (currently nobody's — callisto's microarch is a
-    # roadmap entry); today the practical value is generic x86_64-linux build
-    # capacity for any host's closure. The CPU itself is Skylake-class but the
-    # kiosk's own closure stays untuned (no jupiter.build.microarch here) —
-    # same "can build it without being it" pattern as callisto
-    # (hosts/callisto/configuration.nix).
+    # skylake-tagged closure (now callisto's and its own too); today the
+    # practical value is generic x86_64-linux build capacity for any host's
+    # closure. Same "can build it without being it" pattern as callisto
+    # (hosts/callisto/configuration.nix) for OTHER hosts' derivations — this
+    # kiosk's own closure is tuned above, unlike callisto's untuned-builder
+    # role.
     #
     # gccarch-btver2 (added 2026-07-20, matching modules/core/build-machines.nix's
     # kioskBuilders supportedFeatures): makes kiosks eligible to help build

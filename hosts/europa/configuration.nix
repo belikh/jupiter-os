@@ -108,15 +108,19 @@
   jupiter.nas.enable = true;
 
   # ---- Phase 2: CPU-tuned closure ------------------------------------------
-  # TEMPORARILY DISABLED for Headscale migration — re-enable after tailnet works.
-  # Opteron X3216 is a "Cato" APU on the Puma core, ISA-equivalent to Jaguar,
-  # which GCC targets as btver2. The BinaryLane build server (pallene) compiles
-  # this host's closure with -march=btver2 and pushes to Harmonia; europa then
+  # Re-enabled: the tailnet/CI push pipeline this was blocked on now works
+  # end-to-end (headscale real TLS via Let's Encrypt, CI registers and
+  # pushes over neptune.jupiter.au:8080, confirmed live). Opteron X3216 is a
+  # "Cato" APU on the Puma core, ISA-equivalent to Jaguar, which GCC targets
+  # as btver2. CI (.github/workflows/ci.yml, main-only) builds this host's
+  # closure with -march=btver2 and pushes to Harmonia; europa then
   # substitutes from its own cache ahead of cache.nixos.org. This is the
   # deliberate, mitigated exception to the "no microarch" buildability rule —
   # the private Harmonia cache exists precisely to serve what cache.nixos.org
-  # cannot once gcc.arch is set.
-  # jupiter.build.microarch = "btver2"; # GHA builds this host's closure with -march=btver2
+  # cannot once gcc.arch is set. Verify Harmonia actually has the pushed
+  # closure (`nix path-info --substituters http://10.1.1.2:5000 <toplevel>`)
+  # before switching this host.
+  jupiter.build.microarch = "btver2"; # CI builds this host's closure with -march=btver2
 
   # ---- nixpkgs overlays ----------------------------------------------------
   # bmake's `deptgt-interrupt` unit test is timing-sensitive (it asserts a

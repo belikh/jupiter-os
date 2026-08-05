@@ -183,33 +183,31 @@
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILv1nEsuHqlA1ykn1p8wZmhhv1Y77cBxhgu2tAO3DhlP jupiter-fleet-nix-build"
   ];
 
-  # ---- Roadmap: tune callisto's own closure for its CPU -------------------
+  # ---- Tune callisto's own closure for its CPU -----------------------------
   # i5-8500T is Coffee Lake, which GCC targets as `skylake` (Coffee Lake is
   # Skylake-refresh at the compiler/code-scheduling level — same ISA, same
   # pipeline model; `-march=skylake` produces code that's both correct on
   # and optimally scheduled for this part).
   #
-  # ROADMAP ENTRY ONLY — DO NOT REBUILD CALLISTO LOCALLY BEFORE PALLENE:
-  # setting this option tags every derivation in callisto's closure with
-  # requiredSystemFeatures=["gccarch-skylake"], which invalidates
-  # cache.nixos.org for it. Pallene (modules/services/build-server.nix,
-  # which now lists callisto in `hosts` and "skylake" in `microarchs`) must
-  # build and push this closure to Harmonia FIRST. Only then can callisto
-  # safely `nixos-rebuild` — and even then, only if Harmonia already has the
-  # paths.
-  # Verify pre-deploy with `nix path-info --substituters
-  # http://10.1.1.2:5000 <toplevel>` from callisto — every path
-  # must resolve from Harmonia before `switch`.
+  # Re-enabled: CI (.github/workflows/ci.yml, main-only) now builds and
+  # pushes this closure to Harmonia — the missing piece that caused the
+  # 2026-07-22 disable (this was committed ahead of pallene, which never
+  # did the required build+push, leaving nothing skylake-tagged in Harmonia
+  # or cache.nixos.org for callisto to substitute).
   #
-  # DISABLED 2026-07-22: this was committed ahead of pallene actually doing
-  # the required build+push. Consequence discovered during europa's PXE
-  # bring-up: europa's netboot.ipxe embeds callisto's system.build.toplevel
-  # path (for the kexec init= cmdline), so ANYTHING that evaluates
-  # nixosConfigurations.callisto — including an unrelated europa rebuild —
-  # was forced to build callisto's *entire* skylake-tagged closure from
-  # scratch, since nothing skylake-tagged exists in Harmonia or cache.nixos.org.
-  # Re-enable only after pallene has actually pushed a skylake closure.
-  # jupiter.build.microarch = "skylake";
+  # KNOWN COST, not a failure: europa's netboot.ipxe embeds callisto's
+  # system.build.toplevel path (for the kexec init= cmdline), so ANYTHING
+  # that evaluates nixosConfigurations.callisto — including CI's europa
+  # build job — pulls in callisto's kernel/initrd. On the FIRST run after
+  # enabling this, before Harmonia has any skylake-tagged paths cached,
+  # europa's CI job may redundantly build callisto's entire closure from
+  # scratch (slow but not unsafe — the GH runner already declares
+  # gccarch-skylake). Subsequent runs substitute from Harmonia and are fast.
+  #
+  # DO NOT REBUILD CALLISTO LOCALLY without verifying Harmonia has it first:
+  # `nix path-info --substituters http://10.1.1.2:5000 <toplevel>` from
+  # callisto — every path must resolve from Harmonia before `switch`.
+  jupiter.build.microarch = "skylake";
 
   # Tailscale client for Jupiter tailnet. Reusable (non-ephemeral) tag:fleet
   # pre-auth key, shared fleet-wide via sops — self-registers on switch, no
