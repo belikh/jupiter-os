@@ -178,12 +178,13 @@ jobs:
           # specifically because GitHub-hosted runners have no outbound
           # IPv6 (github.com/actions/runner#402) — ruled out an IPv6-only
           # port-forward (europa's other exposed ports, e.g. DERP/STUN, are
-          # IPv6-only) as unusable from CI. Confirmed by hand: the ts2021
-          # upgrade header survives this path intact (no "no upgrade
-          # header" warning in headscale's log), unlike the Cloudflare
-          # Tunnel path.
+          # IPv6-only) as unusable from CI. https, not http: DERP relay
+          # connections require REAL TLS regardless of scheme (confirmed
+          # live: "tls: first record does not look like a TLS handshake"
+          # against a plain-HTTP listener) — headscale now terminates its
+          # own TLS via Let's Encrypt on this same host:port.
           sudo tailscale up \
-            --login-server=http://neptune.jupiter.au:8080 \
+            --login-server=https://neptune.jupiter.au:8080 \
             --authkey=${{ secrets.TAILSCALE_CI_AUTHKEY }} \
             --accept-routes
           

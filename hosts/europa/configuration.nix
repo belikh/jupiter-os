@@ -172,16 +172,27 @@
     # neptune.jupiter.au:8080 is a direct UDM port-forward to europa:8080,
     # already required for CI's tailscale registration (GitHub-hosted
     # runners have no outbound IPv6 for the equivalent IPv6-only forward).
-    serverUrl = "http://neptune.jupiter.au:8080";
+    # https, not http: DERP relay connections require REAL TLS regardless
+    # of scheme (confirmed live: "tls: first record does not look like a
+    # TLS handshake" against a plain-HTTP listener) — headscale terminates
+    # its own TLS here via Let's Encrypt (below) rather than relying on
+    # Cloudflare Tunnel, which cannot carry DERP/TS2021 at all.
+    serverUrl = "https://neptune.jupiter.au:8080";
     # Database on persistent ZFS dataset
     database = {
       type = "sqlite";
       path = "/var/lib/headscale/db.sqlite";
     };
-    # Use Cloudflare Tunnel for HTTPS, so HTTP internally
+    # Real TLS via headscale's built-in ACME (autocert), terminated
+    # directly on listenAddr (8080) — NOT Cloudflare Tunnel, which breaks
+    # DERP/TS2021 (see serverUrl's comment above). HTTP-01 validation
+    # needs port 80 forwarded to this host (UDM port-forward, separate
+    # from the 8080 one).
     tls = {
       certPath = "";
       keyPath = "";
+      letsencryptHostname = "neptune.jupiter.au";
+      acmeEmail = "io@jupiter.au";
     };
     # DERP server for NAT traversal. UDP 3478 (STUN) is forwarded on both
     # IPv6 (europa's other exposed ports) and IPv4 (neptune.jupiter.au,
@@ -209,7 +220,14 @@
   sops.secrets.tailscale_fleet_authkey = { };
   jupiter.services.tailscale = {
     enable = true;
-    serverUrl = "http://127.0.0.1:8080"; # Local headscale
+    # Not the local loopback anymore: once headscale's listenAddr requires
+    # real TLS (via letsencryptHostname above), a plain-HTTP local
+    # connection to 127.0.0.1:8080 no longer works, and a TLS one wouldn't
+    # validate anyway (the cert covers neptune.jupiter.au, not
+    # 127.0.0.1/10.1.1.2). Goes out through the public URL and back in via
+    # the router's port-forward (NAT hairpin) instead — untested whether
+    # the UDM supports this for a host reaching its own forwarded address.
+    serverUrl = "https://neptune.jupiter.au:8080";
     tags = [ "tag:fleet" ];
     acceptRoutes = true;
     authKeyFile = config.sops.secrets.tailscale_fleet_authkey.path;

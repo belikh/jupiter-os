@@ -333,7 +333,13 @@ in
     sops.secrets.tailscale_fleet_authkey = { };
     jupiter.services.tailscale = {
       enable = true;
-      serverUrl = "https://headscale.jupiter.au";
+      # NOT https://headscale.jupiter.au: that's Cloudflare-Tunnel-fronted,
+      # and cloudflared cannot carry the TS2021/DERP protocols at all
+      # (github.com/cloudflare/cloudflared#883, confirmed live). Goes
+      # through the public neptune.jupiter.au:8080 port-forward instead,
+      # where headscale terminates real TLS itself (see
+      # hosts/europa/configuration.nix's jupiter.services.headscale.tls).
+      serverUrl = "https://neptune.jupiter.au:8080";
       tags = [ "tag:fleet" ];
       acceptRoutes = true;
       authKeyFile = config.sops.secrets.tailscale_fleet_authkey.path;

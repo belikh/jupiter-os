@@ -54,6 +54,14 @@ let
     # silently no-ops cfg.tls entirely rather than erroring.
     tls_cert_path: ${cfg.tls.certPath}
     tls_key_path: ${cfg.tls.keyPath}
+    ${lib.optionalString (cfg.tls.letsencryptHostname != "") ''
+      acme_url: https://acme-v02.api.letsencrypt.org/directory
+      acme_email: ${cfg.tls.acmeEmail}
+      tls_letsencrypt_hostname: ${cfg.tls.letsencryptHostname}
+      tls_letsencrypt_cache_dir: /var/lib/headscale/cache
+      tls_letsencrypt_challenge_type: HTTP-01
+      tls_letsencrypt_listen: ":80"
+    ''}
     # unix_socket's real default (/var/run/headscale/headscale.sock) sits
     # outside this unit's ReadWritePaths — ProtectSystem=strict makes /run
     # read-only unless explicitly listed, so the CLI-control socket would
@@ -189,16 +197,32 @@ in
       description = "Log level (debug, info, warn, error).";
     };
 
-    # TLS - using Cloudflare Tunnel for HTTPS, so HTTP internally
+    # TLS. Cloudflare Tunnel fronts headscale.jupiter.au for plain HTTP
+    # traffic (Harmonia, the web UI) fine, but cannot carry the TS2021 or
+    # DERP protocols at all — both are HTTP-Upgrade-based, and DERP
+    # specifically requires REAL TLS terminated by headscale itself (not
+    # just an https:// URL — confirmed live: DERP clients TLS-handshake
+    # directly against whatever host:port is advertised, "tls: first
+    # record does not look like a TLS handshake" when that port only
+    # speaks plain HTTP). letsencryptHostname enables headscale's built-in
+    # ACME (autocert) support to terminate real TLS on listenAddr directly,
+    # bypassing Cloudflare Tunnel for the registration+DERP path entirely.
     tls = lib.mkOption {
       type = lib.types.attrsOf lib.types.str;
       default = {
         certPath = "";
         keyPath = "";
-        letsencrypt = "false";
-        letsencryptListen = ":443";
+        # Empty = no ACME, plain HTTP on listenAddr (relies on an external
+        # TLS-terminating proxy, e.g. Cloudflare Tunnel, for anything that
+        # needs it — which does NOT include DERP, see this option's doc
+        # comment above). HTTP-01 challenge validation is a fixed ACME
+        # protocol requirement: it always hits port 80 on this hostname,
+        # regardless of what port the DERP/registration traffic itself
+        # ends up using afterward.
+        letsencryptHostname = "";
+        acmeEmail = "";
       };
-      description = "TLS configuration (empty = HTTP only, use Cloudflare Tunnel).";
+      description = "TLS configuration: static certPath/keyPath, or letsencryptHostname/acmeEmail for built-in ACME.";
     };
   };
 
@@ -308,11 +332,21 @@ in
           "/var/lib/headscale"
           "/etc/headscale"
         ];
+        # ACME's HTTP-01 challenge server binds port 80 directly (a fixed
+        # protocol requirement, see tls.letsencryptHostname's doc comment)
+        # — headscale runs as the unprivileged "headscale" user, which
+        # needs this capability to bind a port below 1024. Compatible with
+        # NoNewPrivileges (that only blocks gaining NEW privileges via
+        # exec, not ambient capabilities systemd itself grants).
+        CapabilityBoundingSet = lib.mkIf (cfg.tls.letsencryptHostname or "" != "") "CAP_NET_BIND_SERVICE";
+        AmbientCapabilities = lib.mkIf (cfg.tls.letsencryptHostname or "" != "") "CAP_NET_BIND_SERVICE";
       };
     };
 
-    # Firewall - allow Headscale HTTP + DERP STUN
-    networking.firewall.allowedTCPPorts = lib.mkAfter [ 8080 ];
+    # Firewall - allow Headscale HTTP + DERP STUN + ACME HTTP-01 challenge
+    networking.firewall.allowedTCPPorts = lib.mkAfter (
+      [ 8080 ] ++ lib.optional (cfg.tls.letsencryptHostname or "" != "") 80
+    );
     networking.firewall.allowedUDPPorts = lib.mkAfter [ 3478 ];
 
     # Enable service
