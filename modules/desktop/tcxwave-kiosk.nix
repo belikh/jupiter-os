@@ -57,7 +57,7 @@ in
     # modules/services/customer-msr.nix for the protocol notes.
     ../services/customer-msr.nix
     # Tailscale client for Jupiter tailnet
-    ../../services/tailscale.nix
+    ../../modules/services/tailscale.nix
   ];
 
   options.jupiter.tcxWaveKiosk = {
@@ -331,9 +331,9 @@ in
     jupiter.services.tailscale = {
       enable = true;
       serverUrl = "https://headscale.jupiter.au";
-      authKeyFile = config.sops.secrets.tailscale_kiosk_authkey.path;
       tags = [ "tag:fleet" ];
       acceptRoutes = true;
+      # authKeyFile optional - uses headscale pre-auth keys by default
     };
 
     # ---- Idle-time distributed build server ---------------------------------

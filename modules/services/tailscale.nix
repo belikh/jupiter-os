@@ -7,6 +7,18 @@
 
 let
   cfg = config.jupiter.services.tailscale;
+
+  # Build the tailscale up command as a list of arguments
+  upArgs = lib.concatLists [
+    [ "${pkgs.tailscale}/bin/tailscale" "up" ]
+    [ "--login-server=${cfg.serverUrl}" ]
+    (lib.optional (cfg.authKeyFile != null) [ "--authkey=file:${cfg.authKeyFile}" ])
+    (lib.optional cfg.ephemeral [ "--ephemeral" ])
+    (lib.optional (cfg.hostname != "") [ "--hostname=${cfg.hostname}" ])
+    (lib.concatMap (tag: [ "--advertise-tags=${tag}" ]) cfg.tags)
+    (lib.optional cfg.acceptRoutes [ "--accept-routes" ])
+    (lib.concatMap (route: [ "--advertise-routes=${route}" ]) cfg.advertiseRoutes)
+  ];
 in
 {
   options.jupiter.services.tailscale = {
@@ -21,8 +33,9 @@ in
 
     # Auth key (from sops) - one-time or reusable
     authKeyFile = lib.mkOption {
-      type = lib.types.path;
-      description = "Path to Tailscale auth key file (sops secret).";
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      description = "Path to Tailscale auth key file (sops secret). Optional - can use headscale pre-auth keys instead.";
     };
 
     # Ephemeral node (for CI runners)
@@ -82,16 +95,7 @@ in
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
       serviceConfig = {
-        ExecStartPre = [
-          "${pkgs.tailscale}/bin/tailscale up"
-            + " --login-server=${cfg.serverUrl}"
-            + "${lib.optionalString (cfg.authKeyFile != \"\") \" --authkey=file:${cfg.authKeyFile}\"}"
-            + "${lib.optionalString cfg.ephemeral \" --ephemeral\"}"
-            + "${lib.optionalString (cfg.hostname != \"\") \" --hostname=${cfg.hostname}\"}"
-            + "${lib.concatMap (tag: \" --advertise-tags=${tag}\") cfg.tags}"
-            + "${lib.optionalString cfg.acceptRoutes \" --accept-routes\"}"
-            + "${lib.concatMap (route: \" --advertise-routes=${route}\") cfg.advertiseRoutes}"
-        ];
+        ExecStartPre = [ upArgs ];
         ExecStart = "${pkgs.tailscale}/bin/tailscaled --state=${cfg.stateDir}/tailscaled.state --socket=${cfg.stateDir}/tailscaled.sock --port=41641";
         Restart = "on-failure";
         RestartSec = 5;
@@ -107,14 +111,7 @@ in
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;
-        ExecStart = "${pkgs.tailscale}/bin/tailscale up"
-          + " --login-server=${cfg.serverUrl}"
-          + "${lib.optionalString (cfg.authKeyFile != \"\") \" --authkey=file:${cfg.authKeyFile}\"}"
-          + "${lib.optionalString cfg.ephemeral \" --ephemeral\"}"
-          + "${lib.optionalString (cfg.hostname != \"\") \" --hostname=${cfg.hostname}\"}"
-          + "${lib.concatMap (tag: \" --advertise-tags=${tag}\") cfg.tags}"
-          + "${lib.optionalString cfg.acceptRoutes \" --accept-routes\"}"
-          + "${lib.concatMap (route: \" --advertise-routes=${route}\") cfg.advertiseRoutes}";
+        ExecStart = upArgs;
       };
     };
 

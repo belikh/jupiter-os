@@ -134,7 +134,7 @@ in
     environment.etc."headscale/policy.hujson".text = builtins.toJSON {
       groups = {
         admin = [ "admin@jupiter" ];
-        fleet = [ "europa", "callisto", "amalthea", "metis", "adrastea", "thebe" ];
+        fleet = [ "europa" "callisto" "amalthea" "metis" "adrastea" "thebe" ];
         ci = [ "tag:ci" ];
       };
       hosts = {
@@ -154,7 +154,7 @@ in
         # Fleet hosts can talk to each other on any port
         { action = "accept"; src = [ "fleet" ]; dst = [ "fleet:*" ]; }
         # CI can push to europa's Harmonia (port 5000) and SSH to fleet (port 22)
-        { action = "accept"; src = [ "tag:ci" ]; dst = [ "fleet:5000", "fleet:22" ]; }
+        { action = "accept"; src = [ "tag:ci" ]; dst = [ "fleet:5000" "fleet:22" ]; }
         # Admin full access
         { action = "accept"; src = [ "admin" ]; dst = [ "*:*" ]; }
       ];
@@ -180,9 +180,9 @@ in
           "HEADSCALE_DERP_SERVER_REGION_CODE=${cfg.derp.server.regionCode}"
           "HEADSCALE_DERP_SERVER_REGION_NAME=${cfg.derp.server.regionName}"
           "HEADSCALE_DERP_SERVER_STUN_PORT=${cfg.derp.server.stunPort}"
-          "HEADSCALE_DERP_URLS=${lib.concatStringsSep " " cfg.derp.urls}"
-          "HEADSCALE_DERP_PATHS=${lib.concatStringsSep " " cfg.derp.paths}"
-          "HEADSCALE_DERP_PREFER_DERP=${cfg.derp.preferDerp}"
+          "HEADSCALE_DERP_URLS=${lib.concatStringsSep " " (cfg.derp.urls or [ ])}"
+          "HEADSCALE_DERP_PATHS=${lib.concatStringsSep " " (cfg.derp.paths or [ ])}"
+          "HEADSCALE_DERP_PREFER_DERP=${cfg.derp.preferDerp or "true"}"
           "HEADSCALE_POLICY_MODE=${cfg.policy.mode}"
           "HEADSCALE_POLICY_PATH=${cfg.policy.path}"
           "HEADSCALE_EPHEMERAL_ENABLED=${cfg.ephemeralNode.enabled}"
@@ -192,8 +192,8 @@ in
           "HEADSCALE_LOG_LEVEL=${cfg.logLevel}"
           "HEADSCALE_TLS_CERT_PATH=${cfg.tls.certPath}"
           "HEADSCALE_TLS_KEY_PATH=${cfg.tls.keyPath}"
-          "HEADSCALE_TLS_LETSENCRYPT=${cfg.tls.letsencrypt}"
-          "HEADSCALE_TLS_LETSENCRYPT_LISTEN=${cfg.tls.letsencryptListen}"
+          "HEADSCALE_TLS_LETSENCRYPT=${cfg.tls.letsencrypt or "false"}"
+          "HEADSCALE_TLS_LETSENCRYPT_LISTEN=${cfg.tls.letsencryptListen or ":443"}"
         ];
         ExecStart = "${pkgs.headscale}/bin/headscale serve";
         Restart = "on-failure";

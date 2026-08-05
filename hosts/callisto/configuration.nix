@@ -212,9 +212,9 @@
   jupiter.services.tailscale = {
     enable = true;
     serverUrl = "https://headscale.jupiter.au";
-    authKeyFile = config.sops.secrets.tailscale_callisto_authkey.path;
     tags = [ "tag:fleet" ];
     acceptRoutes = true;
+    # authKeyFile optional - uses headscale pre-auth keys by default
   };
 
   # Console screensaver — Matrix rain on tty1 for the (rare) moments a

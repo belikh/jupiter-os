@@ -184,9 +184,9 @@
   jupiter.services.tailscale = {
     enable = true;
     serverUrl = "http://127.0.0.1:8080";  # Local headscale
-    authKeyFile = config.sops.secrets.tailscale_europa_authkey.path;
     tags = [ "tag:fleet" ];
     acceptRoutes = true;
+    # authKeyFile optional - uses headscale pre-auth keys by default
   };
 
   # Cloudflare Tunnel — now fronts both Harmonia cache AND Headscale control plane.
