@@ -37,9 +37,6 @@ let
     policy:
       mode: ${cfg.policy.mode}
       path: ${cfg.policy.path}
-    ephemeral_node:
-      enabled: ${cfg.ephemeralNode.enabled}
-      reusable: ${cfg.ephemeralNode.reusable}
     dns:
       magic_dns: ${cfg.dns.enabled}
       base_domain: ${cfg.dns.baseDomain}
@@ -50,12 +47,17 @@ let
     log:
       level: ${cfg.logLevel}
       format: text
-    tls:
-      cert_path: ${cfg.tls.certPath}
-      key_path: ${cfg.tls.keyPath}
-      letsencrypt:
-        enabled: ${cfg.tls.letsencrypt or "false"}
-        listen: ${cfg.tls.letsencryptListen or ":443"}
+    # Top-level flat keys, NOT nested under a "tls:" object — confirmed
+    # against config-example.yaml. A nested "tls:" block (the previous
+    # shape here) is an unknown key headscale silently ignores, which
+    # silently no-ops cfg.tls entirely rather than erroring.
+    tls_cert_path: ${cfg.tls.certPath}
+    tls_key_path: ${cfg.tls.keyPath}
+    # unix_socket's real default (/var/run/headscale/headscale.sock) sits
+    # outside this unit's ReadWritePaths — ProtectSystem=strict makes /run
+    # read-only unless explicitly listed, so the CLI-control socket would
+    # fail to bind. Point it at the already-writable state dir instead.
+    unix_socket: /var/lib/headscale/headscale.sock
   '';
 in
 {
@@ -122,17 +124,6 @@ in
         path = "/etc/headscale/policy.hujson";
       };
       description = "ACL policy configuration.";
-    };
-
-    # Ephemeral node settings (for CI runners)
-    ephemeralNode = lib.mkOption {
-      type = lib.types.attrsOf lib.types.str;
-      default = {
-        enabled = "true";
-        # Reusable pre-auth keys for CI
-        reusable = "true";
-      };
-      description = "Ephemeral node settings for CI runners.";
     };
 
     # Tailnet IP allocation ranges. Required by headscale 0.29.3 (config
