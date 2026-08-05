@@ -141,8 +141,10 @@ make boot-smoke-<host>  # headless CI-style boot test
 make fmt                # format all Nix (nixfmt-rfc-style); fmt-check to verify
 
 # Deploy a host (run ON the target host, as root, from the pushed GitHub flake;
-# commit + push BEFORE deploying — the host pulls github:belikh/jupiter-os):
-ssh root@<host> -- nixos-rebuild switch --flake github:belikh/jupiter-os#<host>
+  # commit + push BEFORE deploying — the host pulls github:belikh/jupiter-os):
+  # nom (nix-output-monitor) evaluates faster + live progress; --fast skips
+  # rebuilding deployment tools. Install: `nix profile install nixpkgs#nom`
+  ssh root@<host> -- nom os-switch --fast --flake github:belikh/jupiter-os#<host>
 ```
 
 ## Roadmap (bring-up order)
