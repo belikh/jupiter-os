@@ -16,6 +16,7 @@
     ./core/ecc.nix
     ./core/zed.nix
     ./core/crush.nix
+    ./core/lix.nix
     ./boot/fallout-splash.nix
     ./core/build-tuning.nix
     # ./core/build-machines.nix  # disabled; enable per-host if needed
