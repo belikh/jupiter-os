@@ -185,7 +185,7 @@
   # Tailscale client for this host (connects to local headscale)
   jupiter.services.tailscale = {
     enable = true;
-    serverUrl = "http://127.0.0.1:8080";  # Local headscale
+    serverUrl = "http://127.0.0.1:8080"; # Local headscale
     tags = [ "tag:fleet" ];
     acceptRoutes = true;
     # authKeyFile optional - uses headscale pre-auth keys by default
@@ -203,7 +203,10 @@
     harmoniaHostname = "cache.jupiter.au";
     harmoniaPort = 5000;
     extraIngress = [
-      { hostname = "headscale.jupiter.au"; port = 8080; }
+      {
+        hostname = "headscale.jupiter.au";
+        port = 8080;
+      }
     ];
   };
   # fleet (and the next CI run) can substitute closures CI pushed here. Read-

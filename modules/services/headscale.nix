@@ -89,14 +89,14 @@ in
       type = lib.types.attrsOf (lib.types.attrsOf lib.types.str);
       default = {
         server = {
-          enabled = "true";  # Local DERP enabled - UDP 3478 port-forwarded via IPv6
+          enabled = "true"; # Local DERP enabled - UDP 3478 port-forwarded via IPv6
           regionId = "999";
           regionCode = "jupiter";
           regionName = "Jupiter DERP";
           stunPort = "3478";
         };
-        urls = [];
-        paths = [];
+        urls = [ ];
+        paths = [ ];
         # Prefer local DERP now that port 3478 is open
         preferDerp = "true";
       };
@@ -176,7 +176,14 @@ in
     environment.etc."headscale/policy.hujson".text = builtins.toJSON {
       groups = {
         admin = [ "admin@jupiter" ];
-        fleet = [ "europa" "callisto" "amalthea" "metis" "adrastea" "thebe" ];
+        fleet = [
+          "europa"
+          "callisto"
+          "amalthea"
+          "metis"
+          "adrastea"
+          "thebe"
+        ];
         ci = [ "tag:ci" ];
       };
       hosts = {
@@ -194,11 +201,26 @@ in
       # ACLs
       acls = [
         # Fleet hosts can talk to each other on any port
-        { action = "accept"; src = [ "fleet" ]; dst = [ "fleet:*" ]; }
+        {
+          action = "accept";
+          src = [ "fleet" ];
+          dst = [ "fleet:*" ];
+        }
         # CI can push to europa's Harmonia (port 5000) and SSH to fleet (port 22)
-        { action = "accept"; src = [ "tag:ci" ]; dst = [ "fleet:5000" "fleet:22" ]; }
+        {
+          action = "accept";
+          src = [ "tag:ci" ];
+          dst = [
+            "fleet:5000"
+            "fleet:22"
+          ];
+        }
         # Admin full access
-        { action = "accept"; src = [ "admin" ]; dst = [ "*:*" ]; }
+        {
+          action = "accept";
+          src = [ "admin" ];
+          dst = [ "*:*" ];
+        }
       ];
     };
 
@@ -228,7 +250,10 @@ in
         PrivateTmp = true;
         ProtectSystem = "strict";
         ProtectHome = true;
-        ReadWritePaths = [ "/var/lib/headscale" "/etc/headscale" ];
+        ReadWritePaths = [
+          "/var/lib/headscale"
+          "/etc/headscale"
+        ];
       };
     };
 

@@ -10,7 +10,10 @@ let
 
   # Build the tailscale up command as a list of arguments
   upArgs = lib.concatLists [
-    [ "${pkgs.tailscale}/bin/tailscale" "up" ]
+    [
+      "${pkgs.tailscale}/bin/tailscale"
+      "up"
+    ]
     [ "--login-server=${cfg.serverUrl}" ]
     (lib.optional (cfg.authKeyFile != null) [ "--authkey=file:${cfg.authKeyFile}" ])
     (lib.optional cfg.ephemeral [ "--ephemeral" ])
@@ -107,8 +110,14 @@ in
     # Tailscale up service (runs after tailscaled is ready)
     systemd.services.tailscale-up = {
       description = "Tailscale registration (Jupiter tailnet)";
-      after = [ "network-online.target" "tailscaled.service" ];
-      wants = [ "network-online.target" "tailscaled.service" ];
+      after = [
+        "network-online.target"
+        "tailscaled.service"
+      ];
+      wants = [
+        "network-online.target"
+        "tailscaled.service"
+      ];
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;

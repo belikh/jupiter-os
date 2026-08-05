@@ -19,7 +19,10 @@
 
   config = lib.mkIf config.jupiter.dev.enable {
     # Add local user as trusted user for nix-daemon
-    nix.settings.trusted-users = lib.mkForce [ "root" config.jupiter.dev.user ];
+    nix.settings.trusted-users = lib.mkForce [
+      "root"
+      config.jupiter.dev.user
+    ];
 
     # Use Harmonia binary cache
     nix.settings.substituters = lib.mkForce [
@@ -33,7 +36,10 @@
     ];
 
     # Ensure nix-command + flakes available
-    nix.settings.experimental-features = [ "nix-command" "flakes" ];
+    nix.settings.experimental-features = [
+      "nix-command"
+      "flakes"
+    ];
 
     # Faster evaluation
     nix.package = pkgs.lix;
