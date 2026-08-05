@@ -267,7 +267,12 @@ in
           # needs an absolute path / an explicit shell wrapper.
           "${pkgs.coreutils}/bin/mkdir -p /var/lib/headscale"
           "${pkgs.coreutils}/bin/chown headscale:headscale /var/lib/headscale"
-          "${pkgs.bash}/bin/sh -c 'if [ ! -f /var/lib/headscale/noise_private.key ]; then ${pkgs.headscale}/bin/headscale -c /etc/headscale/config.yaml noise genkey > /var/lib/headscale/noise_private.key; ${pkgs.coreutils}/bin/chown headscale:headscale /var/lib/headscale/noise_private.key; fi'"
+          # `headscale noise genkey` isn't a real subcommand (silently
+          # failed, leaving an empty key file that then failed to parse:
+          # "key hex string doesn't have expected type prefix privkey:") —
+          # the actual command is `generate private-key`, which prints the
+          # already-prefixed key ("privkey:<hex>") to stdout.
+          "${pkgs.bash}/bin/sh -c 'if [ ! -s /var/lib/headscale/noise_private.key ]; then ${pkgs.headscale}/bin/headscale generate private-key > /var/lib/headscale/noise_private.key; ${pkgs.coreutils}/bin/chown headscale:headscale /var/lib/headscale/noise_private.key; fi'"
         ];
         ExecStart = "${pkgs.headscale}/bin/headscale -c /etc/headscale/config.yaml serve";
         Restart = "on-failure";
