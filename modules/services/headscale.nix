@@ -64,6 +64,17 @@ in
   options.jupiter.services.headscale = {
     enable = lib.mkEnableOption "Headscale control plane server (self-hosted Tailscale)";
 
+    # Real headscale user identity (created via `headscale users create`),
+    # granted admin ACL access and tag:ci/tag:fleet ownership. Was
+    # previously the placeholder "admin@jupiter", which isn't a real
+    # headscale user — tag:fleet registration failed with "requested tags
+    # [tag:fleet] are invalid or not permitted" until fixed.
+    adminUser = lib.mkOption {
+      type = lib.types.str;
+      default = "io";
+      description = "headscale user identity for ACL group:admin and tag ownership.";
+    };
+
     # Server configuration
     serverUrl = lib.mkOption {
       type = lib.types.str;
@@ -205,11 +216,11 @@ in
     # instead — no groups{}/hosts{} indirection needed for devices at all.
     environment.etc."headscale/policy.hujson".text = builtins.toJSON {
       groups = {
-        "group:admin" = [ "admin@jupiter" ];
+        "group:admin" = [ cfg.adminUser ];
       };
       tagOwners = {
-        "tag:ci" = [ "admin@jupiter" ];
-        "tag:fleet" = [ "admin@jupiter" ];
+        "tag:ci" = [ cfg.adminUser ];
+        "tag:fleet" = [ cfg.adminUser ];
       };
       acls = [
         # Fleet hosts can talk to each other on any port
