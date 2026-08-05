@@ -15,7 +15,8 @@ let
     metrics_listen_addr: ${cfg.metricsListenAddr}
     database:
       type: ${cfg.database.type}
-      url: ${cfg.database.url}
+      sqlite:
+        path: ${cfg.database.path}
     noise:
       private_key_path: /var/lib/headscale/noise_private.key
     prefixes:
@@ -80,15 +81,18 @@ in
       description = "Address:port for Prometheus metrics.";
     };
 
-    # Database - using sqlite for simplicity, can upgrade to postgres later
+    # Database - using sqlite for simplicity, can upgrade to postgres later.
+    # 0.29.3 schema: database.type is "sqlite" (not "sqlite3") and the file
+    # path lives under database.sqlite.path (not a flat url:) — confirmed
+    # against the real config-example.yaml after "path cannot be empty".
     database = lib.mkOption {
       type = lib.types.attrsOf lib.types.str;
       default = {
-        type = "sqlite3";
+        type = "sqlite";
         # Stored on persistent ZFS dataset
-        url = "file:/var/lib/headscale/db.sqlite?mode=rwc&_fk=1";
+        path = "/var/lib/headscale/db.sqlite";
       };
-      description = "Database configuration (sqlite3 or postgres).";
+      description = "Database configuration (sqlite or postgres).";
     };
 
     # DERP/STUN for NAT traversal

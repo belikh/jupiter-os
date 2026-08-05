@@ -162,8 +162,8 @@
     serverUrl = "https://headscale.jupiter.au";
     # Database on persistent ZFS dataset
     database = {
-      type = "sqlite3";
-      url = "file:/var/lib/headscale/db.sqlite?mode=rwc&_fk=1";
+      type = "sqlite";
+      path = "/var/lib/headscale/db.sqlite";
     };
     # Use Cloudflare Tunnel for HTTPS, so HTTP internally
     tls = {
