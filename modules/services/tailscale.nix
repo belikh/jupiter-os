@@ -8,10 +8,16 @@
 let
   cfg = config.jupiter.services.tailscale;
 
-  # Build the tailscale up command as a list of arguments
+  # Build the tailscale up command as a list of arguments. --socket must
+  # match tailscaled's own --socket below (custom stateDir path, not the
+  # tailscale CLI's default /var/run/tailscale/tailscaled.sock) — it's a
+  # global flag so it goes before the "up" subcommand, or the CLI fails
+  # with "failed to connect to local tailscaled; it doesn't appear to be
+  # running" even though the daemon is up.
   upArgs = lib.concatLists [
     [
       "${pkgs.tailscale}/bin/tailscale"
+      "--socket=${cfg.stateDir}/tailscaled.sock"
       "up"
     ]
     [ "--login-server=${cfg.serverUrl}" ]

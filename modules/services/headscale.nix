@@ -18,6 +18,10 @@ let
       url: ${cfg.database.url}
     noise:
       private_key_path: /var/lib/headscale/noise_private.key
+    prefixes:
+      v4: ${cfg.prefixes.v4}
+      v6: ${cfg.prefixes.v6}
+      allocation: sequential
     derp:
       server:
         enabled: ${cfg.derp.server.enabled}
@@ -125,6 +129,18 @@ in
         reusable = "true";
       };
       description = "Ephemeral node settings for CI runners.";
+    };
+
+    # Tailnet IP allocation ranges. Required by headscale 0.29.3 (config
+    # init fails with "no IPv4 or IPv6 prefix configured" if absent) —
+    # standard Tailscale-compatible CGNAT/ULA ranges.
+    prefixes = lib.mkOption {
+      type = lib.types.attrsOf lib.types.str;
+      default = {
+        v4 = "100.64.0.0/10";
+        v6 = "fd7a:115c:a1e0::/48";
+      };
+      description = "Tailnet IPv4/IPv6 address allocation ranges.";
     };
 
     # DNS
