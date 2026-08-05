@@ -19,6 +19,15 @@ let
       "${pkgs.tailscale}/bin/tailscale"
       "--socket=${cfg.stateDir}/tailscaled.sock"
       "up"
+      # This unit re-runs `tailscale up` with our declared flags on every
+      # activation/restart. Without --reset, tailscale refuses to apply a
+      # flag set that differs from whatever was persisted by a PREVIOUS
+      # `up` invocation (e.g. an earlier manual registration that included
+      # --advertise-tags, now correctly dropped below): "changing settings
+      # via 'tailscale up' requires mentioning all non-default flags."
+      # --reset makes each run fully declarative instead of an incremental
+      # diff against prior state — confirmed live on europa.
+      "--reset"
     ]
     [ "--login-server=${cfg.serverUrl}" ]
     (lib.optional (cfg.authKeyFile != null) [ "--authkey=file:${cfg.authKeyFile}" ])
