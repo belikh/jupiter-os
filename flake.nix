@@ -203,13 +203,25 @@
       callistoCmdLine = "init=${callistoBuild.toplevel}/init loglevel=4 ip=dhcp ${toString callistoConfig.boot.kernelParams}";
       europaLanIp = "10.1.1.2";
       europaPxeHttpPort = 8082; # keep in sync with jupiter.pxe.httpPort default
-      ipxeScript = untunedPkgs.writeText "netboot.ipxe" ''
+      # Embedded script is a STATIC chainload to a fixed URL (europaLanIp +
+      # port never change) — it must NOT reference callistoCmdLine/toplevel,
+      # or every callisto closure change forces a full iPXE recompile (the
+      # cross-compile cost pxe-server.nix's header warns about). The actual
+      # per-build kernel cmdline lives in bootIpxeScript below, a plain text
+      # file fetched at runtime, so only that (trivial, no-compile) file
+      # changes when callisto's closure changes — ipxe.efi/undionly.kpxe
+      # build once and stay cached indefinitely.
+      chainScript = untunedPkgs.writeText "chain.ipxe" ''
+        #!ipxe
+        chain http://${europaLanIp}:${toString europaPxeHttpPort}/boot.ipxe
+      '';
+      ipxeBoot = untunedPkgs.ipxe.override { embedScript = chainScript; };
+      bootIpxeScript = untunedPkgs.writeText "boot.ipxe" ''
         #!ipxe
         kernel http://${europaLanIp}:${toString europaPxeHttpPort}/bzImage ${callistoCmdLine}
         initrd http://${europaLanIp}:${toString europaPxeHttpPort}/initrd
         boot
       '';
-      ipxeBoot = untunedPkgs.ipxe.override { embedScript = ipxeScript; };
       pxeTftpRoot = untunedPkgs.linkFarm "pxe-tftproot" [
         {
           name = "ipxe.efi";
@@ -218,6 +230,10 @@
         {
           name = "undionly.kpxe";
           path = "${ipxeBoot}/undionly.kpxe";
+        }
+        {
+          name = "boot.ipxe";
+          path = bootIpxeScript;
         }
         {
           name = "bzImage";
