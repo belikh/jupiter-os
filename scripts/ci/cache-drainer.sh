@@ -56,19 +56,22 @@ while true; do
   # transfer; retries absorb transient WG/NAR flakes. ssh-ng talks to europa's
   # nix daemon over the jupiter-ci SSH key.
   #
-  # ssh-ng://$ssh where $ssh is "europa-ci" relies on that being an SSH
-  # CONFIG ALIAS (HostName europa) — not a real hostname. This script runs
-  # as root via `sudo` (nix-daemon's post-build-hook context); if the ssh
-  # subprocess nix copy spawns doesn't reliably pick up root's ~/.ssh/config
-  # in that context, "europa-ci" gets treated as a literal (non-resolving)
-  # hostname and fails fast. Bypass the alias entirely: target the real
-  # MagicDNS hostname directly with an explicit user, and pass the
-  # ControlMaster socket via NIX_SSHOPTS instead of relying on config-file
-  # lookup for it.
+  # MUST pass -i explicitly via NIX_SSHOPTS. Confirmed live by direct
+  # reproduction (a manual ssh-ng copy with an explicit -key succeeded
+  # instantly — PATH, nix-daemon, auth are all fine): the earlier
+  # ssh-ng://$ssh form relied on the "europa-ci" SSH CONFIG ALIAS purely
+  # for its `IdentityFile $HOME/.ssh/europa_ci` line (root has no default
+  # ~/.ssh/id_* key at all). A prior "fix" here swapped to an explicit
+  # jupiter-ci@europa target to dodge a suspected alias-resolution problem,
+  # but that also silently dropped the IdentityFile, leaving ssh with no
+  # key to offer at all — an immediate, fast auth failure indistinguishable
+  # in symptom (rc=123, ~1s) from the original hypothesis. Keep the
+  # explicit hostname AND explicitly supply the identity file — don't rely
+  # on alias resolution for anything.
   for attempt in 1 2 3 4 5 6; do
     log "attempt $attempt: pushing $n path(s)"
     if printf '%s\n' "$paths" | xargs -r -d '\n' timeout 600 env \
-        NIX_SSHOPTS="-o ControlPath=/root/.ssh/controlmasters/%r@%h:%p -o StrictHostKeyChecking=accept-new" \
+        NIX_SSHOPTS="-i /root/.ssh/europa_ci -o ControlPath=/root/.ssh/controlmasters/%r@%h:%p -o StrictHostKeyChecking=accept-new" \
         nix copy --to "ssh-ng://jupiter-ci@europa" 2>>/tmp/ci-drainer.err; then
       log "pushed $n path(s) on attempt $attempt"
       break
