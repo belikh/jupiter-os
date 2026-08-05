@@ -26,8 +26,13 @@ let
       # --advertise-tags, now correctly dropped below): "changing settings
       # via 'tailscale up' requires mentioning all non-default flags."
       # --reset makes each run fully declarative instead of an incremental
-      # diff against prior state — confirmed live on europa.
+      # diff against prior state — confirmed live on europa. --reset alone
+      # isn't enough when login-server itself changes though ("can't
+      # change --login-server without --force-reauth", also confirmed
+      # live) — re-registering against a different control server is
+      # treated as a bigger change than --reset covers.
       "--reset"
+      "--force-reauth"
     ]
     [ "--login-server=${cfg.serverUrl}" ]
     (lib.optional (cfg.authKeyFile != null) [ "--authkey=file:${cfg.authKeyFile}" ])
