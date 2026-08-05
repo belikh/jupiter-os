@@ -23,7 +23,18 @@ let
     [ "--login-server=${cfg.serverUrl}" ]
     (lib.optional (cfg.authKeyFile != null) [ "--authkey=file:${cfg.authKeyFile}" ])
     (lib.optional (cfg.hostname != "") [ "--hostname=${cfg.hostname}" ])
-    (lib.concatMap (tag: [ "--advertise-tags=${tag}" ]) cfg.tags)
+    # headscale 0.29.3 HARD-REJECTS registration if --advertise-tags is
+    # combined with a PreAuthKey that already carries tags (this is how
+    # every host here registers now) — confirmed in hscontrol/state/state.go:
+    # "Reject advertise-tags for PreAuthKey registrations early... PreAuthKey
+    # nodes get their tags from the key itself, not from client requests."
+    # Not a harmless redundant flag; a hard registration failure
+    # ("requested tags [...] are invalid or not permitted"). Only emit
+    # --advertise-tags for the authKeyFile-less (interactive/manual
+    # registration) case.
+    (lib.optionals (cfg.authKeyFile == null) (
+      lib.concatMap (tag: [ "--advertise-tags=${tag}" ]) cfg.tags
+    ))
     (lib.optional cfg.acceptRoutes [ "--accept-routes" ])
     (lib.concatMap (route: [ "--advertise-routes=${route}" ]) cfg.advertiseRoutes)
   ];

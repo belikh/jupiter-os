@@ -153,7 +153,15 @@ jobs:
           
           # Start Tailscale with auth key (pre-auth key for CI tag)
           # Uses reusable ephemeral key from Headscale (configured in headscale.nix)
-          # Ephemeral is configured on the pre-auth key in headscale, not via CLI flag
+          # Ephemeral is configured on the pre-auth key in headscale, not via CLI flag.
+          # Do NOT also pass --advertise-tags here: headscale 0.29.3 hard-rejects
+          # registration outright if a PreAuthKey that already carries tags (this
+          # one was created with --tags tag:ci) is combined with ANY client-side
+          # --advertise-tags request — confirmed in hscontrol/state/state.go
+          # ("Reject advertise-tags for PreAuthKey registrations early... PreAuthKey
+          # nodes get their tags from the key itself, not from client requests").
+          # Not a redundant no-op as it might appear — a hard registration failure
+          # ("requested tags [tag:ci] are invalid or not permitted").
           #
           # NOTE: the public https://headscale.jupiter.au (fronted by
           # Cloudflare Tunnel) CANNOT carry the TS2021 noise protocol at
@@ -177,7 +185,6 @@ jobs:
           sudo tailscale up \
             --login-server=http://neptune.jupiter.au:8080 \
             --authkey=${{ secrets.TAILSCALE_CI_AUTHKEY }} \
-            --advertise-tags=tag:ci \
             --accept-routes
           
           # Verify connectivity to europa (Harmonia cache)
