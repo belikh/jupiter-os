@@ -16,7 +16,6 @@ let
     ]
     [ "--login-server=${cfg.serverUrl}" ]
     (lib.optional (cfg.authKeyFile != null) [ "--authkey=file:${cfg.authKeyFile}" ])
-    (lib.optional cfg.ephemeral [ "--ephemeral" ])
     (lib.optional (cfg.hostname != "") [ "--hostname=${cfg.hostname}" ])
     (lib.concatMap (tag: [ "--advertise-tags=${tag}" ]) cfg.tags)
     (lib.optional cfg.acceptRoutes [ "--accept-routes" ])
@@ -39,13 +38,6 @@ in
       type = lib.types.nullOr lib.types.path;
       default = null;
       description = "Path to Tailscale auth key file (sops secret). Optional - can use headscale pre-auth keys instead.";
-    };
-
-    # Ephemeral node (for CI runners)
-    ephemeral = lib.mkOption {
-      type = lib.types.bool;
-      default = false;
-      description = "Register as ephemeral node (auto-cleanup on disconnect).";
     };
 
     # Hostname override (defaults to networking.hostName)

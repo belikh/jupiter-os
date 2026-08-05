@@ -151,12 +151,12 @@ jobs:
           # Install Tailscale
           curl -fsSL https://tailscale.com/install.sh | sudo sh
           
-          # Start Tailscale with ephemeral auth key (pre-auth key for CI tag)
+          # Start Tailscale with auth key (pre-auth key for CI tag)
           # Uses reusable ephemeral key from Headscale (configured in headscale.nix)
+          # Ephemeral is configured on the pre-auth key in headscale, not via CLI flag
           sudo tailscale up \
             --login-server=https://headscale.jupiter.au \
             --authkey=${{ secrets.TAILSCALE_CI_AUTHKEY }} \
-            --ephemeral \
             --advertise-tags=tag:ci \
             --accept-routes
           
