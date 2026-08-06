@@ -120,7 +120,14 @@
   # cannot once gcc.arch is set. Verify Harmonia actually has the pushed
   # closure (`nix path-info --substituters http://10.1.1.2:5000 <toplevel>`)
   # before switching this host.
-  jupiter.build.microarch = "btver2"; # CI builds this host's closure with -march=btver2
+  # TEMPORARILY disabled (2026-08-06): CI hasn't pushed a btver2 closure for
+  # the latest commit yet (headscale ACL/DERP fix, 879d969), and switching a
+  # tuned config directly on europa's weak Opteron X3216 without a Harmonia
+  # substitute forces a from-scratch local btver2 build on hardware this
+  # slow — exactly what the comment above warns to verify against first.
+  # Re-enable once this host's headscale fix is confirmed live (untuned
+  # switch is enough for that) and CI has caught up on a tuned push.
+  # jupiter.build.microarch = "btver2"; # CI builds this host's closure with -march=btver2
 
   # ---- nixpkgs overlays ----------------------------------------------------
   # bmake's `deptgt-interrupt` unit test is timing-sensitive (it asserts a
