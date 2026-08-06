@@ -12,11 +12,18 @@ name: CI (distributed builders)
 # ci.yml parallelizes at HOST granularity (matrix, one job per host/group) —
 # capped at ~6 real hosts. This workflow instead parallelizes at DERIVATION
 # granularity: 19 disposable machines register as Nix remote builders, and
-# ONE coordinator job runs a single `nix build` across every host closure at
-# once, letting Nix's own scheduler fan hundreds of independent derivations
-# out across all 19 builders concurrently — regardless of host count, and
-# with shared derivations (e.g. the skylake kiosk base every kiosk shares)
-# built exactly once instead of once per host.
+# ONE coordinator job builds each host closure in turn, letting Nix's own
+# scheduler fan that host's independent derivations out across all 19
+# builders concurrently — regardless of host count.
+#
+# The coordinator builds hosts SEQUENTIALLY (one nix build per host, looped),
+# not as a single combined `nix build` across all 6 nixosConfigurations at
+# once. An earlier attempt at the combined form hit store issues traced to
+# the kiosks (shared cross-host derivations confusing one evaluation's
+# GC-root/output bookkeeping) — see the "Build + push each host closure
+# sequentially" step below. Cross-host derivation sharing (e.g. the skylake
+# kiosk base every kiosk shares) still substitutes from Harmonia after the
+# first kiosk pushes it, it just isn't deduped within a single evaluation.
 #
 # ---------------------------------------------------------------------------
 # RENDEZVOUS: deterministic Tailscale hostnames, no discovery service needed
@@ -272,20 +279,16 @@ jobs:
           # nix.conf's default `builders = @/etc/nix/machines` picks this up;
           # no daemon restart needed, the machines file is read per-build.
 
-      - name: Build every host closure in one evaluation, fanned across builders
-        run: |
-          nix build \
-            ".#nixosConfigurations.europa.config.system.build.toplevel" \
-            ".#nixosConfigurations.callisto.config.system.build.toplevel" \
-            ".#nixosConfigurations.amalthea.config.system.build.toplevel" \
-            ".#nixosConfigurations.metis.config.system.build.toplevel" \
-            ".#nixosConfigurations.adrastea.config.system.build.toplevel" \
-            ".#nixosConfigurations.thebe.config.system.build.toplevel" \
-            --print-out-paths --no-link > /tmp/out-paths
-
-      - name: Push closures to Harmonia
-        env:
-          EUROPA_SSH: europa-ci
+      # One host at a time, NOT a single combined `nix build` across all 6
+      # nixosConfigurations — a prior attempt at evaluating/building the
+      # fleet as one top-level unit hit store issues traced back to the
+      # kiosks (shared derivations across hosts confusing the single
+      # evaluation/GC-root bookkeeping). Each host is still fully
+      # parallel INSIDE itself: `--builders @/etc/nix/machines` from the
+      # previous step applies per-build, so this host's own derivation
+      # graph fans out across whatever builders came up — only the outer
+      # loop over hosts is serial, same shape as ci.yml's build-host job.
+      - name: Set up europa SSH for per-host Harmonia push
         run: |
           install -m 700 -d "$HOME/.ssh"
           mkdir -p "$HOME/.ssh/controlmasters"
@@ -298,6 +301,16 @@ jobs:
           } >> "$HOME/.ssh/config"
           printf '%s\n' "${{ secrets.EUROPA_CI_SSH_KEY }}" > "$HOME/.ssh/europa_ci"
           chmod 600 "$HOME/.ssh/europa_ci"
-          while read -r path; do
-            nix copy --to "ssh-ng://europa-ci" "$path"
-          done < /tmp/out-paths
+
+      - name: Build + push each host closure sequentially
+        run: |
+          BUILD_EXIT=0
+          for host in europa callisto amalthea metis adrastea thebe; do
+            echo "Building $host..."
+            out=$(nix build ".#nixosConfigurations.$host.config.system.build.toplevel" \
+              --print-out-paths --no-link) || { BUILD_EXIT=1; break; }
+
+            echo "Pushing $host closure to europa..."
+            nix copy --to "ssh-ng://europa-ci" "$out" || echo "WARNING: push failed for $host"
+          done
+          exit $BUILD_EXIT
