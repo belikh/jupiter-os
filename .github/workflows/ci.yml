@@ -77,7 +77,7 @@ jobs:
             trusted-public-keys = ${{ secrets.HARMONIA_PUBLIC_KEY }} cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
             connect-timeout = 5
             post-build-hook = /opt/ci/post-build-hook.sh
-            system-features = gccarch-btver2 gccarch-skylake
+            system-features = gccarch-btver2 gccarch-skylake big-parallel
             cores = 1
             max-jobs = 4
             builders-use-substitutes = true
