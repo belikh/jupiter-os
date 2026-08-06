@@ -207,15 +207,7 @@
   # DO NOT REBUILD CALLISTO LOCALLY without verifying Harmonia has it first:
   # `nix path-info --substituters http://10.1.1.2:5000 <toplevel>` from
   # callisto — every path must resolve from Harmonia before `switch`.
-  # TEMPORARILY disabled (2026-08-06): same reason as europa's matching
-  # comment (hosts/europa/configuration.nix) -- CI hasn't pushed a
-  # skylake closure for 879d969 (headscale ACL/DERP fix) yet, and per the
-  # KNOWN COST note above, europa's own build embeds
-  # nixosConfigurations.callisto.config.system.build.toplevel for PXE
-  # kexec -- so even switching europa untuned would still drag in a local
-  # skylake build here. Re-enable both hosts together once CI has caught
-  # up on a tuned push for this commit.
-  # jupiter.build.microarch = "skylake";
+  jupiter.build.microarch = "skylake";
 
   # Tailscale client for Jupiter tailnet. Reusable (non-ephemeral) tag:fleet
   # pre-auth key, shared fleet-wide via sops — self-registers on switch, no
