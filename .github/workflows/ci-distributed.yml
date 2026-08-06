@@ -265,7 +265,14 @@ jobs:
             host="ci-b${idx}-${{ github.run_id }}.ts.jupiter.au"
             (
               while [ "$(date +%s)" -lt "$deadline" ]; do
-                if ssh -o ConnectTimeout=5 -o BatchMode=yes "$host" true 2>/dev/null; then
+                # BatchMode=yes rules out a hang on a password/host-key
+                # prompt (fails closed instead of prompting). ConnectTimeout
+                # only bounds the initial TCP connect though -- it does NOT
+                # bound DNS resolution or a handshake that goes silent after
+                # connecting (e.g. traffic black-holed mid-relay), so wrap
+                # the whole attempt in `timeout` too rather than trust
+                # ConnectTimeout alone to cap it.
+                if timeout 10 ssh -o ConnectTimeout=5 -o BatchMode=yes -vvv "$host" true 2>"$readydir/$idx.log"; then
                   echo "$host" > "$readydir/$idx"
                   exit 0
                 fi
@@ -275,10 +282,26 @@ jobs:
           done
           wait
           ready=()
-          for f in "$readydir"/*; do
-            [ -f "$f" ] && ready+=("$(cat "$f")")
+          missing=()
+          for idx in $(seq 1 19); do
+            if [ -f "$readydir/$idx" ]; then
+              ready+=("$(cat "$readydir/$idx")")
+            else
+              missing+=("$idx")
+            fi
           done
           echo "${#ready[@]}/19 builders reachable"
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "missing indices: ${missing[*]}"
+            # Surface WHY the last attempt failed for one missing builder --
+            # DNS ("Could not resolve"), ACL/no-route (handshake hangs, no
+            # explicit refusal), or auth are all distinguishable in -vvv
+            # output. Full log is in the job artifact-less run log either
+            # way, this just calls out the tail so it's not buried.
+            first_missing="${missing[0]}"
+            echo "--- last ssh -vvv tail for builder $first_missing (ci-b${first_missing}-${{ github.run_id }}) ---"
+            tail -n 25 "$readydir/$first_missing.log" || true
+          fi
           if [ "${#ready[@]}" -eq 0 ]; then
             echo "::error::no builders came up, aborting rather than building serially on this runner"
             exit 1
