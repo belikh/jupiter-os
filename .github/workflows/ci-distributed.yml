@@ -1,0 +1,303 @@
+name: CI (distributed builders)
+
+# DESIGN DRAFT — not wired to any trigger yet, not enabled. See PR/commit
+# discussion before flipping `on:` to something live. Costs ~20 concurrent
+# GH-hosted runner-minutes per invocation (19 builders + 1 coordinator) vs.
+# ci.yml's current ~6, and needs one new repo secret (CI_BUILDER_SSH_KEY,
+# see below) that does not exist yet.
+#
+# ---------------------------------------------------------------------------
+# WHY THIS SHAPE
+# ---------------------------------------------------------------------------
+# ci.yml parallelizes at HOST granularity (matrix, one job per host/group) —
+# capped at ~6 real hosts. This workflow instead parallelizes at DERIVATION
+# granularity: 19 disposable machines register as Nix remote builders, and
+# ONE coordinator job runs a single `nix build` across every host closure at
+# once, letting Nix's own scheduler fan hundreds of independent derivations
+# out across all 19 builders concurrently — regardless of host count, and
+# with shared derivations (e.g. the skylake kiosk base every kiosk shares)
+# built exactly once instead of once per host.
+#
+# ---------------------------------------------------------------------------
+# RENDEZVOUS: deterministic Tailscale hostnames, no discovery service needed
+# ---------------------------------------------------------------------------
+# headscale has MagicDNS enabled with base_domain=ts.jupiter.au
+# (modules/services/headscale.nix). Each builder registers as
+# `ci-b<idx>-<run_id>.ts.jupiter.au` — `idx` (matrix value) and `run_id`
+# (github.run_id) are both known to EVERY job in the run before it starts,
+# so the coordinator can address all 19 builders directly with no artifact
+# upload / polling / external KV store to discover them. run_id is included
+# specifically to avoid hostname collisions between two CI runs that overlap
+# on different refs (main push + an open PR, say) — idx alone would collide.
+#
+# ---------------------------------------------------------------------------
+# SHUTDOWN: builders poll the Actions API for the coordinator's status
+# ---------------------------------------------------------------------------
+# Builders have no fixed amount of work — they must stay alive exactly as
+# long as the coordinator needs them. There's no push-based signal available
+# between sibling jobs in one run, so each builder polls
+# `GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs` (via `gh api`,
+# using the default GITHUB_TOKEN) every 15s and exits once the job named
+# "coordinator" is no longer queued/in_progress. A hard `timeout-minutes`
+# ceiling on the builder job is the backstop if that never resolves.
+#
+# ---------------------------------------------------------------------------
+# NEW SECRET REQUIRED: CI_BUILDER_SSH_KEY
+# ---------------------------------------------------------------------------
+# A dedicated ed25519 keypair, CI-only, distinct from EUROPA_CI_SSH_KEY and
+# the fleet's nix_build_ssh_key sops secret (that one's private half lives
+# only on already-provisioned hosts, not in GitHub Secrets). Generate once:
+#   ssh-keygen -t ed25519 -N "" -C jupiter-ci-builder -f ci_builder_key
+# Store the PRIVATE half as the repo secret CI_BUILDER_SSH_KEY. The public
+# half is derived at runtime on each builder via `ssh-keygen -y` — only one
+# secret to manage, nothing to keep in sync.
+#
+# ---------------------------------------------------------------------------
+# KNOWN GAPS / THINGS TO VALIDATE BEFORE ENABLING
+# ---------------------------------------------------------------------------
+# - Not yet load-tested: 19 concurrent ephemeral tailnet joins/leaves per
+#   run against headscale — confirm it doesn't choke or leak stale nodes
+#   (ephemeral nodes should self-prune on disconnect, but verify empirically
+#   rather than trusting that here).
+# - No per-builder resource tuning: every builder advertises maxJobs=4,
+#   speedFactor=1, and the same feature set (kvm, benchmark, big-parallel,
+#   gccarch-btver2, gccarch-skylake) — GH-hosted runners are homogeneous so
+#   this is fine unless a future variant mixes runner sizes.
+# - The 90-minute hard caps below are a guess, not measured against a real
+#   distributed run — revisit once this has actually built the fleet once.
+# - GITHUB_TOKEN needs `actions: read` for the builder jobs' polling step;
+#   declared explicitly below rather than relying on default repo policy.
+#
+# ---------------------------------------------------------------------------
+# DELIBERATE NON-PARITY: no post-build-hook/cache-drainer on the builders
+# ---------------------------------------------------------------------------
+# ci.yml's build-host job stages scripts/ci/post-build-hook.sh +
+# cache-drainer.sh so the job pushes each output to Harmonia as it's built.
+# Builders here don't get that: with the ssh-ng remote-build protocol, every
+# output a builder produces is already streamed back to the COORDINATOR's
+# own store as part of the protocol, so the coordinator's single post-build
+# push step (last step below) already covers everything. Wiring the same
+# drainer onto all 19 builders would mean up to 19 concurrent pushers
+# hitting jupiter-ci@europa at once — pallene's push-path notes atticd
+# wedges silently under concurrent pushers; Harmonia's `nix copy` is a
+# different, less fragile mechanism, but it's untested at this concurrency
+# and there's no reason to risk it when the coordinator-only push already
+# gets the data there. Revisit only if the coordinator's serial push loop
+# turns out to be the bottleneck.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  builder:
+    name: builder-${{ matrix.idx }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        idx: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+    steps:
+      - uses: actions/checkout@v4
+
+      # Same as ci.yml's build-host job — builders here do real compiling
+      # (that's the whole point), so they need the same headroom.
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be  # v1.3.1
+        with:
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+          tool-cache: true
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # Cache Nix evaluation/download cache by nixpkgs commit (flake.lock hash) —
+      # each builder gets its own runner-local cache, same key scheme as ci.yml.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/nix
+          key: nix-${{ runner.os }}-nixpkgs-${{ hashFiles('flake.lock') }}
+          restore-keys: |
+            nix-${{ runner.os }}-nixpkgs-${{ hashFiles('flake.lock') }}-
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: |
+            substituters = https://cache.jupiter.au https://cache.nixos.org
+            trusted-public-keys = ${{ secrets.HARMONIA_PUBLIC_KEY }} cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+            connect-timeout = 5
+            trusted-users = root runner
+            system-features = kvm benchmark big-parallel gccarch-btver2 gccarch-skylake
+            cores = 1
+            max-jobs = 4
+
+      - name: Join tailnet under deterministic hostname
+        run: |
+          curl -fsSL https://tailscale.com/install.sh | sudo sh
+          sudo tailscale up \
+            --login-server=https://neptune.jupiter.au:8080 \
+            --authkey=${{ secrets.TAILSCALE_CI_AUTHKEY }} \
+            --hostname="ci-b${{ matrix.idx }}-${{ github.run_id }}" \
+            --accept-routes
+
+      - name: Authorize coordinator's key, start sshd
+        run: |
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "${{ secrets.CI_BUILDER_SSH_KEY }}" > /tmp/ci_builder_key
+          chmod 600 /tmp/ci_builder_key
+          ssh-keygen -y -f /tmp/ci_builder_key > "$HOME/.ssh/authorized_keys"
+          rm -f /tmp/ci_builder_key
+          chmod 600 "$HOME/.ssh/authorized_keys"
+          sudo mkdir -p /run/sshd
+          sudo /usr/sbin/sshd -D -o Port=22 -o PasswordAuthentication=no -o PermitRootLogin=no \
+            -o AuthorizedKeysFile="$HOME/.ssh/authorized_keys" &
+          echo "builder ci-b${{ matrix.idx }}-${{ github.run_id }} ready: $(tailscale ip -4)"
+
+      - name: Wait until the coordinator job finishes, then exit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          deadline=$(( $(date +%s) + 85*60 ))
+          while [ "$(date +%s)" -lt "$deadline" ]; do
+            status=$(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}/jobs" \
+              --jq '.jobs[] | select(.name=="coordinator") | .status')
+            case "$status" in
+              completed) echo "coordinator finished, shutting down"; exit 0 ;;
+              "") echo "coordinator job not visible yet, waiting" ;;
+              *) echo "coordinator status: $status" ;;
+            esac
+            sleep 15
+          done
+          echo "hit hard deadline without seeing coordinator complete, shutting down anyway"
+
+  coordinator:
+    name: coordinator
+    needs: []  # deliberately NOT depending on `builder` — they must run concurrently, not before
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be  # v1.3.1
+        with:
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+          tool-cache: true
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: |
+            substituters = https://cache.jupiter.au https://cache.nixos.org
+            trusted-public-keys = ${{ secrets.HARMONIA_PUBLIC_KEY }} cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+            connect-timeout = 5
+            builders-use-substitutes = true
+            # No local system-features override here — coordinator does not
+            # build anything itself, it only evaluates + dispatches, so it
+            # doesn't need gccarch-*/big-parallel locally. Keep max-jobs low
+            # so the scheduler prefers dispatching to the 19 remote builders
+            # over doing work on this runner's own weak CPU.
+            max-jobs = 0
+
+      - name: Join tailnet
+        run: |
+          curl -fsSL https://tailscale.com/install.sh | sudo sh
+          sudo tailscale up \
+            --login-server=https://neptune.jupiter.au:8080 \
+            --authkey=${{ secrets.TAILSCALE_CI_AUTHKEY }} \
+            --hostname="ci-coordinator-${{ github.run_id }}" \
+            --accept-routes
+
+      - name: Stage builder SSH key + host-checking config
+        run: |
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "${{ secrets.CI_BUILDER_SSH_KEY }}" > "$HOME/.ssh/ci_builder_key"
+          chmod 600 "$HOME/.ssh/ci_builder_key"
+          {
+            echo "Host ci-b*.ts.jupiter.au"
+            echo "  User runner"
+            echo "  IdentityFile $HOME/.ssh/ci_builder_key"
+            echo "  StrictHostKeyChecking accept-new"
+          } >> "$HOME/.ssh/config"
+          chmod 600 "$HOME/.ssh/config"
+
+      - name: Wait for builders to come up, write /etc/nix/machines
+        run: |
+          ready=()
+          deadline=$(( $(date +%s) + 5*60 ))
+          for idx in $(seq 1 19); do
+            host="ci-b${idx}-${{ github.run_id }}.ts.jupiter.au"
+            while [ "$(date +%s)" -lt "$deadline" ]; do
+              if ssh -o ConnectTimeout=5 -o BatchMode=yes "$host" true 2>/dev/null; then
+                ready+=("$host")
+                break
+              fi
+              sleep 5
+            done
+          done
+          echo "${#ready[@]}/19 builders reachable"
+          if [ "${#ready[@]}" -eq 0 ]; then
+            echo "::error::no builders came up, aborting rather than building serially on this runner"
+            exit 1
+          fi
+          : > /tmp/machines
+          for host in "${ready[@]}"; do
+            echo "ssh-ng://runner@${host} x86_64-linux $HOME/.ssh/ci_builder_key 4 1 kvm,benchmark,big-parallel,gccarch-btver2,gccarch-skylake -" \
+              >> /tmp/machines
+          done
+          sudo install -m 644 /tmp/machines /etc/nix/machines
+          # nix.conf's default `builders = @/etc/nix/machines` picks this up;
+          # no daemon restart needed, the machines file is read per-build.
+
+      - name: Build every host closure in one evaluation, fanned across builders
+        run: |
+          nix build \
+            ".#nixosConfigurations.europa.config.system.build.toplevel" \
+            ".#nixosConfigurations.callisto.config.system.build.toplevel" \
+            ".#nixosConfigurations.amalthea.config.system.build.toplevel" \
+            ".#nixosConfigurations.metis.config.system.build.toplevel" \
+            ".#nixosConfigurations.adrastea.config.system.build.toplevel" \
+            ".#nixosConfigurations.thebe.config.system.build.toplevel" \
+            --print-out-paths --no-link > /tmp/out-paths
+
+      - name: Push closures to Harmonia
+        env:
+          EUROPA_SSH: europa-ci
+        run: |
+          install -m 700 -d "$HOME/.ssh"
+          mkdir -p "$HOME/.ssh/controlmasters"
+          {
+            echo "Host europa-ci"
+            echo "  HostName europa"
+            echo "  User jupiter-ci"
+            echo "  IdentityFile $HOME/.ssh/europa_ci"
+            echo "  StrictHostKeyChecking accept-new"
+          } >> "$HOME/.ssh/config"
+          printf '%s\n' "${{ secrets.EUROPA_CI_SSH_KEY }}" > "$HOME/.ssh/europa_ci"
+          chmod 600 "$HOME/.ssh/europa_ci"
+          while read -r path; do
+            nix copy --to "ssh-ng://europa-ci" "$path"
+          done < /tmp/out-paths
