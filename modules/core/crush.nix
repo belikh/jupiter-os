@@ -50,8 +50,8 @@ let
     };
   };
 
-  # Same z.ai coding-plan provider as modules/core/zed.nix's zed-wrapped —
-  # it's the only LLM API key in secrets/secrets.yaml.
+  # Same z.ai coding-plan provider as modules/core/zed.nix's zed-wrapped.
+  # Groq is a second cloud provider (fast Llama/Kimi hosting) alongside it.
   #
   # The fleet model server (modules/services/llama-server.nix) is wired up as
   # a `llamacpp` provider on EVERY host that enables crush. jupiter.services.llm.clientUrl
@@ -83,6 +83,11 @@ let
           name = "Qwen3-Coder (local)";
           base_url = config.jupiter.services.llm.clientUrl;
         };
+        "groq" = {
+          type = "openai";
+          base_url = "https://api.groq.com/openai/v1";
+          api_key = "$GROQ_API_KEY";
+        };
       };
     }
   );
@@ -92,6 +97,7 @@ let
   # sources the sops secret instead of requiring a manual `crush auth` paste.
   crush-wrapped = pkgs.writeShellScriptBin "crush" ''
     export Z_AI_API_KEY="$(cat ${config.sops.secrets.zai_api_key.path})"
+    export GROQ_API_KEY="$(cat ${config.sops.secrets.groq_api_key.path})"
     exec ${crush}/bin/crush "$@"
   '';
 in
@@ -104,6 +110,11 @@ in
     environment.systemPackages = [ crush-wrapped ];
 
     sops.secrets.zai_api_key = {
+      owner = "io";
+      mode = "0400";
+    };
+
+    sops.secrets.groq_api_key = {
       owner = "io";
       mode = "0400";
     };
