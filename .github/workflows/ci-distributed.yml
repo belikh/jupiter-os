@@ -253,17 +253,30 @@ jobs:
 
       - name: Wait for builders to come up, write /etc/nix/machines
         run: |
-          ready=()
+          # Probe all 19 CONCURRENTLY, not one at a time. A sequential loop
+          # sharing one deadline means a single slow/dead builder burns the
+          # entire deadline before the next index is ever tried -- confirmed
+          # live: builder 19 was up and reachable while the coordinator was
+          # still stuck "waiting for builders to come up" because it hadn't
+          # gotten past an earlier, slower index yet.
           deadline=$(( $(date +%s) + 5*60 ))
+          readydir=$(mktemp -d)
           for idx in $(seq 1 19); do
             host="ci-b${idx}-${{ github.run_id }}.ts.jupiter.au"
-            while [ "$(date +%s)" -lt "$deadline" ]; do
-              if ssh -o ConnectTimeout=5 -o BatchMode=yes "$host" true 2>/dev/null; then
-                ready+=("$host")
-                break
-              fi
-              sleep 5
-            done
+            (
+              while [ "$(date +%s)" -lt "$deadline" ]; do
+                if ssh -o ConnectTimeout=5 -o BatchMode=yes "$host" true 2>/dev/null; then
+                  echo "$host" > "$readydir/$idx"
+                  exit 0
+                fi
+                sleep 5
+              done
+            ) &
+          done
+          wait
+          ready=()
+          for f in "$readydir"/*; do
+            [ -f "$f" ] && ready+=("$(cat "$f")")
           done
           echo "${#ready[@]}/19 builders reachable"
           if [ "${#ready[@]}" -eq 0 ]; then
