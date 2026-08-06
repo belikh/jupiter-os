@@ -144,10 +144,24 @@ in
           # matters for CI reachability). Empty = omitted from config.yaml.
           ipv4 = "";
         };
-        urls = [ ];
+        # Tailscale's public DERP map — real fallback relay capacity
+        # (Tailscale's own datacenter DERP nodes) instead of forcing every
+        # non-P2P connection through the single home "Jupiter DERP" server
+        # on residential upload bandwidth. Load-bearing for CI specifically:
+        # GitHub-hosted runners have no outbound IPv6 at all, so they can
+        # never reach the local server's STUN port (3478, IPv6-only
+        # forwarded) for P2P assist — every CI<->CI hop was relaying through
+        # home DERP alone, a real bottleneck/SPOF at 19 concurrent builders.
+        # This URL is headscale's documented magic value that fetches
+        # Tailscale's real global DERP map over plain HTTPS (no IPv6/UDP
+        # port-forward dependency at all).
+        urls = [ "https://controlplane.tailscale.com/derpmap/default" ];
         paths = [ ];
-        # Prefer local DERP now that port 3478 is open
-        preferDerp = "true";
+        # No longer force-prefer the home relay now that public DERP is in
+        # the mix — let clients pick whichever region actually measures
+        # lowest latency (home DERP still wins for LAN-local fleet traffic,
+        # since it'll almost always be closest).
+        preferDerp = "false";
       };
       description = "DERP server configuration. Local DERP enabled (UDP 3478 port-forwarded via IPv6).";
     };
@@ -278,6 +292,19 @@ in
             "tag:fleet:5000"
             "tag:fleet:22"
           ];
+        }
+        # CI nodes can SSH to each other (distributed-builder coordinator ->
+        # builders, ci-distributed.yml). Without this, headscale's
+        # default-deny silently blocks every CI<->CI connection regardless
+        # of DERP/STUN reachability — the coordinator can resolve a
+        # builder's MagicDNS name and even complete a DERP-relayed
+        # handshake, but the SSH attempt itself gets dropped at the ACL
+        # layer (confirmed live: "0/19 builders reachable" with no
+        # transport-level error surfaced).
+        {
+          action = "accept";
+          src = [ "tag:ci" ];
+          dst = [ "tag:ci:22" ];
         }
         # Admin full access
         {
