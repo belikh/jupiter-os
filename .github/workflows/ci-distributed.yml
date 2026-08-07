@@ -155,6 +155,7 @@ jobs:
             trusted-public-keys = ${{ secrets.HARMONIA_PUBLIC_KEY }} cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
             connect-timeout = 5
             trusted-users = root runner
+            http2 = false
             system-features = kvm benchmark big-parallel gccarch-btver2 gccarch-skylake
             cores = 4
             max-jobs = 2
@@ -310,6 +311,7 @@ jobs:
             trusted-public-keys = ${{ secrets.HARMONIA_PUBLIC_KEY }} cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
             connect-timeout = 5
             builders-use-substitutes = true
+            http2 = false
             # No local system-features override here — coordinator does not
             # build anything itself, it only evaluates + dispatches, so it
             # doesn't need gccarch-*/big-parallel locally. Keep max-jobs low
