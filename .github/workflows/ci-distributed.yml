@@ -107,7 +107,10 @@ jobs:
   builder:
     name: builder-${{ matrix.idx }}
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # 360 is GitHub's hard per-job ceiling — `timeout-minutes` cannot exceed
+    # it, and omitting it would default to the same 360 anyway. See the
+    # coordinator's cap for why these three numbers move together.
+    timeout-minutes: 360
     strategy:
       fail-fast: false
       matrix:
@@ -208,7 +211,14 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          deadline=$(( $(date +%s) + 85*60 ))
+          # 355, not 360: builders must serve for as long as the coordinator
+          # can possibly run, but the job itself is killed at 360, so leave 5
+          # minutes for the stats collection + upload steps below. If this
+          # deadline ever drops BELOW the coordinator's timeout, builders
+          # shut down mid-build and the coordinator is left with zero
+          # builders and max-jobs=0 — it then stalls doing nothing until its
+          # own timeout, a silent failure that looks nothing like its cause.
+          deadline=$(( $(date +%s) + 355*60 ))
           while [ "$(date +%s)" -lt "$deadline" ]; do
             status=$(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}/jobs" \
               --jq '.jobs[] | select(.name=="coordinator") | .status')
@@ -261,7 +271,23 @@ jobs:
     name: coordinator
     needs: []  # deliberately NOT depending on `builder` — they must run concurrently, not before
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    # Maxed to GitHub's 360 ceiling: the previous 75 was, by the header's own
+    # admission, "a guess, not measured against a real distributed run", and
+    # run 31147835511 passed it with europa's btver2 closure still building.
+    #
+    # These three numbers are a LADDER and must move together:
+    #   coordinator timeout-minutes  360   (this)
+    #   builder poll deadline        355   (builders serve past every build)
+    #   builder timeout-minutes      360   (room for the stats steps)
+    # Builders idle-poll until the coordinator completes, so if their
+    # deadline ever falls below this cap they exit mid-build and strand the
+    # coordinator with no builders and max-jobs=0.
+    #
+    # Cost note: because 19 builders idle alongside this job, a hung
+    # coordinator now burns up to 20 x 6h of runner time rather than 20 x
+    # 75min. The cap is a cost circuit-breaker, and it has been widened
+    # deliberately in exchange for not truncating a real full-fleet build.
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
 
