@@ -43,7 +43,14 @@ let
       base_domain: ${cfg.dns.baseDomain}
       override_local_dns: true
       nameservers:
-        global: ${lib.concatStringsSep "\n        - " (lib.splitString "," cfg.dns.upstream)}
+        # global is a LIST. The previous form emitted the first entry as a
+        # scalar on the `global:` line and the rest as more-indented `- `
+        # lines, which YAML folds into ONE plain multi-line scalar — the
+        # deployed config.yaml on europa parsed as the single nameserver
+        # "10.1.1.1 - 1.1.1.1" rather than a two-element list. Emit every
+        # entry as a proper sequence item under a bare `global:` instead.
+        global:
+        ${lib.concatMapStringsSep "\n    " (n: "- ${n}") (lib.splitString "," cfg.dns.upstream)}
       search_domains: []
     log:
       level: ${cfg.logLevel}
