@@ -91,6 +91,10 @@ in
     platforms = lib.mkOption {
       type = lib.types.listOf lib.types.str;
       default = [
+        "gamecube"
+        "wii"
+        "ps1"
+        "ps2"
         "nes"
         "snes"
         "gb"
@@ -103,10 +107,6 @@ in
         "gameandwatch"
         "nds"
         "dsi"
-        "gamecube"
-        "wii"
-        "ps1"
-        "ps2"
         "3ds"
         "new3ds"
         "wiiu"
