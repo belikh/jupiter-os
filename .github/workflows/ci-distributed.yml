@@ -596,11 +596,15 @@ jobs:
           # complete (started in builder jobs). Coordinator just builds; no
           # coordinator-side pushing — each builder pushes its own ~11Mbit
           # aggregate ~200Mbit > serial 11Mbit on coordinator.
+          #
+          # --fallback: if substitution fails (corrupted cache entry), rebuild
+          # locally rather than failing. Coordinator has enough resources;
+          # kiosks never hit this error (they're not building, only coord is).
           BUILD_EXIT=0
           for host in europa callisto amalthea metis adrastea thebe; do
             echo "Building $host..."
             nix build ".#nixosConfigurations.$host.config.system.build.toplevel" \
-              --print-out-paths --no-link || { BUILD_EXIT=1; break; }
+              --print-out-paths --no-link --fallback || { BUILD_EXIT=1; break; }
           done
           exit $BUILD_EXIT
 
