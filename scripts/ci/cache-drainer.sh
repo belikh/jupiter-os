@@ -46,6 +46,9 @@ touch "$queue" "$lock"; chmod 666 "$queue" "$lock"
 
 log "drainer started"
 
+total_queued=0
+total_pushed=0
+
 while true; do
   batch=""
   exec 9>"$lock"; flock 9
@@ -56,8 +59,13 @@ while true; do
   paths="$(printf '%s\n' "$batch" | sort -u | grep -v '^$')" || true
   [ -z "$paths" ] && continue
   n="$(printf '%s\n' "$paths" | wc -l)"
+  total_queued=$((total_queued + n))
 
-  log "draining batch: $n path(s)"
+  pct=0
+  if [ "$total_queued" -gt 0 ]; then
+    pct=$(( (total_pushed * 100) / total_queued ))
+  fi
+  log "draining batch: $n path(s) | queued: $total_queued | pushed: $total_pushed | progress: $pct%"
 
   # xargs chunks to stay under ARG_MAX on a big backlog; timeout bounds each
   # transfer; retries absorb transient WG/NAR flakes. ssh-ng talks to europa's
@@ -81,7 +89,12 @@ while true; do
     if printf '%s\n' "$paths" | xargs -r -d '\n' timeout 600 env \
         NIX_SSHOPTS="-i /root/.ssh/europa_ci -o ControlPath=/root/.ssh/controlmasters/%r@%h:%p -o StrictHostKeyChecking=accept-new" \
         "$nix_bin" copy --to "ssh-ng://jupiter-ci@europa" 2>"$err_file"; then
-      log "pushed $n path(s) on attempt $attempt"
+      total_pushed=$((total_pushed + n))
+      pct=0
+      if [ "$total_queued" -gt 0 ]; then
+        pct=$(( (total_pushed * 100) / total_queued ))
+      fi
+      log "pushed $n path(s) on attempt $attempt | queued: $total_queued | pushed: $total_pushed | progress: $pct%"
       rm -f "$err_file"
       break
     else
