@@ -399,12 +399,16 @@ jobs:
           sudo install -m 600 /dev/null /run/ci-builders-known-hosts
 
           sudo mkdir -p /etc/ssh/ssh_config.d
+          sudo mkdir -p /root/.ssh/controlmasters
           sudo tee /etc/ssh/ssh_config.d/ci-builders.conf >/dev/null <<EOF
           Host 100.*
               User runner
               IdentityFile $HOME/.ssh/ci_builder_key
               StrictHostKeyChecking accept-new
               UserKnownHostsFile /run/ci-builders-known-hosts
+              ControlMaster auto
+              ControlPath /root/.ssh/controlmasters/%r@%h:%p
+              ControlPersist 30m
           EOF
           sudo chmod 644 /etc/ssh/ssh_config.d/ci-builders.conf
 
