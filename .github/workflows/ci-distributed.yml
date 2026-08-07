@@ -238,82 +238,213 @@ jobs:
             --hostname="ci-coordinator-${{ github.run_id }}" \
             --accept-routes
 
-      - name: Stage builder SSH key + host-checking config
+      # UNCONDITIONAL, never fails the job. `ssh: Could not resolve hostname`
+      # (the failure this workflow died on for every run up to 31145262216)
+      # is emitted identically in three different situations, and nothing
+      # downstream distinguishes them:
+      #   W1 peers absent from THIS node's netmap -> headscale isn't
+      #      propagating just-registered ephemeral same-tag peers
+      #      (juanfont/headscale#2375).
+      #   W2 netmap fine, but tailscaled never installed 100.100.100.100 as
+      #      the resolver for ts.jupiter.au on this runner, so the lookup
+      #      went to the runner's upstream resolver.
+      #   W3 netmap + DNS fine, but headscale's given_name sanitization
+      #      means the MagicDNS name isn't literally ci-b<idx>-<run_id>.
+      # The builder-side logs can't tell these apart (they show a healthy
+      # join in all three), so the discriminator has to be captured HERE,
+      # on the coordinator, before any probing narrows the picture.
+      - name: Coordinator tailnet diagnostics
+        run: |
+          echo "--- tailscale ip -4 (did this node register at all?) ---"
+          tailscale ip -4 || echo "NO TAILSCALE IP — coordinator never registered"
+
+          echo "--- peer count ---"
+          tailscale status --json | jq '.Peer // {} | length' || true
+
+          echo "--- peers (HostName | DNSName | IP | online) ---"
+          tailscale status --json \
+            | jq -r '.Peer // {} | to_entries[] | .value
+                     | "\(.HostName // "?") | \(.DNSName // "?") | \((.TailscaleIPs // ["?"])[0]) | online=\(.Online)"' \
+            || true
+
+          # One full peer object verbatim: settles which field headscale
+          # actually populates with the requested hostname, rather than
+          # leaving the discovery step's matching to assumption.
+          echo "--- first peer object, verbatim ---"
+          tailscale status --json | jq '.Peer // {} | to_entries[0].value' || true
+
+          echo "--- prefs (is DNS takeover even enabled? CorpDNS=accept-dns) ---"
+          tailscale debug prefs || true
+
+          echo "--- does MagicDNS work for THIS runner? ---"
+          getent hosts europa.ts.jupiter.au || echo "europa.ts.jupiter.au DID NOT RESOLVE"
+
+          echo "--- resolver state ---"
+          cat /etc/resolv.conf || true
+          resolvectl status 2>/dev/null | head -40 || true
+
+      # The probe below runs as `runner`, but the ACTUAL remote-build
+      # dispatch is done by nix-daemon running as ROOT — root reads
+      # /root/.ssh/config and /etc/ssh/ssh_config{,.d/*.conf} and ignores
+      # /home/runner/.ssh/config entirely. The previous shape put
+      # StrictHostKeyChecking only in the runner's own config, so every
+      # dispatch would have died with "Host key verification failed" the
+      # moment rendezvous started working (ephemeral builders generate a
+      # fresh host key every run, and root defaults to StrictHostKeyChecking=ask
+      # with no TTY attached). See nix.dev distributed-builds: when builds
+      # go through the daemon, the DAEMON user needs the SSH access.
+      # /etc/ssh/ssh_config.d/ covers runner and root in one write — the
+      # coordinator's own `ssh -vvv` output confirmed that include is
+      # honoured ("matched no files").
+      - name: Stage builder SSH key + host-checking config (runner AND root)
         run: |
           install -m 700 -d "$HOME/.ssh"
           printf '%s\n' "${{ secrets.CI_BUILDER_SSH_KEY }}" > "$HOME/.ssh/ci_builder_key"
           chmod 600 "$HOME/.ssh/ci_builder_key"
-          {
-            echo "Host ci-b*.ts.jupiter.au"
-            echo "  User runner"
-            echo "  IdentityFile $HOME/.ssh/ci_builder_key"
-            echo "  StrictHostKeyChecking accept-new"
-          } >> "$HOME/.ssh/config"
-          chmod 600 "$HOME/.ssh/config"
+          # Readable by the nix-daemon's ssh (runs as root; root reads
+          # anything, but the file must exist before first dispatch).
+          ls -l "$HOME/.ssh/ci_builder_key"
 
-      - name: Wait for builders to come up, write /etc/nix/machines
+          # Run-scoped known-hosts: builders are ephemeral and generate a
+          # fresh host key every run, so accumulating them in root's real
+          # known_hosts is pure noise.
+          sudo install -m 600 /dev/null /run/ci-builders-known-hosts
+
+          sudo mkdir -p /etc/ssh/ssh_config.d
+          sudo tee /etc/ssh/ssh_config.d/ci-builders.conf >/dev/null <<EOF
+          Host 100.*
+              User runner
+              IdentityFile $HOME/.ssh/ci_builder_key
+              StrictHostKeyChecking accept-new
+              UserKnownHostsFile /run/ci-builders-known-hosts
+          EOF
+          sudo chmod 644 /etc/ssh/ssh_config.d/ci-builders.conf
+
+      # RENDEZVOUS BY LOCAL NETMAP, NOT BY DNS.
+      #
+      # The previous shape dialled ci-b<idx>-<run_id>.ts.jupiter.au and died
+      # with "Could not resolve hostname" on all 19 for the full deadline,
+      # while every builder job was green and had a tailnet IP. That put
+      # three unrelated failure modes (W1/W2/W3, see the diagnostics step
+      # above) behind one indistinguishable error string.
+      #
+      # `tailscale status --json` reads the LOCAL tailscaled netmap: no
+      # resolver, no systemd-resolved, no ts.jupiter.au suffix in the path,
+      # and matching raw HostName/DNSName sidesteps headscale's given_name
+      # sanitization. That eliminates W2 and W3 outright.
+      #
+      # It does NOT fix W1, and it must not pretend to: MagicDNS is DERIVED
+      # from this same netmap rather than queried from headscale per lookup,
+      # so a peer missing from the netmap is missing from `tailscale status`
+      # too. Hence the explicit empty-netmap abort below — an empty peer
+      # list is a control-plane diagnosis, not "builders still starting",
+      # and silently treating it as the latter is what would hide W1.
+      - name: Discover builders via local netmap, write /etc/nix/machines
+        env:
+          RUN_ID: ${{ github.run_id }}
         run: |
-          # Probe all 19 CONCURRENTLY, not one at a time. A sequential loop
-          # sharing one deadline means a single slow/dead builder burns the
-          # entire deadline before the next index is ever tried -- confirmed
-          # live: builder 19 was up and reachable while the coordinator was
-          # still stuck "waiting for builders to come up" because it hadn't
-          # gotten past an earlier, slower index yet.
           deadline=$(( $(date +%s) + 5*60 ))
-          readydir=$(mktemp -d)
-          for idx in $(seq 1 19); do
-            host="ci-b${idx}-${{ github.run_id }}.ts.jupiter.au"
-            (
-              while [ "$(date +%s)" -lt "$deadline" ]; do
-                # BatchMode=yes rules out a hang on a password/host-key
-                # prompt (fails closed instead of prompting). ConnectTimeout
-                # only bounds the initial TCP connect though -- it does NOT
-                # bound DNS resolution or a handshake that goes silent after
-                # connecting (e.g. traffic black-holed mid-relay), so wrap
-                # the whole attempt in `timeout` too rather than trust
-                # ConnectTimeout alone to cap it.
-                if timeout 10 ssh -o ConnectTimeout=5 -o BatchMode=yes -vvv "$host" true 2>"$readydir/$idx.log"; then
-                  echo "$host" > "$readydir/$idx"
-                  exit 0
+          declare -A ip_of
+          declare -A why
+          for idx in $(seq 1 19); do why[$idx]="absent from netmap"; done
+          saw_any_peer=0
+
+          # Poll: builders register ~45s after the coordinator, and late
+          # joiners must still be picked up.
+          while [ "$(date +%s)" -lt "$deadline" ]; do
+            status_json=$(tailscale status --json 2>/dev/null || echo '{}')
+            npeer=$(printf '%s' "$status_json" | jq '.Peer // {} | length' 2>/dev/null || echo 0)
+            [ "$npeer" -gt 0 ] && saw_any_peer=1
+
+            for idx in $(seq 1 19); do
+              [ -n "${ip_of[$idx]:-}" ] && continue
+              want="ci-b${idx}-${RUN_ID}"
+
+              # Match on EITHER field: depending on client version HostName
+              # is the OS hostname while DNSName is the normalized MagicDNS
+              # name, and headscale may suffix a given_name on collision.
+              # startswith is unambiguous here because the run_id follows the
+              # index (ci-b1-<id> can never prefix-match ci-b19-<id>).
+              ip=$(printf '%s' "$status_json" | jq -r --arg w "$want" '
+                    .Peer // {} | to_entries[] | .value
+                    | select(((.HostName // "") | startswith($w))
+                          or ((.DNSName  // "") | startswith($w)))
+                    | (.TailscaleIPs // [])
+                    | map(select(contains(":") | not))
+                    | .[0] // empty' 2>/dev/null | head -1)
+
+              if [ -z "$ip" ]; then
+                continue
+              fi
+
+              # A netmap entry is not proof the ACL permits port 22 — verify
+              # before trusting it, same fail-closed posture as before.
+              if timeout 15 ssh -o ConnectTimeout=5 -o BatchMode=yes \
+                   -o StrictHostKeyChecking=accept-new \
+                   -o UserKnownHostsFile=/dev/null \
+                   -i "$HOME/.ssh/ci_builder_key" "runner@$ip" true 2>"/tmp/probe-$idx.log"; then
+                ip_of[$idx]="$ip"
+                why[$idx]="verified"
+              else
+                # Separate "no tailnet path" from "path fine, SSH refused".
+                if timeout 15 tailscale ping "$ip" >/dev/null 2>&1; then
+                  why[$idx]="present ($ip), tailnet path OK, ssh failed"
+                else
+                  why[$idx]="present ($ip), tailscale ping FAILED"
                 fi
-                sleep 5
-              done
-            ) &
+              fi
+            done
+
+            verified=0
+            for idx in $(seq 1 19); do [ -n "${ip_of[$idx]:-}" ] && verified=$((verified+1)); done
+            echo "$(date +%T) netmap peers=$npeer, verified=$verified/19"
+            [ "$verified" -eq 19 ] && break
+            sleep 5
           done
-          wait
+
+          echo "--- per-builder outcome ---"
           ready=()
-          missing=()
           for idx in $(seq 1 19); do
-            if [ -f "$readydir/$idx" ]; then
-              ready+=("$(cat "$readydir/$idx")")
+            if [ -n "${ip_of[$idx]:-}" ]; then
+              echo "  builder $idx: verified ${ip_of[$idx]}"
+              ready+=("${ip_of[$idx]}")
             else
-              missing+=("$idx")
+              echo "  builder $idx: ${why[$idx]}"
+              [ -s "/tmp/probe-$idx.log" ] && sed 's/^/      /' "/tmp/probe-$idx.log" | tail -n 5
             fi
           done
-          echo "${#ready[@]}/19 builders reachable"
-          if [ "${#missing[@]}" -gt 0 ]; then
-            echo "missing indices: ${missing[*]}"
-            # Surface WHY the last attempt failed for one missing builder --
-            # DNS ("Could not resolve"), ACL/no-route (handshake hangs, no
-            # explicit refusal), or auth are all distinguishable in -vvv
-            # output. Full log is in the job artifact-less run log either
-            # way, this just calls out the tail so it's not buried.
-            first_missing="${missing[0]}"
-            echo "--- last ssh -vvv tail for builder $first_missing (ci-b${first_missing}-${{ github.run_id }}) ---"
-            tail -n 25 "$readydir/$first_missing.log" || true
-          fi
-          if [ "${#ready[@]}" -eq 0 ]; then
-            echo "::error::no builders came up, aborting rather than building serially on this runner"
+          echo "${#ready[@]}/19 builders verified"
+
+          if [ "$saw_any_peer" -eq 0 ]; then
+            echo "::error::W1 CONFIRMED: coordinator's netmap contained ZERO peers for the whole deadline."
+            echo "::error::This is headscale not propagating peers to this node, NOT a DNS or SSH problem."
+            echo "::error::Next step is the untagged-ephemeral-authkey workaround (juanfont/headscale#2375)."
             exit 1
           fi
+          if [ "${#ready[@]}" -eq 0 ]; then
+            echo "::error::peers were visible in the netmap but none verified over SSH — see per-builder outcome above"
+            exit 1
+          fi
+
           : > /tmp/machines
-          for host in "${ready[@]}"; do
-            echo "ssh-ng://runner@${host} x86_64-linux $HOME/.ssh/ci_builder_key 4 1 kvm,benchmark,big-parallel,gccarch-btver2,gccarch-skylake -" \
+          for ip in "${ready[@]}"; do
+            echo "ssh-ng://runner@${ip} x86_64-linux $HOME/.ssh/ci_builder_key 4 1 kvm,benchmark,big-parallel,gccarch-btver2,gccarch-skylake -" \
               >> /tmp/machines
           done
           sudo install -m 644 /tmp/machines /etc/nix/machines
+          cat /etc/nix/machines
           # nix.conf's default `builders = @/etc/nix/machines` picks this up;
           # no daemon restart needed, the machines file is read per-build.
+
+          # Prove the DAEMON's context works, not just the runner's — root
+          # uses a different SSH config entirely, and a green probe as
+          # `runner` says nothing about it. This is the check that would
+          # have caught the /root/.ssh gap before a 90-minute build died on
+          # "Host key verification failed".
+          echo "--- root-context SSH probe (this is what nix-daemon does) ---"
+          sudo -H ssh -o BatchMode=yes -o ConnectTimeout=10 "runner@${ready[0]}" \
+            'echo root-context ssh OK on $(hostname)' \
+            || { echo "::error::nix-daemon (root) cannot SSH to a builder — remote dispatch will fail"; exit 1; }
 
       # One host at a time, NOT a single combined `nix build` across all 6
       # nixosConfigurations — a prior attempt at evaluating/building the
