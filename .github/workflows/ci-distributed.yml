@@ -159,6 +159,7 @@ jobs:
             system-features = kvm benchmark big-parallel gccarch-btver2 gccarch-skylake
             cores = 4
             max-jobs = 2
+            post-build-hook = /opt/ci/post-build-hook.sh
 
       - name: Join tailnet under deterministic hostname
         run: |
@@ -181,6 +182,46 @@ jobs:
           sudo /usr/sbin/sshd -D -o Port=22 -o PasswordAuthentication=no -o PermitRootLogin=no \
             -o AuthorizedKeysFile="$HOME/.ssh/authorized_keys" &
           echo "builder ci-b${{ matrix.idx }}-${{ github.run_id }} ready: $(tailscale ip -4)"
+
+      - name: Stage cache-drainer + set up europa SSH
+        run: |
+          # Stage scripts for post-build-hook + cache-drainer
+          mkdir -p /opt/ci
+          cp scripts/ci/post-build-hook.sh /opt/ci/
+          cp scripts/ci/cache-drainer.sh /opt/ci/
+          cp scripts/ci/retain-recent.sh /opt/ci/
+          chmod +x /opt/ci/*.sh
+
+          # SSH to europa for pushing outputs (each builder pushes in parallel)
+          install -m 700 -d "$HOME/.ssh"
+          mkdir -p "$HOME/.ssh/controlmasters"
+          {
+            echo "Host europa-ci"
+            echo "  HostName europa"
+            echo "  User jupiter-ci"
+            echo "  IdentityFile $HOME/.ssh/europa_ci"
+            echo "  StrictHostKeyChecking accept-new"
+            echo "  ControlMaster auto"
+            echo "  ControlPath $HOME/.ssh/controlmasters/%r@%h:%p"
+            echo "  ControlPersist 30m"
+          } >> "$HOME/.ssh/config"
+          printf '%s\n' "${{ secrets.EUROPA_CI_SSH_KEY }}" > "$HOME/.ssh/europa_ci"
+          chmod 600 "$HOME/.ssh/europa_ci"
+
+          # Pre-warm connection for this builder
+          ssh -o ConnectTimeout=15 -o ControlMaster=auto -o ControlPath="$HOME/.ssh/controlmasters/%r@%h:%p" -o ControlPersist=30m europa-ci true
+
+      - name: Start cache-drainer (background process)
+        run: |
+          # Each builder runs its own drainer, pushing outputs as they complete
+          nohup bash -c '
+            NIX_BIN="$(command -v nix)"
+            while true; do
+              /opt/ci/cache-drainer.sh 2>&1
+              sleep 2
+            done
+          ' >/tmp/cache-drainer.log 2>&1 &
+          echo "Started cache-drainer (builder ${{ matrix.idx }})"
 
       # Sampler runs for the whole window the coordinator is dispatching to
       # us. /proc/stat is the only honest source here: `nix build` output
@@ -549,74 +590,18 @@ jobs:
       # previous step applies per-build, so this host's own derivation
       # graph fans out across whatever builders came up — only the outer
       # loop over hosts is serial, same shape as ci.yml's build-host job.
-      - name: Stage build scripts + set up europa SSH
+      - name: Build each host (builders push outputs to Harmonia in parallel)
         run: |
-          # Stage scripts for post-build-hook + cache-drainer
-          mkdir -p /opt/ci
-          cp scripts/ci/post-build-hook.sh /opt/ci/
-          cp scripts/ci/cache-drainer.sh /opt/ci/
-          cp scripts/ci/retain-recent.sh /opt/ci/
-          chmod +x /opt/ci/*.sh
-
-          # SSH config + ControlMaster for background drainer (uses root context)
-          install -m 700 -d "$HOME/.ssh"
-          mkdir -p "$HOME/.ssh/controlmasters"
-          {
-            echo "Host europa-ci"
-            echo "  HostName europa"
-            echo "  User jupiter-ci"
-            echo "  IdentityFile $HOME/.ssh/europa_ci"
-            echo "  StrictHostKeyChecking accept-new"
-            echo "  ControlMaster auto"
-            echo "  ControlPath $HOME/.ssh/controlmasters/%r@%h:%p"
-            echo "  ControlPersist 30m"
-          } >> "$HOME/.ssh/config"
-          printf '%s\n' "${{ secrets.EUROPA_CI_SSH_KEY }}" > "$HOME/.ssh/europa_ci"
-          chmod 600 "$HOME/.ssh/europa_ci"
-
-          # Pre-warm ControlMaster connection as runner
-          ssh -o ConnectTimeout=15 -o ControlMaster=auto -o ControlPath="$HOME/.ssh/controlmasters/%r@%h:%p" -o ControlPersist=30m europa-ci true
-
-          # Also set up for root (drainer runs as root)
-          sudo mkdir -p /root/.ssh/controlmasters
-          sudo cp "$HOME/.ssh/config" /root/.ssh/config
-          sudo cp "$HOME/.ssh/europa_ci" /root/.ssh/europa_ci
-          sudo chmod 600 /root/.ssh/europa_ci
-          sudo chmod 600 /root/.ssh/config
-          sudo ssh -o ConnectTimeout=15 -o ControlMaster=auto -o ControlPath="/root/.ssh/controlmasters/%r@%h:%p" -o ControlPersist=30m europa-ci true
-
-      - name: Build each host (async drainer pushes to Harmonia)
-        run: |
-          # Configure nix to run post-build-hook for each build
-          mkdir -p ~/.config/nix
-          cat >> ~/.config/nix/nix.conf <<'EOF'
-          post-build-hook = /opt/ci/post-build-hook.sh
-          EOF
-
-          # Start cache drainer as root (runs asynchronously, consuming the queue
-          # populated by post-build-hook during each build). The drainer handles all
-          # pushing + logging; this build loop just builds.
-          sudo NIX_BIN="$(command -v nix)" /opt/ci/cache-drainer.sh 2>&1 | sudo tee /tmp/ci-drainer.log &
-          DRAINER_PID=$!
-          echo "Started cache drainer as root (PID: $DRAINER_PID)"
-
-          # Build each host — post-build-hook enqueues outputs for the drainer
+          # Each builder has its own cache-drainer pushing outputs as builds
+          # complete (started in builder jobs). Coordinator just builds; no
+          # coordinator-side pushing — each builder pushes its own ~11Mbit
+          # aggregate ~200Mbit > serial 11Mbit on coordinator.
           BUILD_EXIT=0
           for host in europa callisto amalthea metis adrastea thebe; do
             echo "Building $host..."
             nix build ".#nixosConfigurations.$host.config.system.build.toplevel" \
               --print-out-paths --no-link || { BUILD_EXIT=1; break; }
-
-            # Pin + retain last 3 builds for this host (safety net for the one
-            # path that must be cached — same as ci.yml's retain-recent)
-            BUILD_HOST="$host" /opt/ci/retain-recent.sh
           done
-
-          # Wait for the drainer to finish consuming the queue before the job exits
-          echo "Waiting for cache drainer to finish..."
-          wait $DRAINER_PID || true
-          echo "Cache drainer finished"
-
           exit $BUILD_EXIT
 
   # Aggregation has to be its own job: the builders deliberately outlive the
