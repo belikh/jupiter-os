@@ -160,6 +160,7 @@ jobs:
             cores = 4
             max-jobs = 2
             post-build-hook = /opt/ci/post-build-hook.sh
+            fallback = true
 
       - name: Join tailnet under deterministic hostname
         run: |
@@ -353,6 +354,7 @@ jobs:
             connect-timeout = 5
             builders-use-substitutes = true
             http2 = false
+            fallback = true
             # No local system-features override here — coordinator does not
             # build anything itself, it only evaluates + dispatches, so it
             # doesn't need gccarch-*/big-parallel locally. Keep max-jobs low
