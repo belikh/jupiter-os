@@ -393,13 +393,13 @@ jobs:
           # anything, but the file must exist before first dispatch).
           ls -l "$HOME/.ssh/ci_builder_key"
 
-          # Run-scoped known-hosts: builders are ephemeral and generate a
-          # fresh host key every run, so accumulating them in root's real
-          # known_hosts is pure noise.
+          # Run-scoped known-hosts + controlmasters (shared by runner and root).
+          # builders are ephemeral and generate a fresh host key every run,
+          # so accumulating them in root's real known_hosts is pure noise.
           sudo install -m 600 /dev/null /run/ci-builders-known-hosts
+          sudo install -m 777 -d /run/ci-builders-controlmasters
 
           sudo mkdir -p /etc/ssh/ssh_config.d
-          sudo mkdir -p /root/.ssh/controlmasters
           sudo tee /etc/ssh/ssh_config.d/ci-builders.conf >/dev/null <<EOF
           Host 100.*
               User runner
@@ -407,7 +407,7 @@ jobs:
               StrictHostKeyChecking accept-new
               UserKnownHostsFile /run/ci-builders-known-hosts
               ControlMaster auto
-              ControlPath /root/.ssh/controlmasters/%r@%h:%p
+              ControlPath /run/ci-builders-controlmasters/%r@%h:%p
               ControlPersist 30m
           EOF
           sudo chmod 644 /etc/ssh/ssh_config.d/ci-builders.conf
