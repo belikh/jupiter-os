@@ -543,8 +543,16 @@ jobs:
       # previous step applies per-build, so this host's own derivation
       # graph fans out across whatever builders came up — only the outer
       # loop over hosts is serial, same shape as ci.yml's build-host job.
-      - name: Set up europa SSH for per-host Harmonia push
+      - name: Stage build scripts + set up europa SSH
         run: |
+          # Stage scripts for post-build-hook + cache-drainer
+          mkdir -p /opt/ci
+          cp scripts/ci/post-build-hook.sh /opt/ci/
+          cp scripts/ci/cache-drainer.sh /opt/ci/
+          cp scripts/ci/retain-recent.sh /opt/ci/
+          chmod +x /opt/ci/*.sh
+
+          # SSH config + ControlMaster for background drainer (uses root context)
           install -m 700 -d "$HOME/.ssh"
           mkdir -p "$HOME/.ssh/controlmasters"
           {
@@ -553,21 +561,56 @@ jobs:
             echo "  User jupiter-ci"
             echo "  IdentityFile $HOME/.ssh/europa_ci"
             echo "  StrictHostKeyChecking accept-new"
+            echo "  ControlMaster auto"
+            echo "  ControlPath $HOME/.ssh/controlmasters/%r@%h:%p"
+            echo "  ControlPersist 30m"
           } >> "$HOME/.ssh/config"
           printf '%s\n' "${{ secrets.EUROPA_CI_SSH_KEY }}" > "$HOME/.ssh/europa_ci"
           chmod 600 "$HOME/.ssh/europa_ci"
 
-      - name: Build + push each host closure sequentially
+          # Pre-warm ControlMaster connection as runner
+          ssh -o ConnectTimeout=15 -o ControlMaster=auto -o ControlPath="$HOME/.ssh/controlmasters/%r@%h:%p" -o ControlPersist=30m europa-ci true
+
+          # Also set up for root (drainer runs as root)
+          sudo mkdir -p /root/.ssh/controlmasters
+          sudo cp "$HOME/.ssh/config" /root/.ssh/config
+          sudo cp "$HOME/.ssh/europa_ci" /root/.ssh/europa_ci
+          sudo chmod 600 /root/.ssh/europa_ci
+          sudo chmod 600 /root/.ssh/config
+          sudo ssh -o ConnectTimeout=15 -o ControlMaster=auto -o ControlPath="/root/.ssh/controlmasters/%r@%h:%p" -o ControlPersist=30m europa-ci true
+
+      - name: Build each host (async drainer pushes to Harmonia)
         run: |
+          # Configure nix to run post-build-hook for each build
+          mkdir -p ~/.config/nix
+          cat >> ~/.config/nix/nix.conf <<'EOF'
+          post-build-hook = /opt/ci/post-build-hook.sh
+          EOF
+
+          # Start cache drainer as root (runs asynchronously, consuming the queue
+          # populated by post-build-hook during each build). The drainer handles all
+          # pushing + logging; this build loop just builds.
+          sudo NIX_BIN="$(command -v nix)" /opt/ci/cache-drainer.sh 2>&1 | sudo tee /tmp/ci-drainer.log &
+          DRAINER_PID=$!
+          echo "Started cache drainer as root (PID: $DRAINER_PID)"
+
+          # Build each host — post-build-hook enqueues outputs for the drainer
           BUILD_EXIT=0
           for host in europa callisto amalthea metis adrastea thebe; do
             echo "Building $host..."
-            out=$(nix build ".#nixosConfigurations.$host.config.system.build.toplevel" \
-              --print-out-paths --no-link) || { BUILD_EXIT=1; break; }
+            nix build ".#nixosConfigurations.$host.config.system.build.toplevel" \
+              --print-out-paths --no-link || { BUILD_EXIT=1; break; }
 
-            echo "Pushing $host closure to europa..."
-            nix copy --to "ssh-ng://europa-ci" "$out" || echo "WARNING: push failed for $host"
+            # Pin + retain last 3 builds for this host (safety net for the one
+            # path that must be cached — same as ci.yml's retain-recent)
+            BUILD_HOST="$host" /opt/ci/retain-recent.sh
           done
+
+          # Wait for the drainer to finish consuming the queue before the job exits
+          echo "Waiting for cache drainer to finish..."
+          wait $DRAINER_PID || true
+          echo "Cache drainer finished"
+
           exit $BUILD_EXIT
 
   # Aggregation has to be its own job: the builders deliberately outlive the
