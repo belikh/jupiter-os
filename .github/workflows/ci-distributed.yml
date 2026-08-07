@@ -178,6 +178,32 @@ jobs:
             -o AuthorizedKeysFile="$HOME/.ssh/authorized_keys" &
           echo "builder ci-b${{ matrix.idx }}-${{ github.run_id }} ready: $(tailscale ip -4)"
 
+      # Sampler runs for the whole window the coordinator is dispatching to
+      # us. /proc/stat is the only honest source here: `nix build` output
+      # lives on the coordinator, so a builder can't tell from its own logs
+      # whether it was saturated or idling on the critical path.
+      - name: Start build-stats sampler
+        run: |
+          mkdir -p /tmp/stats
+          # Baseline BEFORE any coordinator work arrives, so install-nix's
+          # own activity isn't counted as builds we performed.
+          find /nix/var/log/nix/drvs -type f 2>/dev/null | wc -l > /tmp/stats/drv_before
+          nproc > /tmp/stats/nproc
+          date +%s > /tmp/stats/t_start
+          nohup bash -c '
+            prev_total=0; prev_idle=0
+            while true; do
+              read -r _ u n s i w irq sirq st _ < /proc/stat
+              total=$((u+n+s+i+w+irq+sirq+st)); idle=$((i+w))
+              if [ "$prev_total" -ne 0 ]; then
+                dt=$((total-prev_total)); di=$((idle-prev_idle))
+                [ "$dt" -gt 0 ] && echo $(( (100*(dt-di))/dt )) >> /tmp/stats/cpu_samples
+              fi
+              prev_total=$total; prev_idle=$idle
+              sleep 5
+            done' >/dev/null 2>&1 &
+          echo "sampler started (pid $!)"
+
       - name: Wait until the coordinator job finishes, then exit
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -194,6 +220,42 @@ jobs:
             sleep 15
           done
           echo "hit hard deadline without seeing coordinator complete, shutting down anyway"
+
+      # if: always() — a builder that died mid-build still has the most
+      # interesting stats. Never fail the job over reporting.
+      - name: Collect builder stats
+        if: always()
+        run: |
+          s=/tmp/stats
+          before=$(cat "$s/drv_before" 2>/dev/null || echo 0)
+          after=$(find /nix/var/log/nix/drvs -type f 2>/dev/null | wc -l)
+          built=$(( after - before )); [ "$built" -lt 0 ] && built=0
+          cores=$(cat "$s/nproc" 2>/dev/null || nproc)
+          window=$(( $(date +%s) - $(cat "$s/t_start" 2>/dev/null || date +%s) ))
+
+          n=0; mean=0; peak=0; sat=0
+          if [ -s "$s/cpu_samples" ]; then
+            n=$(wc -l < "$s/cpu_samples")
+            mean=$(awk '{t+=$1} END{printf "%.1f", t/NR}' "$s/cpu_samples")
+            peak=$(sort -n "$s/cpu_samples" | tail -1)
+            sat=$(awk '$1>=90{c++} END{printf "%.1f", (c/NR)*100}' "$s/cpu_samples")
+          fi
+
+          mkdir -p out
+          cat > out/stats.json <<JSON
+          {"idx": ${{ matrix.idx }}, "drvs_built": $built, "cores": $cores,
+           "cpu_mean": $mean, "cpu_peak": $peak, "cpu_pct_saturated": $sat,
+           "samples": $n, "window_s": $window}
+          JSON
+          cat out/stats.json
+
+      - name: Upload builder stats
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: builder-stats-${{ matrix.idx }}
+          path: out/stats.json
+          retention-days: 7
 
   coordinator:
     name: coordinator
@@ -481,3 +543,24 @@ jobs:
             nix copy --to "ssh-ng://europa-ci" "$out" || echo "WARNING: push failed for $host"
           done
           exit $BUILD_EXIT
+
+  # Aggregation has to be its own job: the builders deliberately outlive the
+  # coordinator (they poll until it completes), so the coordinator can never
+  # collect their stats — it is always gone first. `needs` both, always().
+  report:
+    name: build stats
+    needs: [ builder, coordinator ]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: builder-stats-*
+          path: stats
+
+      - name: Render summary
+        run: |
+          python3 scripts/ci/render-build-stats.py stats | tee -a "$GITHUB_STEP_SUMMARY"
