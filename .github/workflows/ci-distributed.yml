@@ -156,8 +156,8 @@ jobs:
             connect-timeout = 5
             trusted-users = root runner
             system-features = kvm benchmark big-parallel gccarch-btver2 gccarch-skylake
-            cores = 1
-            max-jobs = 4
+            cores = 4
+            max-jobs = 2
 
       - name: Join tailnet under deterministic hostname
         run: |
