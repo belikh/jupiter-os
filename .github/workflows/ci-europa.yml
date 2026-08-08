@@ -200,7 +200,7 @@ jobs:
 
           # Discover builders from tailnet on this runner
           echo "Discovering builders..."
-          BUILDERS=""
+          BUILDERS_ARRAY=()
           for idx in {1..19}; do
             want="ci-b${idx}-${{ github.run_id }}"
             ip=$(tailscale status --json 2>/dev/null | jq -r --arg w "$want" \
@@ -213,16 +213,16 @@ jobs:
 
             if [ -n "$ip" ]; then
               echo "  Found $want: $ip"
-              BUILDERS="${BUILDERS}$(printf '\n')ssh-ng://runner@${ip} x86_64-linux /root/.ssh/ci_builder_key 4 1 kvm,benchmark,big-parallel,gccarch-btver2,gccarch-skylake -"
+              BUILDERS_ARRAY+=("ssh-ng://runner@${ip} x86_64-linux /root/.ssh/ci_builder_key 4 1 kvm,benchmark,big-parallel,gccarch-btver2,gccarch-skylake -")
             fi
           done
 
-          if [ -z "$BUILDERS" ]; then
+          if [ ${#BUILDERS_ARRAY[@]} -eq 0 ]; then
             echo "ERROR: No builders found"
             exit 1
           fi
 
-          BUILDERS="$(echo "$BUILDERS" | sed '/^$/d')"
+          BUILDERS="$(printf '%s\n' "${BUILDERS_ARRAY[@]}")"
           echo "Total builders found: $(echo "$BUILDERS" | wc -l)"
           echo "First builder: $(echo "$BUILDERS" | head -1)"
           BUILDERS_B64=$(echo "$BUILDERS" | base64 -w0)
