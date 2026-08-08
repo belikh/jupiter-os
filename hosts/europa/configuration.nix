@@ -97,6 +97,10 @@
   # Disable Lix (needs >8GB RAM to build); use standard Nix instead
   jupiter.core.lix.enable = false;
   nix.distributedBuilds = true;
+  nix.settings.system-features = lib.mkAfter [
+    "gccarch-btver2"
+    "big-parallel"
+  ];
   nix.buildMachines = lib.mkForce [
     {
       hostName = "10.1.1.3";
