@@ -262,8 +262,8 @@ jobs:
 
             # Configure remote builders - write to /etc/nix/machines (nix hardcodes this path)
             echo "Configuring remote builders..."
-            echo "$BUILDERS" | sudo tee /etc/nix/machines > /dev/null
-            echo "Wrote $(sudo wc -l < /etc/nix/machines) builders to /etc/nix/machines"
+            echo "$BUILDERS" > /etc/nix/machines
+            echo "Wrote $(wc -l < /etc/nix/machines) builders to /etc/nix/machines"
 
             # Verify nix sees the builders
             echo "Verifying nix configuration..."
