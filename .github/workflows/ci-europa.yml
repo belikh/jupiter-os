@@ -110,11 +110,6 @@ jobs:
             ping -c 1 -W 2 europa >/dev/null 2>&1 && echo "Ping $i: OK" || echo "Ping $i: FAILED"
           done
 
-      - name: Pre-fetch essential build tools to local store
-        run: |
-          echo "Pre-fetching bash to builder's local store..."
-          nix profile install nixpkgs#bash --profile /tmp/prefetch 2>&1 && echo "bash cached" || echo "bash prefetch skipped"
-
       - name: Start build-stats sampler
         run: |
           mkdir -p /tmp/stats
@@ -240,11 +235,6 @@ jobs:
             sleep 5
           done
 
-      - name: Pre-fetch essential build tools to coordinator store
-        run: |
-          echo "Pre-fetching bash to coordinator's local store..."
-          nix profile install nixpkgs#bash --profile /tmp/prefetch 2>&1 && echo "bash cached" || echo "bash prefetch skipped"
-
       - name: Build all hosts on europa
         env:
           EUROPA_SSH_KEY: ${{ secrets.EUROPA_SSH_KEY }}
@@ -336,6 +326,29 @@ jobs:
             MACHINES_FILE="/tmp/nix-machines-${RUN_ID}"
             echo "$BUILDERS" > "$MACHINES_FILE"
             echo "Wrote $(wc -l < "$MACHINES_FILE") builders to $MACHINES_FILE"
+
+            # Guard against a corrupt local store (issue #67). A path registered
+            # valid in europa's DB but missing from disk is never scheduled for
+            # build -- isValidPath() returns true -- so it is handed to a remote
+            # builder that has no way to obtain it. `fallback` does not rescue
+            # this: nothing ever failed to *substitute*. Harmonia makes it worse
+            # by serving a 200 narinfo for the phantom path, straight from the
+            # same lying DB. Catch it here, with a message that names the cause,
+            # instead of an opaque "getting attributes of path ...: No such file
+            # or directory" partway through a 20-machine build.
+            echo "Verifying europa's store is self-consistent..."
+            if ! nix-store --verify; then
+              echo "ERROR: europa's Nix store has paths registered valid but missing on disk." >&2
+              echo "Repair on europa, then re-run CI. Nix runs check/repair builds" >&2
+              echo "LOCALLY ONLY -- the build hook declines repair-mode goals, so" >&2
+              echo "--max-jobs 0 just fails and any other value pins europa's 2 cores." >&2
+              echo "Substitute from callisto instead; it holds the btver2 closure:" >&2
+              echo '  SUB="ssh-ng://root@10.1.1.3?ssh-key=/run/secrets/nix_build_ssh_key"' >&2
+              echo '  nix-store --repair-path <paths> --max-jobs 0 \' >&2
+              echo '    --option substituters "$SUB" --option trusted-substituters "$SUB" \' >&2
+              echo '    --option require-sigs false' >&2
+              exit 1
+            fi
 
             # Run build with full output logging
             set +e  # Don't exit on build failure, we need to report it
