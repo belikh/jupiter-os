@@ -213,8 +213,7 @@ jobs:
 
             if [ -n "$ip" ]; then
               echo "  Found $want: $ip"
-              BUILDERS="$BUILDERS
-ssh-ng://runner@${ip} x86_64-linux /root/.ssh/ci_builder_key 4 1 kvm,benchmark,big-parallel,gccarch-btver2,gccarch-skylake -"
+              BUILDERS="${BUILDERS}$(printf '\n')ssh-ng://runner@${ip} x86_64-linux /root/.ssh/ci_builder_key 4 1 kvm,benchmark,big-parallel,gccarch-btver2,gccarch-skylake -"
             fi
           done
 
