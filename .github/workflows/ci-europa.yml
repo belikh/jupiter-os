@@ -166,13 +166,25 @@ jobs:
           curl -fsSL https://nixos.org/nix/install | sh -s -- --daemon
           curl -fsSL https://tailscale.com/install.sh | sudo sh
 
-      - name: Join tailnet
+      - name: Join tailnet and start SSH server
         run: |
           sudo tailscale up \
             --login-server=https://neptune.jupiter.au:8080 \
             --authkey=${{ secrets.TAILSCALE_CI_AUTHKEY }} \
             --hostname="ci-coordinator-${{ github.run_id }}" \
             --accept-routes
+
+          # Start SSH daemon to serve as a build machine
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "${{ secrets.CI_BUILDER_SSH_KEY }}" > /tmp/builder_key
+          ssh-keygen -y -f /tmp/builder_key > "$HOME/.ssh/authorized_keys"
+          rm -f /tmp/builder_key
+          chmod 600 "$HOME/.ssh/authorized_keys"
+          sudo mkdir -p /run/sshd
+          sudo /usr/sbin/sshd -D -o Port=22 -o PasswordAuthentication=no -o PermitRootLogin=no -o AuthorizedKeysFile="$HOME/.ssh/authorized_keys" &
+          SSHD_PID=$!
+          echo "COORDINATOR_SSHD_PID=$SSHD_PID" >> $GITHUB_ENV
+          echo "SSH daemon started (PID: $SSHD_PID)"
 
       - name: Wait for builders to join tailnet
         run: |
@@ -228,6 +240,12 @@ jobs:
             echo "ERROR: No builders found"
             exit 1
           fi
+
+          # Also add build-on-europa (coordinator) itself as a builder
+          echo "Adding build-on-europa coordinator as a builder..."
+          coordinator_ip=$(tailscale ip -4)
+          echo "  Coordinator IP: $coordinator_ip"
+          BUILDERS_ARRAY+=("ssh-ng://runner@${coordinator_ip} x86_64-linux /root/.ssh/ci_builder_key 4 1 kvm,benchmark,big-parallel,gccarch-btver2,gccarch-skylake -")
 
           BUILDERS="$(printf '%s\n' "${BUILDERS_ARRAY[@]}")"
           echo "Total builders found: $(echo "$BUILDERS" | wc -l)"
@@ -290,6 +308,7 @@ jobs:
               nix build ".#nixosConfigurations.$host.config.system.build.toplevel" \
                 --builders "@/etc/nix/machines" \
                 --builders-use-substitutes \
+                --max-jobs auto \
                 --print-out-paths --no-link --fallback 2>&1
 
               if [ $? -ne 0 ]; then
