@@ -228,6 +228,11 @@ jobs:
             sleep 5
           done
 
+      - name: Pre-fetch essential build tools to coordinator store
+        run: |
+          echo "Pre-fetching bash to coordinator's local store..."
+          nix profile install nixpkgs#bash --profile /tmp/prefetch 2>&1 && echo "bash cached" || echo "bash prefetch skipped"
+
       - name: Build all hosts on europa
         env:
           EUROPA_SSH_KEY: ${{ secrets.EUROPA_SSH_KEY }}
