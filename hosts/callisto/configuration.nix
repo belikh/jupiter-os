@@ -207,7 +207,8 @@
   # DO NOT REBUILD CALLISTO LOCALLY without verifying Harmonia has it first:
   # `nix path-info --substituters http://10.1.1.2:5000 <toplevel>` from
   # callisto — every path must resolve from Harmonia before `switch`.
-  jupiter.build.microarch = "skylake";
+  # jupiter.build.microarch = "skylake";
+  # TEMPORARILY DISABLED — re-enable after build completes
 
   # Tailscale client for Jupiter tailnet. Reusable (non-ephemeral) tag:fleet
   # pre-auth key, shared fleet-wide via sops — self-registers on switch, no
