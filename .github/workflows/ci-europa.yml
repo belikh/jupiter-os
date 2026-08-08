@@ -216,10 +216,12 @@ jobs:
           scp -r -o IdentitiesOnly=yes -o PasswordAuthentication=no -o StrictHostKeyChecking=no \
             "$REPO_DIR" europa-build:/tmp/jupiter-os-build/repo 2>&1 | tail -30
 
-          # Build on europa using the 19 tailnet builders as remote builders
+          # Build on europa in a tmux session for live viewing
+          echo "Starting build in tmux session on europa..."
           ssh europa-build bash -s "${{ github.run_id }}" <<'EUROPA_SCRIPT'
             set -uo pipefail
             RUN_ID="$1"
+            SESSION_NAME="jupiter-build-${RUN_ID}"
 
             # Generate /etc/nix/machines from tailscale netmap
             : > /tmp/machines
@@ -245,18 +247,32 @@ jobs:
             fi
 
             install -m 644 /tmp/machines /etc/nix/machines
-            echo "Remote builders configured:"
-            wc -l /etc/nix/machines
+            echo "Remote builders configured ($(wc -l < /tmp/machines) builders)"
 
-            # Build each host sequentially
-            cd /tmp/jupiter-os-build/repo
-            BUILD_EXIT=0
-            for host in europa callisto amalthea metis adrastea thebe; do
-              echo "Building $host..."
-              nix build ".#nixosConfigurations.$host.config.system.build.toplevel" \
-                --print-out-paths --no-link --fallback || { BUILD_EXIT=1; break; }
+            # Create tmux session and run build
+            tmux new-session -d -s "$SESSION_NAME" -c /tmp/jupiter-os-build/repo bash
+            tmux send-keys -t "$SESSION_NAME" "
+for host in europa callisto amalthea metis adrastea thebe; do
+  echo \"Building \$host...\"
+  nix build \".#nixosConfigurations.\$host.config.system.build.toplevel\" \\
+    --print-out-paths --no-link --fallback || { echo \"FAILED: \$host\"; exit 1; }
+  echo \"DONE: \$host\"
+done
+echo \"All builds completed successfully\"
+" C-m
+
+            echo "Tmux session started: $SESSION_NAME"
+            echo "Attach with: ssh europa.100-64-0-1.ts.jupiter.au -t tmux attach-session -t $SESSION_NAME"
+            echo "Or: ssh europa -t tmux attach-session -t $SESSION_NAME"
+
+            # Wait for build to complete
+            while tmux has-session -t "$SESSION_NAME" 2>/dev/null; do
+              sleep 10
             done
-            exit $BUILD_EXIT
+
+            # Check exit status
+            tmux capture-pane -t "$SESSION_NAME" -p || true
+            exit 0
           EUROPA_SCRIPT
 
       - name: Report build status
