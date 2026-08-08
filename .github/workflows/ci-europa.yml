@@ -265,9 +265,10 @@ jobs:
             echo "$BUILDERS" > /etc/nix/machines
             echo "Wrote $(wc -l < /etc/nix/machines) builders to /etc/nix/machines"
 
-            # Verify nix sees the builders
-            echo "Verifying nix configuration..."
-            nix show-config --json 2>/dev/null | grep -q builders || echo "Note: nix show-config doesn't list builders, but /etc/nix/machines should be read"
+            # Restart nix-daemon to pick up new machines file (it caches the file list)
+            echo "Restarting nix-daemon to load builder configuration..."
+            systemctl restart nix-daemon
+            sleep 1
 
 
             # Run build with full output logging
