@@ -53,6 +53,12 @@ jobs:
             cores = 4
             max-jobs = 2
 
+      - name: Verify btver2 support
+        run: |
+          nix-shell -p gcc --run 'gcc -march=native -Q --help=target | grep march'
+          nix eval --raw '(builtins.readFile /etc/nix/nix.conf)' | grep system-features || echo "Checking nix.conf:"
+          cat /etc/nix/nix.conf | grep system-features || true
+
       - name: Join tailnet under deterministic hostname
         run: |
           curl -fsSL https://tailscale.com/install.sh | sudo sh
