@@ -211,8 +211,10 @@ jobs:
 
           # Copy repo to europa
           echo "Copying repository to europa..."
-          ssh europa-build "rm -rf /tmp/jupiter-os-build && mkdir -p /tmp/jupiter-os-build"
-          scp -r "$REPO_DIR" europa-build:/tmp/jupiter-os-build/repo
+          ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-build \
+            "rm -rf /tmp/jupiter-os-build && mkdir -p /tmp/jupiter-os-build"
+          scp -r -o IdentitiesOnly=yes -o PasswordAuthentication=no -o StrictHostKeyChecking=no \
+            "$REPO_DIR" europa-build:/tmp/jupiter-os-build/repo 2>&1 | tail -30
 
           # Build on europa using the 19 tailnet builders as remote builders
           ssh europa-build bash -s "${{ github.run_id }}" <<'EUROPA_SCRIPT'
