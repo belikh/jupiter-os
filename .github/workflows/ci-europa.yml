@@ -194,7 +194,7 @@ jobs:
             echo "Host europa-build"
             echo "  HostName europa"
             echo "  User root"
-            echo "  IdentityFile $(eval echo ~)/.ssh/europa_ci"
+            echo "  IdentityFile /home/runner/.ssh/europa_ci"
             echo "  StrictHostKeyChecking accept-new"
           } >> "$HOME/.ssh/config"
 
