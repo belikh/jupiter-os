@@ -189,17 +189,20 @@ jobs:
           printf '%s\n' "$CI_BUILDER_SSH_KEY" > "$HOME/.ssh/ci_builder_key"
           chmod 600 "$HOME/.ssh/"{europa_ci,ci_builder_key}
 
-          # SSH config
+          # SSH config (use explicit path, not $HOME variable which SSH won't expand)
           {
             echo "Host europa-build"
             echo "  HostName europa"
             echo "  User root"
-            echo "  IdentityFile $HOME/.ssh/europa_ci"
+            echo "  IdentityFile $(eval echo ~)/.ssh/europa_ci"
             echo "  StrictHostKeyChecking accept-new"
           } >> "$HOME/.ssh/config"
 
           # Copy repo to europa
           echo "Copying repository to europa..."
+          echo "Testing SSH connection to europa-build..."
+          ssh -v -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-build "whoami" 2>&1 | tail -20
+
           ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-build \
             "rm -rf /tmp/jupiter-os-build && mkdir -p /tmp/jupiter-os-build"
           scp -r -o IdentitiesOnly=yes -o PasswordAuthentication=no -o StrictHostKeyChecking=no \
