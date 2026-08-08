@@ -300,6 +300,14 @@ in
             "tag:fleet:22"
           ];
         }
+        # Fleet (europa) can SSH to CI builders for distributed builds
+        # (ci-europa.yml uses SSH for remote builder delegation). Reciprocal
+        # of the "CI can SSH to fleet" rule above.
+        {
+          action = "accept";
+          src = [ "tag:fleet" ];
+          dst = [ "tag:ci:22" ];
+        }
         # CI nodes can SSH to each other (distributed-builder coordinator ->
         # builders, ci-distributed.yml). Without this, headscale's
         # default-deny silently blocks every CI<->CI connection regardless
