@@ -283,10 +283,6 @@ jobs:
               echo "extra-platforms = x86_64-linux" >> "$NIX_CONF_DIR/nix.conf"
             fi
 
-            # Create tmux session for live viewing (optional; build runs in background)
-            tmux new-session -d -s "$SESSION_NAME" -c "$REPO_DIR" bash 2>/dev/null || true
-            echo "Tmux session '$SESSION_NAME' available: ssh europa -t tmux attach-session -t $SESSION_NAME"
-            echo
 
             # Run build with full output logging
             set +e  # Don't exit on build failure, we need to report it
