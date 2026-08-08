@@ -44,20 +44,21 @@ jobs:
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           extra_nix_config: |
+            system-features = kvm benchmark big-parallel gccarch-btver2 gccarch-skylake
             substituters = https://cache.nixos.org
             trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
             connect-timeout = 5
             trusted-users = root runner
             http2 = false
-            system-features = kvm benchmark big-parallel gccarch-btver2 gccarch-skylake
             cores = 4
             max-jobs = 2
 
-      - name: Verify btver2 support
+      - name: Verify nix.conf has btver2
         run: |
-          nix-shell -p gcc --run 'gcc -march=native -Q --help=target | grep march'
-          nix eval --raw '(builtins.readFile /etc/nix/nix.conf)' | grep system-features || echo "Checking nix.conf:"
-          cat /etc/nix/nix.conf | grep system-features || true
+          echo "=== nix.conf system-features ==="
+          grep system-features /etc/nix/nix.conf
+          echo "=== nix show-config system-features ==="
+          nix show-config system-features || true
 
       - name: Join tailnet under deterministic hostname
         run: |
