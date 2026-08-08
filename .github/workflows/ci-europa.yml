@@ -252,19 +252,8 @@ jobs:
             # Create tmux session and run build
             tmux new-session -d -s "$SESSION_NAME" -c /tmp/jupiter-os-build/repo bash
 
-            # Write build script to avoid YAML quoting issues
-            cat > /tmp/run-build.sh <<'BUILD_SCRIPT'
-for host in europa callisto amalthea metis adrastea thebe; do
-  echo "Building $host..."
-  nix build ".#nixosConfigurations.$host.config.system.build.toplevel" \
-    --print-out-paths --no-link --fallback || { echo "FAILED: $host"; exit 1; }
-  echo "DONE: $host"
-done
-echo "All builds completed successfully"
-BUILD_SCRIPT
-            chmod +x /tmp/run-build.sh
-
-            tmux send-keys -t "$SESSION_NAME" '/tmp/run-build.sh' C-m
+            # Run build in tmux session
+            tmux send-keys -t "$SESSION_NAME" 'for host in europa callisto amalthea metis adrastea thebe; do echo "Building $host..."; nix build ".#nixosConfigurations.$host.config.system.build.toplevel" --print-out-paths --no-link --fallback || { echo "FAILED: $host"; exit 1; }; echo "DONE: $host"; done; echo "All builds completed successfully"' C-m
 
             echo "Tmux session started: $SESSION_NAME"
             echo "Attach with: ssh europa -t tmux attach-session -t $SESSION_NAME"
