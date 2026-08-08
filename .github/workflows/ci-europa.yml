@@ -401,11 +401,19 @@ jobs:
             ln -sfn "$NOM_LOG" "$NOM_DIR/current.jsonl"
             echo "nom log: $NOM_LOG (symlinked as $NOM_DIR/current.jsonl)"
 
-            NOM_TO_HUMAN='select(startswith("@nix ")) | .[5:] | (fromjson? // empty)
-              | select((.level // 3) <= 3)
-              | if   .action == "msg"                              then .msg
-                elif .action == "start" and ((.text // "") != "")  then .text
-                else empty end'
+            # Lines that are not internal-json events pass through verbatim --
+            # that is the ssh client's own chatter from the 19 ephemeral builders
+            # ("Permanently added ...", "kex_exchange_identification: ...",
+            # connection timeouts), which the plain logger used to carry and
+            # which is exactly what one needs when a builder drops out. nom
+            # tolerates them in the file too.
+            NOM_TO_HUMAN='if (startswith("@nix ") | not) then .
+              else (.[5:] | (fromjson? // empty)
+                    | select((.level // 3) <= 3)
+                    | if   .action == "msg"                              then .msg
+                      elif .action == "start" and ((.text // "") != "")  then .text
+                      else empty end)
+              end'
 
             # Run build with full output logging
             set +e  # Don't exit on build failure, we need to report it
@@ -431,7 +439,7 @@ jobs:
                 --print-out-paths --no-link --fallback \
                 --log-format internal-json 2>&1 1>"$OUT_PATHS" \
                 | stdbuf -o0 tee -a "$NOM_LOG" \
-                | stdbuf -o0 jq -rR --unbuffered "$NOM_TO_HUMAN"
+                | { stdbuf -o0 jq -rR --unbuffered "$NOM_TO_HUMAN" || cat; }
               # pipefail is on, so $? is the pipeline's -- nix's own status is
               # PIPESTATUS[0].
               HOST_EXIT=${PIPESTATUS[0]}
