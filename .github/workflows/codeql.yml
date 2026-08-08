@@ -12,12 +12,14 @@
 name: "CodeQL Advanced"
 
 on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
-  schedule:
-    - cron: '34 15 * * 4'
+  # Disabled: interferes with CI
+  # push:
+  #   branches: [ "main" ]
+  # pull_request:
+  #   branches: [ "main" ]
+  # schedule:
+  #   - cron: '34 15 * * 4'
+  workflow_dispatch:
 
 jobs:
   analyze:
