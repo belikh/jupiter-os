@@ -136,8 +136,7 @@
   # cannot once gcc.arch is set. Verify Harmonia actually has the pushed
   # closure (`nix path-info --substituters http://10.1.1.2:5000 <toplevel>`)
   # before switching this host.
-  # jupiter.build.microarch = "btver2"; # CI builds this host's closure with -march=btver2
-  # TEMPORARILY DISABLED for current build — re-enable after this completes
+  jupiter.build.microarch = "btver2"; # CI builds this host's closure with -march=btver2
 
   # ---- nixpkgs overlays ----------------------------------------------------
   # bmake's `deptgt-interrupt` unit test is timing-sensitive (it asserts a
