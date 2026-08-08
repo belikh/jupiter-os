@@ -50,6 +50,7 @@ jobs:
             connect-timeout = 30
             trusted-users = root runner
             http2 = false
+            fallback = true
             cores = 4
             max-jobs = 2
 
@@ -197,6 +198,17 @@ jobs:
         run: |
           curl -fsSL https://nixos.org/nix/install | sh -s -- --daemon
           curl -fsSL https://tailscale.com/install.sh | sudo sh
+
+      - name: Configure Nix for build
+        run: |
+          sudo tee -a /etc/nix/nix.conf > /dev/null <<'EOF'
+          substituters = https://cache.jupiter.au https://cache.nixos.org
+          trusted-public-keys = jupiter-cache-1:5tPIwQSj5/mk53jBHqqsAk9IpcuTGz/2UQOdHvjTId0= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+          connect-timeout = 30
+          fallback = true
+          http2 = false
+          EOF
+          sudo systemctl restart nix-daemon
 
       - name: Join tailnet and start SSH server
         run: |
