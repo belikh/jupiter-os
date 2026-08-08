@@ -300,15 +300,15 @@ in
             "tag:fleet:22"
           ];
         }
-        # Fleet (europa) <-> CI (builders): bidirectional SSH + ICMP.
-        # Europa uses SSH to delegate builds to CI nodes (ci-europa.yml).
-        # ICMP (ping) is needed for connectivity verification.
-        # Using :* for all ports includes both TCP/UDP (SSH) and ICMP.
+        # Fleet (europa) -> CI (builders): SSH for distributed builds.
+        # Headscale 0.29.3 doesn't apply :* syntax to TCP properly,
+        # so explicit port 22 is needed.
         {
           action = "accept";
           src = [ "tag:fleet" ];
-          dst = [ "tag:ci:*" ];
+          dst = [ "tag:ci:22" ];
         }
+        # CI (builders) -> Fleet (europa): all ports.
         {
           action = "accept";
           src = [ "tag:ci" ];
