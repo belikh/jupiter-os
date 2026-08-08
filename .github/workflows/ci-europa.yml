@@ -385,10 +385,14 @@ jobs:
             # -- that is where to look when a remote builder fails.
             #
             # Nix emits exactly one log format, so the human-readable CI
-            # transcript is reconstructed from the same stream with jq below
-            # (`msg` at default verbosity + build-activity starts, i.e. roughly
-            # what the plain logger printed before). jq is fleet-wide in
-            # modules/common.nix; stdbuf keeps both stages line-live.
+            # transcript is reconstructed from the same stream with jq below.
+            # The filter reproduces the plain logger's rule exactly: print `msg`
+            # events and activity texts whose own level is <= info(3). That
+            # keeps "building '...drv'" (type 105, level 3) and "copying path
+            # ... from ..." (type 100, level 3) while dropping the per-narinfo
+            # "downloading ..." chatter (type 101, level 4) the old log also
+            # withheld. jq is fleet-wide in modules/common.nix; stdbuf keeps
+            # both stages line-live.
             NOM_DIR=/var/log/jupiter-ci
             NOM_LOG="$NOM_DIR/nom-${RUN_ID}.jsonl"
             mkdir -p "$NOM_DIR"
@@ -398,8 +402,9 @@ jobs:
             echo "nom log: $NOM_LOG (symlinked as $NOM_DIR/current.jsonl)"
 
             NOM_TO_HUMAN='select(startswith("@nix ")) | .[5:] | (fromjson? // empty)
-              | if   .action == "msg"   and ((.level // 3) <= 3)                   then .msg
-                elif .action == "start" and .type == 105 and ((.text // "") != "") then .text
+              | select((.level // 3) <= 3)
+              | if   .action == "msg"                              then .msg
+                elif .action == "start" and ((.text // "") != "")  then .text
                 else empty end'
 
             # Run build with full output logging
