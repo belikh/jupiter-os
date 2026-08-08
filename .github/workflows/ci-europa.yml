@@ -22,7 +22,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        idx: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]
+        idx: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
     steps:
       - uses: actions/checkout@v4
 
@@ -180,7 +180,7 @@ jobs:
           while [ "$(date +%s)" -lt "$deadline" ]; do
             peers=$(tailscale status --json 2>/dev/null | jq '.Peer // {} | length' 2>/dev/null || echo 0)
             echo "$(date +%T) peers=$peers"
-            [ "$peers" -ge 20 ] && break
+            [ "$peers" -ge 19 ] && break
             sleep 5
           done
 
@@ -208,7 +208,7 @@ jobs:
           # Discover builders from tailnet on this runner
           echo "Discovering builders..."
           BUILDERS_ARRAY=()
-          for idx in {1..20}; do
+          for idx in {1..19}; do
             want="ci-b${idx}-${{ github.run_id }}"
             ip=$(tailscale status --json 2>/dev/null | jq -r --arg w "$want" \
               '.Peer // {} | to_entries[] | .value
