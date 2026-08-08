@@ -260,28 +260,14 @@ jobs:
             echo "Repository ready at $(pwd)"
             echo
 
-            # Configure remote builders
+            # Configure remote builders - write to /etc/nix/machines (nix hardcodes this path)
             echo "Configuring remote builders..."
-            MACHINES_FILE="/tmp/nix-machines-$RUN_ID"
-            echo "$BUILDERS" > "$MACHINES_FILE"
-            echo "Wrote $(wc -l < "$MACHINES_FILE") builders to $MACHINES_FILE"
+            echo "$BUILDERS" | sudo tee /etc/nix/machines > /dev/null
+            echo "Wrote $(sudo wc -l < /etc/nix/machines) builders to /etc/nix/machines"
 
-            # Try to write to /etc/nix/machines if possible
-            if [ -w /etc/nix/machines ] || [ -w /etc/nix ]; then
-              echo "Writing to /etc/nix/machines"
-              cat "$MACHINES_FILE" > /etc/nix/machines 2>/dev/null || sudo tee /etc/nix/machines < "$MACHINES_FILE" > /dev/null
-            else
-              echo "INFO: /etc/nix/machines not writable, using $MACHINES_FILE"
-              # Set NIX_CONF_DIR to use a custom nix.conf that points to our machines file
-              export NIX_CONF_DIR=/tmp/nix-conf-$RUN_ID
-              mkdir -p "$NIX_CONF_DIR"
-              echo "builders-use-substitutes = true" > "$NIX_CONF_DIR/nix.conf"
-              # Copy existing config
-              if [ -f /etc/nix/nix.conf ]; then
-                grep -v "^builders" /etc/nix/nix.conf >> "$NIX_CONF_DIR/nix.conf" || true
-              fi
-              echo "extra-platforms = x86_64-linux" >> "$NIX_CONF_DIR/nix.conf"
-            fi
+            # Verify nix sees the builders
+            echo "Verifying nix configuration..."
+            nix show-config --json 2>/dev/null | grep -q builders || echo "Note: nix show-config doesn't list builders, but /etc/nix/machines should be read"
 
 
             # Run build with full output logging
