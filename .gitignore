@@ -21,3 +21,7 @@ __pycache__/
 # Session scratch (build logs, findings, draft PR bodies). Never committed;
 # nothing in the flake reads from here.
 temp/
+
+# open-ultracode runtime state -- timestamps churn every session and nothing
+# in the repo reads it (kept local so a catch-all commit cannot sweep it up).
+.opencode/*/state/
