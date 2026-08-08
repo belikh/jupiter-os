@@ -141,10 +141,18 @@ make boot-smoke-<host>  # headless CI-style boot test
 make fmt                # format all Nix (nixfmt-rfc-style); fmt-check to verify
 
 # Deploy a host (run ON the target host, as root, from the pushed GitHub flake;
-  # commit + push BEFORE deploying — the host pulls github:belikh/jupiter-os):
-  # nom (nix-output-monitor) evaluates faster + live progress; --fast skips
-  # rebuilding deployment tools. Install: `nix profile install nixpkgs#nom`
-  ssh root@<host> -- nom os-switch --fast --flake github:belikh/jupiter-os#<host>
+# commit + push BEFORE deploying — the host pulls github:belikh/jupiter-os).
+# For live progress, pipe nix's internal-json log through nom
+# (nix-output-monitor, fleet-wide via modules/common.nix — no install step).
+# There is NO `nom os-switch`: nom only wraps build/shell/develop/copy/flake,
+# so nixos-rebuild has to be piped in by hand. `-v` is what makes nix emit the
+# per-derivation activity nom's table is built from; it also turns on
+# nixos-rebuild-ng's own `debug:` lines, which nom passes through harmlessly.
+# `|&` is bash — keep the pipe inside the quotes when dialing in from fish.
+ssh -t root@<host> 'nixos-rebuild switch --flake github:belikh/jupiter-os#<host> \
+  --log-format internal-json -v |& nom --json'
+# Plain, no nom (26.11 is nixos-rebuild-ng; --fast is deprecated → --no-reexec):
+ssh root@<host> -- nixos-rebuild switch --flake github:belikh/jupiter-os#<host>
 ```
 
 ## Roadmap (bring-up order)
