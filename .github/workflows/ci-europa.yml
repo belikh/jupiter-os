@@ -78,15 +78,29 @@ jobs:
           rm -f /tmp/ci_builder_key
           chmod 600 "$HOME/.ssh/authorized_keys"
           sudo mkdir -p /run/sshd
-          sudo /usr/sbin/sshd -D -o Port=22 -o PasswordAuthentication=no -o PermitRootLogin=no \
-            -o AuthorizedKeysFile="$HOME/.ssh/authorized_keys" &
+          sudo /usr/sbin/sshd -D -o Port=22 -o ListenAddress=0.0.0.0 -o PasswordAuthentication=no -o PermitRootLogin=no \
+            -o AuthorizedKeysFile="$HOME/.ssh/authorized_keys" -o LogLevel=DEBUG &
+          SSHD_PID=$!
+          echo "sshd started with PID $SSHD_PID"
 
-          # Wait for SSH to be ready
+          # Wait for SSH to be ready on localhost
           for i in {1..60}; do
             timeout 1 bash -c "echo > /dev/tcp/127.0.0.1/22" 2>/dev/null && break
             sleep 1
           done
-          echo "builder ci-b${{ matrix.idx }}-${{ github.run_id }} ready: $(tailscale ip -4)"
+
+          # Verify sshd is listening on the tailnet interface too
+          MY_TAILNET_IP=$(tailscale ip -4)
+          echo "My tailnet IP: $MY_TAILNET_IP"
+          for i in {1..10}; do
+            timeout 1 bash -c "echo > /dev/tcp/${MY_TAILNET_IP}/22" 2>/dev/null && echo "SSH on tailnet: OK" && break
+            echo "SSH on tailnet attempt $i failed, retrying..."
+            sleep 1
+          done
+
+          echo "builder ci-b${{ matrix.idx }}-${{ github.run_id }} ready: $MY_TAILNET_IP"
+          echo "Listening ports:"
+          sudo ss -tlnp | grep sshd || echo "No sshd found in listening ports"
 
       - name: Verify connectivity to europa
         run: |
