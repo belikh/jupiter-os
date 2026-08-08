@@ -260,12 +260,28 @@ jobs:
             echo "Repository ready at $(pwd)"
             echo
 
-            # Configure remote builders via environment variable (nix.conf is immutable)
+            # Configure remote builders
             echo "Configuring remote builders..."
-            export NIX_MACHINES="$BUILDERS"
-            echo "Remote builders configured:"
-            echo "$BUILDERS" | head -3
-            echo "..."
+            MACHINES_FILE="/tmp/nix-machines-$RUN_ID"
+            echo "$BUILDERS" > "$MACHINES_FILE"
+            echo "Wrote $(wc -l < "$MACHINES_FILE") builders to $MACHINES_FILE"
+
+            # Try to write to /etc/nix/machines if possible
+            if [ -w /etc/nix/machines ] || [ -w /etc/nix ]; then
+              echo "Writing to /etc/nix/machines"
+              cat "$MACHINES_FILE" > /etc/nix/machines 2>/dev/null || sudo tee /etc/nix/machines < "$MACHINES_FILE" > /dev/null
+            else
+              echo "INFO: /etc/nix/machines not writable, using $MACHINES_FILE"
+              # Set NIX_CONF_DIR to use a custom nix.conf that points to our machines file
+              export NIX_CONF_DIR=/tmp/nix-conf-$RUN_ID
+              mkdir -p "$NIX_CONF_DIR"
+              echo "builders-use-substitutes = true" > "$NIX_CONF_DIR/nix.conf"
+              # Copy existing config
+              if [ -f /etc/nix/nix.conf ]; then
+                grep -v "^builders" /etc/nix/nix.conf >> "$NIX_CONF_DIR/nix.conf" || true
+              fi
+              echo "extra-platforms = x86_64-linux" >> "$NIX_CONF_DIR/nix.conf"
+            fi
 
             # Create tmux session for live viewing (optional; build runs in background)
             tmux new-session -d -s "$SESSION_NAME" -c "$REPO_DIR" bash 2>/dev/null || true
