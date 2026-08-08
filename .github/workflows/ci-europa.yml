@@ -249,29 +249,47 @@ jobs:
             install -m 644 /tmp/machines /etc/nix/machines
             echo "Remote builders configured ($(wc -l < /tmp/machines) builders)"
 
-            # Create tmux session and run build
-            tmux new-session -d -s "$SESSION_NAME" -c /tmp/jupiter-os-build/repo bash
+            # Create tmux session for live viewing (optional; build runs in background)
+            tmux new-session -d -s "$SESSION_NAME" -c /tmp/jupiter-os-build/repo bash 2>/dev/null || true
+            echo "Tmux session '$SESSION_NAME' available: ssh europa -t tmux attach-session -t $SESSION_NAME"
+            echo
 
-            # Run build in tmux session
-            tmux send-keys -t "$SESSION_NAME" 'for host in europa callisto amalthea metis adrastea thebe; do echo "Building $host..."; nix build ".#nixosConfigurations.$host.config.system.build.toplevel" --print-out-paths --no-link --fallback || { echo "FAILED: $host"; exit 1; }; echo "DONE: $host"; done; echo "All builds completed successfully"' C-m
+            # Run build with full output logging
+            set +e  # Don't exit on build failure, we need to report it
+            BUILD_EXIT=0
+            for host in europa callisto amalthea metis adrastea thebe; do
+              echo "========================================" >&2
+              echo "Building: $host" >&2
+              echo "========================================" >&2
 
-            echo "Tmux session started: $SESSION_NAME"
-            echo "Attach with: ssh europa -t tmux attach-session -t $SESSION_NAME"
+              nix build ".#nixosConfigurations.$host.config.system.build.toplevel" \
+                --print-out-paths --no-link --fallback 2>&1
 
-            # Wait for build to complete
-            while tmux has-session -t "$SESSION_NAME" 2>/dev/null; do
-              sleep 10
+              if [ $? -ne 0 ]; then
+                echo "FAILED: $host" >&2
+                BUILD_EXIT=1
+                break
+              fi
+              echo "DONE: $host" >&2
+              echo
             done
 
-            # Check exit status
-            tmux capture-pane -t "$SESSION_NAME" -p || true
-            exit 0
+            if [ $BUILD_EXIT -eq 0 ]; then
+              echo "========================================"
+              echo "All builds completed successfully"
+              echo "========================================"
+            else
+              echo "========================================"
+              echo "Build failed"
+              echo "========================================"
+            fi
+
+            exit $BUILD_EXIT
           EUROPA_SCRIPT
 
       - name: Report build status
         if: always()
-        run: |
-          echo "Build on europa completed with exit code $?"
+        run: echo "Build workflow completed"
 
   report:
     name: build stats
