@@ -1,0 +1,270 @@
+name: CI (build on europa)
+
+# Build directly on europa (the NAS) with 19 Tailscale remote builders.
+# Avoids coordinator as a bottleneck, keeps everything local to the cache.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  builder:
+    name: builder-${{ matrix.idx }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        idx: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be  # v1.3.1
+        with:
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+          tool-cache: true
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/nix
+          key: nix-${{ runner.os }}-nixpkgs-${{ hashFiles('flake.lock') }}
+          restore-keys: |
+            nix-${{ runner.os }}-nixpkgs-${{ hashFiles('flake.lock') }}-
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: |
+            substituters = https://cache.nixos.org
+            trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+            connect-timeout = 5
+            trusted-users = root runner
+            http2 = false
+            system-features = kvm benchmark big-parallel gccarch-btver2 gccarch-skylake
+            cores = 4
+            max-jobs = 2
+
+      - name: Join tailnet under deterministic hostname
+        run: |
+          curl -fsSL https://tailscale.com/install.sh | sudo sh
+          sudo tailscale up \
+            --login-server=https://neptune.jupiter.au:8080 \
+            --authkey=${{ secrets.TAILSCALE_CI_AUTHKEY }} \
+            --hostname="ci-b${{ matrix.idx }}-${{ github.run_id }}" \
+            --accept-routes
+
+      - name: Authorize coordinator's key, start sshd
+        run: |
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "${{ secrets.CI_BUILDER_SSH_KEY }}" > /tmp/ci_builder_key
+          chmod 600 /tmp/ci_builder_key
+          ssh-keygen -y -f /tmp/ci_builder_key > "$HOME/.ssh/authorized_keys"
+          rm -f /tmp/ci_builder_key
+          chmod 600 "$HOME/.ssh/authorized_keys"
+          sudo mkdir -p /run/sshd
+          sudo /usr/sbin/sshd -D -o Port=22 -o PasswordAuthentication=no -o PermitRootLogin=no \
+            -o AuthorizedKeysFile="$HOME/.ssh/authorized_keys" &
+          echo "builder ci-b${{ matrix.idx }}-${{ github.run_id }} ready: $(tailscale ip -4)"
+
+      - name: Start build-stats sampler
+        run: |
+          mkdir -p /tmp/stats
+          find /nix/var/log/nix/drvs -type f 2>/dev/null | wc -l > /tmp/stats/drv_before
+          nproc > /tmp/stats/nproc
+          date +%s > /tmp/stats/t_start
+          nohup bash -c '
+            prev_total=0; prev_idle=0
+            while true; do
+              read -r _ u n s i w irq sirq st _ < /proc/stat
+              total=$((u+n+s+i+w+irq+sirq+st)); idle=$((i+w))
+              if [ "$prev_total" -ne 0 ]; then
+                dt=$((total-prev_total)); di=$((idle-prev_idle))
+                [ "$dt" -gt 0 ] && echo $(( (100*(dt-di))/dt )) >> /tmp/stats/cpu_samples
+              fi
+              prev_total=$total; prev_idle=$idle
+              sleep 5
+            done' >/dev/null 2>&1 &
+          echo "sampler started (pid $!)"
+
+      - name: Wait until build job finishes, then exit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          deadline=$(( $(date +%s) + 355*60 ))
+          while [ "$(date +%s)" -lt "$deadline" ]; do
+            status=$(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}/jobs" \
+              --jq '.jobs[] | select(.name=="build-on-europa") | .status')
+            case "$status" in
+              completed) echo "build job finished, shutting down"; exit 0 ;;
+              "") echo "build job not visible yet, waiting" ;;
+              *) echo "build job status: $status" ;;
+            esac
+            sleep 15
+          done
+          echo "hit hard deadline without seeing build job complete, shutting down anyway"
+
+      - name: Collect builder stats
+        if: always()
+        run: |
+          s=/tmp/stats
+          before=$(cat "$s/drv_before" 2>/dev/null || echo 0)
+          after=$(find /nix/var/log/nix/drvs -type f 2>/dev/null | wc -l)
+          built=$(( after - before )); [ "$built" -lt 0 ] && built=0
+          cores=$(cat "$s/nproc" 2>/dev/null || nproc)
+          window=$(( $(date +%s) - $(cat "$s/t_start" 2>/dev/null || date +%s) ))
+
+          n=0; mean=0; peak=0; sat=0
+          if [ -s "$s/cpu_samples" ]; then
+            n=$(wc -l < "$s/cpu_samples")
+            mean=$(awk '{t+=$1} END{printf "%.1f", t/NR}' "$s/cpu_samples")
+            peak=$(sort -n "$s/cpu_samples" | tail -1)
+            sat=$(awk '$1>=90{c++} END{printf "%.1f", (c/NR)*100}' "$s/cpu_samples")
+          fi
+
+          mkdir -p out
+          cat > out/stats.json <<JSON
+          {"idx": ${{ matrix.idx }}, "drvs_built": $built, "cores": $cores,
+           "cpu_mean": $mean, "cpu_peak": $peak, "cpu_pct_saturated": $sat,
+           "samples": $n, "window_s": $window}
+          JSON
+          cat out/stats.json
+
+      - name: Upload builder stats
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: builder-stats-${{ matrix.idx }}
+          path: out/stats.json
+          retention-days: 7
+
+  build-on-europa:
+    name: build-on-europa
+    needs: []  # deliberately NOT depending on `builder` — they must run concurrently
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix + Tailscale
+        run: |
+          curl -fsSL https://nixos.org/nix/install | sh -s -- --daemon
+          curl -fsSL https://tailscale.com/install.sh | sudo sh
+
+      - name: Join tailnet
+        run: |
+          sudo tailscale up \
+            --login-server=https://neptune.jupiter.au:8080 \
+            --authkey=${{ secrets.TAILSCALE_CI_AUTHKEY }} \
+            --hostname="ci-coordinator-${{ github.run_id }}" \
+            --accept-routes
+
+      - name: Wait for builders to join tailnet
+        run: |
+          deadline=$(( $(date +%s) + 5*60 ))
+          while [ "$(date +%s)" -lt "$deadline" ]; do
+            peers=$(tailscale status --json 2>/dev/null | jq '.Peer // {} | length' 2>/dev/null || echo 0)
+            echo "$(date +%T) peers=$peers"
+            [ "$peers" -ge 19 ] && break
+            sleep 5
+          done
+
+      - name: Build all hosts on europa
+        env:
+          EUROPA_SSH_KEY: ${{ secrets.EUROPA_CI_SSH_KEY }}
+          CI_BUILDER_SSH_KEY: ${{ secrets.CI_BUILDER_SSH_KEY }}
+        run: |
+          # Write SSH keys
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$EUROPA_SSH_KEY" > "$HOME/.ssh/europa_ci"
+          printf '%s\n' "$CI_BUILDER_SSH_KEY" > "$HOME/.ssh/ci_builder_key"
+          chmod 600 "$HOME/.ssh/"{europa_ci,ci_builder_key}
+
+          # SSH config
+          {
+            echo "Host europa-build"
+            echo "  HostName europa"
+            echo "  User root"
+            echo "  IdentityFile $HOME/.ssh/europa_ci"
+            echo "  StrictHostKeyChecking accept-new"
+          } >> "$HOME/.ssh/config"
+
+          # Build on europa using the 19 tailnet builders as remote builders
+          ssh -vvv -o BatchMode=yes europa-build bash <<'EUROPA_SCRIPT'
+            set -uo pipefail
+
+            # Generate /etc/nix/machines from tailscale netmap
+            cat > /tmp/machines <<EOF
+          EOF
+
+            for idx in {1..19}; do
+              want="ci-b${idx}-${{ github.run_id }}"
+              ip=$(tailscale status --json 2>/dev/null | jq -r --arg w "$want" \
+                '.Peer // {} | to_entries[] | .value
+                 | select(((.HostName // "") | startswith($w))
+                       or ((.DNSName  // "") | startswith($w)))
+                 | (.TailscaleIPs // [])
+                 | map(select(contains(":") | not))
+                 | .[0] // empty' 2>/dev/null | head -1)
+
+              if [ -n "$ip" ]; then
+                echo "ssh-ng://runner@${ip} x86_64-linux $HOME/.ssh/ci_builder_key 4 1 kvm,benchmark,big-parallel,gccarch-btver2,gccarch-skylake -" >> /tmp/machines
+              fi
+            done
+
+            install -m 644 /tmp/machines /etc/nix/machines
+            echo "Remote builders configured:"
+            cat /etc/nix/machines
+
+            # Build each host sequentially
+            cd /root/jupiter-os  # or wherever the repo is cloned
+            BUILD_EXIT=0
+            for host in europa callisto amalthea metis adrastea thebe; do
+              echo "Building $host..."
+              nix build ".#nixosConfigurations.$host.config.system.build.toplevel" \
+                --print-out-paths --no-link --fallback || { BUILD_EXIT=1; break; }
+            done
+            exit $BUILD_EXIT
+          EUROPA_SCRIPT
+
+      - name: Report build status
+        if: always()
+        run: |
+          echo "Build on europa completed with exit code $?"
+
+  report:
+    name: build stats
+    needs: [ builder, build-on-europa ]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: builder-stats-*
+          path: stats
+
+      - name: Render summary
+        run: |
+          python3 scripts/ci/render-build-stats.py stats | tee -a "$GITHUB_STEP_SUMMARY"
