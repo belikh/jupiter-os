@@ -198,14 +198,46 @@ jobs:
             echo "  StrictHostKeyChecking accept-new"
           } >> "$HOME/.ssh/config"
 
+          # Discover builders from tailnet on this runner
+          echo "Discovering builders..."
+          BUILDERS=""
+          for idx in {1..19}; do
+            want="ci-b${idx}-${{ github.run_id }}"
+            ip=$(tailscale status --json 2>/dev/null | jq -r --arg w "$want" \
+              '.Peer // {} | to_entries[] | .value
+               | select(((.HostName // "") | startswith($w))
+                     or ((.DNSName  // "") | startswith($w)))
+               | (.TailscaleIPs // [])
+               | map(select(contains(":") | not))
+               | .[0] // empty' 2>/dev/null | head -1)
+
+            if [ -n "$ip" ]; then
+              echo "  Found $want: $ip"
+              BUILDERS="$BUILDERS
+ssh-ng://runner@${ip} x86_64-linux /root/.ssh/ci_builder_key 4 1 kvm,benchmark,big-parallel,gccarch-btver2,gccarch-skylake -"
+            fi
+          done
+
+          if [ -z "$BUILDERS" ]; then
+            echo "ERROR: No builders found"
+            exit 1
+          fi
+
+          BUILDERS="$(echo "$BUILDERS" | sed '/^$/d')"
+          BUILDERS_B64=$(echo "$BUILDERS" | base64 -w0)
+
           # Build on europa
           echo "Starting build on europa..."
-          ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-build bash -s "${{ github.run_id }}" "${{ github.sha }}" <<'EUROPA_SCRIPT'
+          ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-build bash -s "${{ github.run_id }}" "${{ github.sha }}" "$BUILDERS_B64" <<'EUROPA_SCRIPT'
             set -uo pipefail
             RUN_ID="$1"
             COMMIT_SHA="$2"
+            BUILDERS_B64="$3"
             SESSION_NAME="jupiter-build-${RUN_ID}"
             REPO_DIR="/tmp/jupiter-os-${RUN_ID}"
+
+            # Decode builders list from base64
+            BUILDERS=$(echo "$BUILDERS_B64" | base64 -d)
 
             # Clone the repository
             echo "Cloning jupiter-os at $COMMIT_SHA..."
@@ -215,48 +247,10 @@ jobs:
             echo "Repository ready at $(pwd)"
             echo
 
-            # Generate /etc/nix/machines from tailscale netmap
-            echo "Discovering builders from tailnet..."
-            : > /tmp/machines
-
-            echo "Checking tailscale status..."
-            tailscale status 2>&1 | head -5
-
-            echo "Fetching netmap..."
-            ts_json=$(tailscale status --json 2>&1)
-            if [ $? -ne 0 ]; then
-              echo "ERROR: tailscale status failed: $ts_json"
-              exit 1
-            fi
-
-            peers=$(echo "$ts_json" | jq '.Peer // {} | length' 2>&1)
-            echo "Total peers: $peers"
-
-            for idx in {1..19}; do
-              want="ci-b${idx}-${RUN_ID}"
-              ip=$(tailscale status --json 2>/dev/null | jq -r --arg w "$want" \
-                '.Peer // {} | to_entries[] | .value
-                 | select(((.HostName // "") | startswith($w))
-                       or ((.DNSName  // "") | startswith($w)))
-                 | (.TailscaleIPs // [])
-                 | map(select(contains(":") | not))
-                 | .[0] // empty' 2>/dev/null | head -1)
-
-              if [ -n "$ip" ]; then
-                echo "  Found $want: $ip"
-                echo "ssh-ng://runner@${ip} x86_64-linux /root/.ssh/ci_builder_key 4 1 kvm,benchmark,big-parallel,gccarch-btver2,gccarch-skylake -" >> /tmp/machines
-              fi
-            done
-
-            if [ ! -s /tmp/machines ]; then
-              echo "ERROR: No builders found in netmap"
-              echo "Debugging: first few peers:"
-              tailscale status --json 2>/dev/null | jq '.Peer // {} | to_entries[] | .value | {HostName, DNSName}' | head -20
-              exit 1
-            fi
-
-            install -m 644 /tmp/machines /etc/nix/machines
-            echo "Remote builders configured ($(wc -l < /tmp/machines) builders)"
+            # Configure remote builders
+            echo "Configuring remote builders..."
+            echo "$BUILDERS" | sudo tee /etc/nix/machines > /dev/null
+            echo "Remote builders configured ($(wc -l < /etc/nix/machines) builders)"
 
             # Create tmux session for live viewing (optional; build runs in background)
             tmux new-session -d -s "$SESSION_NAME" -c "$REPO_DIR" bash 2>/dev/null || true
