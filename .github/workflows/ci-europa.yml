@@ -256,6 +256,15 @@ jobs:
             # Decode builders list from base64
             BUILDERS=$(echo "$BUILDERS_B64" | base64 -d 2>&1)
 
+            # Seed SSH known_hosts for ephemeral builder IPs
+            echo "Scanning builder host keys..."
+            echo "$BUILDERS" | while read -r line; do
+              ip=$(echo "$line" | grep -oP 'runner@\K[0-9.]+' || true)
+              if [ -n "$ip" ]; then
+                timeout 5 ssh-keyscan -H "$ip" >> /root/.ssh/known_hosts 2>/dev/null || true
+              fi
+            done
+
             # Clone the repository
             echo "Cloning jupiter-os at $COMMIT_SHA..."
             git clone https://github.com/belikh/jupiter-os "$REPO_DIR"
