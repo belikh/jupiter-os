@@ -223,7 +223,10 @@ jobs:
           fi
 
           BUILDERS="$(echo "$BUILDERS" | sed '/^$/d')"
+          echo "Total builders found: $(echo "$BUILDERS" | wc -l)"
+          echo "First builder: $(echo "$BUILDERS" | head -1)"
           BUILDERS_B64=$(echo "$BUILDERS" | base64 -w0)
+          echo "Encoded size: ${#BUILDERS_B64} chars"
 
           # Build on europa
           echo "Starting build on europa..."
@@ -236,7 +239,11 @@ jobs:
             REPO_DIR="/tmp/jupiter-os-${RUN_ID}"
 
             # Decode builders list from base64
-            BUILDERS=$(echo "$BUILDERS_B64" | base64 -d)
+            echo "DEBUG: BUILDERS_B64 length: ${#BUILDERS_B64}"
+            echo "DEBUG: BUILDERS_B64 first 100 chars: ${BUILDERS_B64:0:100}"
+            BUILDERS=$(echo "$BUILDERS_B64" | base64 -d 2>&1)
+            echo "DEBUG: Decoded builders:"
+            echo "$BUILDERS"
 
             # Clone the repository
             echo "Cloning jupiter-os at $COMMIT_SHA..."
