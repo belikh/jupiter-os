@@ -17,3 +17,7 @@ secrets/pallene-secrets/*
 # Python bytecode (scripts/ are run in place)
 __pycache__/
 *.pyc
+
+# Session scratch (build logs, findings, draft PR bodies). Never committed;
+# nothing in the flake reads from here.
+temp/
