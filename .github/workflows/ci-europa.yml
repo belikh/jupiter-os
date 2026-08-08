@@ -227,7 +227,7 @@ jobs:
 
           # Build on europa
           echo "Starting build on europa..."
-          ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-build bash -s "${{ github.run_id }}" "${{ github.sha }}" "$BUILDERS_B64" <<'EUROPA_SCRIPT'
+          ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-build bash -s "${{ github.run_id }}" "${{ github.sha }}" "$BUILDERS_B64" <<"EUROPA_SCRIPT"
             set -uo pipefail
             RUN_ID="$1"
             COMMIT_SHA="$2"
