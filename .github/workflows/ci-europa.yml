@@ -264,15 +264,10 @@ jobs:
             echo "Repository ready at $(pwd)"
             echo
 
-            # Configure remote builders - write to /etc/nix/machines (nix hardcodes this path)
+            # Write remote builders to /etc/nix/machines
             echo "Configuring remote builders..."
             echo "$BUILDERS" > /etc/nix/machines
             echo "Wrote $(wc -l < /etc/nix/machines) builders to /etc/nix/machines"
-
-            # Restart nix-daemon to pick up new machines file (it caches the file list)
-            echo "Restarting nix-daemon to load builder configuration..."
-            systemctl restart nix-daemon
-            sleep 1
 
 
             # Run build with full output logging
@@ -284,6 +279,8 @@ jobs:
               echo "========================================" >&2
 
               nix build ".#nixosConfigurations.$host.config.system.build.toplevel" \
+                --builders "@/etc/nix/machines" \
+                --builders-use-substitutes \
                 --print-out-paths --no-link --fallback 2>&1
 
               if [ $? -ne 0 ]; then
