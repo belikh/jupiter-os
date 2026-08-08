@@ -55,6 +55,7 @@
     jq
     wget
     curl
+    tmux
     nix-output-monitor
   ];
 

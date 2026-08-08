@@ -296,6 +296,18 @@ jobs:
 
           # Build on europa
           echo "Starting build on europa..."
+          NOM_TIP="ssh -t root@europa 'tail -n +1 -F /var/log/jupiter-ci/current.jsonl | nom --json'"
+          echo "::notice title=Watch this build in nom::$NOM_TIP"
+          {
+            echo "### Watch this build live in \`nom\`"
+            echo
+            echo '```bash'
+            echo "$NOM_TIP"
+            echo '```'
+            echo
+            echo "Per-run log: \`/var/log/jupiter-ci/nom-${{ github.run_id }}.jsonl\` (replay after the fact with \`nom --json < <file>\`)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
           ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-build \
             BUILDERS_B64="$BUILDERS_B64" bash -s "${{ github.run_id }}" "${{ github.sha }}" <<'EUROPA_SCRIPT'
             set -uo pipefail
@@ -360,6 +372,36 @@ jobs:
               exit 1
             fi
 
+            # nom-tailable build log. `--log-format internal-json` is the wire
+            # format nix-output-monitor consumes, so tee nix's stderr to a file
+            # here and a human can attach to a running CI build at any time:
+            #
+            #   ssh -t root@europa 'tail -n +1 -F /var/log/jupiter-ci/current.jsonl | nom --json'
+            #
+            # `tail -n +1` replays from byte 0, so nom's table reflects the whole
+            # build even when you attach late; the same file replays after the
+            # fact with `nom --json < nom-<run_id>.jsonl`. It also retains every
+            # build log line (result type 101), which the CI transcript does not
+            # -- that is where to look when a remote builder fails.
+            #
+            # Nix emits exactly one log format, so the human-readable CI
+            # transcript is reconstructed from the same stream with jq below
+            # (`msg` at default verbosity + build-activity starts, i.e. roughly
+            # what the plain logger printed before). jq is fleet-wide in
+            # modules/common.nix; stdbuf keeps both stages line-live.
+            NOM_DIR=/var/log/jupiter-ci
+            NOM_LOG="$NOM_DIR/nom-${RUN_ID}.jsonl"
+            mkdir -p "$NOM_DIR"
+            find "$NOM_DIR" -maxdepth 1 -name 'nom-*.jsonl' -mtime +7 -delete 2>/dev/null || true
+            : > "$NOM_LOG"
+            ln -sfn "$NOM_LOG" "$NOM_DIR/current.jsonl"
+            echo "nom log: $NOM_LOG (symlinked as $NOM_DIR/current.jsonl)"
+
+            NOM_TO_HUMAN='select(startswith("@nix ")) | .[5:] | (fromjson? // empty)
+              | if   .action == "msg"   and ((.level // 3) <= 3)                   then .msg
+                elif .action == "start" and .type == 105 and ((.text // "") != "") then .text
+                else empty end'
+
             # Run build with full output logging
             set +e  # Don't exit on build failure, we need to report it
             BUILD_EXIT=0
@@ -368,20 +410,40 @@ jobs:
               echo "Building: $host" >&2
               echo "========================================" >&2
 
+              # Label the section inside the nom stream too -- nom prints msg
+              # events above its table, so this marks host boundaries for a
+              # watcher tailing one file across all six closures.
+              printf '@nix {"action":"msg","level":2,"msg":"=== jupiter-ci %s: building %s ==="}\n' \
+                "$RUN_ID" "$host" >> "$NOM_LOG"
+
+              OUT_PATHS="/tmp/outpaths-${RUN_ID}-${host}"
+              # 2>&1 1>"$OUT_PATHS": stderr (the json log) into the pipe first,
+              # then stdout (--print-out-paths) aside to a file. Order matters.
               nix build ".#nixosConfigurations.$host.config.system.build.toplevel" \
                 --builders "@$MACHINES_FILE" \
                 --builders-use-substitutes \
                 --max-jobs auto \
-                --print-out-paths --no-link --fallback 2>&1
+                --print-out-paths --no-link --fallback \
+                --log-format internal-json 2>&1 1>"$OUT_PATHS" \
+                | stdbuf -o0 tee -a "$NOM_LOG" \
+                | stdbuf -o0 jq -rR --unbuffered "$NOM_TO_HUMAN"
+              # pipefail is on, so $? is the pipeline's -- nix's own status is
+              # PIPESTATUS[0].
+              HOST_EXIT=${PIPESTATUS[0]}
+              cat "$OUT_PATHS"
 
-              if [ $? -ne 0 ]; then
+              if [ "$HOST_EXIT" -ne 0 ]; then
                 echo "FAILED: $host" >&2
+                echo "  full log (with builder output): $NOM_LOG" >&2
+                echo "  replay: ssh root@europa \"nom --json < $NOM_LOG\"" >&2
                 BUILD_EXIT=1
                 break
               fi
               echo "DONE: $host" >&2
               echo
             done
+
+            echo "nom log: $NOM_LOG ($(du -h "$NOM_LOG" | cut -f1), $(wc -l < "$NOM_LOG") events)"
 
             if [ $BUILD_EXIT -eq 0 ]; then
               echo "========================================"

@@ -1,8 +1,8 @@
 diff --git a/README.md b/README.md
-index 640c243..2f4f799 100644
+index 640c243..4e5dfd0 100644
 --- a/README.md
 +++ b/README.md
-@@ -143,6 +143,19 @@ priority = 30
+@@ -143,6 +143,26 @@ priority = 30
  # Default: false
  enable_compression = true
  
@@ -18,6 +18,13 @@ index 640c243..2f4f799 100644
 +#
 +# Example: Cloudflare's limit is 512 MB on Free/Pro/Business plans.
 +# max_cacheable_nar_size = 536870912
++#
++# The threshold is compared against the *uncompressed* NAR size. With
++# `enable_compression` the body on the wire is smaller than that, and its final
++# size is not known until the stream ends, so the check is deliberately
++# conservative: a NAR that would have fit under the CDN limit once compressed
++# may still be marked `no-store`. Range responses are always sent uncompressed
++# and are never gated by this option.
 +
  # Allow to override the store path advertised in /nix-cache-info
  # virtual_nix_store = "/nix/store"
@@ -82,7 +89,7 @@ index 2d83162..e5cac2b 100644
      ($res:expr) => {
          match $res {
 diff --git a/harmonia-cache/src/nar.rs b/harmonia-cache/src/nar.rs
-index ad2c690..5b75747 100644
+index 063d3ba..17583aa 100644
 --- a/harmonia-cache/src/nar.rs
 +++ b/harmonia-cache/src/nar.rs
 @@ -1,6 +1,6 @@
@@ -93,7 +100,7 @@ index ad2c690..5b75747 100644
  use actix_web::web::Bytes;
  use actix_web::{HttpRequest, HttpResponse, http, web};
  use harmonia_file_nar::NarByteStream;
-@@ -170,7 +170,13 @@ pub(crate) async fn get(
+@@ -171,7 +171,13 @@ pub(crate) async fn get(
      Ok(res
          .insert_header((http::header::CONTENT_TYPE, "application/x-nix-archive"))
          .insert_header((http::header::ACCEPT_RANGES, "bytes"))

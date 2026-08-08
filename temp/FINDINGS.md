@@ -53,13 +53,45 @@ europa. Routing that through a CDN bought nothing and broke two ways.
 
 Edge headers: `cf-cache-status: HIT`, `cache-control: max-age=31536000`.
 
-Mechanism: **Cloudflare's cacheable-size ceiling is 512 MB on Free/Pro/Business**
-(5 GB Enterprise) — [docs](https://developers.cloudflare.com/cache/concepts/default-cache-behavior/#cacheable-size-limits).
-The full 790 MB NAR is over that and should have bypassed cache entirely. But a
-transfer died at 227 MB, and 227 MB **is** under 512 MB — so Cloudflare judged
-the truncated body cacheable and stored it, pinned for **one year**. Offset 0 of
-the stored object is mid-file HTML, so it isn't even an aligned prefix; Nix's
-parser rejects it instantly. Every builder since gets the same garbage with a 200.
+### Mechanism — CORRECTED, and proven byte-for-byte
+
+My first reading ("a transfer died at 227 MB and Cloudflare cached the truncated
+body") was **wrong**. It could not explain why byte 0 of the cached object is
+*mid-file* HTML rather than the NAR header. The real mechanism:
+
+```
+789,707,296 (real NAR)  −  227,752,466 (edge object)  =  561,954,830
+```
+
+Origin bytes at offset **561,954,830** are **byte-identical** to the edge
+object's first 64 bytes (verified with `cmp`). The cached object is the NAR's
+**tail**, not a truncated head.
+
+So the sequence was:
+
+1. A transfer of the 790 MB NAR broke at offset 561,954,830.
+2. The retry asked for `Range: bytes=561954830-`.
+3. **Harmonia answered `200 OK` — not `206 Partial Content`** — with the ranged
+   body (verified against europa: `HTTP/1.1 200 OK` + `content-range` + partial
+   body; upstream `nar.rs` uses `HttpResponse::Ok()` and never sets
+   `PARTIAL_CONTENT`).
+4. Cloudflare took a `200` as a *complete representation* and stored the tail as
+   the whole object, stamped with the 1-year TTL from the `/nar/*` rule.
+5. Every request since gets the tail, which begins mid-file → `bad archive`.
+
+**Root cause of the poisoning is harmonia's missing 206**, which is upstream
+PR [#1139](https://github.com/nix-community/harmonia/pull/1139) — open,
+mergeable, one line, unmerged as of 2026-08-09. europa's harmonia has the bug.
+
+Cloudflare's 512 MB ceiling (Free/Pro/Business; 5 GB Enterprise —
+[docs](https://developers.cloudflare.com/cache/concepts/default-cache-behavior/#cacheable-size-limits))
+is a **contributing** factor, not the cause: it is why the 790 MB object was
+BYPASS and streamed in the first place, and why the 227 MB tail was small enough
+to be judged cacheable.
+
+Verified locally: with #1139 applied the same request returns `206 Partial
+Content`; without it, `200`. curl exits 0 in both cases — the malformed response
+does not error, it silently yields wrong bytes, which is why this went unnoticed.
 
 ## Failure mode 2 — oversize NARs truncate mid-stream (this killed the run)
 
@@ -104,7 +136,12 @@ warning is unrelated and harmless for now.
 
    Same sites to change either way: `ci-europa.yml:48,200`, `ci.yml:77`,
    `ci-distributed.yml:154,352`.
-2. **Purge the poisoned object.** The surgical option is a by-URL purge of the
+2. **Patch harmonia with upstream PR #1139 (the 206 fix).** One line, mergeable,
+   still open. Until europa has it, *any* interrupted large transfer over *any*
+   lossy path can re-poison the CDN the same way, and no Nix client can ever
+   successfully resume from europa. This is the fix that addresses the actual
+   root cause; everything else is containment.
+3. **Purge the poisoned object.** The surgical option is a by-URL purge of the
    single ghc-doc NAR URL; `purge_everything` is the blunt one (Free plan is
    capped at 5 purge requests/min). Edge TTL is stamped at insertion, so editing
    the cache rule does **not** re-stamp it — it must be purged. Zone
@@ -178,3 +215,97 @@ why the harmonia patch is the right upstream shape.
 **Note:** none of this unblocks CI. CI is fixed by taking Cloudflare out of the
 builder path (see recommendation 1 above); this hardens the *public* cache for
 off-LAN clients.
+
+---
+
+# Follow-up 2: interaction with harmonia's native zstd compression
+
+Tested against the patched binary with `enable_compression = true`,
+`max_cacheable_nar_size = 1 MiB`, NAR = 28,832,296 B (over threshold):
+
+| request | status | headers |
+|---|---|---|
+| full, `Accept-Encoding: zstd` | 200 | `transfer-encoding: chunked`, `content-encoding: zstd`, `vary: accept-encoding`, **`cache-control: no-store`** |
+| full, identity | 200 | `content-length: 28832296`, **`cache-control: no-store`** |
+| range, `Accept-Encoding: zstd` | **206** | `content-length: 4096`, `content-range`, **`content-encoding: identity`**, `cache-control: max-age=31536000` |
+
+Findings:
+
+1. **`no-store` survives compression.** The handler sets Cache-Control before the
+   zstd middleware runs, and the middleware only rewrites the body plus
+   `Content-Encoding`/`Vary`.
+2. **Range responses are never compressed.** The handler forces
+   `Content-Encoding: identity` and the middleware skips any response that
+   already carries that header — so resume stays byte-exact and is unaffected by
+   this option.
+3. **Compressed full responses are chunked** (`no_chunking(false)` drops
+   Content-Length). That *removes the declared length a cache could validate
+   against*, so a truncated compressed stream is if anything **more** likely to
+   be stored as complete. Compression makes the size guard more important, not
+   less.
+4. **The threshold is measured on the uncompressed `nar_size`.** With zstd the
+   stored object is the compressed size, so the check is conservative: a NAR that
+   would have fit under the CDN limit once compressed may still be marked
+   `no-store`. It never under-protects (compressed ≤ uncompressed in practice),
+   and the compressed size cannot be known before the stream ends without
+   buffering the whole thing. Documented in the README hunk of the patch.
+
+Not currently live for us: europa runs with `enable_compression` unset
+(default false) — its narinfos say `Compression: none` and NAR responses carry a
+real `content-length`. This matters only if we turn zstd on.
+
+## Follow-up 3: the size option is measured on the wrong number when zstd is on
+
+Demonstrated with `nixos-manual-html`, `enable_compression = true`,
+`max_cacheable_nar_size = 10,000,000`:
+
+```
+nar_size   = 28,887,072   OVER  the threshold  -> gate fires
+compressed =  2,902,413   UNDER the threshold  -> would have cached fine
+result: cache-control: no-store
+```
+
+A ~10:1 ratio, so the gate refuses caching for an object the CDN would happily
+have stored. Scaled up: a 1 GB NAR compressing to 400 MB, threshold 512 MB, is
+marked `no-store` even though 400 MB is under Cloudflare's limit. **False
+negatives, and at typical text ratios they would apply to nearly every large
+path — which defeats having a CDN at all.**
+
+Root of it: the option gates on `nar_size`, but the object the CDN stores is the
+*compressed* body. Those coincide only when the response goes out identity.
+
+### The sharp problem
+
+Compressed responses are `transfer-encoding: chunked` — no Content-Length. That
+is exactly the case where a cache has no declared length to validate a truncated
+stream against, i.e. **where a size guard is most needed** — and also exactly the
+case where the guard cannot measure the right number. The option is least
+reliable precisely where it would matter most.
+
+### Options
+
+- **A (exact):** apply the threshold only when the response will actually be sent
+  identity — `settings.enable_compression && accepts_zstd(req.headers())` decides.
+  `accepts_zstd` is currently private in `zstd_body.rs`; making it `pub(crate)`
+  is a one-word change. The option then always measures the bytes really sent.
+  Cost: no protection at all for compressed responses (whose size is unknowable
+  before the stream ends).
+- **B (conservative, current):** keep gating on `nar_size`, document it as the
+  uncompressed size. Safe direction, but the false negatives above.
+
+Recommend **A** — a config option that silently means a different thing when
+compression is enabled is a footgun, and B's protection is illusory anyway (see
+"sharp problem").
+
+### Or: question whether the option should exist
+
+With #1139 merged, the range-response poisoning vector is closed outright. The
+residual risk is a plain transfer truncated mid-stream and stored as complete —
+which a conforming cache will not do when Content-Length is declared (the
+identity case). That leaves the compressed/chunked case as the only real gap,
+and the size option cannot cover it. So the honest ranking is:
+
+1. #1139 (closes the actual mechanism),
+2. keep `/nar/*` off the CDN, or leave compression off so Content-Length is
+   always declared,
+3. the size option, as belt-and-braces.
