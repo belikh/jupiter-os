@@ -1,9 +1,10 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
-  pull_request:
+  # Disabled: use ci-europa.yml instead
+  # push:
+  #   branches: [main]
+  # pull_request:
   workflow_dispatch:
 
 concurrency:

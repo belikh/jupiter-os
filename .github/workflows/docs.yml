@@ -1,8 +1,10 @@
 name: Deploy Documentation
 
 on:
-  push:
-    branches: [main]
+  # Disabled temporarily
+  # push:
+  #   branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
