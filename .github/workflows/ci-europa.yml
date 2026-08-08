@@ -336,6 +336,16 @@ jobs:
             # same lying DB. Catch it here, with a message that names the cause,
             # instead of an opaque "getting attributes of path ...: No such file
             # or directory" partway through a 20-machine build.
+            #
+            # `--verify` (no --check-contents, no --repair) costs <1s on europa's
+            # ~81k paths and splits the two cases exactly the way we want:
+            #   - disappeared path with no valid referrers -> silently invalidated,
+            #     so the build below simply rebuilds it. Self-healing; exit 0.
+            #   - disappeared path that still has valid referrers -> hard error,
+            #     exit 1. This is the case that broke #67 (bash-5.3p15 and 12
+            #     others), and it needs a human because Nix cannot invalidate it.
+            # Note it is therefore NOT read-only: it may prune DB entries. That is
+            # the desired behaviour, not a side effect to design around.
             echo "Verifying europa's store is self-consistent..."
             if ! nix-store --verify; then
               echo "ERROR: europa's Nix store has paths registered valid but missing on disk." >&2
