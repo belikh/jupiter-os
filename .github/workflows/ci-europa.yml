@@ -80,6 +80,12 @@ jobs:
           sudo mkdir -p /run/sshd
           sudo /usr/sbin/sshd -D -o Port=22 -o PasswordAuthentication=no -o PermitRootLogin=no \
             -o AuthorizedKeysFile="$HOME/.ssh/authorized_keys" &
+
+          # Wait for SSH to be ready
+          for i in {1..60}; do
+            timeout 1 bash -c "echo > /dev/tcp/127.0.0.1/22" 2>/dev/null && break
+            sleep 1
+          done
           echo "builder ci-b${{ matrix.idx }}-${{ github.run_id }} ready: $(tailscale ip -4)"
 
       - name: Start build-stats sampler
