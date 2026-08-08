@@ -179,7 +179,7 @@ jobs:
 
       - name: Build all hosts on europa
         env:
-          EUROPA_SSH_KEY: ${{ secrets.EUROPA_CI_SSH_KEY }}
+          EUROPA_SSH_KEY: ${{ secrets.EUROPA_SSH_KEY }}
           CI_BUILDER_SSH_KEY: ${{ secrets.CI_BUILDER_SSH_KEY }}
           REPO_DIR: ${{ github.workspace }}
         run: |
