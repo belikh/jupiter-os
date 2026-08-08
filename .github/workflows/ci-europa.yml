@@ -88,6 +88,13 @@ jobs:
           done
           echo "builder ci-b${{ matrix.idx }}-${{ github.run_id }} ready: $(tailscale ip -4)"
 
+      - name: Verify connectivity to europa
+        run: |
+          echo "Pinging europa from builder ci-b${{ matrix.idx }}-${{ github.run_id }}..."
+          for i in {1..5}; do
+            ping -c 1 -W 2 europa >/dev/null 2>&1 && echo "Ping $i: OK" || echo "Ping $i: FAILED"
+          done
+
       - name: Start build-stats sampler
         run: |
           mkdir -p /tmp/stats
