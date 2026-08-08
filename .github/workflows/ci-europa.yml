@@ -176,7 +176,7 @@ jobs:
 
           # Start SSH daemon to serve as a build machine
           install -m 700 -d "$HOME/.ssh"
-          printf '%s\n' "${{ secrets.CI_BUILDER_SSH_KEY }}" > /tmp/builder_key
+          printf '%s\n' "${{ secrets.CI_BUILDER_SSH_KEY }}" | install -m 600 /dev/stdin /tmp/builder_key
           ssh-keygen -y -f /tmp/builder_key > "$HOME/.ssh/authorized_keys"
           rm -f /tmp/builder_key
           chmod 600 "$HOME/.ssh/authorized_keys"
