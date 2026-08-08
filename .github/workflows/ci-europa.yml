@@ -109,6 +109,11 @@ jobs:
             ping -c 1 -W 2 europa >/dev/null 2>&1 && echo "Ping $i: OK" || echo "Ping $i: FAILED"
           done
 
+      - name: Pre-fetch essential build tools to local store
+        run: |
+          echo "Pre-fetching bash to builder's local store..."
+          nix profile install nixpkgs#bash --profile /tmp/prefetch 2>&1 && echo "bash cached" || echo "bash prefetch skipped"
+
       - name: Start build-stats sampler
         run: |
           mkdir -p /tmp/stats
@@ -320,10 +325,6 @@ jobs:
             MACHINES_FILE="/tmp/nix-machines-${RUN_ID}"
             echo "$BUILDERS" > "$MACHINES_FILE"
             echo "Wrote $(wc -l < "$MACHINES_FILE") builders to $MACHINES_FILE"
-
-            # Pre-fetch essential build dependencies to populate local store
-            echo "Pre-fetching bash..."
-            nix profile install nixpkgs#bash --profile /tmp/prefetch 2>&1 && echo "bash fetched" || echo "bash fetch failed (ok if already cached)"
 
             # Run build with full output logging
             set +e  # Don't exit on build failure, we need to report it
