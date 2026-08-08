@@ -45,9 +45,9 @@ jobs:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           extra_nix_config: |
             system-features = kvm benchmark big-parallel gccarch-btver2 gccarch-skylake
-            substituters = https://cache.nixos.org
-            trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
-            connect-timeout = 5
+            substituters = https://cache.jupiter.au https://cache.nixos.org
+            trusted-public-keys = jupiter-cache-1:5tPIwQSj5/mk53jBHqqsAk9IpcuTGz/2UQOdHvjTId0= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+            connect-timeout = 30
             trusted-users = root runner
             http2 = false
             cores = 4
