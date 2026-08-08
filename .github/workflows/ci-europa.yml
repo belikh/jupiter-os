@@ -260,10 +260,12 @@ jobs:
             echo "Repository ready at $(pwd)"
             echo
 
-            # Configure remote builders
+            # Configure remote builders via environment variable (nix.conf is immutable)
             echo "Configuring remote builders..."
-            echo "$BUILDERS" | sudo tee /etc/nix/machines > /dev/null
-            echo "Remote builders configured ($(wc -l < /etc/nix/machines) builders)"
+            export NIX_MACHINES="$BUILDERS"
+            echo "Remote builders configured:"
+            echo "$BUILDERS" | head -3
+            echo "..."
 
             # Create tmux session for live viewing (optional; build runs in background)
             tmux new-session -d -s "$SESSION_NAME" -c "$REPO_DIR" bash 2>/dev/null || true
