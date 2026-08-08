@@ -344,4 +344,12 @@
   # secrets/secrets.yaml before first deploy or Harmonia's activation fails.
   # binarylane_api_token: consumed by jupiter.services.palleneWatchdog.
   sops.secrets.harmonia_sign_key = { };
+
+  # ---- Dev tools for CI builds running in tmux on europa -------------------
+  # nix-output-monitor: formatted output for nix build; useful when watching
+  # builds live via CI's tmux session. Excluded from common.nix (headless NAS),
+  # but worth the small closure for build visibility.
+  environment.systemPackages = with pkgs; [
+    nix-output-monitor
+  ];
 }
