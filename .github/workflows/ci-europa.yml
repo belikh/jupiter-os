@@ -318,10 +318,11 @@ jobs:
             echo "Repository ready at $(pwd)"
             echo
 
-            # Write remote builders to /etc/nix/machines
+            # Write remote builders to temp file (GitHub Actions has /etc read-only)
             echo "Configuring remote builders..."
-            echo "$BUILDERS" > /etc/nix/machines
-            echo "Wrote $(wc -l < /etc/nix/machines) builders to /etc/nix/machines"
+            MACHINES_FILE="/tmp/nix-machines-${RUN_ID}"
+            echo "$BUILDERS" > "$MACHINES_FILE"
+            echo "Wrote $(wc -l < "$MACHINES_FILE") builders to $MACHINES_FILE"
 
 
             # Run build with full output logging
@@ -333,7 +334,7 @@ jobs:
               echo "========================================" >&2
 
               nix build ".#nixosConfigurations.$host.config.system.build.toplevel" \
-                --builders "@/etc/nix/machines" \
+                --builders "@$MACHINES_FILE" \
                 --builders-use-substitutes \
                 --max-jobs auto \
                 --print-out-paths --no-link --fallback 2>&1
