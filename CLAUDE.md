@@ -145,12 +145,13 @@ make fmt                # format all Nix (nixfmt-rfc-style); fmt-check to verify
 # For live progress, pipe nix's internal-json log through nom
 # (nix-output-monitor, fleet-wide via modules/common.nix — no install step).
 # There is NO `nom os-switch`: nom only wraps build/shell/develop/copy/flake,
-# so nixos-rebuild has to be piped in by hand. `-v` is what makes nix emit the
-# per-derivation activity nom's table is built from; it also turns on
-# nixos-rebuild-ng's own `debug:` lines, which nom passes through harmlessly.
+# so nixos-rebuild has to be piped in by hand. internal-json carries the
+# per-derivation activity nom's table is built from at *any* verbosity (only
+# `msg` lines are verbosity-filtered) — adding -v just layers
+# nixos-rebuild-ng's own `debug:` lines on top, which nom passes through.
 # `|&` is bash — keep the pipe inside the quotes when dialing in from fish.
 ssh -t root@<host> 'nixos-rebuild switch --flake github:belikh/jupiter-os#<host> \
-  --log-format internal-json -v |& nom --json'
+  --log-format internal-json |& nom --json'
 # Plain, no nom (26.11 is nixos-rebuild-ng; --fast is deprecated → --no-reexec):
 ssh root@<host> -- nixos-rebuild switch --flake github:belikh/jupiter-os#<host>
 ```
