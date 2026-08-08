@@ -290,12 +290,6 @@ jobs:
             exit 1
           fi
 
-          # Also add build-on-europa (coordinator) itself as a builder
-          echo "Adding build-on-europa coordinator as a builder..."
-          coordinator_ip=$(tailscale ip -4)
-          echo "  Coordinator IP: $coordinator_ip"
-          BUILDERS_ARRAY+=("ssh-ng://runner@${coordinator_ip} x86_64-linux /root/.ssh/ci_builder_key 4 1 kvm,benchmark,big-parallel,gccarch-btver2,gccarch-skylake -")
-
           BUILDERS="$(printf '%s\n' "${BUILDERS_ARRAY[@]}")"
           echo "Total builders found: $(echo "$BUILDERS" | wc -l)"
           echo "First builder: $(echo "$BUILDERS" | head -1)"
