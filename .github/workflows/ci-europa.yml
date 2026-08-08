@@ -321,6 +321,9 @@ jobs:
             echo "$BUILDERS" > "$MACHINES_FILE"
             echo "Wrote $(wc -l < "$MACHINES_FILE") builders to $MACHINES_FILE"
 
+            # Pre-fetch essential build dependencies from cache to warm up substituters
+            echo "Pre-fetching essential build tools..."
+            nix build --dry-run nixpkgs#bash nixpkgs#clang nixpkgs#ninja 2>&1 | grep -E "will be|already|skipped" | head -3 || true
 
             # Run build with full output logging
             set +e  # Don't exit on build failure, we need to report it
