@@ -11,10 +11,23 @@
 # store, so there is no per-cache URL path (unlike Attic's /jupiter-os segment)
 # — the cache root IS the host:port.
 #
-# europa is both server and consumer — for it, the loopback URL avoids a network
-# roundtrip. Every other host reaches the same harmonia over the LAN at europa's
-# reserved IP (10.1.1.2 — UniFi DHCP reservation). CI runners (GitHub Actions)
-# reach it over the UDM WireGuard road-warrior, also at 10.1.1.2:5000.
+# The harmonia server (europa) deliberately does NOT subscribe to itself. The
+# cache it serves IS its own /nix/store, so a path harmonia can offer is one the
+# host already has — isValidPath() short-circuits before substitution and the
+# substituter is never consulted. It can therefore only ever be reached for paths
+# europa does NOT have, which harmonia also 404s. Net gain: zero.
+#
+# The one case where it does answer is the pathological one (issue #67): a path
+# registered valid in the DB but missing from disk. Harmonia builds narinfos from
+# that same DB, so it advertises the phantom with a 200 and then cannot produce a
+# NAR, turning every substitution into a five-deep retry storm of
+#   "HTTP error 200 (curl error: Transferred a partial file)".
+# Subscribing the server to itself buys nothing and hides real corruption behind
+# noise, so it is skipped.
+#
+# Every other host reaches harmonia over the LAN at europa's reserved IP
+# (10.1.1.2 — UniFi DHCP reservation). CI runners (GitHub Actions) reach it over
+# the UDM WireGuard road-warrior, also at 10.1.1.2:5000.
 #
 # The public key is minted once via `nix-store --generate-binary-cache-key`
 # (see docs/ci-harmonia-push-runbook.md) and is a PUBLIC value — it ships here
@@ -74,7 +87,12 @@ in
 
   config = lib.mkIf cfg.enable {
     nix.settings = {
-      substituters = [ url ];
+      # Skipped on the harmonia server itself — see the header comment: it would
+      # be subscribing to its own /nix/store, which can only ever answer for
+      # paths it already has (never consulted) or paths it has lost (#67 retry
+      # storm). The public key is still trusted here, because europa verifies
+      # signatures on the closures CI pushes in over SSH.
+      substituters = lib.optionals (!isHarmoniaServer) [ url ];
       trusted-public-keys = [ cfg.publicKey ];
       # Fail fast if Harmonia is unreachable (e.g. a PR-side CI run that
       # hasn't brought up the WireGuard tunnel) instead of stalling every
