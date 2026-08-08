@@ -200,9 +200,6 @@ jobs:
 
           # Copy repo to europa
           echo "Copying repository to europa..."
-          echo "Testing SSH connection to europa-build..."
-          ssh -v -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-build "whoami" 2>&1 | tail -20
-
           ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-build \
             "rm -rf /tmp/jupiter-os-build && mkdir -p /tmp/jupiter-os-build"
           scp -r -o IdentitiesOnly=yes -o PasswordAuthentication=no -o StrictHostKeyChecking=no \
