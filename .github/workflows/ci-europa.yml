@@ -192,6 +192,7 @@ jobs:
         env:
           EUROPA_SSH_KEY: ${{ secrets.EUROPA_CI_SSH_KEY }}
           CI_BUILDER_SSH_KEY: ${{ secrets.CI_BUILDER_SSH_KEY }}
+          REPO_DIR: ${{ github.workspace }}
         run: |
           # Write SSH keys
           install -m 700 -d "$HOME/.ssh"
@@ -208,16 +209,21 @@ jobs:
             echo "  StrictHostKeyChecking accept-new"
           } >> "$HOME/.ssh/config"
 
+          # Copy repo to europa
+          echo "Copying repository to europa..."
+          ssh europa-build "rm -rf /tmp/jupiter-os-build && mkdir -p /tmp/jupiter-os-build"
+          scp -r "$REPO_DIR" europa-build:/tmp/jupiter-os-build/repo
+
           # Build on europa using the 19 tailnet builders as remote builders
-          ssh -vvv -o BatchMode=yes europa-build bash <<'EUROPA_SCRIPT'
+          ssh europa-build bash -s "${{ github.run_id }}" <<'EUROPA_SCRIPT'
             set -uo pipefail
+            RUN_ID="$1"
 
             # Generate /etc/nix/machines from tailscale netmap
-            cat > /tmp/machines <<EOF
-          EOF
+            : > /tmp/machines
 
             for idx in {1..19}; do
-              want="ci-b${idx}-${{ github.run_id }}"
+              want="ci-b${idx}-${RUN_ID}"
               ip=$(tailscale status --json 2>/dev/null | jq -r --arg w "$want" \
                 '.Peer // {} | to_entries[] | .value
                  | select(((.HostName // "") | startswith($w))
@@ -227,16 +233,21 @@ jobs:
                  | .[0] // empty' 2>/dev/null | head -1)
 
               if [ -n "$ip" ]; then
-                echo "ssh-ng://runner@${ip} x86_64-linux $HOME/.ssh/ci_builder_key 4 1 kvm,benchmark,big-parallel,gccarch-btver2,gccarch-skylake -" >> /tmp/machines
+                echo "ssh-ng://runner@${ip} x86_64-linux /root/.ssh/ci_builder_key 4 1 kvm,benchmark,big-parallel,gccarch-btver2,gccarch-skylake -" >> /tmp/machines
               fi
             done
 
+            if [ ! -s /tmp/machines ]; then
+              echo "ERROR: No builders found in netmap"
+              exit 1
+            fi
+
             install -m 644 /tmp/machines /etc/nix/machines
             echo "Remote builders configured:"
-            cat /etc/nix/machines
+            wc -l /etc/nix/machines
 
             # Build each host sequentially
-            cd /root/jupiter-os  # or wherever the repo is cloned
+            cd /tmp/jupiter-os-build/repo
             BUILD_EXIT=0
             for host in europa callisto amalthea metis adrastea thebe; do
               echo "Building $host..."
