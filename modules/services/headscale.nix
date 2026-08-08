@@ -300,13 +300,19 @@ in
             "tag:fleet:22"
           ];
         }
-        # Fleet (europa) can SSH to CI builders for distributed builds
-        # (ci-europa.yml uses SSH for remote builder delegation). Reciprocal
-        # of the "CI can SSH to fleet" rule above.
+        # Fleet (europa) <-> CI (builders): bidirectional SSH + ICMP.
+        # Europa uses SSH to delegate builds to CI nodes (ci-europa.yml).
+        # ICMP (ping) is needed for connectivity verification.
+        # Using :* for all ports includes both TCP/UDP (SSH) and ICMP.
         {
           action = "accept";
           src = [ "tag:fleet" ];
-          dst = [ "tag:ci:22" ];
+          dst = [ "tag:ci:*" ];
+        }
+        {
+          action = "accept";
+          src = [ "tag:ci" ];
+          dst = [ "tag:fleet:*" ];
         }
         # CI nodes can SSH to each other (distributed-builder coordinator ->
         # builders, ci-distributed.yml). Without this, headscale's
