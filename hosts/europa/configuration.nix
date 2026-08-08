@@ -96,8 +96,20 @@
   jupiter.core.antigravity.enable = false;
   # Disable Lix (needs >8GB RAM to build); use standard Nix instead
   jupiter.core.lix.enable = false;
-  nix.distributedBuilds = lib.mkForce false;
-  nix.buildMachines = lib.mkForce [ ];
+  nix.distributedBuilds = true;
+  nix.buildMachines = lib.mkForce [
+    {
+      hostName = "10.1.1.3";
+      system = "x86_64-linux";
+      protocol = "ssh-ng";
+      sshUser = "root";
+      sshKey = "/run/secrets/nix_build_ssh_key";
+      maxJobs = 1;
+      speedFactor = 2;
+      supportedFeatures = [ "gccarch-btver2" "gccarch-skylake" "big-parallel" ];
+      mandatoryFeatures = [ ];
+    }
+  ];
 
   # ---- Storage profile (OS SSD) --------------------------------------------
   # Stateful root (no impermanence — the NAS needs persistent state).
@@ -344,6 +356,7 @@
   # secrets/secrets.yaml before first deploy or Harmonia's activation fails.
   # binarylane_api_token: consumed by jupiter.services.palleneWatchdog.
   sops.secrets.harmonia_sign_key = { };
+  sops.secrets.nix_build_ssh_key = { };
 
   # ---- Dev tools for CI builds running in tmux on europa -------------------
   # nix-output-monitor: formatted output for nix build; useful when watching
