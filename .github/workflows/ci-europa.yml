@@ -198,22 +198,29 @@ jobs:
             echo "  StrictHostKeyChecking accept-new"
           } >> "$HOME/.ssh/config"
 
-          # Copy repo to europa
-          echo "Copying repository to europa..."
-          ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-build \
-            "rm -rf /tmp/jupiter-os-build && mkdir -p /tmp/jupiter-os-build"
-          scp -r -o IdentitiesOnly=yes -o PasswordAuthentication=no -o StrictHostKeyChecking=no \
-            "$REPO_DIR" europa-build:/tmp/jupiter-os-build/repo 2>&1 | tail -30
-
-          # Build on europa in a tmux session for live viewing
-          echo "Starting build in tmux session on europa..."
-          ssh europa-build bash -s "${{ github.run_id }}" <<'EUROPA_SCRIPT'
+          # Build on europa
+          echo "Starting build on europa..."
+          ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-build bash -s "${{ github.run_id }}" "${{ github.sha }}" <<'EUROPA_SCRIPT'
             set -uo pipefail
             RUN_ID="$1"
+            COMMIT_SHA="$2"
             SESSION_NAME="jupiter-build-${RUN_ID}"
+            REPO_DIR="/tmp/jupiter-os-${RUN_ID}"
+
+            # Clone the repository
+            echo "Cloning jupiter-os at $COMMIT_SHA..."
+            git clone https://github.com/belikh/jupiter-os "$REPO_DIR"
+            cd "$REPO_DIR"
+            git checkout "$COMMIT_SHA"
+            echo "Repository ready at $(pwd)"
+            echo
 
             # Generate /etc/nix/machines from tailscale netmap
+            echo "Discovering builders from tailnet..."
             : > /tmp/machines
+
+            peers=$(tailscale status --json 2>/dev/null | jq '.Peer // {} | length')
+            echo "Total peers: $peers"
 
             for idx in {1..19}; do
               want="ci-b${idx}-${RUN_ID}"
@@ -226,12 +233,15 @@ jobs:
                  | .[0] // empty' 2>/dev/null | head -1)
 
               if [ -n "$ip" ]; then
+                echo "  Found $want: $ip"
                 echo "ssh-ng://runner@${ip} x86_64-linux /root/.ssh/ci_builder_key 4 1 kvm,benchmark,big-parallel,gccarch-btver2,gccarch-skylake -" >> /tmp/machines
               fi
             done
 
             if [ ! -s /tmp/machines ]; then
               echo "ERROR: No builders found in netmap"
+              echo "Debugging: first few peers:"
+              tailscale status --json 2>/dev/null | jq '.Peer // {} | to_entries[] | .value | {HostName, DNSName}' | head -20
               exit 1
             fi
 
@@ -239,7 +249,7 @@ jobs:
             echo "Remote builders configured ($(wc -l < /tmp/machines) builders)"
 
             # Create tmux session for live viewing (optional; build runs in background)
-            tmux new-session -d -s "$SESSION_NAME" -c /tmp/jupiter-os-build/repo bash 2>/dev/null || true
+            tmux new-session -d -s "$SESSION_NAME" -c "$REPO_DIR" bash 2>/dev/null || true
             echo "Tmux session '$SESSION_NAME' available: ssh europa -t tmux attach-session -t $SESSION_NAME"
             echo
 
