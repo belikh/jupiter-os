@@ -219,7 +219,17 @@ jobs:
             echo "Discovering builders from tailnet..."
             : > /tmp/machines
 
-            peers=$(tailscale status --json 2>/dev/null | jq '.Peer // {} | length')
+            echo "Checking tailscale status..."
+            tailscale status 2>&1 | head -5
+
+            echo "Fetching netmap..."
+            ts_json=$(tailscale status --json 2>&1)
+            if [ $? -ne 0 ]; then
+              echo "ERROR: tailscale status failed: $ts_json"
+              exit 1
+            fi
+
+            peers=$(echo "$ts_json" | jq '.Peer // {} | length' 2>&1)
             echo "Total peers: $peers"
 
             for idx in {1..19}; do
