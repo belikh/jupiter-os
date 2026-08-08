@@ -1,0 +1,90 @@
+error: bad archive: input doesn't look like a Nix archive
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: bad archive: input doesn't look like a Nix archive
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: bad archive: input doesn't look like a Nix archive
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: bad archive: input doesn't look like a Nix archive
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: bad archive: input doesn't look like a Nix archive
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: bad archive: input doesn't look like a Nix archive
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: bad archive: input doesn't look like a Nix archive
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: bad archive: input doesn't look like a Nix archive
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+warning: unable to download 'https://cache.jupiter.au/nbk92kkh4vxpx77lnsvjyj9fz16mjp95.narinfo': SSL connect error (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading; retrying in 99 ms (attempt 1/5)
+warning: unable to download 'https://cache.jupiter.au/sy4hwm1s6ix47nnb9x9sd79j9vc5wmgp.narinfo': SSL connect error (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading; retrying in 3 ms (attempt 1/5)
+warning: unable to download 'https://cache.jupiter.au/sxba2kdl3gflxynb609h7c5ndwv9nkcq.narinfo': SSL connect error (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading; retrying in 6 ms (attempt 1/5)
+warning: unable to download 'https://cache.jupiter.au/87yyyfpg09311b6vs6cvzbzy1459z48j.narinfo': SSL connect error (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading; retrying in 96 ms (attempt 1/5)
+warning: unable to download 'https://cache.jupiter.au/5jgz49s9pcia9mq6l7jslsii5wlbbvyi.narinfo': SSL connect error (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading; retrying in 78 ms (attempt 1/5)
+warning: unable to download 'https://cache.jupiter.au/cs3b3wwr2sfggcixfspgpi9jk03xbsg8.narinfo': SSL connect error (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading; retrying in 51 ms (attempt 1/5)
+warning: unable to download 'https://cache.jupiter.au/gnv0i1ibsj45mfcl4dxiw017kjy80ilp.narinfo': SSL connect error (35) TLS connect error: error:0A000126:SSL routines::unexpected eof while reading; retrying in 28 ms (attempt 1/5)
+warning: unable to download 'https://cache.jupiter.au/mf32mi0y7f6b1wijg24q5gf6gcyr2gj6.narinfo': Failure when receiving data from the peer (56) OpenSSL SSL_read: OpenSSL/3.6.2: error:0A000126:SSL routines::unexpected eof while reading, errno 0; retrying in 16 ms (attempt 1/5)
+warning: unable to download 'https://cache.jupiter.au/xiw22lb2vg5b5na4a4xisjihz2flsyby.narinfo': Failure when receiving data from the peer (56) OpenSSL SSL_read: OpenSSL/3.6.2: error:0A000126:SSL routines::unexpected eof while reading, errno 0; retrying in 17 ms (attempt 1/5)
+error: bad archive: input doesn't look like a Nix archive
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: bad archive: input doesn't look like a Nix archive
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: bad archive: input doesn't look like a Nix archive
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: bad archive: input doesn't look like a Nix archive
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: bad archive: input doesn't look like a Nix archive
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: bad archive: input doesn't look like a Nix archive
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: bad archive: input doesn't look like a Nix archive
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: bad archive: input doesn't look like a Nix archive
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: bad archive: input doesn't look like a Nix archive
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: bad archive: input doesn't look like a Nix archive
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: bad archive: input doesn't look like a Nix archive
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: bad archive: input doesn't look like a Nix archive
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: bad archive: input doesn't look like a Nix archive
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: bad archive: input doesn't look like a Nix archive
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: bad archive: input doesn't look like a Nix archive
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: bad archive: input doesn't look like a Nix archive
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+error: path '/nix/store/75h6pcqjln22n7yav17sxlnhlbfvxsms-ghc-9.10.3-doc' is required, but there is no substituter that can build it
+copying path '/nix/store/cyr3fvn3krs8q7kdjgv8iwd36z42nlb9-libgpg-error-1.61' from 'https://cache.jupiter.au'...
+warning: unable to download 'https://cache.jupiter.au/nar/02wyz1p6n2knn3b0xb21d5c3jwd1w0l1d7i9fqrvbi98ci8qfbys.nar?hash=vyq1sns4ri2khxjygph5y4lbgqjyz8pa': HTTP error 200 (curl error: Transferred a partial file); retrying from offset 56649119 in 0 ms (attempt 1/5)
+warning: unable to download 'https://cache.jupiter.au/nar/0vd533c4rfabg40m0m43idha8m5jsajlbbay74aqdpydvdxz1ywy.nar?hash=yqb23mpy7q89p8ypcr4bplxyl4gb9rdc': HTTP error 200 (curl error: Transferred a partial file); retrying from offset 757899018 in 15 ms (attempt 1/5)
+error: unable to download 'https://cache.jupiter.au/nar/02wyz1p6n2knn3b0xb21d5c3jwd1w0l1d7i9fqrvbi98ci8qfbys.nar?hash=vyq1sns4ri2khxjygph5y4lbgqjyz8pa': HTTP error 502 (curl error: Requested range was not delivered by the server)
+error: path '/nix/store/vyq1sns4ri2khxjygph5y4lbgqjyz8pa-rustc-1.97.1' is required, but there is no substituter that can build it
+error: path '/nix/store/vyq1sns4ri2khxjygph5y4lbgqjyz8pa-rustc-1.97.1' is required, but there is no substituter that can build it
+error: substituter 'https://cache.jupiter.au' is disabled
+error: path '/nix/store/vyq1sns4ri2khxjygph5y4lbgqjyz8pa-rustc-1.97.1' is required, but there is no substituter that can build it
+error: path '/nix/store/vyq1sns4ri2khxjygph5y4lbgqjyz8pa-rustc-1.97.1' is required, but there is no substituter that can build it

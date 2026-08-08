@@ -1,0 +1,110 @@
+diff --git a/README.md b/README.md
+index 640c243..2f4f799 100644
+--- a/README.md
++++ b/README.md
+@@ -143,6 +143,19 @@ priority = 30
+ # Default: false
+ enable_compression = true
+ 
++# Serve NARs larger than this many bytes with `Cache-Control: no-store`
++# instead of the usual one-year `max-age`, so a CDN in front of harmonia does
++# not try to store them. 0 (the default) disables the limit.
++#
++# Set this when your CDN has a maximum cacheable object size. An oversized
++# response that is truncated in transit can otherwise be stored as if it were
++# complete, after which every request is served a corrupt NAR until the entry
++# expires. CDN cache rules generally match on the request, so they cannot see
++# the response size -- the origin is the only place this can be decided.
++#
++# Example: Cloudflare's limit is 512 MB on Free/Pro/Business plans.
++# max_cacheable_nar_size = 536870912
++
+ # Allow to override the store path advertised in /nix-cache-info
+ # virtual_nix_store = "/nix/store"
+ # Allow to serve the nix store from a different physical location
+diff --git a/harmonia-cache/src/config.rs b/harmonia-cache/src/config.rs
+index cdd295b..d885d81 100644
+--- a/harmonia-cache/src/config.rs
++++ b/harmonia-cache/src/config.rs
+@@ -30,6 +30,10 @@ fn default_enable_compression() -> bool {
+     false
+ }
+ 
++fn default_max_cacheable_nar_size() -> u64 {
++    0
++}
++
+ /// zstd parameters applied to on-the-fly NAR encoding when the client sends
+ /// `Accept-Encoding: zstd`. Defaults are tuned for a substitution cache:
+ /// level 1 with long-distance matching beats the libzstd default (level 3)
+@@ -116,6 +120,16 @@ pub(crate) struct Config {
+     #[serde(default = "default_enable_compression")]
+     pub(crate) enable_compression: bool,
+ 
++    /// NARs larger than this many bytes are served with `Cache-Control:
++    /// no-store` instead of the usual one-year `max-age`, so a CDN in front of
++    /// harmonia does not try to store them. 0 disables the limit.
++    ///
++    /// Useful when the CDN has a maximum cacheable object size: an oversized
++    /// response that is truncated in transit can otherwise land in the cache as
++    /// if it were complete, and every later request is served a corrupt NAR.
++    #[serde(default = "default_max_cacheable_nar_size")]
++    pub(crate) max_cacheable_nar_size: u64,
++
+     #[serde(default)]
+     pub(crate) zstd: ZstdConfig,
+ 
+diff --git a/harmonia-cache/src/main.rs b/harmonia-cache/src/main.rs
+index 2d83162..e5cac2b 100644
+--- a/harmonia-cache/src/main.rs
++++ b/harmonia-cache/src/main.rs
+@@ -78,6 +78,22 @@ fn cache_control_no_store() -> http::header::CacheControl {
+     http::header::CacheControl(vec![http::header::CacheDirective::NoStore])
+ }
+ 
++/// Cache-Control for a complete NAR response.
++///
++/// NARs are content-addressed and therefore immutable, so they are normally
++/// cacheable for a year. Above `max_cacheable` bytes we ask caches not to store
++/// the response at all: a CDN that refuses objects over some size can otherwise
++/// store a truncated transfer as though it were complete, and then serve that
++/// corrupt body until the entry expires. `max_cacheable == 0` disables the
++/// limit and restores the unconditional one-year `max-age`.
++fn cache_control_for_nar(nar_size: u64, max_cacheable: u64) -> http::header::CacheControl {
++    if max_cacheable > 0 && nar_size > max_cacheable {
++        cache_control_no_store()
++    } else {
++        cache_control_max_age_1y()
++    }
++}
++
+ macro_rules! some_or_404 {
+     ($res:expr) => {
+         match $res {
+diff --git a/harmonia-cache/src/nar.rs b/harmonia-cache/src/nar.rs
+index ad2c690..5b75747 100644
+--- a/harmonia-cache/src/nar.rs
++++ b/harmonia-cache/src/nar.rs
+@@ -1,6 +1,6 @@
+ use crate::config::Config;
+ use crate::error::{CacheError, StoreError};
+-use crate::{cache_control_max_age_1y, some_or_404};
++use crate::{cache_control_for_nar, cache_control_max_age_1y, some_or_404};
+ use actix_web::web::Bytes;
+ use actix_web::{HttpRequest, HttpResponse, http, web};
+ use harmonia_file_nar::NarByteStream;
+@@ -170,7 +170,13 @@ pub(crate) async fn get(
+     Ok(res
+         .insert_header((http::header::CONTENT_TYPE, "application/x-nix-archive"))
+         .insert_header((http::header::ACCEPT_RANGES, "bytes"))
+-        .insert_header(cache_control_max_age_1y())
++        // Only the full response is gated on `nar_size`; the range branch above
++        // is left cacheable because a slice is not the size of the whole NAR,
++        // and it is the path clients use to resume an interrupted download.
++        .insert_header(cache_control_for_nar(
++            nar_size,
++            settings.max_cacheable_nar_size,
++        ))
+         // Sized so the zstd middleware can pledge the exact length.
+         .body(actix_web::body::SizedStream::new(rlength, stream)))
+ }

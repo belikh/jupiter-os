@@ -304,6 +304,10 @@
   services.harmonia.cache.settings = {
     real_nix_store = "/nix/store";
     nix_db_path = "/nix/var/nix/db/db.sqlite";
+    enable_compression = true;
+    workers = 8;
+    max_connection_rate = 512;
+    priority = 30;
   };
   systemd.services.harmonia.serviceConfig.ReadOnlyPaths = [ "/nix/store" ];
   networking.firewall.allowedTCPPorts = [ 5000 ];
