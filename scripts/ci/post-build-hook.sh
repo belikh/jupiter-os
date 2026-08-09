@@ -8,9 +8,12 @@ set -f  # OUT_PATHS is space-split below; a store path may contain glob chars
 FIFO="/var/run/nix-push-fifo"
 LOG="/var/log/nix-push-hook.log"
 
-# Ensure FIFO exists
+# Ensure FIFO exists. Mode 0666: the hook runs as root (via nix-daemon) but the
+# cache-drainer runs as the runner user on the distributed builders, so the
+# FIFO must be readable/writable by both — mode 0600 would let root write a
+# line the runner drainer could never read.
 if [[ ! -p "$FIFO" ]]; then
-    mkfifo -m 600 "$FIFO" 2>/dev/null || true
+    mkfifo -m 666 "$FIFO" 2>/dev/null || true
 fi
 
 # Nix contract (manual §7.5 "Using the post-build-hook"): the hook is invoked

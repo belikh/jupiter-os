@@ -611,13 +611,13 @@ jobs:
 
           : > /tmp/machines
           for ip in "${ready[@]}"; do
-            echo "ssh-ng://runner@${ip}?ssh-options=-o Ciphers=chacha20-poly1305@openssh.com -o MACs=hmac-sha2-256-etm@openssh.com -o Compression=no x86_64-linux $HOME/.ssh/ci_builder_key 4 1 kvm,benchmark,big-parallel,gccarch-btver2,gccarch-skylake -" \
+            echo "ssh-ng://runner@${ip} x86_64-linux $HOME/.ssh/ci_builder_key 4 1 kvm,benchmark,big-parallel,gccarch-btver2,gccarch-skylake -" \
               >> /tmp/machines
           done
 
           # Add coordinator itself as a builder (20th slot)
           echo "  Adding coordinator as builder (localhost)"
-          echo "ssh-ng://runner@127.0.0.1?ssh-options=-o Ciphers=chacha20-poly1305@openssh.com -o MACs=hmac-sha2-256-etm@openssh.com -o Compression=no x86_64-linux $HOME/.ssh/ci_builder_key 4 1 kvm,benchmark,big-parallel,gccarch-btver2,gccarch-skylake -" \
+          echo "ssh-ng://runner@127.0.0.1 x86_64-linux $HOME/.ssh/ci_builder_key 4 1 kvm,benchmark,big-parallel,gccarch-btver2,gccarch-skylake -" \
             >> /tmp/machines
           sudo install -m 644 /tmp/machines /etc/nix/machines
           cat /etc/nix/machines

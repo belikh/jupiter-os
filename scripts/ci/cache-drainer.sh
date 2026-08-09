@@ -1,111 +1,119 @@
 #!/usr/bin/env bash
 #
-# Background cache drainer for CI. Pops batches from the post-build-hook's
-# queue and `nix copy`s them into europa's /nix/store over SSH (Harmonia then
-# serves them to the fleet + the next CI run). Decoupled from nix's build
-# loop so push health — WireGuard latency, large NARs — never stalls the
-# build. Ported from build-server.nix's pusherLoop.
+# Async cache drainer for CI. Reads completed store paths from the
+# post-build-hook's FIFO and `nix copy`s them into europa's /nix/store over
+# SSH (Harmonia then serves them to the fleet + the next CI run). Decoupled
+# from nix's build loop so push health — Tailscale latency, large NARs —
+# never stalls the build. Ported from build-server.nix's pusherLoop.
 #
-# Does ALL logging to europa via SSH (uses ControlMaster from CI workflow).
-# Start BEFORE `nix build` (nohup ... &), kill (pkill -f cache-drainer.sh)
-# after. retain-recent.sh does the final toplevel copy + GC-root pinning as a
-# safety net for the one path that must be cached. Only meaningful on pushes
-# to main (where WireGuard to europa is up); on PR runs this script is never
-# started and the queue harmlessly accumulates into the ephemeral /tmp.
+# INPUT IS THE FIFO (/var/run/nix-push-fifo) that post-build-hook.sh writes:
+# one tab-delimited line per built output (STATUS, STORE_PATH, DERIVATION,
+# TIMESTAMP). The FIFO is held open read+write on fd 3 — the write half keeps
+# the read side from seeing EOF when the hook (the only other writer) closes
+# between builds, so this loop stays alive for the whole CI run instead of
+# dying after the first hook invocation. (The previous shape polled a plain
+# file the hook never wrote, so the two were never connected and nothing ever
+# got pushed.)
+#
+# Runs as the runner user on the distributed builders; the hook itself runs as
+# root via nix-daemon, so the FIFO is mode 0666 (see post-build-hook.sh) and
+# the SSH key/controlmaster paths are $HOME-based, not /root. Start BEFORE
+# `nix build` (nohup ... &) so the FIFO has a reader before the first path is
+# built; the drainer then reads for the whole CI window.
 set -uo pipefail
 umask 000
 
-queue="${QUEUE_FILE:-/tmp/ci-cache-queue.txt}"
-lock="${QUEUE_LOCK:-/tmp/ci-cache-queue.lock}"
-ssh="${EUROPA_SSH:-europa-ci}"   # ~/.ssh/config alias -> jupiter-ci@10.1.1.2
+FIFO="${FIFO:-/var/run/nix-push-fifo}"
+ssh="${EUROPA_SSH:-europa-ci}"   # ~/.ssh/config alias -> jupiter-ci@europa
+key="${EUROPA_KEY:-$HOME/.ssh/europa_ci}"
+cm="${EUROPA_CONTROLMASTERS:-$HOME/.ssh/controlmasters}"
 log_path="/var/log/jupiter-ci/cache-drainer.log"
 # `sudo` (this script's invoker) resets PATH to its own secure_path, which
-# doesn't include wherever install-nix-action put `nix` — confirmed live:
-# "env: 'nix': No such file or directory" on every single attempt. `ssh`
-# works fine bare since /usr/bin is on secure_path; `nix` isn't. The caller
-# resolves and passes the real path; fall back to a bare name (PATH lookup)
-# if run standalone outside that wrapper.
+# doesn't include wherever install-nix-action put `nix`. The caller resolves
+# and passes the real path via NIX_BIN; fall back to a bare name (PATH lookup)
+# if run standalone.
 nix_bin="${NIX_BIN:-nix}"
 
-# Log to europa via SSH (uses ControlMaster from CI workflow)
 log_to_europa() {
   local msg="$1"
-  ssh -o ControlPath="/root/.ssh/controlmasters/%r@%h:%p" "$ssh" \
+  ssh -o ControlPath="$cm/%r@%h:%p" "$ssh" \
     "mkdir -p /var/log/jupiter-ci && echo \"$msg\" >> $log_path" 2>/dev/null || true
 }
 
-# Also log locally for console visibility
 log() {
   local msg="[drainer $(date -u +%H:%M:%S)] $*"
   echo "$msg"
   log_to_europa "$msg"
 }
 
-touch "$queue" "$lock"; chmod 666 "$queue" "$lock"
-: > "$queue"
+# Ensure the FIFO exists. Mode 0666: the hook (root, via nix-daemon) writes
+# and this drainer (runner on builders) reads — both must be able to open it.
+[[ -p "$FIFO" ]] || mkfifo -m 666 "$FIFO"
 
-log "drainer started"
+log "drainer started, reading from $FIFO"
 
 total_queued=0
 total_pushed=0
 
-while true; do
-  batch=""
-  exec 9>"$lock"; flock 9
-  if [ -s "$queue" ]; then batch="$(cat "$queue")"; : > "$queue"; fi
-  exec 9>&-
-
-  [ -z "$batch" ] && { sleep 3; continue; }
-  paths="$(printf '%s\n' "$batch" | sort -u | grep -v '^$')" || true
-  [ -z "$paths" ] && continue
-  n="$(printf '%s\n' "$paths" | wc -l)"
+# Push one batch (newline-separated store paths). Retries absorb transient
+# Tailscale/NAR flakes; xargs chunks to stay under ARG_MAX; timeout bounds
+# each transfer. ssh-ng talks to europa's nix daemon over the jupiter-ci key,
+# supplied explicitly via NIX_SSHOPTS (don't rely on alias identity resolution
+# for the ssh-ng spawn), reusing the ControlMaster socket the workflow warmed.
+flush() {
+  local paths="$1"
+  [ -z "$paths" ] && return
+  paths="$(printf '%s\n' "$paths" | sort -u | grep -v '^$')" || true
+  [ -z "$paths" ] && return
+  local n; n=$(printf '%s\n' "$paths" | wc -l)
   total_queued=$((total_queued + n))
-
-  pct=0
-  if [ "$total_queued" -gt 0 ]; then
-    pct=$(( (total_pushed * 100) / total_queued ))
-  fi
+  local pct=0
+  if [ "$total_queued" -gt 0 ]; then pct=$(( (total_pushed * 100) / total_queued )); fi
   log "draining batch: $n path(s) | queued: $total_queued | pushed: $total_pushed | progress: $pct%"
 
-  # xargs chunks to stay under ARG_MAX on a big backlog; timeout bounds each
-  # transfer; retries absorb transient WG/NAR flakes. ssh-ng talks to europa's
-  # nix daemon over the jupiter-ci SSH key.
-  #
-  # MUST pass -i explicitly via NIX_SSHOPTS. Confirmed live by direct
-  # reproduction (a manual ssh-ng copy with an explicit -key succeeded
-  # instantly — PATH, nix-daemon, auth are all fine): the earlier
-  # ssh-ng://$ssh form relied on the "europa-ci" SSH CONFIG ALIAS purely
-  # for its `IdentityFile $HOME/.ssh/europa_ci` line (root has no default
-  # ~/.ssh/id_* key at all). A prior "fix" here swapped to an explicit
-  # jupiter-ci@europa target to dodge a suspected alias-resolution problem,
-  # but that also silently dropped the IdentityFile, leaving ssh with no
-  # key to offer at all — an immediate, fast auth failure indistinguishable
-  # in symptom (rc=123, ~1s) from the original hypothesis. Keep the
-  # explicit hostname AND explicitly supply the identity file — don't rely
-  # on alias resolution for anything.
   for attempt in 1 2 3 4 5 6; do
     log "attempt $attempt: pushing $n path(s)"
-    err_file="$(mktemp)"
+    local err_file; err_file="$(mktemp)"
     if printf '%s\n' "$paths" | xargs -r -d '\n' timeout 600 env \
-        NIX_SSHOPTS="-i /root/.ssh/europa_ci -o ControlPath=/root/.ssh/controlmasters/%r@%h:%p -o StrictHostKeyChecking=accept-new" \
+        NIX_SSHOPTS="-i $key -o ControlPath=$cm/%r@%h:%p -o StrictHostKeyChecking=accept-new" \
         "$nix_bin" copy --to "ssh-ng://jupiter-ci@europa" 2>"$err_file"; then
       total_pushed=$((total_pushed + n))
-      pct=0
-      if [ "$total_queued" -gt 0 ]; then
-        pct=$(( (total_pushed * 100) / total_queued ))
-      fi
+      pct=0; [ "$total_queued" -gt 0 ] && pct=$(( (total_pushed * 100) / total_queued ))
       log "pushed $n path(s) on attempt $attempt | queued: $total_queued | pushed: $total_pushed | progress: $pct%"
       rm -f "$err_file"
-      break
+      return
     else
-      rc=$?
+      local rc=$?
       log "attempt $attempt failed (rc=$rc); retry in $((attempt * 3))s"
-      # DIAGNOSTIC: ship the real stderr to europa's log — two prior "fixes"
-      # here both guessed wrong about the cause, so stop guessing and log
-      # the actual error text instead of just the wrapper's rc=123.
+      # Ship the real stderr to europa's log — stop guessing at the cause.
       while IFS= read -r line; do log "  stderr: $line"; done < "$err_file"
       rm -f "$err_file"
       sleep $((attempt * 3))
     fi
   done
+}
+
+# Hold the FIFO open read+write (fd 3). The write half prevents EOF when the
+# hook closes between builds, so the read loop spans the whole CI run rather
+# than exiting after the first hook invocation.
+exec 3<>"$FIFO"
+batch=""
+while true; do
+  # Read one tab-delimited line from the hook, with a 3s idle timeout.
+  #   line arrived  -> append STORE_PATH to the batch; flush at 64 paths.
+  #   3s idle       -> flush whatever has accumulated, then keep waiting.
+  # fd 3's write half means the timeout never becomes an EOF, so the drainer
+  # never exits mid-run.
+  if IFS=$'\t' read -r -t 3 STATUS STORE_PATH DERIVATION TIMESTAMP <&3; then
+    if [ -n "${STORE_PATH:-}" ]; then
+      batch="${batch:+$batch$'\n'}$STORE_PATH"
+      if [ "$(printf '%s\n' "$batch" | wc -l)" -ge 64 ]; then
+        flush "$batch"; batch=""
+      fi
+    fi
+  else
+    if [ -n "$batch" ]; then flush "$batch"; batch=""; fi
+  fi
 done
+# Unreachable while fd 3 is held open; safety net only.
+[ -n "$batch" ] && flush "$batch"
