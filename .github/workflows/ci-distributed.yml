@@ -708,10 +708,12 @@ jobs:
           printf '@nix {"action":"msg","level":2,"msg":"=== jupiter-ci %s: building all hosts (%s) ==="}\n' \
             "$RUN_ID" "$HOSTS" | ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-log "cat >> '$NOM_LOG'"
 
+          # Builders were written to /etc/nix/machines by the discover step.
+          # --builders "@/etc/nix/machines" tells nix to read that file.
           # 2>&1 1>"$OUT_PATHS": stderr (the json log) piped to europa via ssh tee,
           # then stdout (--print-out-paths) aside to a file. Order matters.
           nix build "${INSTALLABLES[@]}" \
-            --builders "@$MACHINES_FILE" \
+            --builders "@/etc/nix/machines" \
             --builders-use-substitutes \
             --max-jobs auto \
             --keep-going \
