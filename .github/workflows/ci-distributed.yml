@@ -712,10 +712,18 @@ jobs:
           # --builders "@/etc/nix/machines" tells nix to read that file.
           # 2>&1 1>"$OUT_PATHS": stderr (the json log) piped to europa via ssh tee,
           # then stdout (--print-out-paths) aside to a file. Order matters.
+          # --max-jobs 0: force EVERY derivation onto the remote builders in
+          # /etc/nix/machines (the 19 + localhost). The coordinator is a
+          # dispatch-only scheduler, NOT a builder. A previous `--max-jobs auto`
+          # silently undid this: Nix reads `max-jobs = auto` as "one local slot
+          # per core" (=4 on the runner), overriding nix.conf's `max-jobs = 0`
+          # and making the coordinator build locally — which is why all 19
+          # remote builders showed zero work on every run. max-jobs governs
+          # LOCAL slots only; remote fan-out is controlled by the builders list.
           nix build "${INSTALLABLES[@]}" \
             --builders "@/etc/nix/machines" \
             --builders-use-substitutes \
-            --max-jobs auto \
+            --max-jobs 0 \
             --keep-going \
             --print-out-paths --no-link --fallback \
             --log-format internal-json 2>&1 1>"$OUT_PATHS" \
