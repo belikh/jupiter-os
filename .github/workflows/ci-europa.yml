@@ -271,7 +271,11 @@ jobs:
 
             if [ -n "$ip" ]; then
               echo "  Found $want: $ip"
-              BUILDERS_ARRAY+=("ssh-ng://runner@${ip} x86_64-linux /root/.ssh/ci_builder_key 4 1 kvm,benchmark,big-parallel,gccarch-btver2,gccarch-skylake -")
+              # ?compress=true -> ssh -C (zlib) on the nix-daemon stream. Off by
+              # default in nix, and europa's home uplink is the bottleneck, not
+              # its cores: a 256MB sample of the ghc-9.10.3 NAR (1.93GB total,
+              # pushed to each builder separately) shrinks 6.4x under gzip -6.
+              BUILDERS_ARRAY+=("ssh-ng://runner@${ip}?compress=true x86_64-linux /root/.ssh/ci_builder_key 4 1 kvm,benchmark,big-parallel,gccarch-btver2,gccarch-skylake -")
             fi
           done
 
