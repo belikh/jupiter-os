@@ -158,7 +158,7 @@ jobs:
             http2 = false
             system-features = kvm benchmark big-parallel gccarch-btver2 gccarch-skylake
             cores = 4
-            max-jobs = 2
+            max-jobs = 1
             post-build-hook = /opt/ci/post-build-hook.sh
             fallback = true
 
@@ -362,6 +362,34 @@ jobs:
             # over doing work on this runner's own weak CPU.
             max-jobs = 0
 
+      - name: Install async push system (post-build-hook + daemon)
+        run: |
+          # Copy scripts from repo
+          sudo install -m 755 ${{ github.workspace }}/scripts/ci/post-build-hook.sh /usr/local/bin/nix-post-build-hook
+          sudo install -m 755 ${{ github.workspace }}/scripts/ci/push-daemon.sh /usr/local/bin/nix-push-daemon
+
+          # Create FIFO and log files
+          sudo mkdir -p /var/run /var/log
+          sudo mkfifo -m 600 /var/run/nix-push-fifo 2>/dev/null || true
+          sudo touch /var/log/nix-push-hook.log /var/log/nix-push-daemon.log
+          sudo chmod 644 /var/log/nix-push-hook.log /var/log/nix-push-daemon.log
+
+          # Start push daemon in background
+          sudo nohup /usr/local/bin/nix-push-daemon >/dev/null 2>&1 &
+          DAEMON_PID=$!
+          echo "PUSH_DAEMON_PID=$DAEMON_PID" >> $GITHUB_ENV
+          echo "Push daemon started (PID: $DAEMON_PID)"
+
+          # Configure nix to use post-build-hook (requires daemon restart)
+          sudo tee -a /etc/nix/nix.conf > /dev/null <<'EOF'
+          post-build-hook = /usr/local/bin/nix-post-build-hook
+          EOF
+          sudo systemctl restart nix-daemon
+          echo "nix-daemon restarted with post-build-hook"
+
+          # Verify hook is active
+          nix show-config post-build-hook
+
       - name: Join tailnet
         run: |
           curl -fsSL https://tailscale.com/install.sh | sudo sh
@@ -370,6 +398,26 @@ jobs:
             --authkey=${{ secrets.TAILSCALE_CI_AUTHKEY }} \
             --hostname="ci-coordinator-${{ github.run_id }}" \
             --accept-routes
+
+      - name: Start SSH daemon (coordinator also serves as builder)
+        run: |
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "${{ secrets.CI_BUILDER_SSH_KEY }}" > /tmp/ci_builder_key
+          chmod 600 /tmp/ci_builder_key
+          ssh-keygen -y -f /tmp/ci_builder_key > "$HOME/.ssh/authorized_keys"
+          rm -f /tmp/ci_builder_key
+          chmod 600 "$HOME/.ssh/authorized_keys"
+          sudo mkdir -p /run/sshd
+          sudo /usr/sbin/sshd -D -o Port=22 -o PasswordAuthentication=no -o PermitRootLogin=no \
+            -o AuthorizedKeysFile="$HOME/.ssh/authorized_keys" &
+          echo "COORDINATOR_SSHD_PID=$!" >> $GITHUB_ENV
+          echo "SSH daemon started (PID: $!)"
+
+          # Wait for SSH to be ready on localhost
+          for i in {1..60}; do
+            timeout 1 bash -c "echo > /dev/tcp/127.0.0.1/22" 2>/dev/null && break
+            sleep 1
+          done
 
       # UNCONDITIONAL, never fails the job. `ssh: Could not resolve hostname`
       # (the failure this workflow died on for every run up to 31145262216)
@@ -565,9 +613,14 @@ jobs:
 
           : > /tmp/machines
           for ip in "${ready[@]}"; do
-            echo "ssh-ng://runner@${ip} x86_64-linux $HOME/.ssh/ci_builder_key 4 1 kvm,benchmark,big-parallel,gccarch-btver2,gccarch-skylake -" \
+            echo "ssh-ng://runner@${ip}?ssh-options=-o Ciphers=chacha20-poly1305@openssh.com -o MACs=hmac-sha2-256-etm@openssh.com -o Compression=no x86_64-linux $HOME/.ssh/ci_builder_key 4 1 kvm,benchmark,big-parallel,gccarch-btver2,gccarch-skylake -" \
               >> /tmp/machines
           done
+
+          # Add coordinator itself as a builder (20th slot)
+          echo "  Adding coordinator as builder (localhost)"
+          echo "ssh-ng://runner@127.0.0.1?ssh-options=-o Ciphers=chacha20-poly1305@openssh.com -o MACs=hmac-sha2-256-etm@openssh.com -o Compression=no x86_64-linux $HOME/.ssh/ci_builder_key 4 1 kvm,benchmark,big-parallel,gccarch-btver2,gccarch-skylake -" \
+            >> /tmp/machines
           sudo install -m 644 /tmp/machines /etc/nix/machines
           cat /etc/nix/machines
           # nix.conf's default `builders = @/etc/nix/machines` picks this up;
@@ -583,31 +636,102 @@ jobs:
             'echo root-context ssh OK on $(hostname)' \
             || { echo "::error::nix-daemon (root) cannot SSH to a builder — remote dispatch will fail"; exit 1; }
 
-      # One host at a time, NOT a single combined `nix build` across all 6
-      # nixosConfigurations — a prior attempt at evaluating/building the
-      # fleet as one top-level unit hit store issues traced back to the
-      # kiosks (shared derivations across hosts confusing the single
-      # evaluation/GC-root bookkeeping). Each host is still fully
-      # parallel INSIDE itself: `--builders @/etc/nix/machines` from the
-      # previous step applies per-build, so this host's own derivation
-      # graph fans out across whatever builders came up — only the outer
-      # loop over hosts is serial, same shape as ci.yml's build-host job.
-      - name: Build each host (builders push outputs to Harmonia in parallel)
+      # Build all hosts in a SINGLE nix build invocation — lets nix's scheduler
+      # interleave derivations across all six closures at once. Shared store paths
+      # (kernel, systemd, etc.) build once and every host's independent work
+      # competes for the 19 builders together. `--keep-going` means one host
+      # failing doesn't stop the others from finishing, giving a full pass/fail
+      # picture instead of stopping at the first broken host.
+      #
+      # nom-tailable build log: `--log-format internal-json` is the wire format
+      # nix-output-monitor consumes. Tee nix's stderr to a file so a human can
+      # attach to a running CI build at any time:
+      #
+      #   tail -n +1 -F /tmp/nom-${{ github.run_id }}.jsonl | nom --json
+      #
+      # `tail -n +1` replays from byte 0, so nom's table reflects the whole
+      # build even when you attach late; the same file replays after the fact
+      # with `nom --json < nom-<run_id>.jsonl`. It also retains every build
+      # log line (result type 101), which the CI transcript does not.
+      # Nix emits exactly one log format, so the human-readable CI transcript
+      # is reconstructed from the same stream with jq.
+      - name: Build all hosts (parallel across 19 builders, nom log)
+        env:
+          RUN_ID: ${{ github.run_id }}
         run: |
-          # Each builder has its own cache-drainer pushing outputs as builds
-          # complete (started in builder jobs). Coordinator just builds; no
-          # coordinator-side pushing — each builder pushes its own ~11Mbit
-          # aggregate ~200Mbit > serial 11Mbit on coordinator.
-          #
-          # --fallback: if substitution fails (corrupted cache entry), rebuild
-          # locally rather than failing. Coordinator has enough resources;
-          # kiosks never hit this error (they're not building, only coord is).
-          BUILD_EXIT=0
-          for host in europa callisto amalthea metis adrastea thebe; do
-            echo "Building $host..."
-            nix build ".#nixosConfigurations.$host.config.system.build.toplevel" \
-              --print-out-paths --no-link --fallback || { BUILD_EXIT=1; break; }
+          NOM_DIR=/tmp
+          NOM_LOG="$NOM_DIR/nom-${RUN_ID}.jsonl"
+          : > "$NOM_LOG"
+          echo "nom log: $NOM_LOG (symlinked as $NOM_DIR/current.jsonl)"
+          ln -sfn "$NOM_LOG" "$NOM_DIR/current.jsonl"
+
+          NOM_TO_HUMAN='if (startswith("@nix ") | not) then .
+            else (.[5:] | (fromjson? // empty)
+                  | select((.level // 3) <= 3)
+                  | if   .action == "msg"                              then .msg
+                    elif .action == "start" and ((.text // "") != "")  then .text
+                    else empty end)
+            end'
+
+          HOSTS="europa callisto amalthea metis adrastea thebe"
+          INSTALLABLES=()
+          for host in $HOSTS; do
+            INSTALLABLES+=(".#nixosConfigurations.$host.config.system.build.toplevel")
           done
+
+          OUT_PATHS="/tmp/outpaths-${RUN_ID}"
+          set +e  # Don't exit on build failure, we need to report it
+
+          printf '@nix {"action":"msg","level":2,"msg":"=== jupiter-ci %s: building all hosts (%s) ==="}\n' \
+            "$RUN_ID" "$HOSTS" >> "$NOM_LOG"
+
+          # 2>&1 1>"$OUT_PATHS": stderr (the json log) into the pipe first,
+          # then stdout (--print-out-paths) aside to a file. Order matters.
+          nix build "${INSTALLABLES[@]}" \
+            --builders "@$MACHINES_FILE" \
+            --builders-use-substitutes \
+            --max-jobs auto \
+            --keep-going \
+            --print-out-paths --no-link --fallback \
+            --log-format internal-json 2>&1 1>"$OUT_PATHS" \
+            | stdbuf -o0 tee -a "$NOM_LOG" \
+            | { stdbuf -o0 jq -rR --unbuffered "$NOM_TO_HUMAN" || cat; }
+          # pipefail is on, so $? is the pipeline's -- nix's own status is
+          # PIPESTATUS[0].
+          BUILD_EXIT=${PIPESTATUS[0]}
+
+          echo "Out paths:"
+          cat "$OUT_PATHS"
+          echo "nom log: $NOM_LOG ($(du -h "$NOM_LOG" | cut -f1), $(wc -l < "$NOM_LOG") events)"
+
+          # --keep-going means a host that failed doesn't take its siblings
+          # down with it, but the single combined exit code can't say which
+          # host was which -- check each host's toplevel individually against
+          # the local store to render a per-host table.
+          echo "========================================"
+          echo "Per-host result:"
+          echo "========================================"
+          for host in $HOSTS; do
+            out=$(nix eval --raw ".#nixosConfigurations.$host.config.system.build.toplevel" 2>/dev/null)
+            if [ -n "$out" ] && nix path-info "$out" >/dev/null 2>&1; then
+              echo "  OK   $host -> $out"
+            else
+              echo "  FAIL $host"
+            fi
+          done
+
+          if [ $BUILD_EXIT -eq 0 ]; then
+            echo "========================================"
+            echo "All builds completed successfully"
+            echo "========================================"
+          else
+            echo "========================================"
+            echo "Build failed for one or more hosts -- see table above"
+            echo "  full log (with builder output): $NOM_LOG" >&2
+            echo "  replay: nom --json < $NOM_LOG" >&2
+            echo "========================================"
+          fi
+
           exit $BUILD_EXIT
 
   # Aggregation has to be its own job: the builders deliberately outlive the
