@@ -161,6 +161,19 @@
   # actually runs postgresql as a service (headscale here uses sqlite) --
   # it's only a transitive build dependency of something else in the
   # closure.
+  #
+  # harmonia: ranged NAR requests always answer 200 instead of 206, so a
+  # client that trusts Content-Range but checks status literally can accept
+  # a truncated body as the full NAR -- silent corruption, not just a slow
+  # cache miss. Fixed upstream in nix-community/harmonia#1139 (open,
+  # mergeable, unmerged as of 2026-08-09). Carries the fix as a local patch
+  # against the pinned harmonia-v3.1.0 source rather than pulling the PR's
+  # branch: upstream main is 252 commits ahead of v3.1.0 (crate rename
+  # harmonia_nar -> harmonia_file_nar and friends), so the PR's own diff
+  # doesn't apply to this pin -- the one-line fix does, unchanged, since the
+  # surrounding ranged-response code is untouched by that refactor. Drop
+  # this overlay entry once a harmonia release containing #1139 is pulled
+  # in via a nixpkgs bump.
   nixpkgs.overlays = [
     (_final: prev: {
       bmake = prev.bmake.overrideAttrs { doCheck = false; };
@@ -168,6 +181,9 @@
         doCheck = false;
         doInstallCheck = false;
       };
+      harmonia = prev.harmonia.overrideAttrs (old: {
+        patches = (old.patches or [ ]) ++ [ ./patches/harmonia-pr1139-ranged-206.patch ];
+      });
     })
   ];
 
