@@ -1,0 +1,520 @@
+name: CI (build on europa, one-shot)
+
+# Same as ci-europa.yml (build directly on europa with 19 Tailscale remote
+# builders), but instead of looping `nix build` host-by-host, all six
+# closures are passed to a single `nix build` invocation. That lets nix's
+# scheduler interleave derivations across hosts -- shared store paths
+# (kernel, systemd, etc.) get built once and every host's independent work
+# competes for the 19 builders at the same time, rather than one host
+# finishing its whole closure before the next host's build even starts.
+# `--keep-going` means one host failing doesn't stop the others from
+# finishing, unlike the sequential script's break-on-first-failure.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  builder:
+    name: builder-${{ matrix.idx }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        idx: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/nix
+          key: nix-${{ runner.os }}-nixpkgs-${{ hashFiles('flake.lock') }}
+          restore-keys: |
+            nix-${{ runner.os }}-nixpkgs-${{ hashFiles('flake.lock') }}-
+
+      - uses: cachix/install-nix-action@v31
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: |
+            system-features = kvm benchmark big-parallel gccarch-btver2 gccarch-skylake
+            substituters = https://cache.nixos.org
+            trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+            connect-timeout = 30
+            trusted-users = root runner
+            http2 = false
+            fallback = true
+            cores = 4
+            max-jobs = 2
+
+      - name: Verify nix.conf has btver2
+        run: |
+          echo "=== nix.conf system-features ==="
+          grep system-features /etc/nix/nix.conf
+          echo "=== nix show-config system-features ==="
+          nix show-config system-features || true
+
+      - name: Join tailnet under deterministic hostname
+        run: |
+          curl -fsSL https://tailscale.com/install.sh | sudo sh
+          sudo tailscale up \
+            --login-server=https://neptune.jupiter.au:8080 \
+            --authkey=${{ secrets.TAILSCALE_CI_AUTHKEY }} \
+            --hostname="ci-b${{ matrix.idx }}-${{ github.run_id }}" \
+            --accept-routes
+
+      - name: Authorize coordinator's key, start sshd
+        run: |
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "${{ secrets.CI_BUILDER_SSH_KEY }}" > /tmp/ci_builder_key
+          chmod 600 /tmp/ci_builder_key
+          ssh-keygen -y -f /tmp/ci_builder_key > "$HOME/.ssh/authorized_keys"
+          rm -f /tmp/ci_builder_key
+          chmod 600 "$HOME/.ssh/authorized_keys"
+          sudo mkdir -p /run/sshd
+          sudo /usr/sbin/sshd -D -o Port=22 -o ListenAddress=0.0.0.0 -o PasswordAuthentication=no -o PermitRootLogin=no \
+            -o AuthorizedKeysFile="$HOME/.ssh/authorized_keys" -o LogLevel=DEBUG &
+          SSHD_PID=$!
+          echo "sshd started with PID $SSHD_PID"
+
+          # Wait for SSH to be ready on localhost
+          for i in {1..60}; do
+            timeout 1 bash -c "echo > /dev/tcp/127.0.0.1/22" 2>/dev/null && break
+            sleep 1
+          done
+
+          # Verify sshd is listening on the tailnet interface too
+          MY_TAILNET_IP=$(tailscale ip -4)
+          echo "My tailnet IP: $MY_TAILNET_IP"
+          for i in {1..10}; do
+            timeout 1 bash -c "echo > /dev/tcp/${MY_TAILNET_IP}/22" 2>/dev/null && echo "SSH on tailnet: OK" && break
+            echo "SSH on tailnet attempt $i failed, retrying..."
+            sleep 1
+          done
+
+          echo "builder ci-b${{ matrix.idx }}-${{ github.run_id }} ready: $MY_TAILNET_IP"
+          echo "Listening ports:"
+          sudo ss -tlnp | grep sshd || echo "No sshd found in listening ports"
+
+      - name: Verify connectivity to europa
+        run: |
+          echo "Pinging europa from builder ci-b${{ matrix.idx }}-${{ github.run_id }}..."
+          for i in {1..5}; do
+            ping -c 1 -W 2 europa >/dev/null 2>&1 && echo "Ping $i: OK" || echo "Ping $i: FAILED"
+          done
+
+      - name: Start build-stats sampler
+        run: |
+          mkdir -p /tmp/stats
+          find /nix/var/log/nix/drvs -type f 2>/dev/null | wc -l > /tmp/stats/drv_before
+          nproc > /tmp/stats/nproc
+          date +%s > /tmp/stats/t_start
+          nohup bash -c '
+            prev_total=0; prev_idle=0
+            while true; do
+              read -r _ u n s i w irq sirq st _ < /proc/stat
+              total=$((u+n+s+i+w+irq+sirq+st)); idle=$((i+w))
+              if [ "$prev_total" -ne 0 ]; then
+                dt=$((total-prev_total)); di=$((idle-prev_idle))
+                [ "$dt" -gt 0 ] && echo $(( (100*(dt-di))/dt )) >> /tmp/stats/cpu_samples
+              fi
+              prev_total=$total; prev_idle=$idle
+              sleep 5
+            done' >/dev/null 2>&1 &
+          echo "sampler started (pid $!)"
+
+      - name: Wait until build job finishes, then exit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          deadline=$(( $(date +%s) + 355*60 ))
+          while [ "$(date +%s)" -lt "$deadline" ]; do
+            status=$(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}/jobs" \
+              --jq '.jobs[] | select(.name=="build-on-europa") | .status')
+            case "$status" in
+              completed) echo "build job finished, shutting down"; exit 0 ;;
+              "") echo "build job not visible yet, waiting" ;;
+              *) echo "build job status: $status" ;;
+            esac
+            sleep 15
+          done
+          echo "hit hard deadline without seeing build job complete, shutting down anyway"
+
+      - name: Collect builder stats
+        if: always()
+        run: |
+          s=/tmp/stats
+          before=$(cat "$s/drv_before" 2>/dev/null || echo 0)
+          after=$(find /nix/var/log/nix/drvs -type f 2>/dev/null | wc -l)
+          built=$(( after - before )); [ "$built" -lt 0 ] && built=0
+          cores=$(cat "$s/nproc" 2>/dev/null || nproc)
+          window=$(( $(date +%s) - $(cat "$s/t_start" 2>/dev/null || date +%s) ))
+
+          n=0; mean=0; peak=0; sat=0
+          if [ -s "$s/cpu_samples" ]; then
+            n=$(wc -l < "$s/cpu_samples")
+            mean=$(awk '{t+=$1} END{printf "%.1f", t/NR}' "$s/cpu_samples")
+            peak=$(sort -n "$s/cpu_samples" | tail -1)
+            sat=$(awk '$1>=90{c++} END{printf "%.1f", (c/NR)*100}' "$s/cpu_samples")
+          fi
+
+          mkdir -p out
+          cat > out/stats.json <<JSON
+          {"idx": ${{ matrix.idx }}, "drvs_built": $built, "cores": $cores,
+           "cpu_mean": $mean, "cpu_peak": $peak, "cpu_pct_saturated": $sat,
+           "samples": $n, "window_s": $window}
+          JSON
+          cat out/stats.json
+
+      - name: Upload builder stats
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: builder-stats-${{ matrix.idx }}
+          path: out/stats.json
+          retention-days: 7
+
+  build-on-europa:
+    name: build-on-europa
+    needs: []  # deliberately NOT depending on `builder` — they must run concurrently
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix + Tailscale
+        run: |
+          curl -fsSL https://nixos.org/nix/install | sh -s -- --daemon
+          curl -fsSL https://tailscale.com/install.sh | sudo sh
+
+      - name: Configure Nix for build
+        run: |
+          sudo tee -a /etc/nix/nix.conf > /dev/null <<'EOF'
+          substituters = https://cache.nixos.org
+          trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+          connect-timeout = 30
+          fallback = true
+          http2 = false
+          EOF
+          sudo systemctl restart nix-daemon
+
+      - name: Join tailnet and start SSH server
+        run: |
+          sudo tailscale up \
+            --login-server=https://neptune.jupiter.au:8080 \
+            --authkey=${{ secrets.TAILSCALE_CI_AUTHKEY }} \
+            --hostname="ci-coordinator-${{ github.run_id }}" \
+            --accept-routes
+
+          # Start SSH daemon to serve as a build machine
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "${{ secrets.CI_BUILDER_SSH_KEY }}" | install -m 600 /dev/stdin /tmp/builder_key
+          ssh-keygen -y -f /tmp/builder_key > "$HOME/.ssh/authorized_keys"
+          rm -f /tmp/builder_key
+          chmod 600 "$HOME/.ssh/authorized_keys"
+          sudo mkdir -p /run/sshd
+          sudo /usr/sbin/sshd -D -o Port=22 -o PasswordAuthentication=no -o PermitRootLogin=no -o AuthorizedKeysFile="$HOME/.ssh/authorized_keys" &
+          SSHD_PID=$!
+          echo "COORDINATOR_SSHD_PID=$SSHD_PID" >> $GITHUB_ENV
+          echo "SSH daemon started (PID: $SSHD_PID)"
+
+      - name: Wait for builders to join tailnet
+        run: |
+          deadline=$(( $(date +%s) + 5*60 ))
+          while [ "$(date +%s)" -lt "$deadline" ]; do
+            peers=$(tailscale status --json 2>/dev/null | jq '.Peer // {} | length' 2>/dev/null || echo 0)
+            echo "$(date +%T) peers=$peers"
+            [ "$peers" -ge 19 ] && break
+            sleep 5
+          done
+
+      - name: Build all hosts on europa (single nix build invocation)
+        env:
+          EUROPA_SSH_KEY: ${{ secrets.EUROPA_SSH_KEY }}
+          CI_BUILDER_SSH_KEY: ${{ secrets.CI_BUILDER_SSH_KEY }}
+          REPO_DIR: ${{ github.workspace }}
+        run: |
+          # Write SSH keys
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$EUROPA_SSH_KEY" > "$HOME/.ssh/europa_ci"
+          printf '%s\n' "$CI_BUILDER_SSH_KEY" > "$HOME/.ssh/ci_builder_key"
+          chmod 600 "$HOME/.ssh/"{europa_ci,ci_builder_key}
+
+          # SSH config (use explicit path, not $HOME variable which SSH won't expand)
+          {
+            echo "Host europa-build"
+            echo "  HostName europa"
+            echo "  User root"
+            echo "  IdentityFile /home/runner/.ssh/europa_ci"
+            echo "  StrictHostKeyChecking accept-new"
+          } >> "$HOME/.ssh/config"
+
+          # Discover builders from tailnet on this runner
+          echo "Discovering builders..."
+          BUILDERS_ARRAY=()
+          for idx in {1..19}; do
+            want="ci-b${idx}-${{ github.run_id }}"
+            ip=$(tailscale status --json 2>/dev/null | jq -r --arg w "$want" \
+              '.Peer // {} | to_entries[] | .value
+               | select(((.HostName // "") | startswith($w))
+                     or ((.DNSName  // "") | startswith($w)))
+               | (.TailscaleIPs // [])
+               | map(select(contains(":") | not))
+               | .[0] // empty' 2>/dev/null | head -1)
+
+            if [ -n "$ip" ]; then
+              echo "  Found $want: $ip"
+              # ?compress=true -> ssh -C (zlib) on the nix-daemon stream. Off by
+              # default in nix, and europa's home uplink is the bottleneck, not
+              # its cores: a 256MB sample of the ghc-9.10.3 NAR (1.93GB total,
+              # pushed to each builder separately) shrinks 6.4x under gzip -6.
+              BUILDERS_ARRAY+=("ssh-ng://runner@${ip}?compress=true x86_64-linux /root/.ssh/ci_builder_key 4 1 kvm,benchmark,big-parallel,gccarch-btver2,gccarch-skylake -")
+            fi
+          done
+
+          if [ ${#BUILDERS_ARRAY[@]} -eq 0 ]; then
+            echo "ERROR: No builders found"
+            exit 1
+          fi
+
+          BUILDERS="$(printf '%s\n' "${BUILDERS_ARRAY[@]}")"
+          echo "Total builders found: $(echo "$BUILDERS" | wc -l)"
+          echo "First builder: $(echo "$BUILDERS" | head -1)"
+          BUILDERS_B64=$(echo "$BUILDERS" | base64 -w0)
+          echo "Encoded size: ${#BUILDERS_B64} chars"
+
+          # Copy CI builder SSH key to europa
+          echo "Copying CI builder key to europa..."
+          printf '%s\n' "$CI_BUILDER_SSH_KEY" > /tmp/ci_builder_key
+          scp -o IdentitiesOnly=yes -o PasswordAuthentication=no -o StrictHostKeyChecking=no \
+            /tmp/ci_builder_key europa-build:/root/.ssh/ci_builder_key 2>&1 | tail -5
+          ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-build chmod 600 /root/.ssh/ci_builder_key
+          rm /tmp/ci_builder_key
+
+          # Build on europa
+          echo "Starting build on europa..."
+          NOM_TIP="ssh -t root@europa 'tail -n +1 -F /var/log/jupiter-ci/current.jsonl | nom --json'"
+          echo "::notice title=Watch this build in nom::$NOM_TIP"
+          {
+            echo "### Watch this build live in \`nom\`"
+            echo
+            echo '```bash'
+            echo "$NOM_TIP"
+            echo '```'
+            echo
+            echo "Per-run log: \`/var/log/jupiter-ci/nom-${{ github.run_id }}.jsonl\` (replay after the fact with \`nom --json < <file>\`)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-build \
+            BUILDERS_B64="$BUILDERS_B64" bash -s "${{ github.run_id }}" "${{ github.sha }}" <<'EUROPA_SCRIPT'
+            set -uo pipefail
+            RUN_ID="$1"
+            COMMIT_SHA="$2"
+            SESSION_NAME="jupiter-build-${RUN_ID}"
+            REPO_DIR="/tmp/jupiter-os-${RUN_ID}"
+
+            # Decode builders list from base64
+            BUILDERS=$(echo "$BUILDERS_B64" | base64 -d 2>&1)
+
+            # Seed SSH known_hosts for ephemeral builder IPs (parallel)
+            echo "Scanning builder host keys..."
+            echo "$BUILDERS" | grep -oP 'runner@\K[0-9.]+' | sort -u | xargs -P 8 -I {} bash -c '
+              timeout 5 ssh-keyscan -H {} >> /root/.ssh/known_hosts 2>/dev/null || true
+            '
+
+            # Clone the repository
+            echo "Cloning jupiter-os at $COMMIT_SHA..."
+            git clone https://github.com/belikh/jupiter-os "$REPO_DIR"
+            cd "$REPO_DIR"
+            git checkout "$COMMIT_SHA"
+            echo "Repository ready at $(pwd)"
+            echo
+
+            # Write remote builders to temp file (GitHub Actions has /etc read-only)
+            echo "Configuring remote builders..."
+            MACHINES_FILE="/tmp/nix-machines-${RUN_ID}"
+            echo "$BUILDERS" > "$MACHINES_FILE"
+            echo "Wrote $(wc -l < "$MACHINES_FILE") builders to $MACHINES_FILE"
+
+            # Guard against a corrupt local store (issue #67). A path registered
+            # valid in europa's DB but missing from disk is never scheduled for
+            # build -- isValidPath() returns true -- so it is handed to a remote
+            # builder that has no way to obtain it. `fallback` does not rescue
+            # this: nothing ever failed to *substitute*. Harmonia makes it worse
+            # by serving a 200 narinfo for the phantom path, straight from the
+            # same lying DB. Catch it here, with a message that names the cause,
+            # instead of an opaque "getting attributes of path ...: No such file
+            # or directory" partway through a 20-machine build.
+            #
+            # `--verify` (no --check-contents, no --repair) costs <1s on europa's
+            # ~81k paths and splits the two cases exactly the way we want:
+            #   - disappeared path with no valid referrers -> silently invalidated,
+            #     so the build below simply rebuilds it. Self-healing; exit 0.
+            #   - disappeared path that still has valid referrers -> hard error,
+            #     exit 1. This is the case that broke #67 (bash-5.3p15 and 12
+            #     others), and it needs a human because Nix cannot invalidate it.
+            # Note it is therefore NOT read-only: it may prune DB entries. That is
+            # the desired behaviour, not a side effect to design around.
+            echo "Verifying europa's store is self-consistent..."
+            if ! nix-store --verify; then
+              echo "ERROR: europa's Nix store has paths registered valid but missing on disk." >&2
+              echo "Repair on europa, then re-run CI. Nix runs check/repair builds" >&2
+              echo "LOCALLY ONLY -- the build hook declines repair-mode goals, so" >&2
+              echo "--max-jobs 0 just fails and any other value pins europa's 2 cores." >&2
+              echo "Substitute from callisto instead; it holds the btver2 closure:" >&2
+              echo '  SUB="ssh-ng://root@10.1.1.3?ssh-key=/run/secrets/nix_build_ssh_key"' >&2
+              echo '  nix-store --repair-path <paths> --max-jobs 0 \' >&2
+              echo '    --option substituters "$SUB" --option trusted-substituters "$SUB" \' >&2
+              echo '    --option require-sigs false' >&2
+              exit 1
+            fi
+
+            # nom-tailable build log. `--log-format internal-json` is the wire
+            # format nix-output-monitor consumes, so tee nix's stderr to a file
+            # here and a human can attach to a running CI build at any time:
+            #
+            #   ssh -t root@europa 'tail -n +1 -F /var/log/jupiter-ci/current.jsonl | nom --json'
+            #
+            # `tail -n +1` replays from byte 0, so nom's table reflects the whole
+            # build even when you attach late; the same file replays after the
+            # fact with `nom --json < nom-<run_id>.jsonl`. It also retains every
+            # build log line (result type 101), which the CI transcript does not
+            # -- that is where to look when a remote builder fails.
+            #
+            # Nix emits exactly one log format, so the human-readable CI
+            # transcript is reconstructed from the same stream with jq below.
+            # The filter reproduces the plain logger's rule exactly: print `msg`
+            # events and activity texts whose own level is <= info(3). That
+            # keeps "building '...drv'" (type 105, level 3) and "copying path
+            # ... from ..." (type 100, level 3) while dropping the per-narinfo
+            # "downloading ..." chatter (type 101, level 4) the old log also
+            # withheld. jq is fleet-wide in modules/common.nix; stdbuf keeps
+            # both stages line-live.
+            NOM_DIR=/var/log/jupiter-ci
+            NOM_LOG="$NOM_DIR/nom-${RUN_ID}.jsonl"
+            mkdir -p "$NOM_DIR"
+            find "$NOM_DIR" -maxdepth 1 -name 'nom-*.jsonl' -mtime +7 -delete 2>/dev/null || true
+            : > "$NOM_LOG"
+            ln -sfn "$NOM_LOG" "$NOM_DIR/current.jsonl"
+            echo "nom log: $NOM_LOG (symlinked as $NOM_DIR/current.jsonl)"
+
+            # Lines that are not internal-json events pass through verbatim --
+            # that is the ssh client's own chatter from the 19 ephemeral builders
+            # ("Permanently added ...", "kex_exchange_identification: ...",
+            # connection timeouts), which the plain logger used to carry and
+            # which is exactly what one needs when a builder drops out. nom
+            # tolerates them in the file too.
+            NOM_TO_HUMAN='if (startswith("@nix ") | not) then .
+              else (.[5:] | (fromjson? // empty)
+                    | select((.level // 3) <= 3)
+                    | if   .action == "msg"                              then .msg
+                      elif .action == "start" and ((.text // "") != "")  then .text
+                      else empty end)
+              end'
+
+            # Build every host as ONE multi-installable `nix build` call, instead
+            # of looping host-by-host. This lets nix's scheduler interleave
+            # derivations across all six closures at once -- shared store paths
+            # build once, and every host's independent work competes for the 19
+            # remote builders together, rather than draining one host's queue
+            # before the next host's build is even evaluated. `--keep-going`
+            # means a failure in one host's closure doesn't stop the others from
+            # finishing, so a single run gives a full pass/fail picture instead
+            # of stopping at the first broken host.
+            HOSTS="europa callisto amalthea metis adrastea thebe"
+            INSTALLABLES=()
+            for host in $HOSTS; do
+              INSTALLABLES+=(".#nixosConfigurations.$host.config.system.build.toplevel")
+            done
+
+            OUT_PATHS="/tmp/outpaths-${RUN_ID}"
+            set +e  # Don't exit on build failure, we need to report it
+
+            printf '@nix {"action":"msg","level":2,"msg":"=== jupiter-ci %s: building all hosts (%s) ==="}\n' \
+              "$RUN_ID" "$HOSTS" >> "$NOM_LOG"
+
+            # 2>&1 1>"$OUT_PATHS": stderr (the json log) into the pipe first,
+            # then stdout (--print-out-paths) aside to a file. Order matters.
+            nix build "${INSTALLABLES[@]}" \
+              --builders "@$MACHINES_FILE" \
+              --builders-use-substitutes \
+              --max-jobs auto \
+              --keep-going \
+              --print-out-paths --no-link --fallback \
+              --log-format internal-json 2>&1 1>"$OUT_PATHS" \
+              | stdbuf -o0 tee -a "$NOM_LOG" \
+              | { stdbuf -o0 jq -rR --unbuffered "$NOM_TO_HUMAN" || cat; }
+            # pipefail is on, so $? is the pipeline's -- nix's own status is
+            # PIPESTATUS[0].
+            BUILD_EXIT=${PIPESTATUS[0]}
+
+            echo "Out paths:"
+            cat "$OUT_PATHS"
+            echo "nom log: $NOM_LOG ($(du -h "$NOM_LOG" | cut -f1), $(wc -l < "$NOM_LOG") events)"
+
+            # --keep-going means a host that failed doesn't take its siblings
+            # down with it, but the single combined exit code can't say which
+            # host was which -- check each host's toplevel individually against
+            # the local store to render a per-host table.
+            echo "========================================"
+            echo "Per-host result:"
+            echo "========================================"
+            for host in $HOSTS; do
+              out=$(nix eval --raw ".#nixosConfigurations.$host.config.system.build.toplevel" 2>/dev/null)
+              if [ -n "$out" ] && nix path-info "$out" >/dev/null 2>&1; then
+                echo "  OK   $host -> $out"
+              else
+                echo "  FAIL $host"
+              fi
+            done
+
+            if [ $BUILD_EXIT -eq 0 ]; then
+              echo "========================================"
+              echo "All builds completed successfully"
+              echo "========================================"
+            else
+              echo "========================================"
+              echo "Build failed for one or more hosts -- see table above"
+              echo "  full log (with builder output): $NOM_LOG" >&2
+              echo "  replay: ssh root@europa \"nom --json < $NOM_LOG\"" >&2
+              echo "========================================"
+            fi
+
+            exit $BUILD_EXIT
+          EUROPA_SCRIPT
+
+      - name: Report build status
+        if: always()
+        run: echo "Build workflow completed"
+
+  report:
+    name: build stats
+    needs: [ builder, build-on-europa ]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: builder-stats-*
+          path: stats
+
+      - name: Render summary
+        run: |
+          python3 scripts/ci/render-build-stats.py stats | tee -a "$GITHUB_STEP_SUMMARY"
