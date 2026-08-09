@@ -61,15 +61,16 @@ Nix remote builder **and** MQTT broker.
   Do NOT rebuild callisto locally without verifying Harmonia has it first
   (`nix path-info --substituters http://10.1.1.2:5000 <toplevel>`).
 
-## pallene — Kamatera VPS build server (not a fleet member)
+## pallene — Kamatera VPS (not a fleet member)
 
-Persistent, disk-booted from a raw image built via `nix build .#pallene-raw`.
-Tuned `cores=1 max-jobs=auto` for full-closure rebuilds (many small packages in
-parallel) — the inverse of callisto's `cores=6 max-jobs=1` incremental-shared
-profile. Migrated from the earlier ephemeral BinaryLane ISO design
-(`c478b67`); the old BinaryLane code (`hosts/pallene/configuration.nix`,
-`modules/services/build-server.nix` paths, `scripts/binarylane-*`) is orphaned
-dead code pending a separate cleanup.
+Persistent, disk-booted from a raw image built via `nix build .#pallene-raw`
+(`hosts/pallene/disk-configuration.nix`, built with nixpkgs' make-disk-image.nix).
+The earlier ephemeral BinaryLane ISO build-server design
+(`hosts/pallene/configuration.nix` + `modules/services/build-server.nix` +
+`scripts/binarylane-*`) has been removed as orphaned dead code. Note:
+`modules/services/pallene-watchdog.nix` (still enabled on europa) was written to
+backstop that BinaryLane path and is now itself orphaned — pending a retire
+decision.
 
 ## Roadmap hosts
 

@@ -4,10 +4,11 @@
   ...
 }:
 
-# Per-host CPU microarchitecture tuning for the "rebuild the world" workflow:
-# the disposable BinaryLane build server (pallene) compiles each host's
-# closure targeting that host's own CPU rather than nixpkgs' portable
-# baseline, then pushes the result to the attic cache for that host to pull.
+# Per-host CPU microarchitecture tuning. A host that sets `microarch` has its
+# closure compiled targeting its own CPU (rather than nixpkgs' portable
+# baseline); CI builds it and pushes the result to Harmonia for that host to
+# substitute. (Historically this was driven by a disposable BinaryLane build
+# server — that path is gone; CI→Harmonia replaced it, #63.)
 #
 # CAUTION: this only changes what gets *built*, not what a host is willing to
 # *run* — a host will happily boot a closure built with instructions its CPU
@@ -34,9 +35,8 @@ in
 
       Setting this invalidates cache.nixos.org for the host's ENTIRE closure
       (every derivation is tagged requiredSystemFeatures = ["gccarch-<arch>"]),
-      so a private attic cache must serve the result. The build server
-      (modules/services/build-server.nix) declares the matching system-feature
-      so it can build these tagged derivations.
+      so a private cache (Harmonia) must serve the result. CI declares the
+      matching system-feature so it can build these tagged derivations.
     '';
   };
 
@@ -49,13 +49,13 @@ in
 
     # Declare this host's own nix-daemon capable of building (not just
     # substituting) its own gccarch-tagged derivations. Without this, a host
-    # whose tuned closure has any gap in the attic cache (missing OR
+    # whose tuned closure has any gap in Harmonia (missing OR
     # corrupted — observed 2026-07-18 on europa) hits a hard "missing system
     # features" error the moment it needs to build/--fallback on its own,
     # even though the host's CPU is BY DEFINITION the exact target hardware
     # and can always correctly build+run its own microarch. This is the safe
     # case the module-level CAUTION above doesn't apply to — that caution is
-    # about the DISPOSABLE builder (pallene) possibly running on different,
+    # about a remote builder (e.g. a CI runner) possibly running on different,
     # unconfirmed hardware; a tuned host building for itself has no such gap.
     nix.settings.system-features = lib.mkAfter [ "gccarch-${cfg.microarch}" ];
   };

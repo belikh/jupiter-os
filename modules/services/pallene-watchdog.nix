@@ -5,16 +5,16 @@
   ...
 }:
 
-# External backstop for the ephemeral BinaryLane "pallene" build server
-# (modules/services/build-server.nix). That module already self-destructs on
-# every exit path via a bash EXIT trap, plus its own in-VM 6h force-destroy
-# timer — but both live *inside* pallene, so neither covers:
-#   (1) a SIGKILL (the OOM killer, which the branch's own testing triggered
-#       under the full btver2 bootstrap) skips bash's EXIT trap entirely;
-#   (2) a stale/rotated BinaryLane token baked into an old ISO can't destroy
-#       anything no matter how the in-VM logic retries.
-# This runs on europa instead: a different host, polling on a short interval,
-# using a token sourced fresh from sops rather than the ISO-baked copy.
+# ORPHANED — pending retire decision. This watchdog was written to backstop
+# the ephemeral BinaryLane "pallene" build server (modules/services/build-server.nix,
+# now DELETED — the Kamatera VPS in hosts/pallene/disk-configuration.nix is the
+# live pallene). It still destroys any BinaryLane server named pallene* older
+# than the budget, which only matters if stray BinaryLane servers exist from
+# before the switch. Retire it once confirmed none remain. It runs on europa —
+# a different host from pallene — polling on a short interval, using a token
+# sourced fresh from sops. Historically it covered the two gaps the in-VM
+# self-destruct couldn't: a SIGKILL skipping bash's EXIT trap, and a stale
+# ISO-baked BinaryLane token.
 #
 # BinaryLane's server-list response schema isn't relied on for an age field
 # (unverified from here) — instead this tracks "first seen by this watchdog"
@@ -75,9 +75,7 @@ in
       default = config.sops.secrets.binarylane_api_token.path;
       description = ''
         Path to the decrypted BinaryLane API token, sourced fresh from sops
-        on europa rather than the copy baked into the pallene ISO by
-        `make pallene-iso` — so a rotated token that hasn't made it into a
-        fresh ISO build yet doesn't also blind this watchdog.
+        on europa.
       '';
     };
 
@@ -86,10 +84,8 @@ in
       default = 4;
       description = ''
         Destroy any BinaryLane server named `pallene*` once this watchdog
-        has observed it for this many hours. Deliberately tighter than
-        build-server.nix's own in-VM 6h force-destroy timer: real
-        rebuild-the-world runs have taken up to ~3h in practice (full
-        btver2 bootstrap), so 4h leaves headroom for a genuine run while
+        has observed it for this many hours. 4h leaves headroom for a genuine
+        run (rebuild-the-world runs have taken up to ~3h in practice) while
         still bounding the cost of a stuck one — and this covers the two
         gaps the in-VM timer can't (a SIGKILL skips bash's EXIT trap; a
         stale token baked into an old ISO can't self-destroy at all).

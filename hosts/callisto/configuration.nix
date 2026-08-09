@@ -131,13 +131,6 @@
   boot.loader.grub.enable = false; # no bootloader on iSCSI LUN
 
   # ---- Build daemon tuning for the shared-builder workload ----------------
-  # callisto's actual workload is the OPPOSITE of pallene's
-  # (modules/services/build-server.nix). Pallene does full-closure
-  # rebuilds-from-scratch: wide shallow dependency graph, many small
-  # packages, so pallene correctly picks cores=1 + max-jobs=auto(N) — full
-  # utilization through cross-package parallelism, the standard Hydra
-  # build-farm pattern.
-  #
   # callisto is a SHARED incremental builder for the fleet: when any host
   # does `nixos-rebuild`, only the few packages that actually changed get
   # dispatched here (the rest substitute from cache.nixos.org / Harmonia). Low

@@ -7,13 +7,6 @@ result-*
 *.qcow2
 *-efi-vars.fd
 
-# Real pallene build-server tokens — materialized from sops by `make
-# pallene-iso` around the ISO build, then deleted. Only the *.placeholder
-# files are committed (so eval always resolves); the real plaintext must
-# never land in the store or git.
-secrets/pallene-secrets/*
-!secrets/pallene-secrets/*.placeholder
-
 # Python bytecode (scripts/ are run in place)
 __pycache__/
 *.pyc

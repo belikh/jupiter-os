@@ -281,10 +281,10 @@
         # over ext4-iSCSI on europa's zvol).
         callisto = mkHost ./hosts/callisto/configuration.nix [ ];
 
-        # Kamatera VPS build server (persistent, disk-booted). The raw disk image
-        # is built with nixos-generators, compressed, and served via europa's
-        # vps-image-server + Cloudflare Tunnel for Kamatera's "Import from URL"
-        # flow. See hosts/pallene/disk-configuration.nix.
+        # Kamatera VPS (persistent, disk-booted; not a fleet member — built
+        # standalone, not via mkHost). The raw disk image is built with nixpkgs'
+        # make-disk-image.nix (see hosts/pallene/disk-configuration.nix),
+        # compressed, and served for Kamatera's "Import from URL" flow.
         pallene = nixpkgs.lib.nixosSystem {
           system = "x86_64-linux";
           modules = [ ./hosts/pallene/disk-configuration.nix ];

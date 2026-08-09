@@ -17,7 +17,7 @@
 #
 # Ops prerequisite (one-time, manual): forward wireguardPort/UDP on the home
 # router to europa, and set pallene's peer `endpoint` to europa's public WG
-# endpoint (WAN IP or DDNS hostname). See hosts/pallene/configuration.nix.
+# endpoint (WAN IP or DDNS hostname).
 
 let
   cfg = config.jupiter.network.wireguard;
@@ -54,9 +54,7 @@ in
       type = lib.types.path;
       description = ''
         Path to this host's WireGuard private key. On europa this is a sops
-        secret decrypted at activation; on pallene (no persistent host key)
-        it's written at boot time from cloud-init user-data — see
-        modules/services/build-server.nix's wireguardPrivateKeyFile option.
+        secret decrypted at activation.
       '';
     };
 
