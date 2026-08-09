@@ -361,9 +361,8 @@ in
     # skylake-tagged closure (now callisto's and its own too); today the
     # practical value is generic x86_64-linux build capacity for any host's
     # closure. Same "can build it without being it" pattern as callisto
-    # (hosts/callisto/configuration.nix) for OTHER hosts' derivations — this
-    # kiosk's own closure is tuned above, unlike callisto's untuned-builder
-    # role.
+    # (hosts/callisto/configuration.nix) for OTHER hosts' derivations. This
+    # kiosk's own closure is tuned above (skylake); callisto's is too now.
     #
     # gccarch-btver2 (added 2026-07-20, matching modules/core/build-machines.nix's
     # kioskBuilders supportedFeatures): makes kiosks eligible to help build

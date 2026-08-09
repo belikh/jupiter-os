@@ -9,15 +9,11 @@
 # 4 idle dashboard kiosks as a shared pool of remote Nix builders,
 # fleet-wide by default.
 #
-# callisto's SSH host key checking is disabled for its one Host entry below
-# rather than pinned via publicHostKey. This was written when callisto was
-# diskless/RAM-resident (regenerating its host key every boot, so there was
-# no stable key to pin). It now has a persistent root over iSCSI (see
-# hosts/callisto/configuration.nix) and a stable key going forward — but
-# that key doesn't exist yet before first boot/provisioning, so this is
-# left as-is rather than guessed at. TODO once callisto is actually
-# provisioned: capture its real host key and switch this to publicHostKey
-# pinning like every other build machine would normally get.
+# callisto's SSH host key is pinned via programs.ssh.knownHosts below
+# (captured 2026-07-24 once it gained a persistent iSCSI root — see
+# hosts/callisto/configuration.nix), with the build key wired through
+# programs.ssh.extraConfig (IdentitiesOnly). adrastea is omitted from
+# knownHosts: not installed yet, add its key once provisioned.
 # Authenticates as root using a dedicated keypair (not the admin's
 # own): the private half is the nix_build_ssh_key sops secret, deployed
 # fleet-wide; the public half is baked into callisto's own and every kiosk's

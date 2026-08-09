@@ -157,18 +157,17 @@
   nix.settings.cores = 6;
   nix.settings.max-jobs = 1;
 
-  # Advertise capability to BUILD other hosts' microarch-tuned derivations
-  # without tuning callisto's own closure (no jupiter.build.microarch here —
-  # callisto itself stays on the portable baseline). Without the matching
-  # gccarch-<arch> feature, Nix refuses to even attempt a tagged derivation
-  # here regardless of whether the CPU could run it — same mechanism as
-  # pallene's jupiter.services.buildServer.microarchs.
+  # Advertise capability to BUILD other hosts' microarch-tuned derivations.
+  # callisto's own closure is ALSO skylake-tuned now (jupiter.build.microarch
+  # = "skylake" below), so this advert matches its own tag. Without the
+  # matching gccarch-<arch> feature, Nix refuses to even attempt a tagged
+  # derivation here regardless of whether the CPU could run it.
   #
   # CPU confirmed 2026-07-20: i5-8500T is Coffee Lake, a strict ISA superset
   # of Skylake — so the gccarch-skylake advert is safe both ways (callisto
   # can compile skylake-tagged code AND run it in any checkPhase). This is
-  # what makes the eventual kiosk tuning (also skylake, i5-6300U) safe to
-  # dispatch here.
+  # what makes the kiosk tuning (also skylake, i5-6300U) safe to dispatch
+  # here.
   nix.settings.system-features = lib.mkAfter [
     "gccarch-btver2"
     "gccarch-skylake"

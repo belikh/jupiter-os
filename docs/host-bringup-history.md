@@ -34,14 +34,14 @@ Awaiting physical install (see `.sops.yaml`).
 HPE MicroServer Gen10 (AMD Opteron X3216 APU, btver2/Puma, 8GB ECC), the ZFS
 NAS + data hub + PXE server.
 
-- Runs the **untuned** closure from cache.nixos.org.
-- **btver2 rollback (`e10a46a`):** `jupiter.build.microarch = "btver2"` was
-  rolled back to unblock the arcade bring-up — ZFS 2.4.3 has a kernel-build
-  issue with btver2 on nixpkgs 26.11. The line sits commented-out with a TODO
-  in `hosts/europa/configuration.nix`. Re-enable once the ZFS/nixpkgs compat
-  clears.
-- Attic cache (`attic.jupiter.au` / `neptune.jupiter.au:8080` port-forward) and
-  substituter wiring remain in place for when btver2 comes back online.
+- **btver2 rollback (`e10a46a`, 2026-07):** `jupiter.build.microarch = "btver2"`
+  was rolled back to unblock the arcade bring-up (ZFS 2.4.3 / nixpkgs 26.11
+  kernel-build issue), with the line left commented-out in
+  `hosts/europa/configuration.nix`.
+- **btver2 re-enabled:** once the CI→Harmonia push pipeline worked
+  end-to-end, europa moved to the **btver2-tuned** closure — CI-built and
+  served via Harmonia (`:5000` / `cache.jupiter.au`), substituting ahead of
+  cache.nixos.org. The earlier Attic cache was decommissioned (issue #63).
 
 ## callisto — `10.1.1.3`
 
@@ -55,12 +55,11 @@ Nix remote builder **and** MQTT broker.
 - **2026-07-24:** confirmed live deploying the **MQTT broker move** (mosquitto
   relocated amalthea → callisto, to decouple the broker from a kiosk's
   impermanent/appliance lifecycle). sops decrypts fine at activation.
-- Build-server tuning (`cores=6 max-jobs=1`) is committed in git; the **running
-  closure is stale relative to HEAD** and needs a deploy to take effect.
-- `jupiter.build.microarch = "skylake"` is a **roadmap entry only** — committed
-  but NOT deployed. Pallene must build and push the skylake-tagged closure to
-  attic before callisto's next `nixos-rebuild` (same sequence europa's btver2
-  closure followed).
+- Build-server tuning (`cores=6 max-jobs=1`) is committed in git.
+- `jupiter.build.microarch = "skylake"` is **enabled** — CI builds and pushes
+  the skylake-tagged closure to Harmonia (same pipeline as europa's btver2).
+  Do NOT rebuild callisto locally without verifying Harmonia has it first
+  (`nix path-info --substituters http://10.1.1.2:5000 <toplevel>`).
 
 ## pallene — Kamatera VPS build server (not a fleet member)
 
