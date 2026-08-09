@@ -156,11 +156,21 @@ jobs:
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           extra_nix_config: |
-            substituters = https://cache.jupiter.au https://cache.nixos.org
+            # Harmonia throttle + cache.nixos.org-first. nix's defaults
+            # (max-substitution-jobs 16, http-connections 25) across 19 builders
+            # meant hundreds of concurrent connections to cache.jupiter.au and
+            # overloaded it. Cap each builder to 1 substitution job / 2 http
+            # connections (19 x 1 = 19 jobs, 19 x 2 = 38 conns fleet-wide).
+            # cache.nixos.org first so Harmonia is only queried for paths the
+            # public cache lacks (the tuned closures), not a 404 per standard
+            # path. http2=false => 1 connection per concurrent fetch.
+            substituters = https://cache.nixos.org https://cache.jupiter.au
             trusted-public-keys = ${{ secrets.HARMONIA_PUBLIC_KEY }} cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
             connect-timeout = 5
             trusted-users = root runner
             http2 = false
+            max-substitution-jobs = 1
+            http-connections = 2
             system-features = kvm benchmark big-parallel gccarch-btver2 gccarch-skylake
             cores = 4
             max-jobs = 1
@@ -354,7 +364,13 @@ jobs:
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           extra_nix_config: |
-            substituters = https://cache.jupiter.au https://cache.nixos.org
+            # cache.nixos.org first: the coordinator pulls the bulk of the
+            # closure, so reordered to hit Harmonia only for tuned/custom paths
+            # the public cache lacks (not a 404 for every standard path).
+            # Coordinator keeps nix's default substitution-job/connection caps —
+            # single node (not 19x), and after the reorder its parallel pulls
+            # land on cache.nixos.org, not Harmonia.
+            substituters = https://cache.nixos.org https://cache.jupiter.au
             trusted-public-keys = ${{ secrets.HARMONIA_PUBLIC_KEY }} cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
             connect-timeout = 5
             builders-use-substitutes = true
