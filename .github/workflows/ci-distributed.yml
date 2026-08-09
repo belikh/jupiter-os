@@ -615,10 +615,6 @@ jobs:
               >> /tmp/machines
           done
 
-          # Add coordinator itself as a builder (20th slot)
-          echo "  Adding coordinator as builder (localhost)"
-          echo "ssh-ng://runner@127.0.0.1 x86_64-linux $HOME/.ssh/ci_builder_key 4 1 kvm,benchmark,big-parallel,gccarch-btver2,gccarch-skylake -" \
-            >> /tmp/machines
           sudo install -m 644 /tmp/machines /etc/nix/machines
           cat /etc/nix/machines
           # nix.conf's default `builders = @/etc/nix/machines` picks this up;
@@ -712,9 +708,12 @@ jobs:
           # --builders "@/etc/nix/machines" tells nix to read that file.
           # 2>&1 1>"$OUT_PATHS": stderr (the json log) piped to europa via ssh tee,
           # then stdout (--print-out-paths) aside to a file. Order matters.
-          # --max-jobs 0: force EVERY derivation onto the remote builders in
-          # /etc/nix/machines (the 19 + localhost). The coordinator is a
-          # dispatch-only scheduler, NOT a builder. A previous `--max-jobs auto`
+          # --max-jobs 0: force EVERY derivation onto the 19 remote builders in
+          # /etc/nix/machines. The coordinator is dispatch-only — there is no
+          # localhost self-builder entry, deliberately: a 127.0.0.1 slot would
+          # build on the coordinator, where the only push path (push-daemon →
+          # europa-build) has no working target, so anything it built went
+          # unsent to Harmonia. A previous `--max-jobs auto`
           # silently undid this: Nix reads `max-jobs = auto` as "one local slot
           # per core" (=4 on the runner), overriding nix.conf's `max-jobs = 0`
           # and making the coordinator build locally — which is why all 19
