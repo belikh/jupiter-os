@@ -152,7 +152,7 @@ jobs:
           restore-keys: |
             nix-${{ runner.os }}-nixpkgs-${{ hashFiles('flake.lock') }}-
 
-      - uses: cachix/install-nix-action@v31
+      - uses: cachix/install-nix-action@b4b293eae0b79aac8a161bb32925a5508c9cca93 # v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           extra_nix_config: |
@@ -350,7 +350,7 @@ jobs:
           swap-storage: true
           tool-cache: true
 
-      - uses: cachix/install-nix-action@v31
+      - uses: cachix/install-nix-action@b4b293eae0b79aac8a161bb32925a5508c9cca93 # v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           extra_nix_config: |

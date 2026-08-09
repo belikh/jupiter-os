@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@v31
+      - uses: cachix/install-nix-action@b4b293eae0b79aac8a161bb32925a5508c9cca93 # v31
       - name: Check formatting
         run: nix run nixpkgs#nixfmt-rfc-style -- --check .
       - name: Flake check (evaluates every host)
@@ -70,7 +70,7 @@ jobs:
           sudo install -d -m 755 /opt/ci
           sudo cp scripts/ci/post-build-hook.sh scripts/ci/cache-drainer.sh scripts/ci/retain-recent.sh /opt/ci/
           sudo chmod 755 /opt/ci/*.sh
-      - uses: cachix/install-nix-action@v31
+      - uses: cachix/install-nix-action@b4b293eae0b79aac8a161bb32925a5508c9cca93 # v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           extra_nix_config: |
