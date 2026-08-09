@@ -644,10 +644,10 @@ jobs:
       # picture instead of stopping at the first broken host.
       #
       # nom-tailable build log: `--log-format internal-json` is the wire format
-      # nix-output-monitor consumes. Tee nix's stderr to a file so a human can
-      # attach to a running CI build at any time:
+      # nix-output-monitor consumes. The log is written to europa so it can be
+      # tailed live from there:
       #
-      #   tail -n +1 -F /tmp/nom-${{ github.run_id }}.jsonl | nom --json
+      #   ssh -t root@europa 'tail -n +1 -F /var/log/jupiter-ci/current.jsonl | nom --json'
       #
       # `tail -n +1` replays from byte 0, so nom's table reflects the whole
       # build even when you attach late; the same file replays after the fact
@@ -655,15 +655,39 @@ jobs:
       # log line (result type 101), which the CI transcript does not.
       # Nix emits exactly one log format, so the human-readable CI transcript
       # is reconstructed from the same stream with jq.
-      - name: Build all hosts (parallel across 19 builders, nom log)
+      - name: Build all hosts (parallel across 19 builders, nom log on europa)
         env:
           RUN_ID: ${{ github.run_id }}
+          EUROPA_SSH_KEY: ${{ secrets.EUROPA_SSH_KEY }}
         run: |
-          NOM_DIR=/tmp
-          NOM_LOG="$NOM_DIR/nom-${RUN_ID}.jsonl"
-          : > "$NOM_LOG"
-          echo "nom log: $NOM_LOG (symlinked as $NOM_DIR/current.jsonl)"
-          ln -sfn "$NOM_LOG" "$NOM_DIR/current.jsonl"
+          # Set up SSH to europa for nom log streaming
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$EUROPA_SSH_KEY" > "$HOME/.ssh/europa_ci"
+          chmod 600 "$HOME/.ssh/europa_ci"
+          {
+            echo "Host europa-log"
+            echo "  HostName europa"
+            echo "  User root"
+            echo "  IdentityFile $HOME/.ssh/europa_ci"
+            echo "  StrictHostKeyChecking accept-new"
+          } >> "$HOME/.ssh/config"
+
+          # Prepare nom log directory on europa
+          NOM_LOG="/var/log/jupiter-ci/nom-${RUN_ID}.jsonl"
+          ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-log \
+            "mkdir -p /var/log/jupiter-ci && : > '$NOM_LOG' && ln -sfn '$NOM_LOG' /var/log/jupiter-ci/current.jsonl"
+
+          NOM_TIP="ssh -t root@europa 'tail -n +1 -F /var/log/jupiter-ci/current.jsonl | nom --json'"
+          echo "::notice title=Watch this build in nom::$NOM_TIP"
+          {
+            echo "### Watch this build live in \`nom\`"
+            echo
+            echo '```bash'
+            echo "$NOM_TIP"
+            echo '```'
+            echo
+            echo "Per-run log: \`/var/log/jupiter-ci/nom-${RUN_ID}.jsonl\` (replay after the fact with \`nom --json < <file>\`)."
+          } >> "$GITHUB_STEP_SUMMARY"
 
           NOM_TO_HUMAN='if (startswith("@nix ") | not) then .
             else (.[5:] | (fromjson? // empty)
@@ -682,10 +706,11 @@ jobs:
           OUT_PATHS="/tmp/outpaths-${RUN_ID}"
           set +e  # Don't exit on build failure, we need to report it
 
+          # Write header to europa's nom log
           printf '@nix {"action":"msg","level":2,"msg":"=== jupiter-ci %s: building all hosts (%s) ==="}\n' \
-            "$RUN_ID" "$HOSTS" >> "$NOM_LOG"
+            "$RUN_ID" "$HOSTS" | ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-log "cat >> '$NOM_LOG'"
 
-          # 2>&1 1>"$OUT_PATHS": stderr (the json log) into the pipe first,
+          # 2>&1 1>"$OUT_PATHS": stderr (the json log) piped to europa via ssh tee,
           # then stdout (--print-out-paths) aside to a file. Order matters.
           nix build "${INSTALLABLES[@]}" \
             --builders "@$MACHINES_FILE" \
@@ -694,7 +719,7 @@ jobs:
             --keep-going \
             --print-out-paths --no-link --fallback \
             --log-format internal-json 2>&1 1>"$OUT_PATHS" \
-            | stdbuf -o0 tee -a "$NOM_LOG" \
+            | stdbuf -o0 tee >(ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-log "cat >> '$NOM_LOG'") \
             | { stdbuf -o0 jq -rR --unbuffered "$NOM_TO_HUMAN" || cat; }
           # pipefail is on, so $? is the pipeline's -- nix's own status is
           # PIPESTATUS[0].
@@ -702,7 +727,8 @@ jobs:
 
           echo "Out paths:"
           cat "$OUT_PATHS"
-          echo "nom log: $NOM_LOG ($(du -h "$NOM_LOG" | cut -f1), $(wc -l < "$NOM_LOG") events)"
+          ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-log \
+            "echo \"nom log: $NOM_LOG (\$(du -h '$NOM_LOG' | cut -f1), \$(wc -l < '$NOM_LOG') events)\""
 
           # --keep-going means a host that failed doesn't take its siblings
           # down with it, but the single combined exit code can't say which
