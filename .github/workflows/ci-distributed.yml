@@ -355,11 +355,9 @@ jobs:
             builders-use-substitutes = true
             http2 = false
             fallback = true
-            # No local system-features override here — coordinator does not
-            # build anything itself, it only evaluates + dispatches, so it
-            # doesn't need gccarch-*/big-parallel locally. Keep max-jobs low
-            # so the scheduler prefers dispatching to the 19 remote builders
-            # over doing work on this runner's own weak CPU.
+            # Coordinator must advertise features so it doesn't reject
+            # derivations requiring them, even with max-jobs=0 (dispatch only)
+            system-features = kvm benchmark big-parallel gccarch-btver2 gccarch-skylake
             max-jobs = 0
 
       - name: Install async push system (post-build-hook + daemon)
