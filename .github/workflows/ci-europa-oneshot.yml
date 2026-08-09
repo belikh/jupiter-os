@@ -52,14 +52,14 @@ jobs:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           extra_nix_config: |
             system-features = kvm benchmark big-parallel gccarch-btver2 gccarch-skylake
-            substituters = https://cache.nixos.org
-            trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+            substituters = https://cache.nixos.org https://cache.jupiter.au
+            trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= jupiter-cache-1:5tPIwQSj5/mk53jBHqqsAk9IpcuTGz/2UQOdHvjTId0=
             connect-timeout = 30
             trusted-users = root runner
             http2 = false
             fallback = true
             cores = 4
-            max-jobs = 2
+            max-jobs = 1
 
       - name: Verify nix.conf has btver2
         run: |
@@ -116,6 +116,34 @@ jobs:
           for i in {1..5}; do
             ping -c 1 -W 2 europa >/dev/null 2>&1 && echo "Ping $i: OK" || echo "Ping $i: FAILED"
           done
+
+      - name: Install async push system (post-build-hook + daemon)
+        run: |
+          # Copy scripts from repo
+          sudo install -m 755 ${{ github.workspace }}/scripts/ci/post-build-hook.sh /usr/local/bin/nix-post-build-hook
+          sudo install -m 755 ${{ github.workspace }}/scripts/ci/push-daemon.sh /usr/local/bin/nix-push-daemon
+
+          # Create FIFO and log files
+          sudo mkdir -p /var/run /var/log
+          sudo mkfifo -m 600 /var/run/nix-push-fifo 2>/dev/null || true
+          sudo touch /var/log/nix-push-hook.log /var/log/nix-push-daemon.log
+          sudo chmod 644 /var/log/nix-push-hook.log /var/log/nix-push-daemon.log
+
+          # Start push daemon in background
+          sudo nohup /usr/local/bin/nix-push-daemon >/dev/null 2>&1 &
+          DAEMON_PID=$!
+          echo "PUSH_DAEMON_PID=$DAEMON_PID" >> $GITHUB_ENV
+          echo "Push daemon started (PID: $DAEMON_PID)"
+
+          # Configure nix to use post-build-hook (requires daemon restart)
+          sudo tee -a /etc/nix/nix.conf > /dev/null <<'EOF'
+          post-build-hook = /usr/local/bin/nix-post-build-hook
+          EOF
+          sudo systemctl restart nix-daemon
+          echo "nix-daemon restarted with post-build-hook"
+
+          # Verify hook is active
+          nix show-config post-build-hook
 
       - name: Start build-stats sampler
         run: |
@@ -204,11 +232,15 @@ jobs:
       - name: Configure Nix for build
         run: |
           sudo tee -a /etc/nix/nix.conf > /dev/null <<'EOF'
-          substituters = https://cache.nixos.org
-          trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+          system-features = kvm benchmark big-parallel gccarch-btver2 gccarch-skylake
+          substituters = https://cache.nixos.org https://cache.jupiter.au
+          trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= jupiter-cache-1:5tPIwQSj5/mk53jBHqqsAk9IpcuTGz/2UQOdHvjTId0=
           connect-timeout = 30
-          fallback = true
+          trusted-users = root runner
           http2 = false
+          fallback = true
+          cores = 4
+          max-jobs = 1
           EOF
           sudo systemctl restart nix-daemon
 
@@ -263,7 +295,7 @@ jobs:
             echo "  StrictHostKeyChecking accept-new"
           } >> "$HOME/.ssh/config"
 
-          # Discover builders from tailnet on this runner
+# Discover builders from tailnet on this runner
           echo "Discovering builders..."
           BUILDERS_ARRAY=()
           for idx in {1..19}; do
@@ -271,20 +303,20 @@ jobs:
             ip=$(tailscale status --json 2>/dev/null | jq -r --arg w "$want" \
               '.Peer // {} | to_entries[] | .value
                | select(((.HostName // "") | startswith($w))
-                     or ((.DNSName  // "") | startswith($w)))
-               | (.TailscaleIPs // [])
-               | map(select(contains(":") | not))
-               | .[0] // empty' 2>/dev/null | head -1)
+                      or ((.DNSName  // "") | startswith($w)))
+                | (.TailscaleIPs // [])
+                | map(select(contains(":") | not))
+                | .[0] // empty' 2>/dev/null | head -1)
 
             if [ -n "$ip" ]; then
               echo "  Found $want: $ip"
-              # ?compress=true -> ssh -C (zlib) on the nix-daemon stream. Off by
-              # default in nix, and europa's home uplink is the bottleneck, not
-              # its cores: a 256MB sample of the ghc-9.10.3 NAR (1.93GB total,
-              # pushed to each builder separately) shrinks 6.4x under gzip -6.
-              BUILDERS_ARRAY+=("ssh-ng://runner@${ip}?compress=true x86_64-linux /root/.ssh/ci_builder_key 4 1 kvm,benchmark,big-parallel,gccarch-btver2,gccarch-skylake -")
+              BUILDERS_ARRAY+=("ssh-ng://runner@${ip}?ssh-options=-o Ciphers=chacha20-poly1305@openssh.com -o MACs=hmac-sha2-256-etm@openssh.com -o Compression=no x86_64-linux /root/.ssh/ci_builder_key 4 1 kvm,benchmark,big-parallel,gccarch-btver2,gccarch-skylake -")
             fi
           done
+
+          # Add coordinator itself as a builder (20th slot)
+          echo "  Adding coordinator as builder (localhost)"
+          BUILDERS_ARRAY+=("ssh-ng://runner@127.0.0.1?ssh-options=-o Ciphers=chacha20-poly1305@openssh.com -o MACs=hmac-sha2-256-etm@openssh.com -o Compression=no x86_64-linux /root/.ssh/ci_builder_key 4 1 kvm,benchmark,big-parallel,gccarch-btver2,gccarch-skylake -")
 
           if [ ${#BUILDERS_ARRAY[@]} -eq 0 ]; then
             echo "ERROR: No builders found"
@@ -452,7 +484,7 @@ jobs:
             nix build "${INSTALLABLES[@]}" \
               --builders "@$MACHINES_FILE" \
               --builders-use-substitutes \
-              --max-jobs auto \
+              --max-jobs 20 \
               --keep-going \
               --print-out-paths --no-link --fallback \
               --log-format internal-json 2>&1 1>"$OUT_PATHS" \

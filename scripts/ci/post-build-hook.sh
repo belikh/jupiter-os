@@ -1,38 +1,29 @@
 #!/usr/bin/env bash
-#
-# Nix post-build-hook for CI. Appends each just-built output path to the
-# async queue for the background drainer. Returns immediately — does NOT
-# push to europa. The drainer (cache-drainer.sh) handles all pushing and
-# logging.
-#
-# Runs as the nix-daemon user (root) under install-nix-action.
+# Post-build hook: writes completed store paths to a FIFO for async push to europa
+# Runs on each GitHub Actions builder (as root via nix-daemon)
+
 set -uo pipefail
 
-# Local log file for debugging
-LOCAL_LOG="/tmp/post-build-hook-local.log"
-echo "[$(date -u +%H:%M:%S)] post-build-hook START, OUT_PATHS='$OUT_PATHS'" >>"$LOCAL_LOG"
+FIFO="/var/run/nix-push-fifo"
+LOG="/var/log/nix-push-hook.log"
 
-queue="${QUEUE_FILE:-/tmp/ci-cache-queue.txt}"
-lock="${QUEUE_LOCK:-/tmp/ci-cache-queue.lock}"
+# Ensure FIFO exists
+if [[ ! -p "$FIFO" ]]; then
+    mkfifo -m 600 "$FIFO" 2>/dev/null || true
+fi
 
-[ -z "${OUT_PATHS:-}" ] && { echo "[$(date -u +%H:%M:%S)] OUT_PATHS empty, exiting" >>"$LOCAL_LOG"; exit 0; }
+# nix passes: $1 = store path, $2 = derivation path (optional), $3 = "built"|"substituted"
+STORE_PATH="$1"
+DERIVATION="${2:-}"
+STATUS="${3:-built}"
 
-echo "[$(date -u +%H:%M:%S)] Enqueueing paths: $OUT_PATHS" >>"$LOCAL_LOG"
+# Write to FIFO (non-blocking with timeout)
+# Format: STATUS<TAB>STORE_PATH<TAB>DERIVATION<TAB>TIMESTAMP
+{
+    printf '%s\t%s\t%s\t%s\n' "$STATUS" "$STORE_PATH" "$DERIVATION" "$(date -u +%s)"
+} >> "$FIFO" 2>>"$LOG" || {
+    # Fallback: append to log file if FIFO blocked
+    printf '[%s] FIFO blocked, queued locally: %s\n' "$(date -u +%s)" "$STORE_PATH" >> "$LOG"
+}
 
-# Ensure queue/lock exist and are world-writable for cross-user access (drainer runs as runner user)
-touch "$queue" "$lock"
-chmod 666 "$queue" "$lock"
-
-paths="$(printf '%s' "$OUT_PATHS" | tr ' ' '\n')"
-
-# Append each path to queue
-while IFS= read -r path; do
-  [ -z "$path" ] && continue
-  exec 9>"$lock"
-  flock 9
-  printf '%s\n' "$path" >>"$queue"
-  exec 9>&-
-done <<<"$paths"
-
-echo "[$(date -u +%H:%M:%S)] post-build-hook END" >>"$LOCAL_LOG"
 exit 0

@@ -99,7 +99,9 @@ refs (MQTT, builds) dial it by IP.
   (the `nm-file-secret-agent` D-Bus secret agent), NOT an `environmentFiles` +
   `envsubst` + custom service pipeline.
 - **Git:** always `git push` after committing — the user wants every commit
-  pushed to the remote immediately, no holding locally.
+  pushed to the remote immediately, no holding locally. Commit messages
+  reference any GitHub issue/PR found during the work and include a section
+  on why the work was started (see personal `~/.claude/CLAUDE.md`).
 - **Deploying to a host:** ALWAYS `ssh root@<host>` and run
   `nixos-rebuild switch --flake github:belikh/jupiter-os#<host>` ON the host
   itself. Root SSH works on every host; `io` has no passwordless sudo, so do
