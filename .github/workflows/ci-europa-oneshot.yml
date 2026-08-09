@@ -295,7 +295,7 @@ jobs:
             echo "  StrictHostKeyChecking accept-new"
           } >> "$HOME/.ssh/config"
 
-# Discover builders from tailnet on this runner
+          # Discover builders from tailnet on this runner
           echo "Discovering builders..."
           BUILDERS_ARRAY=()
           for idx in {1..19}; do
