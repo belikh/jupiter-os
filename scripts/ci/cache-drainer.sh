@@ -97,23 +97,19 @@ flush() {
 # hook closes between builds, so the read loop spans the whole CI run rather
 # than exiting after the first hook invocation.
 exec 3<>"$FIFO"
-batch=""
+#
+# ONE PATH AT A TIME. The FIFO is a stream of individual built paths (the
+# post-build-hook writes one line per OUT_PATH); the drainer pushes each
+# before reading the next, never batching. A previous version accumulated
+# up to 64 paths into a single `nix copy`, so each transfer was huge: a
+# batch sat in `nix copy` for the full 600s timeout and died rc=123, over
+# and over, leaving almost nothing landed on europa. Per-path pushing keeps
+# each `nix copy` small and fast (the ControlMaster socket reuses the SSH
+# connection), and one path that genuinely needs the full 600s fails in
+# isolation instead of dragging a whole batch back through the retry loop.
+# fd 3's write half means the 3s read timeout never becomes an EOF, so the
+# drainer never exits mid-run — it just re-loops on idle.
 while true; do
-  # Read one tab-delimited line from the hook, with a 3s idle timeout.
-  #   line arrived  -> append STORE_PATH to the batch; flush at 64 paths.
-  #   3s idle       -> flush whatever has accumulated, then keep waiting.
-  # fd 3's write half means the timeout never becomes an EOF, so the drainer
-  # never exits mid-run.
-  if IFS=$'\t' read -r -t 3 STATUS STORE_PATH DERIVATION TIMESTAMP <&3; then
-    if [ -n "${STORE_PATH:-}" ]; then
-      batch="${batch:+$batch$'\n'}$STORE_PATH"
-      if [ "$(printf '%s\n' "$batch" | wc -l)" -ge 64 ]; then
-        flush "$batch"; batch=""
-      fi
-    fi
-  else
-    if [ -n "$batch" ]; then flush "$batch"; batch=""; fi
-  fi
+  IFS=$'\t' read -r -t 3 STATUS STORE_PATH DERIVATION TIMESTAMP <&3 || continue
+  [ -n "${STORE_PATH:-}" ] && flush "$STORE_PATH"
 done
-# Unreachable while fd 3 is held open; safety net only.
-[ -n "$batch" ] && flush "$batch"
