@@ -78,37 +78,38 @@ status_line() {
   log "$note | enqueued: $enq | pushed: $total_pushed | pending: $pending | progress: ${pct}%"
 }
 
-# Push one batch (newline-separated store paths). Retries absorb transient
-# Tailscale/NAR flakes; xargs chunks to stay under ARG_MAX; timeout bounds
-# each transfer. ssh-ng talks to europa's nix daemon over the jupiter-ci key,
-# supplied explicitly via NIX_SSHOPTS (don't rely on alias identity resolution
-# for the ssh-ng spawn), reusing the ControlMaster socket the workflow warmed.
+# Push one batch (newline-separated store paths). SINGLE attempt: on failure
+# it returns non-zero so the caller moves the path to the back of the queue and
+# moves on (see the read loop), instead of blocking the whole drain behind one
+# stubborn NAR through 6 escalating retries. xargs chunks to stay under
+# ARG_MAX; timeout bounds each transfer. ssh-ng talks to europa's nix daemon
+# over the jupiter-ci key, supplied explicitly via NIX_SSHOPTS (don't rely on
+# alias identity resolution for the ssh-ng spawn), reusing the ControlMaster
+# socket the workflow warmed.
 flush() {
   local paths="$1"
-  [ -z "$paths" ] && return
+  [ -z "$paths" ] && return 0
   paths="$(printf '%s\n' "$paths" | sort -u | grep -v '^$')" || true
-  [ -z "$paths" ] && return
+  [ -z "$paths" ] && return 0
   local n; n=$(printf '%s\n' "$paths" | wc -l)
   status_line "pushing $n path(s)"
 
-  for attempt in 1 2 3 4 5 6; do
-    local err_file; err_file="$(mktemp)"
-    if printf '%s\n' "$paths" | xargs -r -d '\n' timeout 600 env \
-        NIX_SSHOPTS="-i $key -o ControlPath=$cm/%r@%h:%p -o StrictHostKeyChecking=accept-new" \
-        "$nix_bin" copy --to "$store" 2>"$err_file"; then
-      total_pushed=$((total_pushed + n))
-      status_line "pushed $n path(s) on attempt $attempt"
-      rm -f "$err_file"
-      return
-    else
-      local rc=$?
-      status_line "attempt $attempt failed (rc=$rc); retry in $((attempt * 3))s"
-      # Ship the real stderr to europa's log — stop guessing at the cause.
-      while IFS= read -r line; do log "  stderr: $line"; done < "$err_file"
-      rm -f "$err_file"
-      sleep $((attempt * 3))
-    fi
-  done
+  local err_file; err_file="$(mktemp)"
+  if printf '%s\n' "$paths" | xargs -r -d '\n' timeout 600 env \
+      NIX_SSHOPTS="-i $key -o ControlPath=$cm/%r@%h:%p -o StrictHostKeyChecking=accept-new" \
+      "$nix_bin" copy --to "$store" 2>"$err_file"; then
+    total_pushed=$((total_pushed + n))
+    status_line "pushed $n path(s)"
+    rm -f "$err_file"
+    return 0
+  else
+    local rc=$?
+    status_line "push failed (rc=$rc); re-queuing at back of queue"
+    # Ship the real stderr to europa's log — stop guessing at the cause.
+    while IFS= read -r line; do log "  stderr: $line"; done < "$err_file"
+    rm -f "$err_file"
+    return 1
+  fi
 }
 
 # Hold the FIFO open read+write (fd 3). The write half prevents EOF when the
@@ -127,7 +128,25 @@ exec 3<>"$FIFO"
 # isolation instead of dragging a whole batch back through the retry loop.
 # fd 3's write half means the 3s read timeout never becomes an EOF, so the
 # drainer never exits mid-run — it just re-loops on idle.
+#
+# FAILED PUSHES GO TO THE BACK OF THE QUEUE. An in-process requeue list,
+# drained only when the FIFO is idle — equivalent to writing the line back
+# into the FIFO, but can't self-deadlock when the pipe is full (the drainer
+# is the only reader, so a blocking write back into fd 3 against a full
+# buffer would wedge the loop). So one slow/broken NAR is set aside and the
+# next package proceeds immediately; the failed one is retried after the
+# queue drains, with the 3s read timeout as the backoff. The workflow's
+# final `nix copy` of the toplevels is the completeness backstop, so a path
+# that never lands here still gets copied at the end.
+requeue=()
 while true; do
-  IFS=$'\t' read -r -t 3 STATUS STORE_PATH DERIVATION TIMESTAMP <&3 || continue
-  [ -n "${STORE_PATH:-}" ] && flush "$STORE_PATH"
+  if IFS=$'\t' read -r -t 3 STATUS STORE_PATH DERIVATION TIMESTAMP <&3; then
+    # New path from the hook (front of the queue).
+    [ -z "${STORE_PATH:-}" ] && continue
+    flush "$STORE_PATH" || requeue+=("$STORE_PATH")
+  elif [ "${#requeue[@]}" -gt 0 ]; then
+    # FIFO idle: pull the oldest previously-failed path and retry it.
+    retry="${requeue[0]}"; requeue=("${requeue[@]:1}")
+    flush "$retry" || requeue+=("$retry")
+  fi
 done
