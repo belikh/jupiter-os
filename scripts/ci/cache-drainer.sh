@@ -27,6 +27,11 @@ FIFO="${FIFO:-/var/run/nix-push-fifo}"
 ssh="${EUROPA_SSH:-europa-ci}"   # ~/.ssh/config alias -> jupiter-ci@europa
 key="${EUROPA_KEY:-$HOME/.ssh/europa_ci}"
 cm="${EUROPA_CONTROLMASTERS:-$HOME/.ssh/controlmasters}"
+# Destination store for `nix copy`. Defaults to jupiter-ci@europa (the CI
+# receiver); the ci-distributed coordinator overrides to root@europa via
+# EUROPA_STORE — the jupiter-ci key isn't reliably offered there, but
+# root->europa is (the nom log already streams over it).
+store="${EUROPA_STORE:-ssh-ng://jupiter-ci@europa}"
 log_path="/var/log/jupiter-ci/cache-drainer.log"
 # `sudo` (this script's invoker) resets PATH to its own secure_path, which
 # doesn't include wherever install-nix-action put `nix`. The caller resolves
@@ -76,7 +81,7 @@ flush() {
     local err_file; err_file="$(mktemp)"
     if printf '%s\n' "$paths" | xargs -r -d '\n' timeout 600 env \
         NIX_SSHOPTS="-i $key -o ControlPath=$cm/%r@%h:%p -o StrictHostKeyChecking=accept-new" \
-        "$nix_bin" copy --to "ssh-ng://jupiter-ci@europa" 2>"$err_file"; then
+        "$nix_bin" copy --to "$store" 2>"$err_file"; then
       total_pushed=$((total_pushed + n))
       pct=0; [ "$total_queued" -gt 0 ] && pct=$(( (total_pushed * 100) / total_queued ))
       log "pushed $n path(s) on attempt $attempt | queued: $total_queued | pushed: $total_pushed | progress: $pct%"

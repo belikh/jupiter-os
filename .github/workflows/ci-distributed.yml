@@ -88,7 +88,7 @@ name: CI (distributed builders)
 # don't: with the ssh-ng remote-build protocol every output a builder produces
 # is streamed back to the COORDINATOR's own store, so the coordinator is the
 # single node holding every host's full closure. Its post-build-hook +
-# cache-drainer (see "Install async push system") drain to jupiter-ci@europa
+# cache-drainer (see "Install async push system") drain to root@europa
 # one path at a time as the hook fires, and a final `nix copy` of the
 # toplevels ("Stop drainer, final push") guarantees completeness.
 #
@@ -98,7 +98,9 @@ name: CI (distributed builders)
 # ~75% of push attempts failed. (The coordinator's own pusher was meanwhile
 # dead: it ran push-daemon.sh against `europa-build`, an alias never defined
 # in this workflow.) Both fixed: builders no longer push, and the coordinator
-# drains to the real jupiter-ci@europa target. Revisit only if the
+# drains as root@europa (the jupiter-ci key was never offered by ssh on the
+# coordinator, but root->europa already works — the nom log streams over it).
+# Revisit only if the
 # coordinator's single serial push becomes the bottleneck.
 
 on:
@@ -319,6 +321,27 @@ jobs:
     # deliberately in exchange for not truncating a real full-fleet build.
     timeout-minutes: 360
     steps:
+      # Emit the nom watch tip + job summary FIRST, so it renders on the run
+      # Summary page the moment the coordinator starts — not minutes later
+      # when the Build step runs. Points at the run-specific log, not the
+      # current.jsonl symlink: that symlink isn't repointed to this run until
+      # the Build step, and a `tail -F` started now would otherwise stick on
+      # the previous run's target. tail -F on the run-specific path waits for
+      # the file the Build step creates, then streams.
+      - name: nom watch tip
+        run: |
+          NOM_TIP="ssh -t root@europa 'tail -n +1 -F /var/log/jupiter-ci/nom-${{ github.run_id }}.jsonl | nom --json'"
+          echo "::notice title=Watch this build in nom::$NOM_TIP"
+          {
+            echo "### Watch this build live in \`nom\`"
+            echo
+            echo '```bash'
+            echo "$NOM_TIP"
+            echo '```'
+            echo
+            echo "Per-run log: \`/var/log/jupiter-ci/nom-${{ github.run_id }}.jsonl\` (replay after the fact with \`nom --json < <file>\`)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - uses: actions/checkout@v4
 
       - name: Free disk space
@@ -355,17 +378,22 @@ jobs:
 
       - name: Install async push system (post-build-hook + cache-drainer)
         env:
-          EUROPA_CI_SSH_KEY: ${{ secrets.EUROPA_CI_SSH_KEY }}
+          EUROPA_SSH_KEY: ${{ secrets.EUROPA_SSH_KEY }}
         run: |
           # The coordinator is the SOLE pusher. Its post-build-hook fires once
           # per path built (the remote builders stream results back here over
           # ssh-ng, the hook fires as each lands), writing each path to a FIFO
-          # that cache-drainer.sh drains one path at a time to jupiter-ci@europa.
+          # that cache-drainer.sh drains one path at a time to root@europa.
           # Builders do NOT push — they only build what the coordinator
           # dispatches. (The old push-daemon.sh targeted europa-build, an alias
           # never defined in this workflow, so it never pushed anything; the 19
           # per-builder cache-drainers were the workaround AND the source of the
           # rc=123 contention. This restores the intended coordinator-only push.)
+          #
+          # Pushes as root, not jupiter-ci: the jupiter-ci key was never offered
+          # by ssh on the coordinator (every push failed auth, nothing landed),
+          # whereas root->europa already works — the nom log streams over that
+          # exact path. cache-drainer.sh's target/alias/key come from EUROPA_*.
           sudo install -m 755 ${{ github.workspace }}/scripts/ci/post-build-hook.sh /usr/local/bin/nix-post-build-hook
           sudo install -m 755 ${{ github.workspace }}/scripts/ci/cache-drainer.sh /usr/local/bin/cache-drainer
 
@@ -376,17 +404,20 @@ jobs:
           sudo touch /var/log/nix-push-hook.log
           sudo chmod 644 /var/log/nix-push-hook.log
 
-          # jupiter-ci key + europa-ci alias for cache-drainer.sh (same shape
-          # the per-builder drainer used). No pre-warm here: this step runs
-          # before tailnet join, so europa isn't reachable yet — cache-drainer
-          # opens its ControlMaster on the first push during the build.
+          # root->europa key + alias for cache-drainer.sh. The key lives at
+          # $HOME/.ssh/europa_ci (same path the Build step uses for nom-log
+          # streaming — re-staged here so it exists when the drainer launches,
+          # before the Build step runs). No pre-warm: this step runs before
+          # tailnet join, so europa isn't reachable yet — cache-drainer opens its
+          # ControlMaster on the first push during the build. (The Build step
+          # sets up the same Host europa-log block again — harmless duplicate.)
           install -m 700 -d "$HOME/.ssh" "$HOME/.ssh/controlmasters"
-          printf '%s\n' "$EUROPA_CI_SSH_KEY" > "$HOME/.ssh/europa_ci"
+          printf '%s\n' "$EUROPA_SSH_KEY" > "$HOME/.ssh/europa_ci"
           chmod 600 "$HOME/.ssh/europa_ci"
           {
-            echo "Host europa-ci"
+            echo "Host europa-log"
             echo "  HostName europa"
-            echo "  User jupiter-ci"
+            echo "  User root"
             echo "  IdentityFile $HOME/.ssh/europa_ci"
             echo "  StrictHostKeyChecking accept-new"
             echo "  ControlMaster auto"
@@ -404,11 +435,16 @@ jobs:
 
           # Launch the drainer (runner user). It holds the FIFO open on fd 3 and
           # loops for the whole build, so it must outlive this step (nohup + &).
-          # NIX_BIN points cache-drainer.sh at nix explicitly in case the
-          # background shell's PATH differs from this step's.
-          NIX_BIN="$(command -v nix)" nohup /usr/local/bin/cache-drainer >/tmp/cache-drainer.log 2>&1 &
+          # EUROPA_STORE/EUROPA_SSH/EUROPA_KEY point cache-drainer.sh at root@europa
+          # (overriding its jupiter-ci defaults); NIX_BIN pins nix's path in case
+          # the background shell's PATH differs from this step's.
+          NIX_BIN="$(command -v nix)" \
+            EUROPA_STORE="ssh-ng://root@europa" \
+            EUROPA_SSH="europa-log" \
+            EUROPA_KEY="$HOME/.ssh/europa_ci" \
+            nohup /usr/local/bin/cache-drainer >/tmp/cache-drainer.log 2>&1 &
           echo "DRAINER_PID=$!" >> $GITHUB_ENV
-          echo "cache-drainer started (PID $!) — sole pusher to jupiter-ci@europa"
+          echo "cache-drainer started (PID $!) — sole pusher to root@europa"
 
       - name: Join tailnet
         run: |
@@ -693,18 +729,6 @@ jobs:
           ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-log \
             "mkdir -p /var/log/jupiter-ci && : > '$NOM_LOG' && ln -sfn '$NOM_LOG' /var/log/jupiter-ci/current.jsonl"
 
-          NOM_TIP="ssh -t root@europa 'tail -n +1 -F /var/log/jupiter-ci/current.jsonl | nom --json'"
-          echo "::notice title=Watch this build in nom::$NOM_TIP"
-          {
-            echo "### Watch this build live in \`nom\`"
-            echo
-            echo '```bash'
-            echo "$NOM_TIP"
-            echo '```'
-            echo
-            echo "Per-run log: \`/var/log/jupiter-ci/nom-${RUN_ID}.jsonl\` (replay after the fact with \`nom --json < <file>\`)."
-          } >> "$GITHUB_STEP_SUMMARY"
-
           NOM_TO_HUMAN='if (startswith("@nix ") | not) then .
             else (.[5:] | (fromjson? // empty)
                   | select((.level // 3) <= 3)
@@ -804,7 +828,7 @@ jobs:
         if: always()
         env:
           RUN_ID: ${{ github.run_id }}
-          EUROPA_CI_SSH_KEY: ${{ secrets.EUROPA_CI_SSH_KEY }}
+          EUROPA_SSH_KEY: ${{ secrets.EUROPA_SSH_KEY }}
         run: |
           set +e
           # 1. Stop the coordinator's cache-drainer (the sole incremental
@@ -820,14 +844,14 @@ jobs:
             exit 0
           fi
           n=$(wc -l < "$OUT_PATHS")
-          echo "final push: $n toplevel(s) -> jupiter-ci@europa (drainer stopped)"
+          echo "final push: $n toplevel(s) -> root@europa (drainer stopped)"
 
-          # Re-stage the jupiter-ci key + controlmasters dir (the push-system
+          # Re-stage the root->europa key + controlmasters dir (the push-system
           # step also stages these, but this step is `if: always()` — be
           # self-contained in case that step didn't run). Same NIX_SSHOPTS
           # pattern as cache-drainer.sh.
           install -m 700 -d "$HOME/.ssh" "$HOME/.ssh/controlmasters"
-          printf '%s\n' "$EUROPA_CI_SSH_KEY" > "$HOME/.ssh/europa_ci"
+          printf '%s\n' "$EUROPA_SSH_KEY" > "$HOME/.ssh/europa_ci"
           chmod 600 "$HOME/.ssh/europa_ci"
 
           # Idempotent (paths already present are skipped); retry so one
@@ -836,7 +860,7 @@ jobs:
           for attempt in 1 2 3 4 5; do
             if timeout 1800 env \
                 NIX_SSHOPTS="-i $HOME/.ssh/europa_ci -o StrictHostKeyChecking=accept-new -o ControlMaster=auto -o ControlPath=$HOME/.ssh/controlmasters/%r@%h:%p -o ControlPersist=30m" \
-                nix copy --to "ssh-ng://jupiter-ci@europa" $(cat "$OUT_PATHS"); then
+                nix copy --to "ssh-ng://root@europa" $(cat "$OUT_PATHS"); then
               echo "final push OK on attempt $attempt"
               ok=1; break
             fi
