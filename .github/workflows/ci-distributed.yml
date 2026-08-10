@@ -169,12 +169,16 @@ jobs:
             # connections (19 x 1 = 19 jobs, 19 x 2 = 38 conns fleet-wide).
             # cache.nixos.org first so Harmonia is only queried for paths the
             # public cache lacks (the tuned closures), not a 404 per standard
-            # path. http2=false => 1 connection per concurrent fetch.
+            # path. http2=true multiplexes narinfo/NAR fetches over very few TCP
+            # connections to the Cloudflare edge cache (vs 1 conn per fetch with
+            # http/1), which is what keeps cache.jupiter.au's connection count
+            # sane across 19 builders; the edge cache is the reason we route
+            # through cache.jupiter.au at all.
             substituters = https://cache.nixos.org https://cache.jupiter.au
             trusted-public-keys = ${{ secrets.HARMONIA_PUBLIC_KEY }} cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
-            connect-timeout = 5
+            connect-timeout = 30
             trusted-users = root runner
-            http2 = false
+            http2 = true
             max-substitution-jobs = 1
             http-connections = 2
             system-features = kvm benchmark big-parallel gccarch-btver2 gccarch-skylake
@@ -367,9 +371,9 @@ jobs:
             # land on cache.nixos.org, not Harmonia.
             substituters = https://cache.nixos.org https://cache.jupiter.au
             trusted-public-keys = ${{ secrets.HARMONIA_PUBLIC_KEY }} cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
-            connect-timeout = 5
+            connect-timeout = 30
             builders-use-substitutes = true
-            http2 = false
+            http2 = true
             fallback = true
             # Coordinator must advertise features so it doesn't reject
             # derivations requiring them, even with max-jobs=0 (dispatch only)
@@ -750,6 +754,26 @@ jobs:
           printf '@nix {"action":"msg","level":2,"msg":"=== jupiter-ci %s: building all hosts (%s) ==="}\n' \
             "$RUN_ID" "$HOSTS" | ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-log "cat >> '$NOM_LOG'"
 
+          # Dispatch-concurrency diagnostic. We can't SSH into a GHA runner, so
+          # sample the coordinator for the whole build and surface it here. The
+          # question this settles: under the intended maxJobs=1 x 19 builders,
+          # ssh-to-builders should sit near 19; if it's in the hundreds, nix's
+          # flock slot-locks in /nix/var/nix/current-load aren't contending on
+          # this runner's filesystem (hence the over-dispatch). nix-fs reports
+          # what FS /nix lives on (overlayfs would explain non-contending flock).
+          nohup bash -c '
+            while true; do
+              ts=$(date -u +%T)
+              br=$(pgrep -fc build-remote 2>/dev/null || echo 0)
+              slots=$(find /nix/var/nix/current-load -type f 2>/dev/null | wc -l)
+              conns=$(ss -tnH 2>/dev/null | grep -c "100\.64\." || echo 0)
+              fs=$(stat -f -c "%T" /nix/var/nix 2>/dev/null || echo "?")
+              echo "$ts build-remote=$br current-load-files=$slots ssh-to-builders=$conns nix-fs=$fs"
+              sleep 15
+            done' > /tmp/coordinator-concurrency.log 2>&1 &
+          CONC_PID=$!
+          echo "concurrency sampler started (pid $CONC_PID) -> /tmp/coordinator-concurrency.log"
+
           # Builders were written to /etc/nix/machines by the discover step.
           # --builders "@/etc/nix/machines" tells nix to read that file.
           # 2>&1 1>"$OUT_PATHS": stderr (the json log) piped to europa via ssh tee,
@@ -779,6 +803,25 @@ jobs:
           # pipefail is on, so $? is the pipeline's -- nix's own status is
           # PIPESTATUS[0].
           BUILD_EXIT=${PIPESTATUS[0]}
+
+          # Stop the dispatch-concurrency sampler and surface its samples +
+          # peak into the run log and the job summary. ssh-to-builders peaks
+          # near 19 = the cap holds; in the hundreds = the flock slot-locks in
+          # current-load/ aren't contending (see the sampler comment above).
+          kill $CONC_PID 2>/dev/null || true
+          sleep 1
+          echo "=== coordinator dispatch-concurrency samples (15s cadence) ==="
+          cat /tmp/coordinator-concurrency.log
+          peak=$(awk -F'ssh-to-builders=' '{print $2}' /tmp/coordinator-concurrency.log \
+            | awk '{print $1}' | sort -n | tail -1)
+          nixfs=$(awk -F'nix-fs=' '{print $2}' /tmp/coordinator-concurrency.log | tail -1)
+          echo "peak ssh-to-builders: ${peak:-?} (intended ~19)   nix-fs: ${nixfs:-?}"
+          {
+            echo "### Coordinator dispatch concurrency"
+            echo "Peak concurrent ssh-to-builder connections: **${peak:-?}** (intended ~19)."
+            echo "nix state dir filesystem: \`${nixfs:-?}\` (overlayfs would explain non-contending flock slot-locks)."
+            echo "Full 15s sample series is in the build step log."
+          } >> "$GITHUB_STEP_SUMMARY"
 
           echo "Out paths:"
           cat "$OUT_PATHS"
