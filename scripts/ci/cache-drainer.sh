@@ -27,6 +27,11 @@ FIFO="${FIFO:-/var/run/nix-push-fifo}"
 ssh="${EUROPA_SSH:-europa-ci}"   # ~/.ssh/config alias -> jupiter-ci@europa
 key="${EUROPA_KEY:-$HOME/.ssh/europa_ci}"
 cm="${EUROPA_CONTROLMASTERS:-$HOME/.ssh/controlmasters}"
+# Destination store for `nix copy`. Defaults to jupiter-ci@europa (the CI
+# receiver); the ci-distributed coordinator overrides to root@europa via
+# EUROPA_STORE — the jupiter-ci key isn't reliably offered there, but
+# root->europa is (the nom log already streams over it).
+store="${EUROPA_STORE:-ssh-ng://jupiter-ci@europa}"
 log_path="/var/log/jupiter-ci/cache-drainer.log"
 # `sudo` (this script's invoker) resets PATH to its own secure_path, which
 # doesn't include wherever install-nix-action put `nix`. The caller resolves
@@ -52,68 +57,96 @@ log() {
 
 log "drainer started, reading from $FIFO"
 
-total_queued=0
 total_pushed=0
 
-# Push one batch (newline-separated store paths). Retries absorb transient
-# Tailscale/NAR flakes; xargs chunks to stay under ARG_MAX; timeout bounds
-# each transfer. ssh-ng talks to europa's nix daemon over the jupiter-ci key,
-# supplied explicitly via NIX_SSHOPTS (don't rely on alias identity resolution
-# for the ssh-ng spawn), reusing the ControlMaster socket the workflow warmed.
+# Cumulative count of paths the post-build-hook has written into the FIFO, kept
+# in a file the hook bumps atomically (flock) per write. This is the ONLY honest
+# denominator for progress: a FIFO exposes no depth, and the drainer's own "how
+# many I've read" is just "how many I've pushed +/- one in flight" — which is why
+# the old total_queued-based percentage was pinned at 99-100% no matter how deep
+# the real backlog was. Read fresh each time we log so it tracks the producer.
+enqueue_cnt="${ENQUEUE_CNT:-/var/run/nix-push-enqueued}"
+enqueue_count() { cat "$enqueue_cnt" 2>/dev/null || echo 0; }
+
+# One status line: enqueued (producer total) | pushed (consumer total) |
+# pending (real backlog = in-FIFO + in-flight + retrying) | honest progress %.
+status_line() {
+  local note="$1"
+  local enq; enq=$(enqueue_count)
+  local pending=$((enq - total_pushed)); [ "$pending" -lt 0 ] && pending=0
+  local pct="-"; [ "$enq" -gt 0 ] && pct=$(( (total_pushed * 100) / enq ))
+  log "$note | enqueued: $enq | pushed: $total_pushed | pending: $pending | progress: ${pct}%"
+}
+
+# Push one batch (newline-separated store paths). SINGLE attempt: on failure
+# it returns non-zero so the caller moves the path to the back of the queue and
+# moves on (see the read loop), instead of blocking the whole drain behind one
+# stubborn NAR through 6 escalating retries. xargs chunks to stay under
+# ARG_MAX; timeout bounds each transfer. ssh-ng talks to europa's nix daemon
+# over the jupiter-ci key, supplied explicitly via NIX_SSHOPTS (don't rely on
+# alias identity resolution for the ssh-ng spawn), reusing the ControlMaster
+# socket the workflow warmed.
 flush() {
   local paths="$1"
-  [ -z "$paths" ] && return
+  [ -z "$paths" ] && return 0
   paths="$(printf '%s\n' "$paths" | sort -u | grep -v '^$')" || true
-  [ -z "$paths" ] && return
+  [ -z "$paths" ] && return 0
   local n; n=$(printf '%s\n' "$paths" | wc -l)
-  total_queued=$((total_queued + n))
-  local pct=0
-  if [ "$total_queued" -gt 0 ]; then pct=$(( (total_pushed * 100) / total_queued )); fi
-  log "draining batch: $n path(s) | queued: $total_queued | pushed: $total_pushed | progress: $pct%"
+  status_line "pushing $n path(s)"
 
-  for attempt in 1 2 3 4 5 6; do
-    log "attempt $attempt: pushing $n path(s)"
-    local err_file; err_file="$(mktemp)"
-    if printf '%s\n' "$paths" | xargs -r -d '\n' timeout 600 env \
-        NIX_SSHOPTS="-i $key -o ControlPath=$cm/%r@%h:%p -o StrictHostKeyChecking=accept-new" \
-        "$nix_bin" copy --to "ssh-ng://jupiter-ci@europa" 2>"$err_file"; then
-      total_pushed=$((total_pushed + n))
-      pct=0; [ "$total_queued" -gt 0 ] && pct=$(( (total_pushed * 100) / total_queued ))
-      log "pushed $n path(s) on attempt $attempt | queued: $total_queued | pushed: $total_pushed | progress: $pct%"
-      rm -f "$err_file"
-      return
-    else
-      local rc=$?
-      log "attempt $attempt failed (rc=$rc); retry in $((attempt * 3))s"
-      # Ship the real stderr to europa's log — stop guessing at the cause.
-      while IFS= read -r line; do log "  stderr: $line"; done < "$err_file"
-      rm -f "$err_file"
-      sleep $((attempt * 3))
-    fi
-  done
+  local err_file; err_file="$(mktemp)"
+  if printf '%s\n' "$paths" | xargs -r -d '\n' timeout 600 env \
+      NIX_SSHOPTS="-i $key -o ControlPath=$cm/%r@%h:%p -o StrictHostKeyChecking=accept-new" \
+      "$nix_bin" copy --to "$store" 2>"$err_file"; then
+    total_pushed=$((total_pushed + n))
+    status_line "pushed $n path(s)"
+    rm -f "$err_file"
+    return 0
+  else
+    local rc=$?
+    status_line "push failed (rc=$rc); re-queuing at back of queue"
+    # Ship the real stderr to europa's log — stop guessing at the cause.
+    while IFS= read -r line; do log "  stderr: $line"; done < "$err_file"
+    rm -f "$err_file"
+    return 1
+  fi
 }
 
 # Hold the FIFO open read+write (fd 3). The write half prevents EOF when the
 # hook closes between builds, so the read loop spans the whole CI run rather
 # than exiting after the first hook invocation.
 exec 3<>"$FIFO"
-batch=""
+#
+# ONE PATH AT A TIME. The FIFO is a stream of individual built paths (the
+# post-build-hook writes one line per OUT_PATH); the drainer pushes each
+# before reading the next, never batching. A previous version accumulated
+# up to 64 paths into a single `nix copy`, so each transfer was huge: a
+# batch sat in `nix copy` for the full 600s timeout and died rc=123, over
+# and over, leaving almost nothing landed on europa. Per-path pushing keeps
+# each `nix copy` small and fast (the ControlMaster socket reuses the SSH
+# connection), and one path that genuinely needs the full 600s fails in
+# isolation instead of dragging a whole batch back through the retry loop.
+# fd 3's write half means the 3s read timeout never becomes an EOF, so the
+# drainer never exits mid-run — it just re-loops on idle.
+#
+# FAILED PUSHES GO TO THE BACK OF THE QUEUE. An in-process requeue list,
+# drained only when the FIFO is idle — equivalent to writing the line back
+# into the FIFO, but can't self-deadlock when the pipe is full (the drainer
+# is the only reader, so a blocking write back into fd 3 against a full
+# buffer would wedge the loop). So one slow/broken NAR is set aside and the
+# next package proceeds immediately; the failed one is retried after the
+# queue drains, with the 3s read timeout as the backoff. The workflow's
+# final `nix copy` of the toplevels is the completeness backstop, so a path
+# that never lands here still gets copied at the end.
+requeue=()
 while true; do
-  # Read one tab-delimited line from the hook, with a 3s idle timeout.
-  #   line arrived  -> append STORE_PATH to the batch; flush at 64 paths.
-  #   3s idle       -> flush whatever has accumulated, then keep waiting.
-  # fd 3's write half means the timeout never becomes an EOF, so the drainer
-  # never exits mid-run.
   if IFS=$'\t' read -r -t 3 STATUS STORE_PATH DERIVATION TIMESTAMP <&3; then
-    if [ -n "${STORE_PATH:-}" ]; then
-      batch="${batch:+$batch$'\n'}$STORE_PATH"
-      if [ "$(printf '%s\n' "$batch" | wc -l)" -ge 64 ]; then
-        flush "$batch"; batch=""
-      fi
-    fi
-  else
-    if [ -n "$batch" ]; then flush "$batch"; batch=""; fi
+    # New path from the hook (front of the queue).
+    [ -z "${STORE_PATH:-}" ] && continue
+    flush "$STORE_PATH" || requeue+=("$STORE_PATH")
+  elif [ "${#requeue[@]}" -gt 0 ]; then
+    # FIFO idle: pull the oldest previously-failed path and retry it.
+    retry="${requeue[0]}"; requeue=("${requeue[@]:1}")
+    flush "$retry" || requeue+=("$retry")
   fi
 done
-# Unreachable while fd 3 is held open; safety net only.
-[ -n "$batch" ] && flush "$batch"

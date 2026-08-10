@@ -16,6 +16,25 @@ if [[ ! -p "$FIFO" ]]; then
     mkfifo -m 666 "$FIFO" 2>/dev/null || true
 fi
 
+# Cumulative count of paths enqueued into the FIFO, consumed by cache-drainer.sh
+# as the denominator for its progress/backlog math. A FIFO exposes no depth, so
+# without this the drainer can only count what it has already READ — which equals
+# what it has pushed +/- one in flight — and its "progress %" pins at 99-100%
+# regardless of how deep the real backlog is. Bumped atomically (flock) once per
+# hook invocation, AFTER the writes land in the FIFO, so the drainer's count
+# never includes paths that haven't actually entered the pipe (a FIFO-blocked
+# path that fell back to $LOG is deliberately NOT counted). Root writes; the
+# drainer (root on the coordinator, runner on distributed builders) only reads.
+ENQUEUE_CNT="${ENQUEUE_CNT:-/var/run/nix-push-enqueued}"
+bump_enqueue() {
+    local n="$1"
+    (
+        flock 9
+        local c=0; [ -f "$ENQUEUE_CNT" ] && c=$(<"$ENQUEUE_CNT")
+        echo $((c + n)) > "$ENQUEUE_CNT"
+    ) 9>"$ENQUEUE_CNT.lock"
+}
+
 # Nix contract (manual §7.5 "Using the post-build-hook"): the hook is invoked
 # with NO positional arguments. The just-built outputs arrive in $OUT_PATHS
 # (space-separated) and the derivation in $DRV_PATH. Reading $1 here crashed
@@ -31,15 +50,19 @@ DRV_PATH="${DRV_PATH:-}"
 # 20-machine distributed build for.
 [ -z "$OUT_PATHS" ] && exit 0
 
-# Format per output: STATUS<TAB>STORE_PATH<TAB>DERIVATION<TAB>TIMESTAMP
+# Format per output: STATUS<TAB>STORE_PATH<TAB>DERIVATION<TAB>TIMESTAMP.
+# Count only paths that actually entered the FIFO — keeps the drainer's
+# enqueued/pending honest (a fallback'd path never reaches it).
 ts="$(date -u +%s)"
+written=0
 for STORE_PATH in $OUT_PATHS; do
-    {
-        printf '%s\t%s\t%s\t%s\n' "built" "$STORE_PATH" "$DRV_PATH" "$ts"
-    } >> "$FIFO" 2>>"$LOG" || {
+    if printf '%s\t%s\t%s\t%s\n' "built" "$STORE_PATH" "$DRV_PATH" "$ts" >> "$FIFO" 2>>"$LOG"; then
+        written=$((written + 1))
+    else
         # Fallback: append to log file if FIFO blocked
         printf '[%s] FIFO blocked, queued locally: %s\n' "$(date -u +%s)" "$STORE_PATH" >> "$LOG"
-    }
+    fi
 done
+[ "$written" -gt 0 ] && bump_enqueue "$written"
 
 exit 0

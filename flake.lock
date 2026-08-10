@@ -1,5 +1,22 @@
 {
   "nodes": {
+    "aeon": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1786203596,
+        "narHash": "sha256-5CjJYn8DrcBR+Q7Y+V4PfmfRIhHJK8qpFND3FVXnOgQ=",
+        "owner": "aeonfun",
+        "repo": "aeon",
+        "rev": "d11f662c193623be8dad6036cff3520895eefb90",
+        "type": "github"
+      },
+      "original": {
+        "owner": "aeonfun",
+        "ref": "main",
+        "repo": "aeon",
+        "type": "github"
+      }
+    },
     "crane": {
       "locked": {
         "lastModified": 1781825982,
@@ -194,6 +211,7 @@
     },
     "root": {
       "inputs": {
+        "aeon": "aeon",
         "disko": "disko",
         "ha-linux-agent": "ha-linux-agent",
         "impermanence": "impermanence",
