@@ -57,8 +57,26 @@ log() {
 
 log "drainer started, reading from $FIFO"
 
-total_queued=0
 total_pushed=0
+
+# Cumulative count of paths the post-build-hook has written into the FIFO, kept
+# in a file the hook bumps atomically (flock) per write. This is the ONLY honest
+# denominator for progress: a FIFO exposes no depth, and the drainer's own "how
+# many I've read" is just "how many I've pushed +/- one in flight" — which is why
+# the old total_queued-based percentage was pinned at 99-100% no matter how deep
+# the real backlog was. Read fresh each time we log so it tracks the producer.
+enqueue_cnt="${ENQUEUE_CNT:-/var/run/nix-push-enqueued}"
+enqueue_count() { cat "$enqueue_cnt" 2>/dev/null || echo 0; }
+
+# One status line: enqueued (producer total) | pushed (consumer total) |
+# pending (real backlog = in-FIFO + in-flight + retrying) | honest progress %.
+status_line() {
+  local note="$1"
+  local enq; enq=$(enqueue_count)
+  local pending=$((enq - total_pushed)); [ "$pending" -lt 0 ] && pending=0
+  local pct="-"; [ "$enq" -gt 0 ] && pct=$(( (total_pushed * 100) / enq ))
+  log "$note | enqueued: $enq | pushed: $total_pushed | pending: $pending | progress: ${pct}%"
+}
 
 # Push one batch (newline-separated store paths). Retries absorb transient
 # Tailscale/NAR flakes; xargs chunks to stay under ARG_MAX; timeout bounds
@@ -71,25 +89,20 @@ flush() {
   paths="$(printf '%s\n' "$paths" | sort -u | grep -v '^$')" || true
   [ -z "$paths" ] && return
   local n; n=$(printf '%s\n' "$paths" | wc -l)
-  total_queued=$((total_queued + n))
-  local pct=0
-  if [ "$total_queued" -gt 0 ]; then pct=$(( (total_pushed * 100) / total_queued )); fi
-  log "draining batch: $n path(s) | queued: $total_queued | pushed: $total_pushed | progress: $pct%"
+  status_line "pushing $n path(s)"
 
   for attempt in 1 2 3 4 5 6; do
-    log "attempt $attempt: pushing $n path(s)"
     local err_file; err_file="$(mktemp)"
     if printf '%s\n' "$paths" | xargs -r -d '\n' timeout 600 env \
         NIX_SSHOPTS="-i $key -o ControlPath=$cm/%r@%h:%p -o StrictHostKeyChecking=accept-new" \
         "$nix_bin" copy --to "$store" 2>"$err_file"; then
       total_pushed=$((total_pushed + n))
-      pct=0; [ "$total_queued" -gt 0 ] && pct=$(( (total_pushed * 100) / total_queued ))
-      log "pushed $n path(s) on attempt $attempt | queued: $total_queued | pushed: $total_pushed | progress: $pct%"
+      status_line "pushed $n path(s) on attempt $attempt"
       rm -f "$err_file"
       return
     else
       local rc=$?
-      log "attempt $attempt failed (rc=$rc); retry in $((attempt * 3))s"
+      status_line "attempt $attempt failed (rc=$rc); retry in $((attempt * 3))s"
       # Ship the real stderr to europa's log — stop guessing at the cause.
       while IFS= read -r line; do log "  stderr: $line"; done < "$err_file"
       rm -f "$err_file"
