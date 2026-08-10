@@ -21,8 +21,8 @@ only when the machine that needs them is brought up.
 | `metis` | kiosk — kitchen | ✅ live | 2026-07-24 |
 | `thebe` | kiosk — robbie-room | ✅ live | — |
 | `adrastea` | kiosk — office | registered/CI-green; placeholder disk (`REPLACE-ME`) + age key, awaiting install | — |
-| `europa` | `10.1.1.2` — ZFS NAS + data hub + PXE | ✅ live, **untuned** (btver2 rolled back) | — |
-| `callisto` | `10.1.1.3` — shared builder + MQTT broker | ✅ live; iSCSI root on europa zvol; `skylake` microarch roadmap-only | 2026-07-24 |
+| `europa` | `10.1.1.2` — ZFS NAS + data hub + PXE | ✅ live, **btver2-tuned** (CI→Harmonia) | — |
+| `callisto` | `10.1.1.3` — shared builder + MQTT broker | ✅ live; iSCSI root on europa zvol; **`skylake`-tuned** (CI→Harmonia) | 2026-07-24 |
 | `pallene` | Kamatera VPS build server (not fleet) | persistent, disk-booted via `.#pallene-raw` | — |
 
 `.sops.yaml` also holds `ganymede`/`himalia` age keys (roadmap, not in
@@ -33,9 +33,9 @@ refs (MQTT, builds) dial it by IP.
 ### TOPOLOGY — cross-host wiring
 
 - **MQTT → callisto `10.1.1.3`** (`modules/services/mqtt.nix`): kiosk ha-agents + Home Assistant → mosquitto (static `mqttHost`).
-- **Build delegation → callisto** (`modules/core/build-machines.nix`, default-on): advertises `gccarch-btver2`/`skylake` to build *others'* tuned closures while its own stays untuned; `cores=6 max-jobs=1`. Pallene inverts it (`cores=1 max-jobs=auto`) and pushes tuned closures to the Harmonia cache (Attic decommissioned — #63; pallene's push path is dormant pending a `nix copy` rework, see `modules/services/build-server.nix` header).
+- **Build delegation → callisto** (`modules/core/build-machines.nix`, **currently disabled fleet-wide** — commented out of `common.nix`, no host enables it; europa delegates inline to callisto only via `nix.buildMachines`). When enabled it advertises `gccarch-btver2`/`skylake`; callisto is itself `skylake`-tuned. CI (not pallene) builds the tuned closures and pushes them to Harmonia over the tailnet (Attic decommissioned — #63). The old pallene push path (`modules/services/build-server.nix`) is orphaned.
 - **PXE netboot → europa** (`modules/network/pxe-server.nix` via `flake.nix` `pxeModule`): serves callisto's netboot — ganymede's old role (same deviation as `cloudflareTunnel`).
-- **Harmonia → europa** (`services.harmonia` on `:5000`): read-only binary cache serving europa's `/nix/store`. GitHub Actions builds the kiosk closures on free `ubuntu-latest` CPU and pushes them in over the UDM WG road-warrior (`nix copy --to ssh://europa` as `jupiter-ci`, **main-only**, incremental via a post-build-hook, last 3 main builds/host pinned as GC roots) — see `docs/ci-harmonia-push-runbook.md`. Replaces the decommissioned Attic (#63).
+- **Harmonia → europa** (`services.harmonia` on `:5000`): read-only binary cache serving europa's `/nix/store`. GitHub Actions builds the tuned closures (europa btver2, callisto + kiosks skylake) on free `ubuntu-latest` CPU and pushes them over the tailnet (`nix copy --to ssh://europa` as `jupiter-ci`, **main-only**, incremental via a post-build-hook, last 3 main builds/host pinned as GC roots) — see `docs/ci-harmonia-push-runbook.md`. Replaces the decommissioned Attic (#63).
 
 ## Layout
 
@@ -137,7 +137,7 @@ Key memories that drove this workflow: `jupiter_os_thebe_wifi_sae_fix.md`, `jupi
 
 ```bash
 make check              # nix flake check --no-build (eval every registered host)
-make build-all          # build the 4 kiosk closures (the untuned hosts)
+make build-all          # build the 4 kiosk closures (skylake-tuned)
 make test-<host>        # build & boot a host in a QEMU VM
 make boot-smoke-<host>  # headless CI-style boot test
 make fmt                # format all Nix (nixfmt-rfc-style); fmt-check to verify
@@ -161,9 +161,10 @@ ssh root@<host> -- nixos-rebuild switch --flake github:belikh/jupiter-os#<host>
 ## Roadmap (bring-up order)
 
 amalthea + thebe (live) → the remaining 2 kiosks (metis/adrastea —
-registered, CI-green, awaiting physical install) → europa (live, untuned —
-`btver2` rolled back pending a ZFS/nixpkgs fix) → callisto
-(registered CI-green, **live with iSCSI root**, fleet build server) →
+registered, CI-green, awaiting physical install) → europa (live,
+**btver2-tuned**, CI→Harmonia) → callisto
+(registered CI-green, **live with iSCSI root**, **skylake-tuned**, fleet
+build server) →
 ganymede (resolver/services) → himalia (laptop) → gaming/branding/terranix/
 edge layers. Port each from `archive/full-fleet-reference`, keeping the
 buildability rules above.

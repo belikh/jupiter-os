@@ -133,13 +133,6 @@
   boot.loader.grub.enable = false; # no bootloader on iSCSI LUN
 
   # ---- Build daemon tuning for the shared-builder workload ----------------
-  # callisto's actual workload is the OPPOSITE of pallene's
-  # (modules/services/build-server.nix). Pallene does full-closure
-  # rebuilds-from-scratch: wide shallow dependency graph, many small
-  # packages, so pallene correctly picks cores=1 + max-jobs=auto(N) — full
-  # utilization through cross-package parallelism, the standard Hydra
-  # build-farm pattern.
-  #
   # callisto is a SHARED incremental builder for the fleet: when any host
   # does `nixos-rebuild`, only the few packages that actually changed get
   # dispatched here (the rest substitute from cache.nixos.org / Harmonia). Low
@@ -159,18 +152,17 @@
   nix.settings.cores = 6;
   nix.settings.max-jobs = 1;
 
-  # Advertise capability to BUILD other hosts' microarch-tuned derivations
-  # without tuning callisto's own closure (no jupiter.build.microarch here —
-  # callisto itself stays on the portable baseline). Without the matching
-  # gccarch-<arch> feature, Nix refuses to even attempt a tagged derivation
-  # here regardless of whether the CPU could run it — same mechanism as
-  # pallene's jupiter.services.buildServer.microarchs.
+  # Advertise capability to BUILD other hosts' microarch-tuned derivations.
+  # callisto's own closure is ALSO skylake-tuned now (jupiter.build.microarch
+  # = "skylake" below), so this advert matches its own tag. Without the
+  # matching gccarch-<arch> feature, Nix refuses to even attempt a tagged
+  # derivation here regardless of whether the CPU could run it.
   #
   # CPU confirmed 2026-07-20: i5-8500T is Coffee Lake, a strict ISA superset
   # of Skylake — so the gccarch-skylake advert is safe both ways (callisto
   # can compile skylake-tagged code AND run it in any checkPhase). This is
-  # what makes the eventual kiosk tuning (also skylake, i5-6300U) safe to
-  # dispatch here.
+  # what makes the kiosk tuning (also skylake, i5-6300U) safe to dispatch
+  # here.
   nix.settings.system-features = lib.mkAfter [
     "gccarch-btver2"
     "gccarch-skylake"

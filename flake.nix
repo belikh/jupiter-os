@@ -274,7 +274,7 @@
 
         # HPE MicroServer Gen10 — the ZFS NAS and data hub. Phase 1 untuned
         # bootstrap from cache.nixos.org (stock kernel, no microarch); Phase 2
-        # switches to a btver2-tuned closure served from its own Attic cache.
+        # switches to a btver2-tuned closure served from Harmonia.
         # Also runs the PXE server for callisto (see
         # hosts/europa/configuration.nix) — ganymede's role in the old design,
         # moved here since ganymede isn't registered yet.
@@ -284,14 +284,14 @@
         # iSCSI (europa's tank/services/callisto-root zvol) — the fleet's
         # shared Nix remote builder (i5, 64GB RAM). See
         # hosts/callisto/configuration.nix and
-        # docs/callisto-iscsi-root-provisioning.md; not yet physically
-        # provisioned/booted on this design.
+        # docs/callisto-iscsi-root-provisioning.md (live at 10.1.1.3, root
+        # over ext4-iSCSI on europa's zvol).
         callisto = mkHost ./hosts/callisto/configuration.nix [ ];
 
-        # Kamatera VPS build server (persistent, disk-booted). The raw disk image
-        # is built with nixos-generators, compressed, and served via europa's
-        # vps-image-server + Cloudflare Tunnel for Kamatera's "Import from URL"
-        # flow. See hosts/pallene/disk-configuration.nix.
+        # Kamatera VPS (persistent, disk-booted; not a fleet member — built
+        # standalone, not via mkHost). The raw disk image is built with nixpkgs'
+        # make-disk-image.nix (see hosts/pallene/disk-configuration.nix),
+        # compressed, and served for Kamatera's "Import from URL" flow.
         pallene = nixpkgs.lib.nixosSystem {
           system = "x86_64-linux";
           modules = [ ./hosts/pallene/disk-configuration.nix ];

@@ -352,10 +352,11 @@
   # yields to real NAS work.
   jupiter.consoleScreensaver.enable = true;
 
-  # External backstop for the pallene build server: destroys any BinaryLane
-  # pallene* server still running past 4h, from a different host on a
-  # separately-sourced token — covers the OOM-SIGKILL and stale-ISO-token
-  # gaps the in-VM self-destruct/6h timer in build-server.nix can't.
+  # External backstop: destroys any stray BinaryLane pallene* server still
+  # running past 4h, from a different host on a separately-sourced token.
+  # NOTE: with the BinaryLane build-server path removed (the Kamatera VPS is
+  # the live pallene now), this watchdog's premise is orphaned — kept enabled
+  # pending a retire decision. See modules/services/pallene-watchdog.nix.
   jupiter.services.palleneWatchdog.enable = true;
 
   # iSCSI target backing callisto's root filesystem (replaces the old
