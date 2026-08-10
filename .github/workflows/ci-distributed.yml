@@ -81,21 +81,25 @@ name: CI (distributed builders)
 #   declared explicitly below rather than relying on default repo policy.
 #
 # ---------------------------------------------------------------------------
-# DELIBERATE NON-PARITY: no post-build-hook/cache-drainer on the builders
+# COORDINATOR-ONLY PUSH: builders do not drain to europa
 # ---------------------------------------------------------------------------
 # ci.yml's build-host job stages scripts/ci/post-build-hook.sh +
-# cache-drainer.sh so the job pushes each output to Harmonia as it's built.
-# Builders here don't get that: with the ssh-ng remote-build protocol, every
-# output a builder produces is already streamed back to the COORDINATOR's
-# own store as part of the protocol, so the coordinator's single post-build
-# push step (last step below) already covers everything. Wiring the same
-# drainer onto all 19 builders would mean up to 19 concurrent pushers
-# hitting jupiter-ci@europa at once — pallene's push-path notes atticd
-# wedges silently under concurrent pushers; Harmonia's `nix copy` is a
-# different, less fragile mechanism, but it's untested at this concurrency
-# and there's no reason to risk it when the coordinator-only push already
-# gets the data there. Revisit only if the coordinator's serial push loop
-# turns out to be the bottleneck.
+# cache-drainer.sh so the job pushes each output as it's built. Builders here
+# don't: with the ssh-ng remote-build protocol every output a builder produces
+# is streamed back to the COORDINATOR's own store, so the coordinator is the
+# single node holding every host's full closure. Its post-build-hook +
+# cache-drainer (see "Install async push system") drain to jupiter-ci@europa
+# one path at a time as the hook fires, and a final `nix copy` of the
+# toplevels ("Stop drainer, final push") guarantees completeness.
+#
+# History: an earlier version wired cache-drainers onto all 19 builders too.
+# That meant up to 19 concurrent `nix copy` sessions hitting jupiter-ci@europa,
+# which overloaded it — batches timed out (rc=123 at the 600s ceiling) and
+# ~75% of push attempts failed. (The coordinator's own pusher was meanwhile
+# dead: it ran push-daemon.sh against `europa-build`, an alias never defined
+# in this workflow.) Both fixed: builders no longer push, and the coordinator
+# drains to the real jupiter-ci@europa target. Revisit only if the
+# coordinator's single serial push becomes the bottleneck.
 
 on:
   workflow_dispatch:
@@ -174,7 +178,10 @@ jobs:
             system-features = kvm benchmark big-parallel gccarch-btver2 gccarch-skylake
             cores = 4
             max-jobs = 1
-            post-build-hook = /opt/ci/post-build-hook.sh
+            # No post-build-hook: builders don't push. The coordinator is the
+            # sole pusher (its post-build-hook + cache-drainer drain to europa).
+            # A hook here would write to a FIFO nothing reads, and once the pipe
+            # buffer fills it would block nix's build loop.
             fallback = true
 
       - name: Join tailnet under deterministic hostname
@@ -199,45 +206,10 @@ jobs:
             -o AuthorizedKeysFile="$HOME/.ssh/authorized_keys" &
           echo "builder ci-b${{ matrix.idx }}-${{ github.run_id }} ready: $(tailscale ip -4)"
 
-      - name: Stage cache-drainer + set up europa SSH
-        run: |
-          # Stage scripts for post-build-hook + cache-drainer
-          mkdir -p /opt/ci
-          cp scripts/ci/post-build-hook.sh /opt/ci/
-          cp scripts/ci/cache-drainer.sh /opt/ci/
-          cp scripts/ci/retain-recent.sh /opt/ci/
-          chmod +x /opt/ci/*.sh
-
-          # SSH to europa for pushing outputs (each builder pushes in parallel)
-          install -m 700 -d "$HOME/.ssh"
-          mkdir -p "$HOME/.ssh/controlmasters"
-          {
-            echo "Host europa-ci"
-            echo "  HostName europa"
-            echo "  User jupiter-ci"
-            echo "  IdentityFile $HOME/.ssh/europa_ci"
-            echo "  StrictHostKeyChecking accept-new"
-            echo "  ControlMaster auto"
-            echo "  ControlPath $HOME/.ssh/controlmasters/%r@%h:%p"
-            echo "  ControlPersist 30m"
-          } >> "$HOME/.ssh/config"
-          printf '%s\n' "${{ secrets.EUROPA_CI_SSH_KEY }}" > "$HOME/.ssh/europa_ci"
-          chmod 600 "$HOME/.ssh/europa_ci"
-
-          # Pre-warm connection for this builder
-          ssh -o ConnectTimeout=15 -o ControlMaster=auto -o ControlPath="$HOME/.ssh/controlmasters/%r@%h:%p" -o ControlPersist=30m europa-ci true
-
-      - name: Start cache-drainer (background process)
-        run: |
-          # Each builder runs its own drainer, pushing outputs as they complete
-          nohup bash -c '
-            NIX_BIN="$(command -v nix)"
-            while true; do
-              /opt/ci/cache-drainer.sh 2>&1
-              sleep 2
-            done
-          ' >/tmp/cache-drainer.log 2>&1 &
-          echo "Started cache-drainer (builder ${{ matrix.idx }})"
+      # Builders do NOT drain to europa — the coordinator is the sole pusher.
+      # (The steps that used to stage cache-drainer.sh + europa SSH and launch a
+      # per-builder drainer lived here; removed when pushing moved to the
+      # coordinator. See the header's "coordinator-only push" note.)
 
       # Sampler runs for the whole window the coordinator is dispatching to
       # us. /proc/stat is the only honest source here: `nix build` output
@@ -381,33 +353,62 @@ jobs:
             system-features = kvm benchmark big-parallel gccarch-btver2 gccarch-skylake
             max-jobs = 0
 
-      - name: Install async push system (post-build-hook + daemon)
+      - name: Install async push system (post-build-hook + cache-drainer)
+        env:
+          EUROPA_CI_SSH_KEY: ${{ secrets.EUROPA_CI_SSH_KEY }}
         run: |
-          # Copy scripts from repo
+          # The coordinator is the SOLE pusher. Its post-build-hook fires once
+          # per path built (the remote builders stream results back here over
+          # ssh-ng, the hook fires as each lands), writing each path to a FIFO
+          # that cache-drainer.sh drains one path at a time to jupiter-ci@europa.
+          # Builders do NOT push — they only build what the coordinator
+          # dispatches. (The old push-daemon.sh targeted europa-build, an alias
+          # never defined in this workflow, so it never pushed anything; the 19
+          # per-builder cache-drainers were the workaround AND the source of the
+          # rc=123 contention. This restores the intended coordinator-only push.)
           sudo install -m 755 ${{ github.workspace }}/scripts/ci/post-build-hook.sh /usr/local/bin/nix-post-build-hook
-          sudo install -m 755 ${{ github.workspace }}/scripts/ci/push-daemon.sh /usr/local/bin/nix-push-daemon
+          sudo install -m 755 ${{ github.workspace }}/scripts/ci/cache-drainer.sh /usr/local/bin/cache-drainer
 
-          # Create FIFO and log files
+          # FIFO mode 666: the hook runs as root (via nix-daemon), the drainer
+          # as the runner user — both must open it (mirrors post-build-hook.sh).
           sudo mkdir -p /var/run /var/log
-          sudo mkfifo -m 600 /var/run/nix-push-fifo 2>/dev/null || true
-          sudo touch /var/log/nix-push-hook.log /var/log/nix-push-daemon.log
-          sudo chmod 644 /var/log/nix-push-hook.log /var/log/nix-push-daemon.log
+          sudo mkfifo -m 666 /var/run/nix-push-fifo 2>/dev/null || true
+          sudo touch /var/log/nix-push-hook.log
+          sudo chmod 644 /var/log/nix-push-hook.log
 
-          # Start push daemon in background
-          sudo nohup /usr/local/bin/nix-push-daemon >/dev/null 2>&1 &
-          DAEMON_PID=$!
-          echo "PUSH_DAEMON_PID=$DAEMON_PID" >> $GITHUB_ENV
-          echo "Push daemon started (PID: $DAEMON_PID)"
+          # jupiter-ci key + europa-ci alias for cache-drainer.sh (same shape
+          # the per-builder drainer used). No pre-warm here: this step runs
+          # before tailnet join, so europa isn't reachable yet — cache-drainer
+          # opens its ControlMaster on the first push during the build.
+          install -m 700 -d "$HOME/.ssh" "$HOME/.ssh/controlmasters"
+          printf '%s\n' "$EUROPA_CI_SSH_KEY" > "$HOME/.ssh/europa_ci"
+          chmod 600 "$HOME/.ssh/europa_ci"
+          {
+            echo "Host europa-ci"
+            echo "  HostName europa"
+            echo "  User jupiter-ci"
+            echo "  IdentityFile $HOME/.ssh/europa_ci"
+            echo "  StrictHostKeyChecking accept-new"
+            echo "  ControlMaster auto"
+            echo "  ControlPath $HOME/.ssh/controlmasters/%r@%h:%p"
+            echo "  ControlPersist 30m"
+          } >> "$HOME/.ssh/config"
 
-          # Configure nix to use post-build-hook (requires daemon restart)
+          # Configure nix to use post-build-hook (requires daemon restart).
           sudo tee -a /etc/nix/nix.conf > /dev/null <<'EOF'
           post-build-hook = /usr/local/bin/nix-post-build-hook
           EOF
           sudo systemctl restart nix-daemon
           echo "nix-daemon restarted with post-build-hook"
-
-          # Verify hook is active
           nix show-config post-build-hook
+
+          # Launch the drainer (runner user). It holds the FIFO open on fd 3 and
+          # loops for the whole build, so it must outlive this step (nohup + &).
+          # NIX_BIN points cache-drainer.sh at nix explicitly in case the
+          # background shell's PATH differs from this step's.
+          NIX_BIN="$(command -v nix)" nohup /usr/local/bin/cache-drainer >/tmp/cache-drainer.log 2>&1 &
+          echo "DRAINER_PID=$!" >> $GITHUB_ENV
+          echo "cache-drainer started (PID $!) — sole pusher to jupiter-ci@europa"
 
       - name: Join tailnet
         run: |
@@ -730,16 +731,18 @@ jobs:
           # 2>&1 1>"$OUT_PATHS": stderr (the json log) piped to europa via ssh tee,
           # then stdout (--print-out-paths) aside to a file. Order matters.
           # --max-jobs 0: force EVERY derivation onto the 19 remote builders in
-          # /etc/nix/machines. The coordinator is dispatch-only — there is no
-          # localhost self-builder entry, deliberately: a 127.0.0.1 slot would
-          # build on the coordinator, where the only push path (push-daemon →
-          # europa-build) has no working target, so anything it built went
-          # unsent to Harmonia. A previous `--max-jobs auto`
-          # silently undid this: Nix reads `max-jobs = auto` as "one local slot
-          # per core" (=4 on the runner), overriding nix.conf's `max-jobs = 0`
-          # and making the coordinator build locally — which is why all 19
-          # remote builders showed zero work on every run. max-jobs governs
-          # LOCAL slots only; remote fan-out is controlled by the builders list.
+          # /etc/nix/machines. The coordinator is dispatch-only — it orchestrates
+          # the build, streams the nom log, and runs the sole cache-drainer +
+          # final push to europa, so its CPU stays free for that rather than
+          # joining the build pool. (Historically max-jobs=0 also avoided
+          # building locally because the local push path was broken; that's
+          # fixed now — see "Install async push system" — but dispatch-only is
+          # still the chosen shape.) A previous `--max-jobs auto` silently undid
+          # this: Nix reads `max-jobs = auto` as "one local slot per core" (=4
+          # on the runner), overriding nix.conf's `max-jobs = 0` and making the
+          # coordinator build locally — which is why all 19 remote builders
+          # showed zero work on every run. max-jobs governs LOCAL slots only;
+          # remote fan-out is controlled by the builders list.
           nix build "${INSTALLABLES[@]}" \
             --builders "@/etc/nix/machines" \
             --builders-use-substitutes \
@@ -787,6 +790,63 @@ jobs:
           fi
 
           exit $BUILD_EXIT
+
+      # When the build finishes, stop the coordinator's incremental drainer so
+      # the final push lands unobstructed. During the build the coordinator's
+      # cache-drainer pushed each path one at a time as the post-build-hook
+      # fired; left running, it would contend with this step's `nix copy` at
+      # europa's nix-daemon/SSH. Kill it, then ONE authoritative `nix copy` of
+      # every toplevel from the coordinator — the single node holding each
+      # host's full closure (streamed back from the builders over ssh-ng). nix
+      # copy is idempotent, so paths the drainer already landed are skipped;
+      # this fills any gaps and guarantees the closures are complete on europa.
+      - name: Stop drainer, final push to europa
+        if: always()
+        env:
+          RUN_ID: ${{ github.run_id }}
+          EUROPA_CI_SSH_KEY: ${{ secrets.EUROPA_CI_SSH_KEY }}
+        run: |
+          set +e
+          # 1. Stop the coordinator's cache-drainer (the sole incremental
+          #    pusher) so it isn't contending with the final nix copy.
+          pkill -f /usr/local/bin/cache-drainer 2>/dev/null \
+            && echo "stopped coordinator cache-drainer" \
+            || echo "(no coordinator cache-drainer running)"
+
+          # 2. Final authoritative push of every toplevel that built.
+          OUT_PATHS="/tmp/outpaths-${RUN_ID}"
+          if [ ! -s "$OUT_PATHS" ]; then
+            echo "no out paths ($OUT_PATHS empty/missing) — build produced nothing to push"
+            exit 0
+          fi
+          n=$(wc -l < "$OUT_PATHS")
+          echo "final push: $n toplevel(s) -> jupiter-ci@europa (drainer stopped)"
+
+          # Re-stage the jupiter-ci key + controlmasters dir (the push-system
+          # step also stages these, but this step is `if: always()` — be
+          # self-contained in case that step didn't run). Same NIX_SSHOPTS
+          # pattern as cache-drainer.sh.
+          install -m 700 -d "$HOME/.ssh" "$HOME/.ssh/controlmasters"
+          printf '%s\n' "$EUROPA_CI_SSH_KEY" > "$HOME/.ssh/europa_ci"
+          chmod 600 "$HOME/.ssh/europa_ci"
+
+          # Idempotent (paths already present are skipped); retry so one
+          # transient drop doesn't fail the whole final push.
+          ok=0
+          for attempt in 1 2 3 4 5; do
+            if timeout 1800 env \
+                NIX_SSHOPTS="-i $HOME/.ssh/europa_ci -o StrictHostKeyChecking=accept-new -o ControlMaster=auto -o ControlPath=$HOME/.ssh/controlmasters/%r@%h:%p -o ControlPersist=30m" \
+                nix copy --to "ssh-ng://jupiter-ci@europa" $(cat "$OUT_PATHS"); then
+              echo "final push OK on attempt $attempt"
+              ok=1; break
+            fi
+            echo "final push attempt $attempt failed; retry in $((attempt*5))s"
+            sleep $((attempt*5))
+          done
+          if [ "$ok" != 1 ]; then
+            echo "::error::final push to europa failed after 5 attempts — cache not updated"
+            exit 1
+          fi
 
   # Aggregation has to be its own job: the builders deliberately outlive the
   # coordinator (they poll until it completes), so the coordinator can never
