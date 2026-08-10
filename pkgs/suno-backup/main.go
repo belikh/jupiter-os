@@ -483,7 +483,16 @@ func loadStore(path string) (*store, error) {
 		return s, nil
 	}
 	if err := json.Unmarshal(data, &s.st); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
+		// A corrupt index would otherwise brick the daemon. Preserve the bad
+		// file for forensics and start empty: the per-clip self-heal in
+		// backupClip (re-derive sha256 from any wav already on disk) rebuilds
+		// the index from existing files without re-downloading anything.
+		// Recovery = re-walking feed pages and re-hashing local wavs, never
+		// re-fetching from Suno. (tank/archive/suno is also sanoid-snapshotted
+		// daily, so a clean rollback is another option.)
+		rotted := path + ".corrupt-" + time.Now().UTC().Format("20060102T150405Z")
+		_ = os.Rename(path, rotted)
+		return s, nil
 	}
 	if s.st.Index == nil {
 		s.st.Index = map[string]clipRecord{}
@@ -616,33 +625,55 @@ func (d *daemon) backupClip(ctx context.Context, raw json.RawMessage, core clipC
 	}
 
 	// 2. WAV master — generate on demand and stream down atomically.
+	//
+	// Restart safety is the invariant here: a clip already on disk is NEVER
+	// re-downloaded. processClips already skips ids present in the index, so
+	// the only ways we reach here with a wav already present are (a) a crash
+	// between the atomic rename and the index save leaving an orphan file, or
+	// (b) a wiped/corrupt index being rebuilt. In both cases we self-heal:
+	// re-derive the sha256 from the file on disk and record the index entry,
+	// so the next cycle skips it cleanly and the backfill converges. No network.
 	wavPath := filepath.Join(dir, core.ID+".wav")
 	if _, err := os.Stat(wavPath); err == nil {
-		// Already on disk (e.g. restart mid-index). Trust it; verify below.
-	} else if errors.Is(err, os.ErrNotExist) {
-		wavURL, err := d.api.wavURL(ctx, core.ID, d.cfg.pollInterval, d.cfg.convertTimeout)
-		if err != nil {
-			_ = os.Remove(metaPath) // roll back meta so next pass retries cleanly
-			return fmt.Errorf("wav for %s: %w", core.ID, err)
+		if d.st.has(core.ID) {
+			return nil
 		}
-		sum, n, err := d.download(ctx, wavURL, wavPath)
-		if err != nil {
-			_ = os.Remove(metaPath)
-			return fmt.Errorf("download %s: %w", wavURL, err)
+		sum, n, ferr := hashFile(wavPath)
+		if ferr != nil {
+			return fmt.Errorf("self-heal hash %s: %w", wavPath, ferr)
 		}
-		rec := clipRecord{
+		d.st.add(clipRecord{
 			ID: core.ID, Title: core.Title, CreatedAt: core.CreatedAt,
 			SHA256: sum, WavBytes: n, BackedUpAt: time.Now().UTC().Format(time.RFC3339),
-		}
-		d.st.add(rec)
-		if err := d.st.save(); err != nil {
-			d.log.Error("persist index failed", "err", err)
-		}
-		d.log.Info("backed up", "id", core.ID, "title", core.Title,
-			"bytes", n, "total_indexed", d.st.count())
-	} else if err != nil {
+		})
+		_ = d.st.save()
+		d.log.Info("self-healed index from existing wav", "id", core.ID, "bytes", n,
+			"total_indexed", d.st.count())
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
+
+	// WAV missing: generate on demand and download atomically.
+	wavURL, err := d.api.wavURL(ctx, core.ID, d.cfg.pollInterval, d.cfg.convertTimeout)
+	if err != nil {
+		_ = os.Remove(metaPath) // roll back meta so next pass retries cleanly
+		return fmt.Errorf("wav for %s: %w", core.ID, err)
+	}
+	sum, n, err := d.download(ctx, wavURL, wavPath)
+	if err != nil {
+		_ = os.Remove(metaPath)
+		return fmt.Errorf("download %s: %w", wavURL, err)
+	}
+	d.st.add(clipRecord{
+		ID: core.ID, Title: core.Title, CreatedAt: core.CreatedAt,
+		SHA256: sum, WavBytes: n, BackedUpAt: time.Now().UTC().Format(time.RFC3339),
+	})
+	if err := d.st.save(); err != nil {
+		d.log.Error("persist index failed", "err", err)
+	}
+	d.log.Info("backed up", "id", core.ID, "title", core.Title,
+		"bytes", n, "total_indexed", d.st.count())
 	return nil
 }
 
@@ -670,10 +701,18 @@ func (d *daemon) download(ctx context.Context, urlStr, dest string) (string, int
 	h := sha256.New()
 	mw := io.MultiWriter(f, h)
 	n, err := io.Copy(mw, resp.Body)
+	// fsync the data before close+rename so a crash/power-loss can't leave a
+	// renamed wav with only part of its bytes flushed (ZFS's COW already makes
+	// this safe, but this is cheap insurance on any filesystem).
+	syncErr := f.Sync()
 	closeErr := f.Close()
 	if err != nil {
 		_ = os.Remove(part)
 		return "", 0, err
+	}
+	if syncErr != nil {
+		_ = os.Remove(part)
+		return "", 0, fmt.Errorf("fsync %s: %w", part, syncErr)
 	}
 	if closeErr != nil {
 		_ = os.Remove(part)
@@ -685,6 +724,23 @@ func (d *daemon) download(ctx context.Context, urlStr, dest string) (string, int
 	}
 	if err := os.Rename(part, dest); err != nil {
 		_ = os.Remove(part)
+		return "", 0, err
+	}
+	return hex.EncodeToString(h.Sum(nil)), n, nil
+}
+
+// hashFile streams a file through sha256, returning the hex digest and byte
+// count. Used by the self-heal path to (re)derive an index entry for a wav
+// already on disk without re-downloading it.
+func hashFile(path string) (string, int64, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", 0, err
+	}
+	defer f.Close()
+	h := sha256.New()
+	n, err := io.Copy(h, f)
+	if err != nil {
 		return "", 0, err
 	}
 	return hex.EncodeToString(h.Sum(nil)), n, nil
@@ -877,6 +933,15 @@ func atomicWriteBytes(path string, data []byte) error {
 	}
 	tmpName := tmp.Name()
 	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		_ = os.Remove(tmpName)
+		return err
+	}
+	// fsync before close+rename so index.json / meta.json are durable across a
+	// crash (the per-track index is the daemon's resume checkpoint — losing it
+	// to a power-cut between write and rename would mean re-walking feeds to
+	// rebuild it, never re-download, but we'd rather not).
+	if err := tmp.Sync(); err != nil {
 		tmp.Close()
 		_ = os.Remove(tmpName)
 		return err
