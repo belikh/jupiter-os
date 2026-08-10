@@ -332,6 +332,19 @@
           makeWrapper = nixpkgs.legacyPackages.x86_64-linux.makeWrapper;
         }).aeon-cli;
 
+      # suno-backup — Go daemon that mirrors a Suno account's WAV masters +
+      # the complete per-clip metadata into europa's tank/archive/suno dataset.
+      # Built from in-tree stdlib-only source. Exposed standalone so the
+      # vendorHash can be recomputed via `nix build .#suno-backup` without
+      # pulling europa's whole btver2-tuned closure. Consumed by the host via
+      # modules/services/suno-backup.nix's pkgs.callPackage.
+      packages.x86_64-linux.suno-backup = (
+        import ./pkgs/suno-backup {
+          lib = nixpkgs.lib;
+          buildGoModule = nixpkgs.legacyPackages.x86_64-linux.buildGoModule;
+        }
+      );
+
       # `nix flake check` builds every registered host closure — for a
       # single-host bootstrap that's cheap, and it's the whole point: prove
       # the thing builds.

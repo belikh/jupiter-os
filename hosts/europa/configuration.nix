@@ -57,6 +57,11 @@
     ../../modules/services/rom-acquire.nix
     ../../modules/services/rom-scraper.nix
     ../../modules/services/arcade-inventory.nix
+    # Suno account library backup: always-on Go daemon (pkgs/suno-backup) that
+    # mirrors the account's WAV masters + complete per-clip metadata into
+    # tank/archive/suno. Authenticates via the Clerk __client cookie held in the
+    # suno_cookie sops secret (add it to secrets/secrets.yaml before activating).
+    ../../modules/services/suno-backup.nix
   ];
 
   networking.hostName = "europa";
@@ -378,6 +383,12 @@
   jupiter.services.romAcquire.enable = true;
   jupiter.services.romScraper.enable = true;
   jupiter.services.arcadeInventory.enable = true;
+
+  # Suno account backup daemon — WAV masters + full per-clip metadata into
+  # /tank/archive/suno. The suno_cookie sops secret must hold the Clerk
+  # __client value (added to secrets/secrets.yaml, encrypted to europa's age
+  # key) before this activates.
+  jupiter.services.sunoBackup.enable = true;
 
   # ---- sops secrets --------------------------------------------------------
   # harmonia_sign_key: private Nix binary-cache signing key for Harmonia

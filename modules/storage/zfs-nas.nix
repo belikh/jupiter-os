@@ -71,6 +71,18 @@ let
       mountpoint = "/tank/archive/retro";
       recordsize = "1M";
     }
+    # Suno account library backup (modules/services/suno-backup.nix): lossless
+    # WAV masters (10-40MB each) + the complete per-clip metadata JSON. Sibling
+    # of tank/archive/retro (same "external-sourced media under tank/archive"
+    # precedent), 1M recordsize for large immutable audio, snapshotted via the
+    # `bulk` sanoid template (daily/monthly — the archive grows slowly as new
+    # tracks generate, so hourly snapshots would be wasteful). NOT exported to
+    # kiosks; this is a cold backup, not served media.
+    {
+      name = "tank/archive/suno";
+      mountpoint = "/tank/archive/suno";
+      recordsize = "1M";
+    }
     {
       name = "tank/archive/retro/games";
       mountpoint = "/tank/archive/retro/games";

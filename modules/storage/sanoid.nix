@@ -54,6 +54,18 @@
         recursive = true;
       };
 
+      # Suno library backup (modules/services/suno-backup.nix): irreplaceable
+      # (Suno could delete/change retention any time — the whole point), so it
+      # IS snapshotted unlike the re-acquirable retro ROMs; but it's a
+      # slow-growing append-only archive of large immutable files, so the light
+      # `bulk` cadence (daily/monthly) fits better than tank/backups's hourly
+      # `important`. Non-recursive into tank/archive (only this dataset, not
+      # tank/archive/retro which stays unsnapshotted).
+      "tank/archive/suno" = {
+        useTemplate = [ "bulk" ];
+        recursive = true;
+      };
+
       # tank/surveillance, tank/downloads, tank/junk:
       # no snapshots (churny/disposable/in-flight).
     };
