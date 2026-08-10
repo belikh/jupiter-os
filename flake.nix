@@ -60,6 +60,12 @@
       url = "github:Jovian-Experiments/Jovian-NixOS";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # Aeon autonomous agent framework — source for dashboard package (not a flake)
+    aeon = {
+      url = "github:aeonfun/aeon/main";
+      flake = false;
+    };
   };
 
   outputs =
@@ -72,6 +78,7 @@
       sops-nix,
       ha-linux-agent,
       jovian,
+      aeon,
       ...
     }:
     let
@@ -301,6 +308,29 @@
       # it's independently checkable without pulling in europa's whole
       # (gccarch-btver2-tuned) system closure.
       packages.x86_64-linux.pxe-tftproot = pxeTftpRoot;
+
+      # Aeon dashboard and CLI packages — built from upstream aeonfun/aeon main branch
+      # (not a flake, so we use fetchFromGitHub + buildNpmPackage)
+      packages.x86_64-linux.aeon-dashboard =
+        (import ./pkgs/aeon/default.nix {
+          lib = nixpkgs.lib;
+          pkgs = nixpkgs.legacyPackages.x86_64-linux;
+          fetchFromGitHub = nixpkgs.legacyPackages.x86_64-linux.fetchFromGitHub;
+          stdenv = nixpkgs.legacyPackages.x86_64-linux.stdenv;
+          buildNpmPackage = nixpkgs.legacyPackages.x86_64-linux.buildNpmPackage;
+          nodejs = nixpkgs.legacyPackages.x86_64-linux.nodejs;
+          makeWrapper = nixpkgs.legacyPackages.x86_64-linux.makeWrapper;
+        }).aeon-dashboard;
+      packages.x86_64-linux.aeon-cli =
+        (import ./pkgs/aeon/default.nix {
+          lib = nixpkgs.lib;
+          pkgs = nixpkgs.legacyPackages.x86_64-linux;
+          fetchFromGitHub = nixpkgs.legacyPackages.x86_64-linux.fetchFromGitHub;
+          stdenv = nixpkgs.legacyPackages.x86_64-linux.stdenv;
+          buildNpmPackage = nixpkgs.legacyPackages.x86_64-linux.buildNpmPackage;
+          nodejs = nixpkgs.legacyPackages.x86_64-linux.nodejs;
+          makeWrapper = nixpkgs.legacyPackages.x86_64-linux.makeWrapper;
+        }).aeon-cli;
 
       # `nix flake check` builds every registered host closure — for a
       # single-host bootstrap that's cheap, and it's the whole point: prove

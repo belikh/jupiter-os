@@ -110,7 +110,11 @@
       sshKey = "/run/secrets/nix_build_ssh_key";
       maxJobs = 1;
       speedFactor = 2;
-      supportedFeatures = [ "gccarch-btver2" "gccarch-skylake" "big-parallel" ];
+      supportedFeatures = [
+        "gccarch-btver2"
+        "gccarch-skylake"
+        "big-parallel"
+      ];
       mandatoryFeatures = [ ];
     }
   ];

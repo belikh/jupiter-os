@@ -56,6 +56,8 @@
     ../../modules/services/mqtt.nix
     # Tailscale client for Jupiter tailnet
     ../../modules/services/tailscale.nix
+    # Aeon autonomous agent framework dashboard
+    ../../modules/services/aeon.nix
   ];
 
   networking.hostName = "callisto";
@@ -284,4 +286,21 @@
   jupiter.services.llm.host = "0.0.0.0";
   jupiter.services.llm.exposeLan = true;
   jupiter.services.llm.clientUrl = "http://127.0.0.1:8081";
+
+  # ---- Aeon autonomous agent framework --------------------------------------
+  # Runs the aeon dashboard (Next.js on port 5555, bound 0.0.0.0 for LAN +
+  # Tailscale access). The dashboard manages belikh/agent (a public fork of
+  # aeonfun/aeon) via the `gh` CLI — all config (skills, schedules,
+  # STRATEGY.md, SOUL.md, API keys, notifications) is done through the web UI.
+  # GitHub Actions runs skills on cron in the fork's repo (public = unlimited
+  # free Actions minutes). See modules/services/aeon.nix.
+  sops.secrets.aeon_gh_token = { };
+
+  jupiter.services.aeon = {
+    enable = true;
+    repoUrl = "github:belikh/agent";
+    ghTokenFile = config.sops.secrets.aeon_gh_token.path;
+    host = "0.0.0.0";
+    exposeLan = true;
+  };
 }

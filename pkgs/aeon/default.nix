@@ -1,124 +1,74 @@
-{ lib, fetchFromGitHub, nodePackages, stdenv, writeShellScriptBin, makeWrapper, pkgs, ... }:
+{
+  lib,
+  fetchFromGitHub,
+  stdenv,
+  buildNpmPackage,
+  nodejs,
+  makeWrapper,
+  pkgs,
+  ...
+}:
 
 let
-  # Fetch aeonfun/aeon from GitHub main branch
-  # Update rev and sha256 when updating to a newer commit
+  # Fetch aeonfun/aeon from GitHub main branch.
+  # Bump sha256 when updating: set to lib.fakeHash, build, paste the got: hash.
   aeonSrc = fetchFromGitHub {
     owner = "aeonfun";
     repo = "aeon";
     rev = "main";
-    sha256 = "sha256-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=";
+    sha256 = "sha256-5CjJYn8DrcBR+Q7Y+V4PfmfRIhHJK8qpFND3FVXnOgQ=";
     fetchSubmodules = false;
   };
 
-  # Build the dashboard (Next.js app)
-  dashboard = nodePackages.buildNodePackage {
+  # Install the dashboard's npm dependencies (offline via fetchNpmDeps).
+  #
+  # We do NOT run `next build` here: the dashboard fetches Google Fonts
+  # (Inter, Space Mono) at build time via next/font/google, which requires
+  # network — impossible inside the Nix sandbox. Instead, we install deps
+  # only, and the NixOS module runs `next dev` at runtime (same as aeon's
+  # own ./aeon launcher, which uses `npm run dev`, not `next start`).
+  dashboard = buildNpmPackage {
     pname = "aeon-dashboard";
     version = "0.1.0";
 
-    src = aeonSrc + "/apps/dashboard";
-
-    # Use the package.json from the dashboard app
-    packageJSON = aeonSrc + "/apps/dashboard/package.json";
-
-    # Don't run tests during build
-    doCheck = false;
-
-    # Build the Next.js app
-    buildCommand = "npm run build";
-
-    # Install dependencies
-    npmFlags = [ "--production=false" ];
-
-    # Required native dependencies for Next.js
-    nativeBuildInputs = [ nodePackages.node-gyp ];
-
-    # Environment variables for build
-    NODE_ENV = "production";
-    NEXT_TELEMETRY_DISABLED = "1";
-  };
-
-  # Build the CLI (TypeScript app that uses dashboard lib)
-  cli = nodePackages.buildNodePackage {
-    pname = "aeon-cli";
-    version = "0.1.0";
-
-    src = aeonSrc + "/apps/cli";
-
-    packageJSON = aeonSrc + "/apps/cli/package.json";
-
-    doCheck = false;
-
-    buildCommand = "npm run build";
-
-    npmFlags = [ "--production=false" ];
-
-    nativeBuildInputs = [ nodePackages.node-gyp ];
-
-    NODE_ENV = "production";
-  };
-
-  # Wrap the aeon launcher script to use pre-built artifacts
-  # The original ./aeon launcher is at aeonSrc/aeon
-  aeonLauncher = writeShellScriptBin "aeon" ''
-    #!/usr/bin/env bash
-    set -euo pipefail
-
-    DIR="${BASH_SOURCE[0]%/*}"
-    ROOT_DIR="${DIR}/../.."
-
-    # The pre-built CLI entry point
-    CLI_DIST="${ROOT_DIR}/apps/cli/dist/index.js"
-    DASHBOARD_DIR="${ROOT_DIR}/apps/dashboard"
-
-    if [ "$#" -gt 0 ]; then
-      # CLI mode: delegate to pre-built CLI
-      exec node "$CLI_DIST" "$@"
-    else
-      # Dashboard mode: start Next.js server
-      cd "$DASHBOARD_DIR"
-      exec node node_modules/next/dist/bin/next start -p 5555 -H 0.0.0.0
-    fi
-  '';
-
-  # Combined package with both dashboard and CLI
-  combined = stdenv.mkDerivation {
-    pname = "aeon";
-    version = "0.1.0";
-
     src = aeonSrc;
+    sourceRoot = "source/apps/dashboard";
 
-    buildInputs = [ dashboard cli aeonLauncher ];
+    npmDepsHash = "sha256-1I71PGGBoZaDxDb58ag/S/PuqxRyxZNX/LYSlMxe6zU=";
+
+    # Don't run `next build` — the NixOS module runs `next dev` at runtime
+    dontNpmBuild = true;
+
+    doCheck = false;
+
+    env = {
+      NEXT_TELEMETRY_DISABLED = "1";
+    };
 
     installPhase = ''
-      mkdir -p $out/bin
-      mkdir -p $out/lib/aeon
+      runHook preInstall
 
-      # Copy pre-built dashboard
-      cp -r ${dashboard}/.next $out/lib/aeon/.next
-      cp -r ${dashboard}/public $out/lib/aeon/public 2>/dev/null || true
-      cp -r ${dashboard}/node_modules $out/lib/aeon/node_modules 2>/dev/null || true
-      cp ${dashboard}/package.json $out/lib/aeon/package.json
+      mkdir -p $out
+      cp -r node_modules $out/node_modules
+      cp package.json $out/package.json
+      # Copy source files needed for `next dev`
+      cp -r app $out/app
+      cp -r components $out/components
+      cp -r lib $out/lib
+      cp -r public $out/public 2>/dev/null || true
+      cp next.config.ts $out/next.config.ts
+      cp tsconfig.json $out/tsconfig.json
+      cp postcss.config.mjs $out/postcss.config.mjs 2>/dev/null || true
+      cp proxy.ts $out/proxy.ts 2>/dev/null || true
+      cp instrumentation.ts $out/instrumentation.ts 2>/dev/null || true
 
-      # Copy pre-built CLI
-      cp -r ${cli}/dist $out/lib/aeon/cli-dist
-      cp ${cli}/package.json $out/lib/aeon/cli-package.json
-
-      # Copy the launcher
-      cp ${aeonLauncher} $out/bin/aeon
-      chmod +x $out/bin/aeon
-
-      # Create a symlink for the dashboard start script
-      ln -s $out/bin/aeon $out/bin/aeon-dashboard
+      runHook postInstall
     '';
-
-    # Make the output relocatable
-    dontStrip = true;
   };
 
 in
 {
-  inherit combined dashboard cli;
-  aeon-dashboard = combined;
-  aeon-cli = combined;
+  inherit dashboard;
+  aeon-dashboard = dashboard;
+  aeon-cli = dashboard;
 }
