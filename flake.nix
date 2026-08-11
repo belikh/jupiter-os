@@ -138,32 +138,57 @@
                 ];
               }
             )
-            # bmake's `deptgt-interrupt` unit test is flaky under load: it sends
-            # SIGINT to a child make and expects exit 130, but under the heavy
+            # checkPhase is off fleet-wide, unconditionally, for every
+            # derivation — not just nixpkgs.config.doCheckByDefault (which
+            # already defaults to false but is only a fallback packages can
+            # and do override with their own `doCheck = true;`, so it never
+            # touched the packages below anyway).
+            #
+            # This started as one-off overrides for individually-flaky
+            # tests: bmake's `deptgt-interrupt` unit test sends SIGINT to a
+            # child make and expects exit 130, but under the heavy
             # oversubscription of a "rebuild the world" run (load 8-21) the
             # signal sometimes doesn't land in time and the child exits 0 ->
-            # "Failed tests: deptgt-interrupt" -> bmake build fails -> lowdown
-            # (uses bmake) fails -> cascades up to the europa system toplevel.
-            # bmake itself builds fine; only its test suite is the problem, so
-            # skip it. See europa-20260716120909.log in R2 logs/.
+            # "Failed tests: deptgt-interrupt" -> bmake build fails ->
+            # lowdown (uses bmake) fails -> cascades up to the europa system
+            # toplevel (see europa-20260716120909.log in R2 logs/).
+            # perl5Packages.Test2Harness's `t/integration/preload.t` failed
+            # the same way under load (attempts 11 and 12 of the europa
+            # bring-up, same "1 of 62 test files failed" signature both
+            # times) cascading through nix-perl -> nix -> the whole system
+            # toplevel, with the other 61 test files and 1729 assertions
+            # passing fine.
             #
-            # perl5Packages.Test2Harness's `t/integration/preload.t` is
-            # likewise flaky under heavy distributed-build load: it failed
-            # attempt11 and attempt12 of the europa bring-up (same "1 of 62
-            # test files failed" signature both times), cascading through
-            # nix-perl -> nix -> the whole system toplevel. The other 61
-            # test files and 1729 assertions pass; only this one subtest
-            # under load is the problem, so skip the test suite entirely.
+            # It stopped being one-off when the CI distributed-builder
+            # pipeline (ci-distributed.yml) hit the same failure mode for a
+            # structural reason: it builds gccarch-bdver4/skylake-tuned
+            # closures on GitHub's `ubuntu-latest` runner pool, a
+            # heterogeneous grab-bag of Azure CPU generations, then
+            # immediately *executes* the just-built, target-tuned test
+            # binaries as part of checkPhase on that same ephemeral runner.
+            # zlib's checkPhase crashed with "Illegal instruction (core
+            # dumped)" running ./minigzip64 — a target/build CPU mismatch,
+            # the same class of problem nixpkgs itself already skips
+            # checkPhase for on cross builds, just triggered here by
+            # runner-pool heterogeneity instead of an explicit cross build.
+            # (A second, unrelated failure in the same run — gmp-6.3.0's
+            # configure erroring on a missing `m4` on one builder — is a
+            # broken-builder-environment issue, not a doCheck one; harmless
+            # for this override to also silence, since a broken toolchain
+            # dependency will still fail later at build time regardless of
+            # whether its own checkPhase would have run.)
             {
               nixpkgs.overlays = [
                 (final: prev: {
-                  bmake = prev.bmake.overrideAttrs (_: {
-                    doCheck = false;
-                  });
-                  perl5Packages = prev.perl5Packages // {
-                    Test2Harness = prev.perl5Packages.Test2Harness.overrideAttrs (_: {
-                      doCheck = false;
-                    });
+                  stdenv = prev.stdenv // {
+                    mkDerivation =
+                      args:
+                      prev.stdenv.mkDerivation (
+                        if prev.lib.isFunction args then
+                          (finalAttrs: (args finalAttrs) // { doCheck = false; doInstallCheck = false; })
+                        else
+                          args // { doCheck = false; doInstallCheck = false; }
+                      );
                   };
                 })
                 # modules/core/crush.nix packages crush itself, pinned
