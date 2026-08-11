@@ -106,6 +106,14 @@
     "gccarch-btver2"
     "big-parallel"
   ];
+  # Retain build-time outputs alongside the rooted runtime closures.
+  # keep-derivations is already true, so a pinned toplevel reaches its full
+  # derivation graph; keep-outputs materializes those derivations' outputs
+  # (the tuned toolchain — binutils, rustc, clang, llvm, ninja, dev libs) so
+  # Harmonia can serve the build closure to CI's remote builders instead of
+  # them rebuilding it from source each run. Cost: europa's store grows to
+  # the full build closure of the retained builds.
+  nix.settings.keep-outputs = true;
   nix.buildMachines = lib.mkForce [
     {
       hostName = "10.1.1.3";
