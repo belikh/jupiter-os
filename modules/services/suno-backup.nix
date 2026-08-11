@@ -55,9 +55,10 @@ in
         Destination root for the backup. Must be a mounted path (the service
         unit gates on RequiresMountsFor this). Defaults to the
         `tank/archive/suno` ZFS dataset (modules/storage/zfs-nas.nix). Layout
-        under it: index.json (clip id -> {sha256,wav_bytes,…} state +
-        backfill cursor), manifest-free per-clip audit via backed_up_at in
-        index.json, and tracks/<YYYY>/<MM>/<id>/{<id>.wav, meta.json}.
+        under it: index.json (clip id -> {wav sha256/bytes, cover sha256/bytes,
+        backfill cursor} state), and tracks/<YYYY>/<MM>/<id>/{<id>.wav,
+        cover.jpg, meta.json} — the lossless master, the large cover art, and
+        the complete clip object (lyrics/prompts/tags/…).
       '';
     };
 

@@ -450,12 +450,14 @@ func (c *apiClient) wavURL(ctx context.Context, id string, poll, timeout time.Du
 // ------------------------------- Store --------------------------------------
 
 type clipRecord struct {
-	ID         string `json:"id"`
-	Title      string `json:"title"`
-	CreatedAt  string `json:"created_at"`
-	SHA256     string `json:"sha256"`
-	WavBytes   int64  `json:"wav_bytes"`
-	BackedUpAt string `json:"backed_up_at"`
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	CreatedAt   string `json:"created_at"`
+	SHA256      string `json:"sha256"` // lossless WAV master
+	WavBytes    int64  `json:"wav_bytes"`
+	ImageSHA256 string `json:"image_sha256,omitempty"` // large cover art; "none" = checked, no art
+	ImageBytes  int64  `json:"image_bytes,omitempty"`
+	BackedUpAt  string `json:"backed_up_at"`
 }
 
 type storeState struct {
@@ -611,10 +613,11 @@ func (d *daemon) backupClip(ctx context.Context, raw json.RawMessage, core clipC
 		return err
 	}
 
-	// 1. meta.json — the complete clip object, pretty-printed. This is the
-	//    full set of metadata Suno exposes (lyrics, prompts, tags, counts,
-	//    flags, project, media_urls, action_config, ...), stored verbatim so
-	//    nothing is lost to a hand-picked struct.
+	// 1. meta.json — the complete clip object, pretty-printed. The full set of
+	//    metadata Suno exposes (lyrics, prompts, tags, counts, flags, project,
+	//    media_urls, action_config, ...), stored verbatim so nothing is lost to
+	//    a hand-picked struct. Also the source healImages reads for the cover
+	//    URL when backfilling already-indexed clips (no API call).
 	metaPath := filepath.Join(dir, "meta.json")
 	if _, err := os.Stat(metaPath); errors.Is(err, os.ErrNotExist) {
 		if err := atomicWriteBytes(metaPath, prettyJSON(raw)); err != nil {
@@ -624,57 +627,114 @@ func (d *daemon) backupClip(ctx context.Context, raw json.RawMessage, core clipC
 		return err
 	}
 
-	// 2. WAV master — generate on demand and stream down atomically.
-	//
-	// Restart safety is the invariant here: a clip already on disk is NEVER
-	// re-downloaded. processClips already skips ids present in the index, so
-	// the only ways we reach here with a wav already present are (a) a crash
-	// between the atomic rename and the index save leaving an orphan file, or
-	// (b) a wiped/corrupt index being rebuilt. In both cases we self-heal:
-	// re-derive the sha256 from the file on disk and record the index entry,
-	// so the next cycle skips it cleanly and the backfill converges. No network.
-	wavPath := filepath.Join(dir, core.ID+".wav")
-	if _, err := os.Stat(wavPath); err == nil {
-		if d.st.has(core.ID) {
-			return nil
-		}
-		sum, n, ferr := hashFile(wavPath)
-		if ferr != nil {
-			return fmt.Errorf("self-heal hash %s: %w", wavPath, ferr)
-		}
-		d.st.add(clipRecord{
-			ID: core.ID, Title: core.Title, CreatedAt: core.CreatedAt,
-			SHA256: sum, WavBytes: n, BackedUpAt: time.Now().UTC().Format(time.RFC3339),
-		})
-		_ = d.st.save()
-		d.log.Info("self-healed index from existing wav", "id", core.ID, "bytes", n,
-			"total_indexed", d.st.count())
-		return nil
-	} else if !errors.Is(err, os.ErrNotExist) {
+	// 2. WAV master (critical) — generate on demand and stream down atomically,
+	//    or self-heal from an existing file. Never re-downloads.
+	wsha, wbytes, err := d.ensureWav(ctx, core, dir)
+	if err != nil {
+		_ = os.Remove(metaPath) // roll back meta so next pass retries cleanly
 		return err
 	}
 
-	// WAV missing: generate on demand and download atomically.
-	wavURL, err := d.api.wavURL(ctx, core.ID, d.cfg.pollInterval, d.cfg.convertTimeout)
-	if err != nil {
-		_ = os.Remove(metaPath) // roll back meta so next pass retries cleanly
-		return fmt.Errorf("wav for %s: %w", core.ID, err)
+	// 3. Large cover art (image_large_url) — supplementary. A clip with no
+	//    cover URL records the "none" sentinel so healImages doesn't keep
+	//    re-scanning it; a download failure leaves ImageSHA256 empty for a
+	//    healImages retry.
+	isha, ibytes, ierr := d.ensureImage(ctx, raw, dir)
+	if ierr != nil {
+		d.log.Warn("cover art fetch failed (healImages will retry)", "id", core.ID, "err", ierr)
+	} else if isha == "" {
+		isha = "none" // clip has no image_large_url; mark checked
 	}
-	sum, n, err := d.download(ctx, wavURL, wavPath)
-	if err != nil {
-		_ = os.Remove(metaPath)
-		return fmt.Errorf("download %s: %w", wavURL, err)
-	}
+
 	d.st.add(clipRecord{
 		ID: core.ID, Title: core.Title, CreatedAt: core.CreatedAt,
-		SHA256: sum, WavBytes: n, BackedUpAt: time.Now().UTC().Format(time.RFC3339),
+		SHA256: wsha, WavBytes: wbytes,
+		ImageSHA256: isha, ImageBytes: ibytes,
+		BackedUpAt: time.Now().UTC().Format(time.RFC3339),
 	})
 	if err := d.st.save(); err != nil {
 		d.log.Error("persist index failed", "err", err)
 	}
 	d.log.Info("backed up", "id", core.ID, "title", core.Title,
-		"bytes", n, "total_indexed", d.st.count())
+		"wav_bytes", wbytes, "image_bytes", ibytes, "total_indexed", d.st.count())
 	return nil
+}
+
+// ensureWav guarantees the lossless master is on disk, returning its sha256 and
+// byte count. If the wav already exists (crash-recovery orphan, or a re-
+// encounter during an index rebuild) it is hashed in place rather than
+// re-fetched — never re-downloads an existing file.
+func (d *daemon) ensureWav(ctx context.Context, core clipCore, dir string) (string, int64, error) {
+	wavPath := filepath.Join(dir, core.ID+".wav")
+	if _, err := os.Stat(wavPath); err == nil {
+		sum, n, ferr := hashFile(wavPath)
+		if ferr != nil {
+			return "", 0, fmt.Errorf("hash existing wav %s: %w", wavPath, ferr)
+		}
+		return sum, n, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", 0, err
+	}
+	wavURL, err := d.api.wavURL(ctx, core.ID, d.cfg.pollInterval, d.cfg.convertTimeout)
+	if err != nil {
+		return "", 0, fmt.Errorf("wav for %s: %w", core.ID, err)
+	}
+	sum, n, err := d.download(ctx, wavURL, wavPath)
+	if err != nil {
+		return "", 0, fmt.Errorf("download %s: %w", wavURL, err)
+	}
+	return sum, n, nil
+}
+
+// ensureImage fetches the clip's large cover art (image_large_url) unless it is
+// already on disk (hashed in place). Returns ("", 0, nil) — not an error —
+// when the clip has no cover URL. Cover-art failure is non-fatal: the WAV is
+// the critical artifact, and healImages retries missing covers from meta.json.
+func (d *daemon) ensureImage(ctx context.Context, raw json.RawMessage, dir string) (string, int64, error) {
+	imgURL := largeImageURL(raw)
+	if imgURL == "" {
+		return "", 0, nil
+	}
+	coverPath := filepath.Join(dir, "cover"+imageExt(imgURL))
+	if _, err := os.Stat(coverPath); err == nil {
+		sum, n, ferr := hashFile(coverPath)
+		if ferr != nil {
+			return "", 0, fmt.Errorf("hash existing cover %s: %w", coverPath, ferr)
+		}
+		return sum, n, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", 0, err
+	}
+	sum, n, err := d.download(ctx, imgURL, coverPath)
+	if err != nil {
+		return "", 0, fmt.Errorf("cover %s: %w", imgURL, err)
+	}
+	return sum, n, nil
+}
+
+// largeImageURL pulls image_large_url out of the clip object (empty if absent).
+func largeImageURL(raw json.RawMessage) string {
+	var s struct {
+		ImageLargeURL string `json:"image_large_url"`
+	}
+	if err := json.Unmarshal(raw, &s); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(s.ImageLargeURL)
+}
+
+// imageExt maps a cover URL to its on-disk extension. Suno serves JPEG covers
+// (image_large_url is always .jpeg for real artwork), but preserve .png/.webp
+// if a future/default variant ever appears rather than mislabel the file.
+func imageExt(u string) string {
+	switch {
+	case strings.HasSuffix(u, ".png"):
+		return ".png"
+	case strings.HasSuffix(u, ".webp"):
+		return ".webp"
+	default:
+		return ".jpg"
+	}
 }
 
 // download streams url to dest atomically (.part then rename), hashing as it
@@ -872,6 +932,24 @@ func (d *daemon) run(ctx context.Context) error {
 		}
 	}()
 
+	// Image backfill runs immediately, then hourly. Catches clips backed up
+	// before cover-art support landed and clips whose cover download failed:
+	// it reads each clip's on-disk meta.json for image_large_url (no API call)
+	// and fetches the large cover. Cheap no-op scan once every clip is done.
+	go func() {
+		t := time.NewTicker(time.Hour)
+		defer t.Stop()
+		d.healImages(ctx)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				d.healImages(ctx)
+			}
+		}
+	}()
+
 	// Backfill runs continuously; when the library is fully walked it idles to
 	// a slow re-verify sweep.
 	idle := time.NewTimer(0)
@@ -893,6 +971,85 @@ func (d *daemon) run(ctx context.Context) error {
 			idle.Reset(delay)
 		}
 	}
+}
+
+// healImages backfills the large cover art for indexed clips missing it: clips
+// backed up before cover-art support landed, and clips whose cover download
+// previously failed. It reads each clip's on-disk meta.json for image_large_url
+// — no API calls — fetches the cover, and records sha256/bytes. The "none"
+// sentinel marks clips with no cover URL so they're not re-scanned. Idempotent
+// and concurrency-limited; a cheap no-op scan once every clip is done.
+func (d *daemon) healImages(ctx context.Context) {
+	type pending struct {
+		id  string
+		rec clipRecord
+	}
+	d.st.mu.Lock()
+	pend := make([]pending, 0)
+	for id, rec := range d.st.st.Index {
+		if rec.ImageSHA256 == "" {
+			pend = append(pend, pending{id: id, rec: rec})
+		}
+	}
+	d.st.mu.Unlock()
+	if len(pend) == 0 {
+		return
+	}
+	d.log.Info("image backfill pass", "clips_missing_cover", len(pend))
+	var wg sync.WaitGroup
+	for _, p := range pend {
+		select {
+		case <-ctx.Done():
+			return
+		case d.sem <- struct{}{}:
+		}
+		wg.Add(1)
+		go func(p pending) {
+			defer wg.Done()
+			defer func() { <-d.sem }()
+			if err := d.healOneImage(ctx, p.id, p.rec); err != nil {
+				d.log.Warn("image backfill item failed (will retry)", "id", p.id, "err", err)
+			}
+		}(p)
+	}
+	wg.Wait()
+}
+
+// healOneImage fetches (or re-hashes) the large cover for one indexed clip from
+// its on-disk meta.json. Marks "none" if the clip has no cover URL.
+func (d *daemon) healOneImage(ctx context.Context, id string, rec clipRecord) error {
+	dir := filepath.Join(d.cfg.dataDir, "tracks", yearMonth(rec.CreatedAt), id)
+	raw, err := os.ReadFile(filepath.Join(dir, "meta.json"))
+	if err != nil {
+		return fmt.Errorf("read meta.json: %w", err)
+	}
+	imgURL := largeImageURL(raw)
+	if imgURL == "" {
+		rec.ImageSHA256 = "none"
+		d.st.add(rec)
+		_ = d.st.save()
+		return nil
+	}
+	coverPath := filepath.Join(dir, "cover"+imageExt(imgURL))
+	var sum string
+	var n int64
+	if _, err := os.Stat(coverPath); err == nil {
+		sum, n, err = hashFile(coverPath)
+		if err != nil {
+			return err
+		}
+	} else {
+		sum, n, err = d.download(ctx, imgURL, coverPath)
+		if err != nil {
+			return err
+		}
+	}
+	rec.ImageSHA256 = sum
+	rec.ImageBytes = n
+	d.st.add(rec)
+	_ = d.st.save()
+	d.log.Info("image backfilled", "id", id, "bytes", n)
+	return nil
 }
 
 // ------------------------------- helpers ------------------------------------
