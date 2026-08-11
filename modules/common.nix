@@ -59,6 +59,17 @@
     nix-output-monitor
   ];
 
+  # nh (nix helper) fleet-wide. programs.nh is the nixpkgs-blessed module (not
+  # a bare package): it installs nh and wires NH_FLAKE so `nh os switch` on a
+  # host rebuilds github:belikh/jupiter-os#<hostname> — the same pull-from-
+  # GitHub deploy shape as the nixos-rebuild incantation in CLAUDE.md, just
+  # less typing. Deliberately NOT enabling programs.nh.clean (nh's GC) because
+  # nix.gc below already owns weekly collection.
+  programs.nh = {
+    enable = true;
+    flake = "github:belikh/jupiter-os";
+  };
+
   system.stateVersion = "26.05";
   time.timeZone = "Australia/Brisbane";
 
