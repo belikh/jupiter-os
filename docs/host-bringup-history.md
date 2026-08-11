@@ -76,10 +76,12 @@ Persistent, disk-booted from a raw image built via `nix build .#pallene-raw`
 (`hosts/pallene/disk-configuration.nix`, built with nixpkgs' make-disk-image.nix).
 The earlier ephemeral BinaryLane ISO build-server design
 (`hosts/pallene/configuration.nix` + `modules/services/build-server.nix` +
-`scripts/binarylane-*`) has been removed as orphaned dead code. Note:
-`modules/services/pallene-watchdog.nix` (still enabled on europa) was written to
-backstop that BinaryLane path and is now itself orphaned — pending a retire
-decision.
+`scripts/binarylane-*`) has been removed as orphaned dead code. The
+`pallene-watchdog` that backstopped that BinaryLane path (ran on europa,
+polled `api.binarylane.com.au` every 15min to destroy stale `pallene*`
+servers) was retired alongside it — module deleted, import + enable removed
+from europa. The `binarylane_api_token` sops secret is kept in
+`secrets/secrets.yaml` for potential future BinaryLane use.
 
 ## Roadmap hosts
 

@@ -44,7 +44,6 @@
     ../../modules/services/smart-monitoring.nix
     ../../modules/services/console-screensaver.nix
     ../../modules/services/cloudflare-tunnel.nix
-    ../../modules/services/pallene-watchdog.nix
     ../../modules/services/iscsi-target.nix
     # Headscale control plane (self-hosted Tailscale)
     ../../modules/services/headscale.nix
@@ -368,13 +367,6 @@
   # yields to real NAS work.
   jupiter.consoleScreensaver.enable = true;
 
-  # External backstop: destroys any stray BinaryLane pallene* server still
-  # running past 4h, from a different host on a separately-sourced token.
-  # NOTE: with the BinaryLane build-server path removed (the Kamatera VPS is
-  # the live pallene now), this watchdog's premise is orphaned — kept enabled
-  # pending a retire decision. See modules/services/pallene-watchdog.nix.
-  jupiter.services.palleneWatchdog.enable = true;
-
   # iSCSI target backing callisto's root filesystem (replaces the old
   # NFS-backed /persist — see hosts/callisto/configuration.nix). ACL-scoped
   # to callisto's initiator IQN only, no CHAP (see
@@ -405,7 +397,9 @@
   # harmonia_sign_key: private Nix binary-cache signing key for Harmonia
   # (generated via nix-store --generate-binary-cache-key). Must be added to
   # secrets/secrets.yaml before first deploy or Harmonia's activation fails.
-  # binarylane_api_token: consumed by jupiter.services.palleneWatchdog.
+  # (binarylane_api_token stays in secrets.yaml but is no longer materialized
+  # here — its consumer, the pallene-watchdog, was retired. Kept for potential
+  # future BinaryLane use.)
   sops.secrets.harmonia_sign_key = { };
   sops.secrets.nix_build_ssh_key = { };
 
