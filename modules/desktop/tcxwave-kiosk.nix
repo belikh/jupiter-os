@@ -364,11 +364,12 @@ in
     # (hosts/callisto/configuration.nix) for OTHER hosts' derivations. This
     # kiosk's own closure is tuned above (skylake); callisto's is too now.
     #
-    # gccarch-btver2 (added 2026-07-20, matching modules/core/build-machines.nix's
+    # gccarch-bdver4 (matching modules/core/build-machines.nix's
     # kioskBuilders supportedFeatures): makes kiosks eligible to help build
-    # europa's btver2-tuned closure too — btver2 is a portable baseline ISA
-    # subset, safe to compile/execute on any modern x86_64 CPU including
-    # Skylake. This is the REMOTE side of that eligibility — nix's own
+    # europa's bdver4-tuned (Excavator) closure too — Skylake is an ISA
+    # superset of Excavator's standard extensions (AVX2/FMA/BMI/F16C), so a
+    # Skylake kiosk can safely compile and run-check europa's bdver4 code.
+    # This is the REMOTE side of that eligibility — nix's own
     # daemon here enforces system-features against what a dispatcher
     # requests, independent of what the dispatcher's --builders string
     # claims, so both sides need this tag or the remote refuses the job

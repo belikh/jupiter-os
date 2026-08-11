@@ -19,7 +19,7 @@
 #
 # The same package is also exposed standalone as the flake output
 # `packages.x86_64-linux.dmt-console` (built with the UNTUNED nixpkgs so it
-# substitutes from cache.nixos.org and never lands in europa's gccarch-btver2
+# substitutes from cache.nixos.org and never lands in europa's gccarch-bdver4
 # closure). Keep these two buildGoModule calls in sync.
 
 let

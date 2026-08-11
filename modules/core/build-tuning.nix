@@ -25,10 +25,10 @@ in
   options.jupiter.build.microarch = lib.mkOption {
     type = lib.types.nullOr lib.types.str;
     default = null;
-    example = "btver2";
+    example = "bdver4";
     description = ''
       GCC `-march`/`-mtune` target (a `nixpkgs.hostPlatform.gcc.arch` value,
-      e.g. "btver2", "znver3") matching this host's actual CPU. Leave null
+      e.g. "bdver4", "znver3") matching this host's actual CPU. Leave null
       (the default) to build the ordinary portable baseline every other
       nixpkgs consumer gets — the safe choice for any host whose real
       hardware isn't confirmed yet.

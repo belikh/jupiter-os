@@ -47,12 +47,12 @@ let
   # dashboard session so builds never visibly stutter the kiosk UI. Real
   # core count TODO if/when we want to push harder.
   #
-  # gccarch-btver2 (proven manually against europa's closure on 2026-07-20,
-  # dispatched alongside callisto via a one-off --builders flag): the kiosks
-  # aren't themselves btver2-tuned, this only makes them ELIGIBLE to build
-  # btver2-tagged derivations for other hosts (europa) — btver2 is a portable
-  # baseline ISA subset, safe to execute/compile on any modern x86_64 CPU
-  # including these Skylake units. Caveat: each kiosk only has ~7.6GiB RAM
+  # gccarch-bdver4 (added so kiosks can help build europa's Excavator-tuned
+  # closure): the kiosks aren't themselves bdver4-tuned, this only makes them
+  # ELIGIBLE to build bdver4-tagged derivations for other hosts (europa) —
+  # Skylake is an ISA superset of Excavator's standard extensions (AVX2/FMA/
+  # BMI/F16C), so a Skylake kiosk can safely compile and run-check europa's
+  # bdver4 code. Caveat: each kiosk only has ~7.6GiB RAM
   # (vs callisto's 64GB) — a large tuned derivation (e.g. clang/llvm) landing
   # on a kiosk instead of callisto risks swap-thrashing or OOM. Acceptable
   # for now since callisto's higher speedFactor biases dispatch there first;

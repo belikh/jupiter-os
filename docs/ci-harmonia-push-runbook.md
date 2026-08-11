@@ -50,7 +50,7 @@ peer is a UniFi dashboard step.
      `192.168.5.2/32` (pallene's tunnel IP). Caveat: WG roaming means the UDM
      routes to whichever of pallene/the-runner handshook last, so the two can't
      push concurrently — fine in practice because pallene's build-server path is
-     dormant (europa btver2 rolled back) and CI builds are short.
+      dormant (europa is CI-built, not pallene-pushed) and CI builds are short.
    - **Fresh peer (alternative):** generate a new WG keypair and add it as a UDM
      road-warrior peer (UniFi) with its own tunnel IP (e.g. `192.168.5.7/32`),
      allowed-ips `10.1.1.0/24`. Then `WG_RUNNER_PRIVATE_KEY` = the new private
@@ -104,9 +104,9 @@ rebuilt.
   CI-pushed yet (callisto is iSCSI-root, europa is the cache host). Add them to
   the matrix when wanted.
 - **pallene's build-server push** (`modules/services/build-server.nix`) still
-  targets the decommissioned atticd; it's dormant (europa btver2 is rolled
-  back) and must be reworked to `nix copy --to ssh://europa` when btver2 is
-  re-enabled.
+  targets the decommissioned atticd; it's dormant (europa's bdver4 closure is
+  CI-built and pushed via `nix copy --to ssh://europa` directly, not via this
+  module) and can be removed.
 - **europa store growth**: Harmonia serves europa's live store (no separate
   cache dataset like Attic's `tank/services/attic`). Monitor `/nix/store` on
   europa; the keep-3 rotation bounds it but the dataset is now shared with the

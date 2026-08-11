@@ -39,7 +39,7 @@ Seven hosts are wired into the flake today:
   (its own hostName/hostId/dashboard URL/disk), registered and CI-green but
   awaiting its real install (placeholder disk and sops key).
 - **europa** (HPE MicroServer Gen10) — the ZFS NAS + data hub, live at
-  `10.1.1.2`. Runs the **btver2-tuned** closure — CI-built and pushed to
+  `10.1.1.2`. Runs the **bdver4-tuned** closure — CI-built and pushed to
   Harmonia, which europa substitutes ahead of cache.nixos.org (the one
   justified microarch exception; see `hosts/europa/configuration.nix`). Also
   runs the PXE server callisto netboots from (ganymede's role in the old
@@ -110,7 +110,7 @@ machine actually needs them:
    URL/disk). ✅ live
 4. **adrastea** — shares the kiosk profile. registered; awaiting physical
    install
-5. **europa** (NAS + data hub) — live at `10.1.1.2`, **btver2-tuned**
+5. **europa** (NAS + data hub) — live at `10.1.1.2`, **bdver4-tuned**
    (CI-built, served via Harmonia). Also PXE-serves callisto (ganymede's role
    in the old design; moved here since ganymede isn't registered), runs the
    Harmonia binary cache, and hosts the jupiterOS Arcade ROM pipeline.
@@ -130,7 +130,7 @@ Rules that keep this buildable:
 - **No custom kernels on ZFS hosts.** The stock `linuxPackages` default is
   the one ZFS always supports and the cache always has.
 - **No microarch tuning** without a private build cache that serves what
-  cache.nixos.org can't once `gcc.arch` is set. (europa's `btver2` and the
+  cache.nixos.org can't once `gcc.arch` is set. (europa's `bdver4` and the
   callisto/kiosk `skylake` tunings are the justified exceptions — CI-built and
   served via Harmonia.)
 - **A new input must be justified by a registered host** that uses it.

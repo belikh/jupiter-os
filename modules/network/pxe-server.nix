@@ -6,7 +6,7 @@
 #
 # `root` is built entirely in flake.nix using an UNTUNED nixpkgs instance
 # (nixpkgs.legacyPackages.x86_64-linux), not this host's own `pkgs` — on
-# europa, `pkgs` is gccarch-btver2-tuned (jupiter.build.microarch), and
+# europa, `pkgs` is gccarch-bdver4-tuned (jupiter.build.microarch), and
 # building ipxe/syslinux/mtools under that tag means rebuilding that whole
 # toolchain from source (nothing that unrelated is in the private Attic,
 # and cache.nixos.org only has the portable build). Confirmed: plain

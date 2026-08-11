@@ -194,7 +194,7 @@
       # init= names.
       #
       # Built with the PLAIN untuned nixpkgs.legacyPackages, not europa's own
-      # (gccarch-btver2-tuned) `pkgs` — see modules/network/pxe-server.nix's
+      # (gccarch-bdver4-tuned) `pkgs` — see modules/network/pxe-server.nix's
       # comment for why that distinction is load-bearing here.
       untunedPkgs = nixpkgs.legacyPackages.x86_64-linux;
 
@@ -274,7 +274,7 @@
 
         # HPE MicroServer Gen10 — the ZFS NAS and data hub. Phase 1 untuned
         # bootstrap from cache.nixos.org (stock kernel, no microarch); Phase 2
-        # switches to a btver2-tuned closure served from Harmonia.
+        # switches to a bdver4-tuned closure served from Harmonia.
         # Also runs the PXE server for callisto (see
         # hosts/europa/configuration.nix) — ganymede's role in the old design,
         # moved here since ganymede isn't registered yet.
@@ -306,7 +306,7 @@
       # The TFTP root europa serves callisto's netboot chain from — exposed
       # standalone (built with the untuned nixpkgs, see pxeModule above) so
       # it's independently checkable without pulling in europa's whole
-      # (gccarch-btver2-tuned) system closure.
+      # (gccarch-bdver4-tuned) system closure.
       packages.x86_64-linux.pxe-tftproot = pxeTftpRoot;
 
       # Aeon dashboard and CLI packages — built from upstream aeonfun/aeon main branch
@@ -336,7 +336,7 @@
       # the complete per-clip metadata into europa's tank/archive/suno dataset.
       # Built from in-tree stdlib-only source. Exposed standalone so the
       # vendorHash can be recomputed via `nix build .#suno-backup` without
-      # pulling europa's whole btver2-tuned closure. Consumed by the host via
+      # pulling europa's whole bdver4-tuned closure. Consumed by the host via
       # modules/services/suno-backup.nix's pkgs.callPackage.
       packages.x86_64-linux.suno-backup = (
         import ./pkgs/suno-backup {

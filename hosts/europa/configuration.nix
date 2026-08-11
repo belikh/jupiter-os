@@ -7,17 +7,18 @@
 
 # HPE MicroServer Gen10 — the ZFS NAS and data hub.
 #
-# Hardware: AMD Opteron X3216 APU (1c/2t, btver2/Puma), 8GB ECC,
+# Hardware: AMD Opteron X3216 APU (1c/2t, Excavator/bdver4), 8GB ECC,
 # Crucial MX500 500GB SSD (OS), 2× WD 18TB (tank pool / file transfer).
 #
 # Phase 1: untuned NixOS from cache.nixos.org (stock kernel, no microarch
 # flags). Gets the machine running with ZFS, Samba, NFS, Harmonia, Syncthing,
 # and SMART monitoring.
 #
-# Phase 2 (active): jupiter.build.microarch = "btver2" tunes the closure for
-# this exact CPU (Puma core, ISA-equivalent to Jaguar). The BinaryLane build
-# server (pallene) compiles it and pushes to europa's own store (served by
-# Harmonia); europa then
+# Phase 2 (active): jupiter.build.microarch = "bdver4" tunes the closure for
+# this exact CPU (Excavator core — family 15h model 60h, which GCC targets as
+# bdver4; the Opteron X3216 is NOT the Puma/Jaguar/btver2 core this was long
+# mis-identified as). The BinaryLane build server (pallene) compiles it and
+# pushes to europa's own store (served by Harmonia); europa then
 # substitutes from localhost:8080 ahead of cache.nixos.org. This is the
 # deliberate, mitigated exception to the "no microarch" buildability rule —
 # the private Harmonia cache exists precisely to serve what cache.nixos.org
@@ -92,7 +93,7 @@
   # editor), ecc (Node.js agent CLI), and antigravity/agy (Google agent CLI)
   # on for the bootstrap host, but europa is a headless STORAGE-ONLY NAS with
   # no display and no interactive dev sessions — all four are pure closure
-  # bloat on a btver2-tuned, cache-sensitive host (and zed/crush even pull a
+  # bloat on a bdver4-tuned, cache-sensitive host (and zed/crush even pull a
   # sops secret decrypted on every activation for binaries that can't start).
   # Opt out; the future dev workstation (himalia) opts in.
   jupiter.core.zed.enable = false;
@@ -143,22 +144,24 @@
   # ---- Phase 2: CPU-tuned closure ------------------------------------------
   # Re-enabled: the tailnet/CI push pipeline this was blocked on now works
   # end-to-end (headscale real TLS via Let's Encrypt, CI registers and
-  # pushes over neptune.jupiter.au:8080, confirmed live). Opteron X3216 is a
-  # "Cato" APU on the Puma core, ISA-equivalent to Jaguar, which GCC targets
-  # as btver2. CI (.github/workflows/ci.yml, main-only) builds this host's
-  # closure with -march=btver2 and pushes to Harmonia; europa then
-  # substitutes from its own cache ahead of cache.nixos.org. This is the
-  # deliberate, mitigated exception to the "no microarch" buildability rule —
-  # the private Harmonia cache exists precisely to serve what cache.nixos.org
-  # cannot once gcc.arch is set. Verify Harmonia actually has the pushed
-  # closure (`nix path-info --substituters http://10.1.1.2:5000 <toplevel>`)
-  # before switching this host.
+  # pushes over neptune.jupiter.au:8080, confirmed live). The Opteron X3216
+  # is Excavator (AMD family 15h model 60h — verified empirically from
+  # /proc/cpuinfo, which also shows avx2/fma/bmi1/bmi2/f16c flags that
+  # Puma/Jaguar/btver2 lack), which GCC targets as bdver4. CI
+  # (.github/workflows/ci.yml, main-only) builds this host's closure with
+  # -march=bdver4 and pushes to Harmonia; europa then substitutes from its
+  # own cache ahead of cache.nixos.org. This is the deliberate, mitigated
+  # exception to the "no microarch" buildability rule — the private Harmonia
+  # cache exists precisely to serve what cache.nixos.org cannot once gcc.arch
+  # is set. Verify Harmonia actually has the pushed closure (`nix path-info
+  # --substituters http://10.1.1.2:5000 <toplevel>`) before switching this
+  # host.
   jupiter.build.microarch = "bdver4"; # CI builds this host's closure with -march=bdver4
 
   # ---- nixpkgs overlays ----------------------------------------------------
   # bmake's `deptgt-interrupt` unit test is timing-sensitive (it asserts a
   # SIGINT yields exit 130) and flakes non-deterministically under load / when
-  # the closure is microarch-tuned — on the first full btver2 build it failed
+  # the closure is microarch-tuned — on the first full tuned build it failed
   # (expected 130, got 0), cascading through nix → nixos-system-europa and
   # sinking the entire run. bmake compiles fine; only its check phase is flaky.
   # This overlay is in scope when pallene builds .#nixosConfigurations.europa.

@@ -16,7 +16,7 @@ fully buildable -- do not treat patterns copied from it as automatically correct
 
 Registered hosts (in flake.nix nixosConfigurations): amalthea, thebe, metis, adrastea (4 TCx Wave
 kiosks sharing modules/desktop/tcxwave-kiosk.nix), europa (ZFS NAS + PXE server, live, full
-btver2-tuned closure), callisto (shared Nix remote builder + MQTT broker, live with persistent
+bdver4-tuned closure), callisto (shared Nix remote builder + MQTT broker, live with persistent
 iSCSI root on europa's zvol, i5-8500T, 64GB RAM), pallene (ephemeral BinaryLane build-server ISO
 host, phase 2 only). NOT yet registered in flake.nix despite having .sops.yaml age keys: ganymede,
 himalia (roadmap hosts only -- this is intentional per CLAUDE.md, not a bug, but flag if any
@@ -29,7 +29,7 @@ Known current state facts (treat as ground truth, flag any code/docs that contra
 - callisto is live at 10.1.1.3, ext4 root over iSCSI, jupiter.build.microarch = 'skylake' is a
   ROADMAP-ONLY setting -- pallene must build+push the skylake closure to attic before callisto's
   next nixos-rebuild takes effect. The running closure is stale relative to git HEAD.
-- europa Stage 4 (btver2 tuned closure, substituting from its own Attic) is done; stages 2 and 5
+- europa Stage 4 (bdver4 tuned closure, substituting from its own Attic) is done; stages 2 and 5
   remain, are independent cleanup, not blockers.
 - MQTT broker lives on callisto (modules/services/mqtt.nix), moved from amalthea 2026-07-24.
   Kiosks address it via a static 10.1.1.3 IP literal (no DNS/mDNS yet) -- this is intentional,

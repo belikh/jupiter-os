@@ -291,7 +291,7 @@ gotcha below — the default multi-builder dispatch hangs):
 ssh root@$HOST.localdomain 'cd /root/jupiter-os && \
   systemd-run --unit=jupiter-rebuild --working-directory=/root/jupiter-os \
   --setenv=NIX_CONFIG="max-jobs = 0
-builders = ssh-ng://root@10.1.1.3 x86_64-linux /run/secrets/nix_build_ssh_key 6 2 gccarch-btver2,gccarch-skylake,big-parallel - -
+builders = ssh-ng://root@10.1.1.3 x86_64-linux /run/secrets/nix_build_ssh_key 6 2 gccarch-bdver4,gccarch-skylake,big-parallel - -
 builders-use-substitutes = true" \
   -- bash -lc "nixos-rebuild switch --flake .#'"$HOST"'"'
 ```

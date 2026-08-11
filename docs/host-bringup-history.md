@@ -31,7 +31,7 @@ Awaiting physical install (see `.sops.yaml`).
 
 ## europa — `10.1.1.2`
 
-HPE MicroServer Gen10 (AMD Opteron X3216 APU, btver2/Puma, 8GB ECC), the ZFS
+HPE MicroServer Gen10 (AMD Opteron X3216 APU, Excavator/bdver4, 8GB ECC), the ZFS
 NAS + data hub + PXE server.
 
 - **btver2 rollback (`e10a46a`, 2026-07):** `jupiter.build.microarch = "btver2"`
@@ -42,6 +42,15 @@ NAS + data hub + PXE server.
   end-to-end, europa moved to the **btver2-tuned** closure — CI-built and
   served via Harmonia (`:5000` / `cache.jupiter.au`), substituting ahead of
   cache.nixos.org. The earlier Attic cache was decommissioned (issue #63).
+- **bdver4 correction (2026-08):** an empirical `/proc/cpuinfo` check showed
+  the Opteron X3216 is **Excavator** (cpu family 21 / 15h, model 96 / 60h,
+  with avx2/fma/bmi1/bmi2/f16c flags that Puma/Jaguar/btver2 lack) — GCC
+  targets it as `-march=bdver4`, NOT btver2 as the whole tree documented up
+  to now. The btver2 closure ran safely (btver2's ISA is a subset of
+  bdver4) but under-tuned europa — AVX2/FMA/BMI/F16C went unused. Flipped
+  `jupiter.build.microarch` to `"bdver4"` and re-tagged the CI + builder
+  `system-features`; europa substitutes the bdver4 closure from Harmonia
+  once CI rebuilds it. Functional change: commit `06694db`.
 
 ## callisto — `10.1.1.3`
 
@@ -57,7 +66,7 @@ Nix remote builder **and** MQTT broker.
   impermanent/appliance lifecycle). sops decrypts fine at activation.
 - Build-server tuning (`cores=6 max-jobs=1`) is committed in git.
 - `jupiter.build.microarch = "skylake"` is **enabled** — CI builds and pushes
-  the skylake-tagged closure to Harmonia (same pipeline as europa's btver2).
+  the skylake-tagged closure to Harmonia (same pipeline as europa's bdver4).
   Do NOT rebuild callisto locally without verifying Harmonia has it first
   (`nix path-info --substituters http://10.1.1.2:5000 <toplevel>`).
 
