@@ -107,8 +107,17 @@ on:
   workflow_dispatch:
 
 concurrency:
+  # false, not true: a full-fleet distributed build can take more than one
+  # run to land (retry after a flaky builder, iterate on a fix), and a
+  # second workflow_dispatch shouldn't kill a build already in flight on the
+  # 19 shared builders. false makes the new run QUEUE behind the running one
+  # instead of cancelling it. Caveat: GitHub's queue only holds one pending
+  # run per group — if you dispatch a third run while one is running and one
+  # is already queued, the previously-queued run is cancelled in favor of the
+  # newest (the in-progress run is never touched). Fire dispatches one at a
+  # time if you need every one of them to actually run.
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 permissions:
   contents: read
