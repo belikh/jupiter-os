@@ -279,6 +279,31 @@
   jupiter.services.llm.exposeLan = true;
   jupiter.services.llm.clientUrl = "http://127.0.0.1:8081";
 
+  # ---- iGPU offload for the model server (Vulkan, UHD 630) -----------------
+  # i5-8500T's integrated UHD Graphics 630 is Gen9.5 (PCI 8086:3e92) — a
+  # sideline compute unit distinct from the 6 CPU cores the build-server and
+  # llama-server workloads already compete over, so offloading here doesn't
+  # take capacity from either. Picked Vulkan over SYCL/oneAPI for this specific
+  # part: SYCL's biggest wins are on Xe/Arc-class silicon, and Gen9.5 doesn't
+  # clear the extra oneAPI toolchain weight worth carrying. Mesa ships the ANV
+  # Vulkan ICD itself, so `hardware.graphics.enable` (below) is sufficient —
+  # no separate Intel compute-runtime package needed.
+  #
+  # `n-gpu-layers` uses llama.cpp's own convention of "any number ≥ the
+  # model's real layer count" to mean "offload everything" (Qwen3-Coder-30B-A3B
+  # has 48); 999 is comfortably past that. Operator-tunable down (or back to 0)
+  # if benchmarking shows offload losing to CPU-only on this box, same as
+  # nThreads above.
+  jupiter.services.llm.package = pkgs.llama-cpp.override { vulkanSupport = true; };
+  jupiter.services.llm.gpuLayers = 999;
+
+  hardware.graphics.enable = true;
+
+  # Vulkan / Mesa diagnostics (vulkaninfo) — same tool modules/gaming/console.nix
+  # installs for the same reason, kept independent here since that module is
+  # gamescope-specific and not something callisto should pull in.
+  environment.systemPackages = [ pkgs.vulkan-tools ];
+
   # ---- Aeon autonomous agent framework --------------------------------------
   # Runs the aeon dashboard (Next.js on port 5555, bound 0.0.0.0 for LAN +
   # Tailscale access). The dashboard manages belikh/agent (a public fork of

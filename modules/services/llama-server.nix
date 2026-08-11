@@ -87,7 +87,12 @@ in
     gpuLayers = lib.mkOption {
       type = lib.types.int;
       default = 0;
-      description = "GPU layers offloaded. 0 = CPU-only (callisto has no discrete GPU).";
+      description = ''
+        GPU layers offloaded (--n-gpu-layers). 0 = CPU-only. Nonzero requires a
+        GPU-enabled `package` override (e.g. `llama-cpp.override { vulkanSupport
+        = true; }`) and a working ICD on the host (e.g. `hardware.graphics.enable`
+        for Mesa's Vulkan driver) — this option alone does not provide either.
+      '';
     };
 
     nThreads = lib.mkOption {
@@ -111,6 +116,23 @@ in
         threads = cfg.nThreads;
       };
     };
+
+    # nixpkgs' services.llama-cpp unit runs as a systemd DynamicUser with
+    # PrivateDevices=false specifically "for GPU support" (see the module's
+    # own comment), but a DynamicUser's transient UID isn't a member of the
+    # "render" group that owns /dev/dri/renderD* (udev's stock
+    # 50-udev-default.rules: `KERNEL=="renderD*", GROUP="render"`) — so any
+    # GPU backend (Vulkan/ROCm/etc.) EACCES's on device open without this.
+    # systemd lets a DynamicUser service join existing static groups via
+    # SupplementaryGroups even though its primary UID/GID is ephemeral.
+    # "video" is included too since some Mesa/DRM paths still probe it.
+    # Only requested when GPU offload is actually configured, matching the
+    # package override (host sets `package = llama-cpp.override { vulkanSupport
+    # = true; }`) that makes GPU offload possible in the first place.
+    systemd.services.llama-cpp.serviceConfig.SupplementaryGroups = lib.mkIf (cfg.gpuLayers != 0) [
+      "render"
+      "video"
+    ];
 
     networking.firewall.allowedTCPPorts = lib.optional cfg.exposeLan cfg.port;
   };
