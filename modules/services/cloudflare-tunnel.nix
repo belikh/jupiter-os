@@ -52,15 +52,25 @@ in
               type = lib.types.str;
               description = "Public hostname for this ingress rule";
             };
+            host = lib.mkOption {
+              type = lib.types.str;
+              default = "localhost";
+              description = ''
+                Upstream host to proxy to. cloudflared runs on this host
+                (europa) but can proxy to anywhere reachable from it — set
+                this to a LAN IP to expose a service running on a different
+                host (e.g. callisto) without running a second tunnel.
+              '';
+            };
             port = lib.mkOption {
               type = lib.types.port;
-              description = "Local upstream port";
+              description = "Upstream port";
             };
           };
         }
       );
       default = [ ];
-      description = "Additional ingress rules for the tunnel: hostname → localhost:port";
+      description = "Additional ingress rules for the tunnel: hostname → host:port";
     };
   };
 
@@ -79,7 +89,7 @@ in
         // builtins.listToAttrs (
           map (rule: {
             name = rule.hostname;
-            value = "http://localhost:${toString rule.port}";
+            value = "http://${rule.host}:${toString rule.port}";
           }) cfg.extraIngress
         );
         originRequest.noTLSVerify = true;

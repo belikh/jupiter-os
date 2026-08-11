@@ -345,6 +345,16 @@
         }
       );
 
+      # nom-web — browser UI for nix's internal-json build logs (see
+      # pkgs/nom-web/default.nix). Exposed standalone for the same reason as
+      # suno-backup above. Consumed by modules/services/nom-web.nix.
+      packages.x86_64-linux.nom-web = (
+        import ./pkgs/nom-web {
+          lib = nixpkgs.lib;
+          buildGoModule = nixpkgs.legacyPackages.x86_64-linux.buildGoModule;
+        }
+      );
+
       # `nix flake check` builds every registered host closure — for a
       # single-host bootstrap that's cheap, and it's the whole point: prove
       # the thing builds.

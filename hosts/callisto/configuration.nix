@@ -58,6 +58,8 @@
     ../../modules/services/tailscale.nix
     # Aeon autonomous agent framework dashboard
     ../../modules/services/aeon.nix
+    # nom-web: browser UI for jupiter-ci build logs
+    ../../modules/services/nom-web.nix
   ];
 
   networking.hostName = "callisto";
@@ -319,5 +321,28 @@
     ghTokenFile = config.sops.secrets.aeon_gh_token.path;
     host = "0.0.0.0";
     exposeLan = true;
+  };
+
+  # ---- nom-web: browser UI for ci-distributed.yml's build logs -------------
+  # Reads europa's /var/log/jupiter-ci over NFS (export in
+  # modules/storage/nas-nfs.nix); `soft` so a dead europa doesn't hang the
+  # service. Reached publicly at nom.jupiter.au via europa's Cloudflare
+  # Tunnel (extraIngress in hosts/europa/configuration.nix), so the port only
+  # needs to be open to the LAN, not the internet.
+  fileSystems."/mnt/jupiter-ci-logs" = {
+    device = "10.1.1.2:/var/log/jupiter-ci";
+    fsType = "nfs";
+    options = [
+      "ro"
+      "noatime"
+      "soft"
+      "timeo=50"
+      "retrans=2"
+    ];
+  };
+
+  jupiter.services.nomWeb = {
+    enable = true;
+    openFirewall = true;
   };
 }

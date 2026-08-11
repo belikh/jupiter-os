@@ -324,6 +324,14 @@
         hostname = "headscale.jupiter.au";
         port = 8080;
       }
+      {
+        # nom-web (browser UI for jupiter-ci build logs) runs on callisto,
+        # not here — cloudflared can proxy to any LAN host it can reach.
+        # See modules/services/nom-web.nix / hosts/callisto/configuration.nix.
+        hostname = "nom.jupiter.au";
+        host = "10.1.1.3";
+        port = 8092;
+      }
     ];
   };
   # fleet (and the next CI run) can substitute closures CI pushed here. Read-

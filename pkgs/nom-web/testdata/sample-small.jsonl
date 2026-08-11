@@ -1,0 +1,144 @@
+@nix {"action":"msg","level":2,"msg":"=== jupiter-ci 31295971155: building europa ==="}
+@nix {"action":"start","id":5896496176168960,"level":4,"parent":0,"text":"evaluating derivation 'git+file:///tmp/jupiter-os-31295971155#nixosConfigurations.europa.config.system.build.toplevel'","type":0}
+@nix {"action":"start","id":5896496176168961,"level":5,"parent":0,"text":"getting Git revision count of '/tmp/jupiter-os-31295971155'","type":0}
+@nix {"action":"stop","id":5896496176168961}
+@nix {"action":"start","id":5896496176168962,"level":5,"parent":0,"text":"copying '/tmp/jupiter-os-31295971155/' to the store","type":0}
+@nix {"action":"stop","id":5896496176168962}
+@nix {"action":"start","id":5896496176168963,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/pkgs/by-name/ni/nixos-init' to the store","type":0}
+@nix {"action":"stop","id":5896496176168963}
+@nix {"action":"start","id":5896496176168964,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/pkgs/build-support/node/prefetch-npm-deps' to the store","type":0}
+@nix {"action":"stop","id":5896496176168964}
+@nix {"action":"msg","column":0,"file":"«none»:0","level":1,"line":0,"msg":"\u001b[35;1mevaluation warning:\u001b[0m Scripted initrd is deprecated and scheduled for removal in 26.11. See the NixOS 26.05 release notes.","raw_msg":"Scripted initrd is deprecated and scheduled for removal in 26.11. See the NixOS 26.05 release notes.\n"}
+@nix {"action":"start","id":5896496176168965,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/pkgs/development/tools/haskell/ghc-settings-edit' to the store","type":0}
+@nix {"action":"stop","id":5896496176168965}
+@nix {"action":"start","id":5896496176168966,"level":5,"parent":0,"text":"copying '/tmp/jupiter-os-31295971155/modules/core/ecc-package-lock.json' to the store","type":0}
+@nix {"action":"stop","id":5896496176168966}
+@nix {"action":"start","id":5896496176168967,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/pkgs/by-name/ni/nixos-firewall-tool' to the store","type":0}
+@nix {"action":"stop","id":5896496176168967}
+@nix {"action":"start","id":5896496176168968,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/lib' to the store","type":0}
+@nix {"action":"stop","id":5896496176168968}
+@nix {"action":"start","id":5896496176168969,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/' to the store","type":0}
+@nix {"action":"stop","id":5896496176168969}
+@nix {"action":"start","id":5896496176168970,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/pkgs/pkgs-lib' to the store","type":0}
+@nix {"action":"stop","id":5896496176168970}
+@nix {"action":"start","id":5896496176168971,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/pkgs/by-name/ni/nixos-render-docs/src' to the store","type":0}
+@nix {"action":"stop","id":5896496176168971}
+@nix {"action":"start","id":5896496176168972,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/pkgs/misc/documentation-highlighter' to the store","type":0}
+@nix {"action":"stop","id":5896496176168972}
+@nix {"action":"start","id":5896496176168973,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/nixos/doc/manual' to the store","type":0}
+@nix {"action":"stop","id":5896496176168973}
+@nix {"action":"start","id":5896496176168974,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/pkgs/by-name/ni/nixos-init' to the store","type":0}
+@nix {"action":"stop","id":5896496176168974}
+@nix {"action":"start","id":5896496176168975,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/pkgs/by-name/sw/switch-to-configuration-ng' to the store","type":0}
+@nix {"action":"stop","id":5896496176168975}
+@nix {"action":"start","id":5896496176168976,"level":5,"parent":0,"text":"copying '«github:Mic92/sops-nix/56b24064fdcaedca53553b1a6d607fd23b613a24?narHash=sha256-478kKQBvK6SYTOdN2h9jhKJv94nbXRbFMfuL1WshErg%3D»/' to the store","type":0}
+@nix {"action":"stop","id":5896496176168976}
+@nix {"action":"start","id":5896496176168977,"level":5,"parent":0,"text":"copying '/tmp/jupiter-os-31295971155/secrets/secrets.yaml' to the store","type":0}
+@nix {"action":"stop","id":5896496176168977}
+@nix {"action":"start","id":5896496176168978,"level":5,"parent":0,"text":"copying '/tmp/jupiter-os-31295971155/hosts/europa/patches/harmonia-pr1139-ranged-206.patch' to the store","type":0}
+@nix {"action":"stop","id":5896496176168978}
+@nix {"action":"start","id":5896496176168979,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/pkgs/development/tools/haskell/ghc-settings-edit' to the store","type":0}
+@nix {"action":"stop","id":5896496176168979}
+@nix {"action":"start","id":5896496176168980,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/pkgs/development/libraries/qt-6/hooks/fix-qt-builtin-paths.sh' to the store","type":0}
+@nix {"action":"stop","id":5896496176168980}
+@nix {"action":"start","id":5896496176168981,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/pkgs/development/libraries/qt-6/hooks/fix-qt-module-paths.sh' to the store","type":0}
+@nix {"action":"stop","id":5896496176168981}
+@nix {"action":"start","id":5896496176168982,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/pkgs/development/libraries/qt-6/hooks/fix-qt-builtin-paths.sh' to the store","type":0}
+@nix {"action":"stop","id":5896496176168982}
+@nix {"action":"start","id":5896496176168983,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/pkgs/development/libraries/qt-6/hooks/fix-qt-module-paths.sh' to the store","type":0}
+@nix {"action":"stop","id":5896496176168983}
+@nix {"action":"start","id":5896496176168984,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/pkgs/build-support/node/prefetch-npm-deps' to the store","type":0}
+@nix {"action":"stop","id":5896496176168984}
+@nix {"action":"start","id":5896496176168985,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/pkgs/by-name/ni/nixos-firewall-tool' to the store","type":0}
+@nix {"action":"stop","id":5896496176168985}
+@nix {"action":"start","id":5896496176168986,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/lib' to the store","type":0}
+@nix {"action":"stop","id":5896496176168986}
+@nix {"action":"start","id":5896496176168987,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/' to the store","type":0}
+@nix {"action":"stop","id":5896496176168987}
+@nix {"action":"start","id":5896496176168988,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/pkgs/pkgs-lib' to the store","type":0}
+@nix {"action":"stop","id":5896496176168988}
+@nix {"action":"start","id":5896496176168989,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/pkgs/by-name/ni/nixos-render-docs/src' to the store","type":0}
+@nix {"action":"stop","id":5896496176168989}
+@nix {"action":"start","id":5896496176168990,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/pkgs/misc/documentation-highlighter' to the store","type":0}
+@nix {"action":"stop","id":5896496176168990}
+@nix {"action":"start","id":5896496176168991,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/nixos/doc/manual' to the store","type":0}
+@nix {"action":"stop","id":5896496176168991}
+@nix {"action":"start","id":5896496176168992,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/pkgs/pkgs-lib/formats/json2x' to the store","type":0}
+@nix {"action":"stop","id":5896496176168992}
+@nix {"action":"start","id":5896496176168993,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/pkgs/by-name/sw/switch-to-configuration-ng' to the store","type":0}
+@nix {"action":"stop","id":5896496176168993}
+@nix {"action":"start","id":5896496176168994,"level":5,"parent":0,"text":"copying '«github:Mic92/sops-nix/56b24064fdcaedca53553b1a6d607fd23b613a24?narHash=sha256-478kKQBvK6SYTOdN2h9jhKJv94nbXRbFMfuL1WshErg%3D»/' to the store","type":0}
+@nix {"action":"stop","id":5896496176168994}
+@nix {"action":"stop","id":5896496176168960}
+@nix {"action":"start","id":5896496176168995,"level":6,"parent":0,"text":"querying info about missing paths","type":0}
+@nix {"action":"stop","id":5896496176168995}
+@nix {"action":"start","id":5896496176168996,"level":0,"parent":0,"text":"","type":102}
+@nix {"action":"start","id":5896496176168997,"level":0,"parent":0,"text":"","type":104}
+@nix {"action":"start","id":5896496176168998,"level":0,"parent":0,"text":"","type":103}
+@nix {"action":"result","fields":[0,0,0,0],"id":5896496176168997,"type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":5896496176168998,"type":105}
+@nix {"action":"result","fields":[101,0],"id":5896496176168996,"type":106}
+@nix {"action":"result","fields":[100,0],"id":5896496176168996,"type":106}
+@nix {"action":"start","id":5896496176168999,"level":6,"parent":0,"text":"querying info about missing paths","type":0}
+@nix {"action":"stop","id":5896496176168999}
+@nix {"action":"result","fields":[0,1,0,0],"id":5896496176168997,"type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":5896496176168998,"type":105}
+@nix {"action":"result","fields":[101,0],"id":5896496176168996,"type":106}
+@nix {"action":"result","fields":[100,0],"id":5896496176168996,"type":106}
+@nix {"action":"result","fields":[0,0,0,0],"id":5896496176168997,"type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":5896496176168998,"type":105}
+@nix {"action":"result","fields":[101,0],"id":5896496176168996,"type":106}
+@nix {"action":"result","fields":[100,0],"id":5896496176168996,"type":106}
+@nix {"action":"stop","id":5896496176168998}
+@nix {"action":"stop","id":5896496176168997}
+@nix {"action":"stop","id":5896496176168996}
+@nix {"action":"msg","level":2,"msg":"=== jupiter-ci 31295971155: building callisto ==="}
+@nix {"action":"start","id":5896968622571520,"level":4,"parent":0,"text":"evaluating derivation 'git+file:///tmp/jupiter-os-31295971155#nixosConfigurations.callisto.config.system.build.toplevel'","type":0}
+@nix {"action":"start","id":5896968622571521,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/pkgs/build-support/node/prefetch-npm-deps' to the store","type":0}
+@nix {"action":"stop","id":5896968622571521}
+@nix {"action":"msg","column":0,"file":"«none»:0","level":1,"line":0,"msg":"\u001b[35;1mevaluation warning:\u001b[0m Scripted initrd is deprecated and scheduled for removal in 26.11. See the NixOS 26.05 release notes.","raw_msg":"Scripted initrd is deprecated and scheduled for removal in 26.11. See the NixOS 26.05 release notes.\n"}
+@nix {"action":"start","id":5896968622571522,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/pkgs/development/tools/haskell/ghc-settings-edit' to the store","type":0}
+@nix {"action":"stop","id":5896968622571522}
+@nix {"action":"start","id":5896968622571523,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/pkgs/by-name/ni/nixos-firewall-tool' to the store","type":0}
+@nix {"action":"stop","id":5896968622571523}
+@nix {"action":"start","id":5896968622571524,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/lib' to the store","type":0}
+@nix {"action":"stop","id":5896968622571524}
+@nix {"action":"start","id":5896968622571525,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/' to the store","type":0}
+@nix {"action":"stop","id":5896968622571525}
+@nix {"action":"start","id":5896968622571526,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/pkgs/pkgs-lib' to the store","type":0}
+@nix {"action":"stop","id":5896968622571526}
+@nix {"action":"start","id":5896968622571527,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/pkgs/by-name/ni/nixos-render-docs/src' to the store","type":0}
+@nix {"action":"stop","id":5896968622571527}
+@nix {"action":"start","id":5896968622571528,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/pkgs/misc/documentation-highlighter' to the store","type":0}
+@nix {"action":"stop","id":5896968622571528}
+@nix {"action":"start","id":5896968622571529,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/nixos/doc/manual' to the store","type":0}
+@nix {"action":"stop","id":5896968622571529}
+@nix {"action":"start","id":5896968622571530,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/pkgs/by-name/ni/nixos-init' to the store","type":0}
+@nix {"action":"stop","id":5896968622571530}
+@nix {"action":"start","id":5896968622571531,"level":5,"parent":0,"text":"copying '«github:nixos/nixpkgs/148bab9c1c3c53136ecb44a6ea356a0ed5b39b06?narHash=sha256-KoTsyMQqnXQZq8deCEnu4QkyldkwH/bpMMhUcfMdGIw%3D»/pkgs/by-name/sw/switch-to-configuration-ng' to the store","type":0}
+@nix {"action":"stop","id":5896968622571531}
+@nix {"action":"start","id":5896968622571532,"level":5,"parent":0,"text":"copying '«github:Mic92/sops-nix/56b24064fdcaedca53553b1a6d607fd23b613a24?narHash=sha256-478kKQBvK6SYTOdN2h9jhKJv94nbXRbFMfuL1WshErg%3D»/' to the store","type":0}
+@nix {"action":"stop","id":5896968622571532}
+@nix {"action":"stop","id":5896968622571520}
+@nix {"action":"start","id":5896968622571533,"level":6,"parent":0,"text":"querying info about missing paths","type":0}
+@nix {"action":"stop","id":5896968622571533}
+@nix {"action":"start","id":5896968622571534,"level":0,"parent":0,"text":"","type":102}
+@nix {"action":"start","id":5896968622571535,"level":0,"parent":0,"text":"","type":104}
+@nix {"action":"start","id":5896968622571536,"level":0,"parent":0,"text":"","type":103}
+@nix {"action":"result","fields":[0,0,0,0],"id":5896968622571535,"type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":5896968622571536,"type":105}
+@nix {"action":"result","fields":[101,0],"id":5896968622571534,"type":106}
+@nix {"action":"result","fields":[100,0],"id":5896968622571534,"type":106}
+@nix {"action":"start","id":5896968622571537,"level":6,"parent":0,"text":"querying info about missing paths","type":0}
+@nix {"action":"stop","id":5896968622571537}
+@nix {"action":"result","fields":[0,1,0,0],"id":5896968622571535,"type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":5896968622571536,"type":105}
+@nix {"action":"result","fields":[101,0],"id":5896968622571534,"type":106}
+@nix {"action":"result","fields":[100,0],"id":5896968622571534,"type":106}
+@nix {"action":"result","fields":[0,0,0,0],"id":5896968622571535,"type":105}
+@nix {"action":"result","fields":[0,0,0,0],"id":5896968622571536,"type":105}
+@nix {"action":"result","fields":[101,0],"id":5896968622571534,"type":106}
+@nix {"action":"result","fields":[100,0],"id":5896968622571534,"type":106}
+@nix {"action":"stop","id":5896968622571536}
+@nix {"action":"stop","id":5896968622571535}
+@nix {"action":"stop","id":5896968622571534}

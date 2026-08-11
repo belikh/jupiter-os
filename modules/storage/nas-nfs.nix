@@ -23,6 +23,15 @@
     # crossmnt allows NFSv4 clients to traverse into child ZFS datasets
     # no_subtree_check suppresses spurious ESTALE errors on crossing
     /tank/archive/retro  10.1.1.0/24(ro,sync,no_subtree_check,crossmnt,no_root_squash)
+
+    # ci-distributed.yml's raw --log-format internal-json build logs
+    # (root:root 0644, world-readable — no squash tricks needed). callisto
+    # is the only consumer (jupiter-nom-web, modules/services/nom-web.nix),
+    # so unlike the exports above this is scoped to that one host rather
+    # than the whole LAN — these logs carry raw builder output. Confirmed
+    # exportfs accepts a plain (non-mountpoint) subdirectory of the /var ZFS
+    # dataset fine, no fsid= needed.
+    /var/log/jupiter-ci  10.1.1.3/32(ro,sync,no_subtree_check)
   '';
 
   networking.firewall.allowedTCPPorts = [ 2049 ];

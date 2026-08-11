@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>nom-web</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <h1>nom-web</h1>
+  <select id="log-picker"><option>loading…</option></select>
+  <span id="status" class="status">disconnected</span>
+</header>
+
+<section id="summary" class="summary"></section>
+
+<main>
+  <section>
+    <h2>active</h2>
+    <table id="active-table">
+      <thead><tr><th>kind</th><th>name</th><th>phase</th><th>progress</th><th>elapsed</th><th>last line</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>recent output</h2>
+    <pre id="recent"></pre>
+  </section>
+
+  <section>
+    <h2>warnings / errors</h2>
+    <pre id="warnings"></pre>
+  </section>
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>

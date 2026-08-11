@@ -1,0 +1,104 @@
+:root {
+  color-scheme: dark;
+  --bg: #0d1117;
+  --panel: #161b22;
+  --border: #30363d;
+  --text: #c9d1d9;
+  --dim: #8b949e;
+  --green: #3fb950;
+  --blue: #58a6ff;
+  --red: #f85149;
+  --yellow: #d29922;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 1rem;
+  background: var(--bg);
+  color: var(--text);
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+h1 { font-size: 1rem; margin: 0; color: var(--blue); }
+h2 { font-size: 0.85rem; text-transform: uppercase; color: var(--dim); margin: 0 0 0.5rem; }
+
+select, .status {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 0.3rem 0.5rem;
+  border-radius: 4px;
+}
+
+.status.connected { color: var(--green); }
+.status.finished { color: var(--dim); }
+
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  padding: 0.75rem 1rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 1rem;
+}
+
+.summary .item .label { color: var(--dim); margin-right: 0.4rem; }
+.summary .item .value { color: var(--green); }
+.summary .item .value.partial { color: var(--blue); }
+.summary .item .failed { color: var(--red); margin-left: 0.4rem; }
+
+main {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+th, td {
+  text-align: left;
+  padding: 0.35rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 28ch;
+}
+
+th { color: var(--dim); font-weight: normal; font-size: 0.75rem; text-transform: uppercase; }
+
+td.kind-build { color: var(--yellow); }
+td.kind-fetch, td.kind-download { color: var(--blue); }
+
+pre {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.6rem;
+  max-height: 20rem;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin: 0;
+}
+
+#warnings { color: var(--yellow); }
