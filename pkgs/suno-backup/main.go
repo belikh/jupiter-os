@@ -640,10 +640,15 @@ func (d *daemon) backupClip(ctx context.Context, raw json.RawMessage, core clipC
 	//    re-scanning it; a download failure leaves ImageSHA256 empty for a
 	//    healImages retry.
 	isha, ibytes, ierr := d.ensureImage(ctx, raw, dir)
-	if ierr != nil {
+	switch {
+	case errors.Is(ierr, errCoverUnavailable):
+		isha = "none" // large cover permanently refused (4xx) — don't retry
+		d.log.Info("cover marked unavailable", "id", core.ID)
+	case ierr != nil:
+		// Transient (5xx/network) — leave empty so healImages retries.
 		d.log.Warn("cover art fetch failed (healImages will retry)", "id", core.ID, "err", ierr)
-	} else if isha == "" {
-		isha = "none" // clip has no image_large_url; mark checked
+	case isha == "":
+		isha = "none" // clip has no image_large_url at all; mark checked
 	}
 
 	d.st.add(clipRecord{
@@ -707,6 +712,11 @@ func (d *daemon) ensureImage(ctx context.Context, raw json.RawMessage, dir strin
 	}
 	sum, n, err := d.download(ctx, imgURL, coverPath)
 	if err != nil {
+		if terminalHTTP(err) {
+			// Permanent CDN refusal (403/404) — signal the caller to mark
+			// "none" so healImages stops retrying this clip's cover forever.
+			return "", 0, errCoverUnavailable
+		}
 		return "", 0, fmt.Errorf("cover %s: %w", imgURL, err)
 	}
 	return sum, n, nil
@@ -737,6 +747,30 @@ func imageExt(u string) string {
 	}
 }
 
+// httpStatusError carries the HTTP response code from a failed fetch so callers
+// can distinguish permanent refusals (4xx) from transient ones (5xx, network).
+type httpStatusError struct{ code int }
+
+func (e *httpStatusError) Error() string { return fmt.Sprintf("status %d", e.code) }
+
+// terminalHTTP reports whether err is a permanent HTTP failure: 4xx other than
+// 429 (Too Many Requests). Used only for the cover art — a clip whose
+// image_large_url persistently 403/404s is marked "none" so healImages stops
+// retrying it forever, instead of re-fetching it every hour. WAV failures are
+// NEVER treated as terminal (a clip is never abandoned for a missing master).
+func terminalHTTP(err error) bool {
+	var h *httpStatusError
+	if errors.As(err, &h) {
+		return h.code >= 400 && h.code < 500 && h.code != http.StatusTooManyRequests
+	}
+	return false
+}
+
+// errCoverUnavailable signals that a clip's large cover is permanently
+// unavailable (4xx) so the caller records the "none" sentinel rather than
+// leaving the field empty for a retry that will never succeed.
+var errCoverUnavailable = errors.New("cover unavailable")
+
 // download streams url to dest atomically (.part then rename), hashing as it
 // goes, returning the sha256 hex and byte count.
 func (d *daemon) download(ctx context.Context, urlStr, dest string) (string, int64, error) {
@@ -751,7 +785,7 @@ func (d *daemon) download(ctx context.Context, urlStr, dest string) (string, int
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
-		return "", 0, fmt.Errorf("status %d", resp.StatusCode)
+		return "", 0, &httpStatusError{code: resp.StatusCode}
 	}
 	part := dest + ".part"
 	f, err := os.Create(part)
@@ -1041,6 +1075,14 @@ func (d *daemon) healOneImage(ctx context.Context, id string, rec clipRecord) er
 	} else {
 		sum, n, err = d.download(ctx, imgURL, coverPath)
 		if err != nil {
+			if terminalHTTP(err) {
+				// Permanent CDN refusal — stop retrying this clip hourly.
+				rec.ImageSHA256 = "none"
+				d.st.add(rec)
+				_ = d.st.save()
+				d.log.Info("cover marked unavailable", "id", id, "err", err)
+				return nil
+			}
 			return err
 		}
 	}
