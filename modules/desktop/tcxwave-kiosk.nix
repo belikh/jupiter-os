@@ -382,7 +382,7 @@ in
     # secret fleet-wide via modules/core/build-machines.nix.
     nix.settings.system-features = lib.mkAfter [
       "gccarch-skylake"
-      "gccarch-btver2"
+      "gccarch-bdver4"
       "big-parallel"
     ];
 

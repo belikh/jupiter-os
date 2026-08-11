@@ -68,7 +68,7 @@ name: CI (distributed builders)
 #   rather than trusting that here).
 # - No per-builder resource tuning: every builder advertises maxJobs=1,
 #   speedFactor=4, and the same feature set (kvm, benchmark, big-parallel,
-#   gccarch-btver2, gccarch-skylake). maxJobs=1 matches the builder's own
+#   gccarch-bdver4, gccarch-skylake). maxJobs=1 matches the builder's own
 #   nix.conf (max-jobs=1, cores=4 — one derivation at a time on all 4 cores,
 #   the callisto/kiosk large-package shape, not pallene's cores=1
 #   many-small-packages shape); declaring more would lie to the coordinator,
@@ -185,7 +185,7 @@ jobs:
             http2 = false
             max-substitution-jobs = 1
             http-connections = 2
-            system-features = kvm benchmark big-parallel gccarch-btver2 gccarch-skylake
+            system-features = kvm benchmark big-parallel gccarch-bdver4 gccarch-skylake
             cores = 4
             max-jobs = 1
             # No post-build-hook: builders don't push. The coordinator is the
@@ -381,7 +381,7 @@ jobs:
             fallback = true
             # Coordinator must advertise features so it doesn't reject
             # derivations requiring them, even with max-jobs=0 (dispatch only)
-            system-features = kvm benchmark big-parallel gccarch-btver2 gccarch-skylake
+            system-features = kvm benchmark big-parallel gccarch-bdver4 gccarch-skylake
             max-jobs = 0
 
       - name: Install async push system (post-build-hook + cache-drainer)
@@ -677,7 +677,7 @@ jobs:
 
           : > /tmp/machines
           for ip in "${ready[@]}"; do
-            echo "ssh-ng://runner@${ip} x86_64-linux $HOME/.ssh/ci_builder_key 1 4 kvm,benchmark,big-parallel,gccarch-btver2,gccarch-skylake -" \
+            echo "ssh-ng://runner@${ip} x86_64-linux $HOME/.ssh/ci_builder_key 1 4 kvm,benchmark,big-parallel,gccarch-bdver4,gccarch-skylake -" \
               >> /tmp/machines
           done
 

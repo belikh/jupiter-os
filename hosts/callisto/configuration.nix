@@ -164,7 +164,7 @@
   # what makes the kiosk tuning (also skylake, i5-6300U) safe to dispatch
   # here.
   nix.settings.system-features = lib.mkAfter [
-    "gccarch-btver2"
+    "gccarch-bdver4"
     "gccarch-skylake"
     "big-parallel"
   ];

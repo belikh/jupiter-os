@@ -68,7 +68,7 @@ let
     speedFactor = 1;
     supportedFeatures = [
       "gccarch-skylake"
-      "gccarch-btver2"
+      "gccarch-bdver4"
       "big-parallel"
     ];
     mandatoryFeatures = [ ];
@@ -115,7 +115,7 @@ in
         # choice once a second builder exists.
         speedFactor = 2;
         supportedFeatures = [
-          "gccarch-btver2"
+          "gccarch-bdver4"
           "gccarch-skylake"
           "big-parallel"
         ];

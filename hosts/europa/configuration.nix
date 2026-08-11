@@ -103,7 +103,7 @@
   jupiter.core.lix.enable = false;
   nix.distributedBuilds = true;
   nix.settings.system-features = lib.mkAfter [
-    "gccarch-btver2"
+    "gccarch-bdver4"
     "big-parallel"
   ];
   # Retain build-time outputs alongside the rooted runtime closures.
@@ -124,7 +124,7 @@
       maxJobs = 1;
       speedFactor = 2;
       supportedFeatures = [
-        "gccarch-btver2"
+        "gccarch-bdver4"
         "gccarch-skylake"
         "big-parallel"
       ];
@@ -153,7 +153,7 @@
   # cannot once gcc.arch is set. Verify Harmonia actually has the pushed
   # closure (`nix path-info --substituters http://10.1.1.2:5000 <toplevel>`)
   # before switching this host.
-  jupiter.build.microarch = "btver2"; # CI builds this host's closure with -march=btver2
+  jupiter.build.microarch = "bdver4"; # CI builds this host's closure with -march=bdver4
 
   # ---- nixpkgs overlays ----------------------------------------------------
   # bmake's `deptgt-interrupt` unit test is timing-sensitive (it asserts a
