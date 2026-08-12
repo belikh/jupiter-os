@@ -42,9 +42,10 @@ refs (MQTT, builds) dial it by IP.
 - `flake.nix` — entry point. Inputs are deliberately minimal (nixpkgs,
   `nixpkgs-unstable` floated free so `modules/core/crush.nix` can pull a newer
   Go toolchain than the fleet pin, disko, impermanence, sops-nix,
-  ha-linux-agent, `jovian` for the kiosks' gaming stack). `mkHost` injects
-  flake modules via a lexical closure — avoid `specialArgs`. Every host in
-  `nixosConfigurations` is also a flake check.
+  ha-linux-agent, `jovian` for the kiosks' gaming stack, `suno-web` for
+  europa's Suno-archive browser). `mkHost` injects flake modules via a lexical
+  closure — avoid `specialArgs`. Every host in `nixosConfigurations` is also a
+  flake check.
 - `hosts/<name>/` — per-host config (`configuration.nix`). Hosts are named
   after Jupiter's moons.
 - `modules/` — reusable NixOS modules behind a `jupiter.*` options namespace,

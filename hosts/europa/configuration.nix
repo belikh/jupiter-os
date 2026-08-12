@@ -62,6 +62,11 @@
     # tank/archive/suno. Authenticates via the Clerk __client cookie held in the
     # suno_cookie sops secret (add it to secrets/secrets.yaml before activating).
     ../../modules/services/suno-backup.nix
+    # Browser UI over that archive (pkgs/suno-web): search/filter across every
+    # archived metadata field, browse personas, follow the clip derivation
+    # graph, build playlists, stream the WAV masters. Read-only against the
+    # dataset; its playlists live in its own StateDirectory.
+    ../../modules/services/suno-web.nix
   ];
 
   networking.hostName = "europa";
@@ -400,6 +405,17 @@
   # __client value (added to secrets/secrets.yaml, encrypted to europa's age
   # key) before this activates.
   jupiter.services.sunoBackup.enable = true;
+
+  # Browser UI over that archive, on the LAN at http://10.1.1.2:8093. Indexes
+  # the archive's meta.json files in memory (~40MB for the current ~18.7k
+  # clips) and refreshes every 5m to pick up whatever the backfill has just
+  # pulled down. LAN-only on purpose: it streams the 35-45MB lossless masters
+  # directly, so putting it behind the Cloudflare Tunnel would want on-the-fly
+  # transcoding first.
+  jupiter.services.sunoWeb = {
+    enable = true;
+    openFirewall = true;
+  };
 
   # ---- sops secrets --------------------------------------------------------
   # harmonia_sign_key: private Nix binary-cache signing key for Harmonia

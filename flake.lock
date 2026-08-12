@@ -218,7 +218,8 @@
         "jovian": "jovian",
         "nixpkgs": "nixpkgs",
         "nixpkgs-unstable": "nixpkgs-unstable",
-        "sops-nix": "sops-nix"
+        "sops-nix": "sops-nix",
+        "suno-web": "suno-web"
       }
     },
     "sops-nix": {
@@ -238,6 +239,26 @@
       "original": {
         "owner": "Mic92",
         "repo": "sops-nix",
+        "type": "github"
+      }
+    },
+    "suno-web": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1786528325,
+        "narHash": "sha256-38M/c1j//+dl7Tam397Uptq9huhKOn+uvv0NQAyfunU=",
+        "owner": "belikh",
+        "repo": "suno-web",
+        "rev": "7860af993333fe5a43adb9ebb70b4b856eb8236d",
+        "type": "github"
+      },
+      "original": {
+        "owner": "belikh",
+        "repo": "suno-web",
         "type": "github"
       }
     },

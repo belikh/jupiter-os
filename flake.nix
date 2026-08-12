@@ -66,6 +66,20 @@
       url = "github:aeonfun/aeon/main";
       flake = false;
     };
+
+    # suno-web — browser UI over the Suno archive europa mirrors (search,
+    # metadata filters, persona browsing, the clip derivation graph,
+    # playlists, playback). Justified by a registered host that uses it:
+    # europa enables jupiter.services.sunoWeb. Lives in its own repository
+    # rather than in-tree because it is a general-purpose browser for any
+    # Suno archive, not fleet-specific config; jupiter-os keeps only the
+    # service module (modules/services/suno-web.nix) that wires it into a
+    # host. Stdlib-only Go, so it substitutes clean on europa's bdver4-tuned
+    # closure.
+    suno-web = {
+      url = "github:belikh/suno-web";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -79,6 +93,7 @@
       ha-linux-agent,
       jovian,
       aeon,
+      suno-web,
       ...
     }:
     let
@@ -283,6 +298,14 @@
           httpPort = europaPxeHttpPort;
         };
       };
+
+      # Hand europa the suno-web package from the flake input. Same lexical
+      # closure pattern as pxeModule above: modules/services/suno-web.nix
+      # declares a `package` option and stays a plain NixOS module, and the
+      # input never leaks into hosts that don't use it.
+      sunoWebModule = { ... }: {
+        jupiter.services.sunoWeb.package = suno-web.packages.x86_64-linux.suno-web;
+      };
     in
     {
       nixosConfigurations = {
@@ -303,7 +326,10 @@
         # Also runs the PXE server for callisto (see
         # hosts/europa/configuration.nix) — ganymede's role in the old design,
         # moved here since ganymede isn't registered yet.
-        europa = mkHost ./hosts/europa/configuration.nix [ pxeModule ]; # NAS + data hub
+        europa = mkHost ./hosts/europa/configuration.nix [
+          pxeModule
+          sunoWebModule
+        ]; # NAS + data hub
 
         # No-local-disk compute node, PXE-booted from europa with root over
         # iSCSI (europa's tank/services/callisto-root zvol) — the fleet's
@@ -379,6 +405,14 @@
           buildGoModule = nixpkgs.legacyPackages.x86_64-linux.buildGoModule;
         }
       );
+
+      # suno-web — browser UI over the archive suno-backup mirrors: search,
+      # metadata filtering, the clip derivation graph, playlists and playback.
+      # Unlike suno-backup/nom-web above this is NOT built from in-tree source
+      # — it lives in its own repository (github:belikh/suno-web) and arrives
+      # as a flake input. Re-exported here so `nix build .#suno-web` still
+      # works from this tree, and consumed by europa via sunoWebModule.
+      packages.x86_64-linux.suno-web = suno-web.packages.x86_64-linux.suno-web;
 
       # `nix flake check` builds every registered host closure — for a
       # single-host bootstrap that's cheap, and it's the whole point: prove
