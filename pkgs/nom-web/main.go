@@ -17,7 +17,11 @@ import (
 //go:embed static/*
 var staticFS embed.FS
 
-var logNameRe = regexp.MustCompile(`^(nom-[0-9]+\.jsonl|current\.jsonl)$`)
+// nom-<run_id>-<hosts>.jsonl, e.g. nom-31602659139-europa.jsonl. The suffix
+// names the host set the run built ("all" for the full fleet), which is what
+// tells three workflows' runs apart in a directory listing. The older
+// suffix-less names are still accepted so historical logs keep opening.
+var logNameRe = regexp.MustCompile(`^(nom-[0-9]+(-[a-z0-9-]+)?\.jsonl|current\.jsonl)$`)
 
 type logEntry struct {
 	Name    string    `json:"name"`

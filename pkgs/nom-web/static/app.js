@@ -275,7 +275,12 @@ async function loadList() {
   for (const l of logs) {
     const opt = document.createElement("option");
     opt.value = l.name;
-    opt.textContent = `${l.live ? "● LIVE  " : ""}${l.name}  (${fmtBytes(l.size)})`;
+    // nom-<run_id>-<hosts>.jsonl reads better split up; older logs without
+    // the host suffix fall back to the bare name.
+    const m = l.name.match(/^nom-(\d+)(?:-(.+))?\.jsonl$/);
+    const label = m ? `run ${m[1]}${m[2] ? " · " + m[2] : ""}` : l.name;
+    const when = new Date(l.modTime).toLocaleString();
+    opt.textContent = `${l.live ? "● LIVE  " : ""}${label}  —  ${when}  (${fmtBytes(l.size)})`;
     picker.appendChild(opt);
   }
   if (logs.length === 0) return;
