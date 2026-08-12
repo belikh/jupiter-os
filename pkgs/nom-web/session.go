@@ -31,6 +31,51 @@ func newSession(path string) *session {
 	}
 }
 
+// depsPath is the edge list belonging to this log: nom-<run>.jsonl pairs
+// with deps-<run>.txt. current.jsonl is resolved first so the live view
+// finds the running run's graph.
+func (sess *session) depsPath() string {
+	base := filepath.Base(sess.path)
+	if base == "current.jsonl" {
+		if target, err := os.Readlink(sess.path); err == nil {
+			base = filepath.Base(target)
+		}
+	}
+	run := strings.TrimSuffix(strings.TrimPrefix(base, "nom-"), ".jsonl")
+	if run == base {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(sess.path), "deps-"+run+".txt")
+}
+
+// loadDeps attaches the run's dependency graph if it is there. CI writes it
+// before the first build starts, but a session can outrace that (and older
+// runs predate it entirely), so this is retried from the tree endpoint
+// rather than being a one-shot at session start.
+func (sess *session) loadDeps() {
+	sess.st.mu.Lock()
+	already := sess.st.deps != nil
+	sess.st.mu.Unlock()
+	if already {
+		return
+	}
+
+	path := sess.depsPath()
+	if path == "" {
+		return
+	}
+	g, err := loadDepGraph(path)
+	if err != nil {
+		return
+	}
+
+	sess.st.mu.Lock()
+	sess.st.deps = g
+	sess.st.tree = nil // force a rebuild now that the edges are known
+	sess.st.mu.Unlock()
+	log.Printf("nom-web: loaded dependency graph %s (%d derivations with inputs)", path, len(g.inputs))
+}
+
 func (sess *session) subscribe() chan Snapshot {
 	ch := make(chan Snapshot, 1)
 	sess.mu.Lock()
@@ -185,6 +230,7 @@ func (m *manager) getOrStart(name string) *session {
 	}
 	s := newSession(filepath.Join(m.logDir, name))
 	m.sessions[name] = s
+	s.loadDeps()
 	go s.run(m.isLive)
 	return s
 }

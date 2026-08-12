@@ -766,12 +766,19 @@ jobs:
           ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-log \
             "mkdir -p /var/log/jupiter-ci && : > '$NOM_LOG' && ln -sfn '$NOM_LOG' /var/log/jupiter-ci/current.jsonl"
 
+          # The CI transcript keeps only what you would actually read here:
+          # errors, warnings and notices (nix levels 0-2, which includes this
+          # workflow's own "=== jupiter-ci … ===" headers). Everything at info
+          # level and below — the per-derivation "building '…'", "copying path
+          # '…'", "querying info about '…'" chatter and the thousand-line
+          # "these N derivations will be built:" listing — is dropped: it ran
+          # to hundreds of thousands of lines per run and buried the failures
+          # this log exists to show. None of it is lost; the full stream is
+          # still written to europa verbatim and is what nom-web renders.
           NOM_TO_HUMAN='if (startswith("@nix ") | not) then .
             else (.[5:] | (fromjson? // empty)
-                  | select((.level // 3) <= 3)
-                  | if   .action == "msg"                              then .msg
-                    elif .action == "start" and ((.text // "") != "")  then .text
-                    else empty end)
+                  | select((.level // 3) <= 2)
+                  | if .action == "msg" then .msg else empty end)
             end'
 
           HOSTS="europa callisto amalthea metis adrastea thebe"
@@ -782,6 +789,38 @@ jobs:
 
           OUT_PATHS="/tmp/outpaths-${RUN_ID}"
           set +e  # Don't exit on build failure, we need to report it
+
+          # Derivation dependency graph, written next to the nom log as
+          # deps-<run_id>.txt (one `<input-drv> <dependent-drv>` pair per line,
+          # store basenames). nom-web renders its dependency tree from this.
+          #
+          # It has to be exported here rather than derived downstream: the
+          # internal-json stream carries no dependency edges at all (every
+          # build activity nix emits has "parent":0, and the "these N
+          # derivations will be built:" listing names derivations without
+          # relating them). nom reconstructs the graph by reading the .drv
+          # files out of the local store instead, which only works where the
+          # build was evaluated — of one run's 1144 planned drvs, 9 exist on
+          # europa. The coordinator has just evaluated all of them, so it is
+          # the only place the graph is free.
+          #
+          # ~4 MB per host, heavily overlapping, and `nix-store -q --graph` is
+          # ~1s per closure; the eval is already warm from the flake check.
+          # Non-fatal by design: a missing deps file only means no tree.
+          DEPS_LOG="/var/log/jupiter-ci/deps-${RUN_ID}.txt"
+          TOP_DRVS=$(nix path-info --derivation "${INSTALLABLES[@]}" 2>/dev/null)
+          if [ -n "$TOP_DRVS" ]; then
+            # shellcheck disable=SC2086  # word splitting is the point
+            nix-store -q --graph $TOP_DRVS 2>/dev/null \
+              | grep -oE '"[a-z0-9]{32}-[^"]+\.drv" -> "[a-z0-9]{32}-[^"]+\.drv"' \
+              | sed -E 's/"//g; s/ -> / /' \
+              | sort -u \
+              | ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-log \
+                  "cat > '$DEPS_LOG' && wc -l < '$DEPS_LOG'" \
+              | sed "s|^|dependency graph -> $DEPS_LOG, edges: |"
+          else
+            echo "WARNING: could not instantiate top-level drvs; no dependency tree for this run"
+          fi
 
           # Write header to europa's nom log
           printf '@nix {"action":"msg","level":2,"msg":"=== jupiter-ci %s: building all hosts (%s) ==="}\n' \

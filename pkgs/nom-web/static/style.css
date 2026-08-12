@@ -102,3 +102,46 @@ pre {
 }
 
 #warnings { color: var(--yellow); }
+
+/* Dependency tree. One row per derivation occurrence, indented by depth;
+   the dot carries the state so a snapshot only has to swap class names
+   rather than re-render the forest. */
+.legend { color: var(--dim); font-weight: normal; text-transform: none; font-size: 0.75rem; }
+
+.tree {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.6rem;
+  max-height: 24rem;
+  overflow: auto;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+
+.tree-row { white-space: nowrap; }
+.tree-row.muted { color: var(--dim); }
+.tree-name { color: var(--text); }
+.tree-row .dup { color: var(--dim); margin-left: 0.4rem; }
+
+.dot {
+  display: inline-block;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  margin-right: 0.5rem;
+  background: var(--border);
+}
+.dot.running { background: var(--yellow); }
+.dot.done    { background: var(--green); }
+.dot.transferring { background: var(--blue); }
+
+.toggle {
+  color: var(--dim);
+  font-weight: normal;
+  text-transform: none;
+  font-size: 0.75rem;
+  margin-left: 0.6rem;
+  cursor: pointer;
+}
+.toggle input { vertical-align: middle; margin-right: 0.2rem; }

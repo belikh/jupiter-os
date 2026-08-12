@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"sort"
 	"time"
 )
@@ -20,6 +21,14 @@ type Snapshot struct {
 	Warnings  []string      `json:"warnings"`
 	Corrupted uint64        `json:"corrupted"`
 	Untrusted uint64        `json:"untrusted"`
+
+	// Dependency tree state. The forest itself is fetched once from
+	// /api/logs/{name}/tree — only DrvStates rides the stream, one base64'd
+	// byte per node, so a 1000-derivation tree costs ~1.5 KB per snapshot
+	// instead of being re-serialised at the broadcast rate. TreeSize tells
+	// the client when the forest grew and must be re-fetched.
+	TreeSize  int    `json:"treeSize"`
+	DrvStates string `json:"drvStates"`
 }
 
 type SummaryItem struct {
@@ -97,6 +106,8 @@ func (s *state) snapshot(finished bool) Snapshot {
 		Warnings:  s.warnings.items(),
 		Corrupted: s.corruptedPaths,
 		Untrusted: s.untrustedPaths,
+		TreeSize:  len(s.drvs),
+		DrvStates: s.encodeDrvStates(),
 	}
 
 	snap.Summary = []SummaryItem{
@@ -138,4 +149,15 @@ func (s *state) snapshot(finished bool) Snapshot {
 	}
 
 	return snap
+}
+
+// encodeDrvStates renders one byte per derivation — what the tree colours
+// its dots by, and what the client filters the "active only" view on. Must
+// be called with s.mu held.
+func (s *state) encodeDrvStates() string {
+	b := make([]byte, len(s.track))
+	for i, t := range s.track {
+		b[i] = t.state()
+	}
+	return base64.StdEncoding.EncodeToString(b)
 }

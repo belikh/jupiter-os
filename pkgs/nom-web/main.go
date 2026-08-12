@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"time"
@@ -31,12 +32,25 @@ func listLogs(logDir string, m *manager) ([]logEntry, error) {
 		return nil, err
 	}
 	current := m.resolveCurrent()
+	present := make(map[string]bool, len(entries))
+	for _, e := range entries {
+		present[e.Name()] = true
+	}
+
 	var out []logEntry
 	for _, e := range entries {
 		if e.IsDir() || !logNameRe.MatchString(e.Name()) {
 			continue
 		}
-		info, err := e.Info()
+		// current.jsonl is a symlink to one of the nom-*.jsonl files beside
+		// it, which is already listed (and flagged live). Listing it too
+		// would duplicate the running run under a second name.
+		if e.Name() == "current.jsonl" && present[current] {
+			continue
+		}
+		// Stat, not e.Info(): the latter lstats, so a symlink would be
+		// reported with the size and mtime of the link itself.
+		info, err := os.Stat(filepath.Join(logDir, e.Name()))
 		if err != nil {
 			continue
 		}
@@ -72,6 +86,26 @@ func main() {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(logs)
+	})
+
+	// The dependency forest for a run: fetched once per client and again
+	// whenever a snapshot reports a larger treeSize, rather than being
+	// re-sent with every snapshot.
+	mux.HandleFunc("GET /api/logs/{name}/tree", func(w http.ResponseWriter, r *http.Request) {
+		name := r.PathValue("name")
+		if !logNameRe.MatchString(name) {
+			http.Error(w, "invalid log name", http.StatusBadRequest)
+			return
+		}
+		sess := m.getOrStart(name)
+		sess.loadDeps() // CI may have written deps-<run>.txt after the session started
+		tree, hasDeps := sess.st.treeSnapshot()
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(struct {
+			Tree
+			HasDeps bool `json:"hasDeps"`
+		}{tree, hasDeps})
 	})
 
 	mux.HandleFunc("GET /api/logs/{name}/stream", func(w http.ResponseWriter, r *http.Request) {
