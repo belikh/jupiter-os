@@ -712,6 +712,26 @@ jobs:
       # failing doesn't stop the others from finishing, giving a full pass/fail
       # picture instead of stopping at the first broken host.
       #
+      # TWO PASSES, europa as LAST RESORT ONLY: pass 1 always dispatches to
+      # the 19 disposable GH builders. GitHub's ubuntu-latest pool is a
+      # heterogeneous grab-bag of Azure CPU generations, so anything that
+      # compiles a binary and immediately *executes* it as a normal part of
+      # its own build (autotools configure probes, perl's miniperl bootstrap,
+      # cargo build.rs, ...) can hit "Illegal instruction" when that binary
+      # was built gccarch-bdver4/skylake-tuned but the runner it landed on
+      # doesn't actually support the tuned instruction set. See
+      # docs/ci-harmonia-push-runbook.md-adjacent history: the zlib/gmp/perl
+      # incidents that motivated this.
+      #
+      # Only if pass 1 leaves failures behind do we retry on europa — real,
+      # always-on bdver4 hardware, not a disposable runner, but also the
+      # fleet's NAS/PXE/Harmonia box, so it's deliberately excluded from the
+      # main pool and only touched when the free ephemeral builders couldn't
+      # finish everything. `nix build` is idempotent: everything pass 1 built
+      # is already valid in the coordinator's local store (remote builds copy
+      # their outputs back here as they complete), so pass 2's `nix build`
+      # only actually attempts whatever's still missing.
+      #
       # nom-tailable build log: `--log-format internal-json` is the wire format
       # nix-output-monitor consumes. The log is written to europa so it can be
       # tailed live from there:
@@ -724,7 +744,7 @@ jobs:
       # log line (result type 101), which the CI transcript does not.
       # Nix emits exactly one log format, so the human-readable CI transcript
       # is reconstructed from the same stream with jq.
-      - name: Build all hosts (parallel across 19 builders, nom log on europa)
+      - name: Build all hosts (parallel across 19 builders, europa as last-resort fallback)
         env:
           RUN_ID: ${{ github.run_id }}
           EUROPA_SSH_KEY: ${{ secrets.EUROPA_SSH_KEY }}
@@ -840,6 +860,44 @@ jobs:
           cat "$OUT_PATHS"
           ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-log \
             "echo \"nom log: $NOM_LOG (\$(du -h '$NOM_LOG' | cut -f1), \$(wc -l < '$NOM_LOG') events)\""
+
+          # Pass 2, LAST RESORT ONLY: pass 1 left something unbuilt. Retry on
+          # europa instead of the GH pool.
+          #
+          # supportedFeatures is deliberately gccarch-bdver4 ONLY, not
+          # -skylake too: europa's own CPU is bdver4-tuned, so a
+          # skylake-tagged derivation (callisto/kiosks) would hit the exact
+          # same build/target CPU mismatch here that sent it to pass 2 in the
+          # first place. Leaving -skylake off means Nix won't even try to
+          # dispatch those to europa — they stay correctly FAILed rather than
+          # silently mis-built on the wrong CPU. (callisto is the real
+          # skylake box; wiring it up as a second last-resort fallback is
+          # follow-up work, not done here.) maxJobs=1 so this doesn't hammer
+          # a box with other fleet duties (NAS, PXE, Harmonia).
+          if [ $BUILD_EXIT -ne 0 ]; then
+            echo "========================================"
+            echo "Pass 1 (19 GH builders) left failures behind -- retrying on europa (last resort)"
+            echo "========================================"
+            echo "ssh-ng://root@europa x86_64-linux $HOME/.ssh/europa_ci 1 1 kvm,benchmark,big-parallel,gccarch-bdver4 -" \
+              > /tmp/machines-europa
+
+            printf '@nix {"action":"msg","level":2,"msg":"=== jupiter-ci %s: pass 2, retrying failures on europa (last resort) ==="}\n' \
+              "$RUN_ID" | ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-log "cat >> '$NOM_LOG'"
+
+            nix build "${INSTALLABLES[@]}" \
+              --builders "@/tmp/machines-europa" \
+              --builders-use-substitutes \
+              --max-jobs 0 \
+              --keep-going \
+              --print-out-paths --no-link --fallback \
+              --log-format internal-json 2>&1 1>>"$OUT_PATHS" \
+              | stdbuf -o0 tee >(ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-log "cat >> '$NOM_LOG'") \
+              | { stdbuf -o0 jq -rR --unbuffered "$NOM_TO_HUMAN" || cat; }
+            BUILD_EXIT=${PIPESTATUS[0]}
+
+            echo "Out paths after europa retry:"
+            cat "$OUT_PATHS"
+          fi
 
           # --keep-going means a host that failed doesn't take its siblings
           # down with it, but the single combined exit code can't say which
