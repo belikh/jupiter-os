@@ -287,16 +287,13 @@
     # IP rather than resolving HostName (which would otherwise still be
     # server_url's host — see above for why that must NOT be the
     # Cloudflare-Tunnel-fronted hostname).
-    derp = {
-      server = {
-        enabled = "true";
-        regionId = "999";
-        regionCode = "jupiter";
-        regionName = "Jupiter DERP";
-        stunPort = "3478";
-        ipv4 = "157.85.248.45"; # neptune.jupiter.au
-      };
-    };
+    # Only the leaf that differs from the module default. Everything else
+    # (region 999/jupiter, STUN 3478, and crucially derp.urls' public DERP
+    # fallback) comes from modules/services/headscale.nix. This block used to
+    # restate the whole server attrset, which — under the old attrsOf option
+    # shape — replaced the default outright and deleted `urls`, forcing all
+    # relayed CI traffic through europa's own DERP. See that option's comment.
+    derp.server.ipv4 = "157.85.248.45"; # neptune.jupiter.au
   };
 
   # Tailscale client for this host (connects to local headscale). Reusable

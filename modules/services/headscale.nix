@@ -8,6 +8,18 @@
 let
   cfg = config.jupiter.services.headscale;
 
+  # Emit a YAML sequence for a list-valued key, newlines and indentation
+  # supplied entirely from inside the interpolation. Nix's '' de-indentation
+  # only strips the common prefix of LITERAL source lines — interpolated text
+  # is inserted verbatim — so a separator like "\n    " written inline lands at
+  # a different indent than the first item, which is how dns.nameservers.global
+  # once collapsed a list into one folded scalar (see its comment below).
+  # Building the whole block here keeps both ends under one rule, and renders
+  # `[]` for the empty case rather than a dangling key.
+  yamlList =
+    indent: items:
+    if items == [ ] then " []" else "\n" + lib.concatMapStringsSep "\n" (i: "${indent}- ${i}") items;
+
   # Generate headscale config.yaml
   configYaml = ''
     server_url: ${cfg.serverUrl}
@@ -25,16 +37,28 @@ let
       allocation: sequential
     derp:
       server:
-        enabled: ${cfg.derp.server.enabled}
-        region_id: ${cfg.derp.server.regionId}
+        enabled: ${lib.boolToString cfg.derp.server.enable}
+        region_id: ${toString cfg.derp.server.regionId}
         region_code: ${cfg.derp.server.regionCode}
         region_name: ${cfg.derp.server.regionName}
-        stun_listen_addr: "0.0.0.0:${cfg.derp.server.stunPort}"
+        stun_listen_addr: "0.0.0.0:${toString cfg.derp.server.stunPort}"
         private_key_path: /var/lib/headscale/derp_server_private.key
-        ${lib.optionalString (cfg.derp.server.ipv4 or "" != "") "ipv4: ${cfg.derp.server.ipv4}"}
-      urls: ${lib.concatStringsSep "\n  " (lib.map (u: "- ${u}") (cfg.derp.urls or [ ]))}
-      paths: ${lib.concatStringsSep "\n  " (lib.map (p: "- ${p}") (cfg.derp.paths or [ ]))}
-      prefer_derp: ${cfg.derp.preferDerp or "true"}
+        ${lib.optionalString (cfg.derp.server.ipv4 != "") "ipv4: ${cfg.derp.server.ipv4}"}
+        ${lib.optionalString (cfg.derp.server.ipv6 != "") "ipv6: ${cfg.derp.server.ipv6}"}
+      urls:${yamlList "    " cfg.derp.urls}
+      paths:${yamlList "    " cfg.derp.paths}
+      # Both real keys, verified against v0.29.3's config-example.yaml.
+      # auto_update_enabled is NOT among headscale's viper.SetDefault calls
+      # (only update_frequency is, at 3h), so omitting it leaves viper's zero
+      # value — false — and the map from `urls` would then only ever load at
+      # startup. Emit it explicitly.
+      #
+      # There is deliberately NO prefer_derp line here. It was emitted for a
+      # long time and is not a headscale key at all (absent from
+      # config-example.yaml and from hscontrol/types/config.go); viper silently
+      # ignores unknown keys, so it never did anything in either direction.
+      auto_update_enabled: ${lib.boolToString cfg.derp.autoUpdate}
+      update_frequency: ${cfg.derp.updateFrequency}
     policy:
       mode: ${cfg.policy.mode}
       path: ${cfg.policy.path}
@@ -135,42 +159,110 @@ in
       description = "Database configuration (sqlite or postgres).";
     };
 
-    # DERP/STUN for NAT traversal
-    derp = lib.mkOption {
-      type = lib.types.attrsOf (lib.types.attrsOf lib.types.str);
-      default = {
-        server = {
-          enabled = "true"; # Local DERP enabled - UDP 3478 port-forwarded via IPv6
-          regionId = "999";
-          regionCode = "jupiter";
-          regionName = "Jupiter DERP";
-          stunPort = "3478";
-          # Public IPv4 to advertise for the DERP relay, so clients connect
-          # directly by IP instead of resolving HostName (which is
-          # server_url's host — see serverUrl's doc comment on why that
-          # matters for CI reachability). Empty = omitted from config.yaml.
-          ipv4 = "";
+    # DERP/STUN for NAT traversal.
+    #
+    # ONE OPTION PER KEY, not a single attrsOf holding the lot. An option's
+    # `default` applies only when there are NO definitions, so with the old
+    # `attrsOf (attrsOf str)` shape a host that set one leaf replaced the
+    # WHOLE default attrset and silently dropped its siblings. That is not
+    # hypothetical: hosts/europa set `derp.server.ipv4` and thereby deleted
+    # `urls`, so europa's live config.yaml rendered `urls:` empty for months
+    # — every relayed connection forced through the single home DERP, which
+    # is the very failure the urls default exists to prevent (below). Per-key
+    # options merge instead of replacing, so setting one leaf can't do that.
+    derp = {
+      server = {
+        enable = lib.mkOption {
+          type = lib.types.bool;
+          default = true;
+          description = "Run headscale's embedded DERP relay (STUN on stunPort).";
         };
-        # Tailscale's public DERP map — real fallback relay capacity
-        # (Tailscale's own datacenter DERP nodes) instead of forcing every
-        # non-P2P connection through the single home "Jupiter DERP" server
-        # on residential upload bandwidth. Load-bearing for CI specifically:
-        # GitHub-hosted runners have no outbound IPv6 at all, so they can
-        # never reach the local server's STUN port (3478, IPv6-only
-        # forwarded) for P2P assist — every CI<->CI hop was relaying through
-        # home DERP alone, a real bottleneck/SPOF at 19 concurrent builders.
-        # This URL is headscale's documented magic value that fetches
-        # Tailscale's real global DERP map over plain HTTPS (no IPv6/UDP
-        # port-forward dependency at all).
-        urls = [ "https://controlplane.tailscale.com/derpmap/default" ];
-        paths = [ ];
-        # No longer force-prefer the home relay now that public DERP is in
-        # the mix — let clients pick whichever region actually measures
-        # lowest latency (home DERP still wins for LAN-local fleet traffic,
-        # since it'll almost always be closest).
-        preferDerp = "false";
+
+        regionId = lib.mkOption {
+          type = lib.types.int;
+          default = 999;
+          description = "DERP region ID for the embedded relay (999 is the conventional private region).";
+        };
+
+        regionCode = lib.mkOption {
+          type = lib.types.str;
+          default = "jupiter";
+          description = "Short code for the embedded relay's DERP region — what `tailscale status` prints as `relay \"<code>\"`.";
+        };
+
+        regionName = lib.mkOption {
+          type = lib.types.str;
+          default = "Jupiter DERP";
+          description = "Human-readable name for the embedded relay's DERP region.";
+        };
+
+        stunPort = lib.mkOption {
+          type = lib.types.port;
+          default = 3478;
+          description = "UDP port the embedded relay's STUN responder binds (0.0.0.0).";
+        };
+
+        ipv4 = lib.mkOption {
+          type = lib.types.str;
+          default = "";
+          example = "157.85.248.45";
+          description = ''
+            Public IPv4 to advertise for the DERP relay, so clients connect
+            directly by IP instead of resolving HostName (which is
+            server_url's host — see serverUrl's doc comment on why that
+            matters for CI reachability). Empty = omitted from config.yaml.
+          '';
+        };
+
+        ipv6 = lib.mkOption {
+          type = lib.types.str;
+          default = "";
+          description = "Public IPv6 to advertise for the DERP relay. Empty = omitted from config.yaml.";
+        };
       };
-      description = "DERP server configuration. Local DERP enabled (UDP 3478 port-forwarded via IPv6).";
+
+      urls = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ "https://controlplane.tailscale.com/derpmap/default" ];
+        description = ''
+          Additional DERP maps to merge in. The default is Tailscale's public
+          map — real fallback relay capacity (Tailscale's own datacenter DERP
+          nodes) instead of forcing every non-P2P connection through the
+          single home "Jupiter DERP" server on residential upload bandwidth.
+
+          Load-bearing for CI specifically: GitHub-hosted runners have no
+          outbound IPv6 at all, so they can never reach the local server's
+          STUN port (3478, IPv6-only forwarded) for P2P assist, and both ends
+          are behind NAT that won't hole-punch — so every CI hop relays. With
+          this list empty the only relay is home DERP, which on europa is also
+          the DESTINATION: the same two 1.6GHz Excavator cores then do DERP
+          TLS, WireGuard crypto, sshd, NAR decompression and ZFS writes at
+          once. Measured consequence: `nix copy` pushes exceeding
+          cache-drainer.sh's 600s timeout in a steady 10m00s-12s cadence.
+
+          This URL is headscale's documented magic value that fetches
+          Tailscale's real global DERP map over plain HTTPS (no IPv6/UDP
+          port-forward dependency at all).
+        '';
+      };
+
+      paths = lib.mkOption {
+        type = lib.types.listOf lib.types.str;
+        default = [ ];
+        description = "Local DERP map files to merge in.";
+      };
+
+      autoUpdate = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = "Periodically re-fetch the DERP maps named in `urls`. Off leaves them frozen at startup.";
+      };
+
+      updateFrequency = lib.mkOption {
+        type = lib.types.str;
+        default = "3h";
+        description = "How often to re-fetch the DERP maps when autoUpdate is on (headscale's own default).";
+      };
     };
 
     # Policy/ACLs
