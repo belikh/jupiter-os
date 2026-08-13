@@ -7,7 +7,8 @@
 
 # HPE MicroServer Gen10 — the ZFS NAS and data hub.
 #
-# Hardware: AMD Opteron X3216 APU (1c/2t, Excavator/bdver4), 8GB ECC,
+# Hardware: AMD Opteron X3216 APU (2c/2t — one Excavator module, 2 integer
+# cores, no SMT; family 21 model 96, so bdver4), 8GB ECC,
 # Crucial MX500 500GB SSD (OS), 2× WD 18TB (tank pool / file transfer).
 #
 # Phase 1: untuned NixOS from cache.nixos.org (stock kernel, no microarch

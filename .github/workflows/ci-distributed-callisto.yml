@@ -773,7 +773,7 @@ jobs:
           # kernel/initrd are being built anyway, so the final push below lands
           # them on europa: europa's `systemctl start jupiter-pxe-assets` then
           # substitutes from its own store instead of compiling a
-          # skylake-tagged kernel on a 1c/2t Opteron. Also the only place this
+          # skylake-tagged kernel on a 2-core Opteron. Also the only place this
           # package is ever built — `nix flake check` is eval-only, so a broken
           # linkFarm here would otherwise first surface at publish time.
           INSTALLABLES+=(".#pxe-netboot-assets")

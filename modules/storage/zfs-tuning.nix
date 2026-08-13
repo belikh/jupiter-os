@@ -1,7 +1,8 @@
 { lib, ... }:
 
 # Performance tuning for the NAS (HPE MicroServer Gen10: Opteron X3216 APU,
-# 1c/2t 1.6GHz, 8GB ECC single-channel, 2×1GbE BCM5720, SATA disks).
+# 2c/2t 1.6GHz base / 3.0GHz boost, 8GB ECC single-channel, 2×1GbE BCM5720,
+# SATA disks).
 #
 # The serving ceiling is the 1GbE network and ARC capacity, NOT disk speed.
 # So this focuses on: right-sizing ARC, keeping the weak CPU out of the way,

@@ -792,7 +792,7 @@ jobs:
           # modules/network/pxe-server.nix). Build them explicitly so the final
           # push lands them on europa: europa's `systemctl start
           # jupiter-pxe-assets` then substitutes from its own store instead of
-          # compiling a skylake-tagged kernel on a 1c/2t Opteron. Also the only
+          # compiling a skylake-tagged kernel on a 2-core Opteron. Also the only
           # place this package is ever built — `nix flake check` is eval-only,
           # so a broken linkFarm here would first surface at publish time.
           INSTALLABLES+=(".#pxe-netboot-assets")
