@@ -22,33 +22,6 @@
 # Live at 10.1.1.3 (UniFi DHCP reservation, MAC c4:65:16:b8:76:03 — see
 # modules/core/build-machines.nix).
 #
-# The old design's callisto (diskless Postgres/Loki server for n8n + the HA
-# recorder, PXE-served from ganymede) is NOT what this host is — different
-# hardware, different role, reusing only the name.
-#
-# ---- Why iSCSI, not NFS (2026-07-24) ---------------------------------------
-# This host previously kept a small NFS-backed /persist for just SSH host
-# keys/logs, and even THAT burned a full session chasing initrd fragility
-# (missing NIC driver, no DHCP client, no mount.nfs helper, no rpc.statd —
-# see git history on this file) before being reverted to a plain,
-# non-neededForBoot stage-2 mount. Root itself was never going anywhere near
-# that path. iSCSI root uses a different, purpose-built NixOS mechanism
-# instead (boot.iscsi-initiator, nixos/modules/services/networking/iscsi/
-# root-initiator.nix) that nixpkgs ships specifically for booting / and /nix
-# over iSCSI — not a hand-rolled mount. Its one hard requirement is the
-# CLASSIC (non-systemd) stage-1 initrd: it asserts
-# `!boot.initrd.systemd.enable`, because systemd-stage-1 doesn't support
-# iSCSI yet. That's a real trade (this host loses systemd-stage-1's
-# tooling), but it's the same initrd implementation every ordinary
-# disk-based NixOS install has used for years — not the newer, thinner
-# netboot-minimal environment that had "no hardware scan behind it" and
-# caused the earlier pain.
-#
-# A useful side effect: since root is now a real persistent filesystem
-# instead of a tmpfs squashfs overlay, sops-nix can decrypt secrets at
-# activation like on any other host. The "sops can't decrypt at runtime
-# here" gap this host used to carry is closed by this change, not worked
-# around — no impermanence/NFS-persist plumbing needed at all anymore.
 {
   imports = [
     ../../modules/common.nix
@@ -96,21 +69,7 @@
     target = "iqn.2026-07.au.jupiter:europa:callisto-root";
   };
 
-  # Disable Lix (needs >8GB RAM to build); use standard Nix instead
-  jupiter.core.lix.enable = false;
-
-  # Root over iSCSI: a plain ext4 filesystem on the whole LUN. NO ZFS layer
-  # — europa already runs ZFS on the backing tank, and stacking ZFS on a
-  # network block device is both redundant and fragile (ZFS expects direct
-  # disk access and deadlocked the boot when tried). ext4 on the LUN is the
-  # simple, correct design: the LUN is a block device, mkfs.ext4 it, mount
-  # it. No pool, no pool-name collision with europa's own rpool, no rescue
-  # rename step. The LUN is used whole (no GPT partition) so by-path exposes
-  # only the single lun-0 device to mount.
-  #
-  # Same by-path device format as before — systemd-udevd's path_id
-  # (handle_scsi_iscsi()) generates ip-<addr>:<port>-iscsi-<iqn>-lun-<N>
-  # for the iSCSI SCSI device, deterministic from the portal/target above.
+  
   fileSystems."/" = {
     device = "/dev/disk/by-path/ip-10.1.1.2:3260-iscsi-iqn.2026-07.au.jupiter:europa:callisto-root-lun-0";
     fsType = "ext4";
@@ -179,80 +138,19 @@
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILv1nEsuHqlA1ykn1p8wZmhhv1Y77cBxhgu2tAO3DhlP jupiter-fleet-nix-build"
   ];
 
-  # ---- Tune callisto's own closure for its CPU -----------------------------
-  # i5-8500T is Coffee Lake, which GCC targets as `skylake` (Coffee Lake is
-  # Skylake-refresh at the compiler/code-scheduling level — same ISA, same
-  # pipeline model; `-march=skylake` produces code that's both correct on
-  # and optimally scheduled for this part).
-  #
-  # Re-enabled: CI (.github/workflows/ci.yml, main-only) now builds and
-  # pushes this closure to Harmonia — the missing piece that caused the
-  # 2026-07-22 disable (this was committed ahead of pallene, which never
-  # did the required build+push, leaving nothing skylake-tagged in Harmonia
-  # or cache.nixos.org for callisto to substitute).
-  #
-  # No longer a shared cost with europa: europa's netboot chain used to embed
-  # this host's kernel/initrd/toplevel in its own system closure, so building
-  # europa also built callisto's whole skylake-tagged closure. That edge is
-  # gone — europa's closure now holds only the static iPXE binaries, and the
-  # callisto-derived boot.ipxe/bzImage/initrd are published out-of-band as
-  # `.#pxe-netboot-assets` into jupiter.pxe.assetsDir (see
-  # modules/network/pxe-server.nix). Consequence for THIS host: after a config
-  # change lands, `nixos-rebuild switch` here first, then publish on europa
-  # (`systemctl start jupiter-pxe-assets.service`) — boot.ipxe pins `init=` to
-  # a toplevel that must already exist on this host's iSCSI root.
-  #
-  # DO NOT REBUILD CALLISTO LOCALLY without verifying Harmonia has it first:
-  # `nix path-info --substituters http://10.1.1.2:5000 <toplevel>` from
-  # callisto — every path must resolve from Harmonia before `switch`.
-  # DISABLED 2026-08-13, same reason as europa's: a tuned closure can't come
-  # from cache.nixos.org at all, so it depends entirely on the CI→Harmonia
-  # push that has been timing out. Untuned, callisto substitutes from
-  # cache.nixos.org directly. The gccarch-* system-features below are
-  # deliberately KEPT — they advertise what this host can BUILD for others
-  # (it is the fleet's remote builder), which is independent of how its own
-  # closure is compiled.
   # jupiter.build.microarch = "skylake";
 
-  # Tailscale client for Jupiter tailnet. Reusable (non-ephemeral) tag:fleet
-  # pre-auth key, shared fleet-wide via sops — self-registers on switch, no
-  # manual `headscale auth register` step needed.
   sops.secrets.tailscale_fleet_authkey = { };
   jupiter.services.tailscale = {
     enable = true;
-    # NOT https://headscale.jupiter.au: that's Cloudflare-Tunnel-fronted,
-    # and cloudflared cannot carry the TS2021/DERP protocols at all
-    # (github.com/cloudflare/cloudflared#883, confirmed live). Goes
-    # through the public neptune.jupiter.au:8080 port-forward instead,
-    # where headscale terminates real TLS itself (see
-    # hosts/europa/configuration.nix's jupiter.services.headscale.tls).
     serverUrl = "https://neptune.jupiter.au:8080";
     tags = [ "tag:fleet" ];
     acceptRoutes = true;
     authKeyFile = config.sops.secrets.tailscale_fleet_authkey.path;
   };
 
-  # Console screensaver — Matrix rain on tty1 for the (rare) moments a
-  # monitor is plugged into this host. Same module as europa; Nice=19 is
-  # baked into modules/services/console-screensaver.nix itself (not a
-  # per-host override), so the eye-candy always yields to real build work
-  # here too.
   jupiter.consoleScreensaver.enable = true;
 
-  # ---- MQTT broker (moved from amalthea 2026-07-24) -----------------------
-  # The fleet's mosquitto broker: every kiosk's ha-agent publishes here, and
-  # an external Home Assistant instance subscribes as the `homeassistant`
-  # user. It used to run on amalthea, coupling fleet infrastructure to a
-  # kiosk's impermanent/appliance lifecycle; callisto is a better home now
-  # that it has a persistent root (see the iSCSI comment above sops can
-  # decrypt at activation here too). Kiosks reach it at the static
-  # 10.1.1.3 DHCP reservation (modules/desktop/tcxwave-kiosk.nix's
-  # mqttHost default) — same address build-machines.nix already dials, since
-  # callisto has no DNS/mDNS resolution yet.
-  #
-  # NOT auto-covered by anything imported above: unlike the kiosks (which
-  # get mqtt_ha_linux_agent via tcxwave-kiosk.nix), callisto needs both
-  # secrets declared explicitly here.
   sops.secrets.mqtt_homeassistant = { };
   sops.secrets.mqtt_ha_linux_agent = { };
 
@@ -326,7 +224,7 @@
 
   jupiter.services.aeon = {
     enable = true;
-    repoUrl = "github:belikh/agent";
+    repoUrl = "github:belikh/aeon";
     ghTokenFile = config.sops.secrets.aeon_gh_token.path;
     host = "0.0.0.0";
     exposeLan = true;
