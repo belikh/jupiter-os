@@ -240,6 +240,46 @@ in
     systemd.services.iscsi-target = {
       requires = [ "zfs-create-iscsi-zvol.service" ];
       after = [ "zfs-create-iscsi-zvol.service" ];
+
+      # Assert the LUN actually got exported. `targetctl restore` treats every
+      # per-object failure as a WARNING and still exits 0, so the unit reports
+      # `active` while exporting a target with nothing behind it. Observed live
+      # 2026-08-13 after a stop/start where the backstore device was still held:
+      #
+      #   targetctl: Could not create StorageObject callisto-root: Cannot
+      #     configure StorageObject because device {dev} is already in use, skipped
+      #   targetctl: Could not find matching StorageObject for LUN 0, skipped
+      #   targetctl: Could not find matching TPG LUN 0 for MappedLUN 0, skipped
+      #   systemd[1]: Finished iscsi-target.service.
+      #
+      # The initiator then LOGS IN FINE — the ACL and portal restored, so a TCP
+      # session establishes — and simply finds no block device, which surfaces
+      # on the far side as an unexplained stage-1 "cannot find root" on a host
+      # whose root this is. `systemctl is-active` is worthless here; only the
+      # configfs tree tells the truth. Checked there rather than by parsing
+      # targetcli, so this needs no extra runtime dependency.
+      #
+      # On failure systemd marks the unit failed and runs ExecStop
+      # (targetctl clear). That leaves the target down rather than half-up:
+      # the same practical outcome, but a LOUD one that `systemctl status`
+      # and a failed-units check will surface instead of hiding.
+      serviceConfig.ExecStartPost = [
+        (toString (
+          pkgs.writeShellScript "assert-iscsi-lun-exported" ''
+            tpg="/sys/kernel/config/target/iscsi/${cfg.targetIqn}/tpgt_1"
+            if [ ! -d "$tpg/lun/lun_0" ]; then
+              echo "iscsi-target: TPG LUN 0 is MISSING under $tpg/lun — the target is exporting nothing." >&2
+              echo "iscsi-target: check 'journalctl -u iscsi-target' for skipped-object warnings from targetctl restore." >&2
+              exit 1
+            fi
+            if [ ! -d "$tpg/acls/${cfg.initiatorIqn}/lun_0" ]; then
+              echo "iscsi-target: MappedLUN 0 is MISSING for ${cfg.initiatorIqn} — it can log in but will see no disk." >&2
+              exit 1
+            fi
+            echo "iscsi-target: verified LUN 0 exported and mapped to ${cfg.initiatorIqn}"
+          ''
+        ))
+      ];
     };
 
     networking.firewall.allowedTCPPorts = [ cfg.portalPort ];
