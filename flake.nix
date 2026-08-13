@@ -153,70 +153,47 @@
                 ];
               }
             )
-            # checkPhase is off fleet-wide, unconditionally, for every
-            # derivation — not just nixpkgs.config.doCheckByDefault (which
-            # already defaults to false but is only a fallback packages can
-            # and do override with their own `doCheck = true;`, so it never
-            # touched the packages below anyway).
+            # REMOVED 2026-08-13: a fleet-wide overlay that rewrote
+            # stdenv.mkDerivation to force doCheck/doInstallCheck = false on
+            # EVERY derivation. Do not re-add it.
             #
-            # This started as one-off overrides for individually-flaky
-            # tests: bmake's `deptgt-interrupt` unit test sends SIGINT to a
-            # child make and expects exit 130, but under the heavy
-            # oversubscription of a "rebuild the world" run (load 8-21) the
-            # signal sometimes doesn't land in time and the child exits 0 ->
-            # "Failed tests: deptgt-interrupt" -> bmake build fails ->
-            # lowdown (uses bmake) fails -> cascades up to the europa system
-            # toplevel (see europa-20260716120909.log in R2 logs/).
-            # perl5Packages.Test2Harness's `t/integration/preload.t` failed
-            # the same way under load (attempts 11 and 12 of the europa
-            # bring-up, same "1 of 62 test files failed" signature both
-            # times) cascading through nix-perl -> nix -> the whole system
-            # toplevel, with the other 61 test files and 1729 assertions
-            # passing fine.
+            # doCheck is part of the derivation, so forcing it changed the
+            # output hash of every package nixpkgs ships with doCheck = true,
+            # and of everything downstream of those — which is nearly the whole
+            # closure, since zlib is one of them. cache.nixos.org has the
+            # upstream hashes and never had ours. Isolated at the same locked
+            # nixpkgs rev, with the overlay as the only variable:
             #
-            # It stopped being one-off when the CI distributed-builder
-            # pipeline (ci-distributed.yml) hit the same failure mode for a
-            # structural reason: it builds gccarch-bdver4/skylake-tuned
-            # closures on GitHub's `ubuntu-latest` runner pool, a
-            # heterogeneous grab-bag of Azure CPU generations, then
-            # immediately *executes* the just-built, target-tuned test
-            # binaries as part of checkPhase on that same ephemeral runner.
-            # zlib's checkPhase crashed with "Illegal instruction (core
-            # dumped)" running ./minigzip64 — a target/build CPU mismatch,
-            # the same class of problem nixpkgs itself already skips
-            # checkPhase for on cross builds, just triggered here by
-            # runner-pool heterogeneity instead of an explicit cross build.
-            # (A second, unrelated failure in the same run — gmp-6.3.0's
-            # configure erroring on a missing `m4` on one builder — is a
-            # broken-builder-environment issue, not a doCheck one; harmless
-            # for this override to also silence, since a broken toolchain
-            # dependency will still fail later at build time regardless of
-            # whether its own checkPhase would have run.)
+            #   plain nixpkgs zlib : /nix/store/fkcbg2c1w29jr5yp9awai9w3v1wvxdk9-zlib-1.3.2
+            #   + this overlay     : /nix/store/06jg037flvplksig8n08infallylhlhq-zlib-1.3.2
+            #
+            # Measured on europa's toplevel (`nix build --dry-run`), overlay
+            # present vs absent, nothing else changed:
+            #
+            #   with    2244 derivations to build, 1942 paths to fetch (9.9 GiB)
+            #   without   70 derivations to build,  896 paths to fetch (2.4 GiB)
+            #
+            # So it took the ENTIRE fleet off cache.nixos.org — including the
+            # 7.6GB kiosks, which OOM on heavy local builds, and it is why the
+            # CI→Harmonia push was load-bearing for untuned hosts too.
+            #
+            # It began as one-off overrides for genuinely flaky checkPhases
+            # (bmake's `deptgt-interrupt` racing a SIGINT under load;
+            # perl5Packages.Test2Harness's `t/integration/preload.t`; zlib's
+            # ./minigzip64 taking SIGILL when CI built gccarch-tuned code on
+            # heterogeneous Azure runners and then EXECUTED it) and got
+            # generalised. Generalising inverted it: a package that substitutes
+            # from cache.nixos.org never runs its checkPhase locally at all, so
+            # the overlay was itself the cause of the local rebuilds whose
+            # flaky tests it existed to suppress.
+            #
+            # If a specific package flakes again, override that package —
+            # `bmake = prev.bmake.overrideAttrs { doCheck = false; };` — which
+            # costs one package's cache hit instead of all of them. The SIGILL
+            # case additionally requires microarch tuning to be on; it is
+            # currently off for europa and callisto.
             {
               nixpkgs.overlays = [
-                (final: prev: {
-                  stdenv = prev.stdenv // {
-                    mkDerivation =
-                      args:
-                      prev.stdenv.mkDerivation (
-                        if prev.lib.isFunction args then
-                          (
-                            finalAttrs:
-                            (args finalAttrs)
-                            // {
-                              doCheck = false;
-                              doInstallCheck = false;
-                            }
-                          )
-                        else
-                          args
-                          // {
-                            doCheck = false;
-                            doInstallCheck = false;
-                          }
-                      );
-                  };
-                })
                 # modules/core/crush.nix packages crush itself, pinned
                 # straight to a GitHub release tag (nixpkgs' own crush
                 # derivation lags upstream releases too much) — but its
