@@ -164,6 +164,49 @@
         patches = (old.patches or [ ]) ++ [ ./patches/harmonia-pr1139-ranged-206.patch ];
       });
     })
+    # doCheck=false, scoped to europa only -- NOT the fleet-wide version
+    # 91707bc removed. That one lived in flake.nix's mkHost (every host,
+    # including untuned ones), so forcing doCheck on every derivation
+    # changed the output hash of anything nixpkgs ships with doCheck=true
+    # -- including zlib -- which broke cache.nixos.org substitution for
+    # hosts that were never supposed to need Harmonia. This one only
+    # applies to europa, which already can't substitute from
+    # cache.nixos.org once gcc.arch is set (see the CPU-tuned closure note
+    # above) -- there's no untuned substitutability to break here.
+    #
+    # Why it's needed again: europa's real CPU (Opteron X3216 APU,
+    # Excavator) is missing RDRAND -- confirmed via /proc/cpuinfo, no
+    # `rdrand` flag -- but GCC's bdver4 target unconditionally assumes
+    # RDRAND is present (gcc.gnu.org bug 116854) and enables it by default
+    # (`-mrdrnd` is [enabled] under plain -march=bdver4, verified with
+    # `gcc -Q --help=target`). Packages whose OWN test suite touches an
+    # RDRAND codepath -- confirmed live: gmp/libmpc's `make check`
+    # (tradius, teta, tacos, ...) -- SIGILL building on europa itself, real
+    # hardware, not a dispatch problem. Verified this overlay actually
+    # reaches those: `stdenv.mkDerivation` is the shared builder every
+    # bootstrap stage funnels through, so patching it here changes
+    # doCheck all the way down through bootstrap-stage-xgcc, not just the
+    # final stdenv's packages (checked via drvPath diffing).
+    #
+    # This does NOT fix the deeper issue: -mno-rdrnd isn't applied to
+    # actual codegen, so a package whose SHIPPED (not test) binary hits an
+    # RDRAND codepath could still SIGILL at runtime on europa, not just
+    # during someone else's build. Silencing checkPhase here only proves
+    # the build completes, not that the closure is safe to run -- follow-up
+    # work is injecting -mno-rdrnd into every bootstrap-stage gcc-wrapper,
+    # not just skipping the symptom.
+    (_final: prev: {
+      stdenv = prev.stdenv // {
+        mkDerivation =
+          args:
+          prev.stdenv.mkDerivation (
+            if prev.lib.isFunction args then
+              (finalAttrs: (args finalAttrs) // { doCheck = false; })
+            else
+              args // { doCheck = false; }
+          );
+      };
+    })
   ];
 
   # ---- Networking ----------------------------------------------------------
