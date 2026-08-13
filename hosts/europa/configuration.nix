@@ -31,10 +31,14 @@
     ../../modules/storage/zfs-tuning.nix
     ../../modules/storage/nas-nfs.nix
     ../../modules/network/nas-bond.nix
-    # jupiter.pxe itself is enabled in flake.nix's pxeModule, not here — it
-    # needs self.nixosConfigurations.callisto's build outputs, which aren't
-    # reachable from a plain host module (see flake.nix, CLAUDE.md's "avoid
-    # specialArgs" note). This import just brings the option in scope.
+    # jupiter.pxe itself is enabled in flake.nix's pxeModule, not here — its
+    # TFTP root has to be built with the UNTUNED nixpkgs instance (ipxe under
+    # this host's bdver4 tag means a from-source toolchain rebuild), and that
+    # instance isn't reachable from a plain host module (see flake.nix,
+    # CLAUDE.md's "avoid specialArgs" note). It no longer reaches into
+    # callisto's config at all — the callisto-derived kernel/initrd are
+    # published separately into jupiter.pxe.assetsDir. This import just brings
+    # the option in scope.
     ../../modules/network/pxe-server.nix
     # GitHub Actions CI nix-copy receiver (jupiter-ci user + per-build GC
     # roots). CI builds on free GHA CPU, then `nix copy --to ssh://europa`

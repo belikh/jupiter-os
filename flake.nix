@@ -200,9 +200,20 @@
                       args:
                       prev.stdenv.mkDerivation (
                         if prev.lib.isFunction args then
-                          (finalAttrs: (args finalAttrs) // { doCheck = false; doInstallCheck = false; })
+                          (
+                            finalAttrs:
+                            (args finalAttrs)
+                            // {
+                              doCheck = false;
+                              doInstallCheck = false;
+                            }
+                          )
                         else
-                          args // { doCheck = false; doInstallCheck = false; }
+                          args
+                          // {
+                            doCheck = false;
+                            doInstallCheck = false;
+                          }
                       );
                   };
                 })
@@ -223,15 +234,31 @@
           ++ extraModules;
         };
 
-      # Wire the PXE server (on europa — see hosts/europa/configuration.nix
-      # for why it's here and not ganymede) directly to callisto's build
-      # products, so the TFTP-served image always matches the flake. The
-      # cmdLine's `init=` points the booting kernel at its closure's init —
+      # The PXE server lives on europa (see hosts/europa/configuration.nix for
+      # why it's here and not ganymede), but europa's system closure must NOT
+      # reference callisto's. Building/evaluating europa used to drag
+      # callisto's entire (skylake-tuned) kernel + initrd + toplevel in
+      # through the TFTP root; the netboot chain is therefore split in two:
+      #
+      #   pxeTftpRoot        — ipxe.efi + undionly.kpxe. Static, callisto-free,
+      #                        lives IN europa's closure, served over TFTP.
+      #   pxeNetbootAssets   — boot.ipxe + bzImage + initrd. Derived from
+      #                        callisto, deliberately NOT in europa's closure;
+      #                        published out-of-band into jupiter.pxe.assetsDir
+      #                        (see modules/network/pxe-server.nix) and served
+      #                        over HTTP.
+      #
+      # The cmdLine's `init=` points the booting kernel at its closure's init —
       # this is the standard switch_root target on every NixOS boot path
       # (disk, netboot, or iSCSI-root alike), not a kexec-specific trick:
       # once stage-1 finds and mounts the real root (over iSCSI now, see
       # hosts/callisto/configuration.nix), it switch_roots into whatever
-      # init= names.
+      # init= names. It is kept (rather than letting stage-1 default to
+      # /nix/var/nix/profiles/system/init) precisely because it pins the
+      # served kernel/initrd and the userland they boot to ONE generation —
+      # which is also why the assets must be published AFTER callisto has
+      # switched to that generation, so the path exists on callisto's own
+      # iSCSI root. See docs/callisto-iscsi-root-provisioning.md.
       #
       # Built with the PLAIN untuned nixpkgs.legacyPackages, not europa's own
       # (gccarch-bdver4-tuned) `pkgs` — see modules/network/pxe-server.nix's
@@ -269,6 +296,11 @@
         initrd http://${europaLanIp}:${toString europaPxeHttpPort}/initrd
         boot
       '';
+      # TFTP root: the chainload binaries only. Nothing here reaches callisto,
+      # so europa's closure stays callisto-free — verify with
+      #   nix why-depends --derivation \
+      #     .#nixosConfigurations.europa.config.system.build.toplevel \
+      #     .#nixosConfigurations.callisto.config.system.build.toplevel
       pxeTftpRoot = untunedPkgs.linkFarm "pxe-tftproot" [
         {
           name = "ipxe.efi";
@@ -278,6 +310,12 @@
           name = "undionly.kpxe";
           path = "${ipxeBoot}/undionly.kpxe";
         }
+      ];
+      # HTTP-served half — the callisto-derived files. Published into
+      # jupiter.pxe.assetsDir by jupiter-pxe-assets.service, NOT wired into
+      # any host's config: a store-path reference from europa is exactly the
+      # coupling this split exists to remove.
+      pxeNetbootAssets = untunedPkgs.linkFarm "pxe-netboot-assets" [
         {
           name = "boot.ipxe";
           path = bootIpxeScript;
@@ -354,11 +392,24 @@
       # The output is result/nixos.img — compress with `xz -T0 -9` before serving.
       packages.x86_64-linux.pallene-raw = self.nixosConfigurations.pallene.config.system.build.raw;
 
-      # The TFTP root europa serves callisto's netboot chain from — exposed
-      # standalone (built with the untuned nixpkgs, see pxeModule above) so
-      # it's independently checkable without pulling in europa's whole
-      # (gccarch-bdver4-tuned) system closure.
+      # The TFTP half of the netboot chain (ipxe.efi + undionly.kpxe) — the
+      # part that lives in europa's closure. Exposed standalone (built with
+      # the untuned nixpkgs, see pxeModule above) so it's independently
+      # checkable without pulling in europa's whole (gccarch-bdver4-tuned)
+      # system closure. Contains NO callisto build products since the split;
+      # those are pxe-netboot-assets below.
       packages.x86_64-linux.pxe-tftproot = pxeTftpRoot;
+
+      # The HTTP half: boot.ipxe + callisto's bzImage/initrd. Deliberately a
+      # standalone package rather than part of europa's system closure, so
+      # building europa never builds callisto. europa publishes it with
+      #   systemctl start jupiter-pxe-assets.service
+      # (jupiter.pxe.assetsFlakeRef points at this attr) — run that AFTER
+      # callisto has switched to the generation being served, since boot.ipxe
+      # pins `init=` to that toplevel and the path has to exist on callisto's
+      # own iSCSI root. Skylake-tagged: only substitutes/builds where
+      # gccarch-skylake is available.
+      packages.x86_64-linux.pxe-netboot-assets = pxeNetbootAssets;
 
       # Aeon dashboard and CLI packages — built from upstream aeonfun/aeon main branch
       # (not a flake, so we use fetchFromGitHub + buildNpmPackage)

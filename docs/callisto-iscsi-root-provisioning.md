@@ -40,6 +40,63 @@ while still booting entirely over PXE with no local disk.
   `initrd` to callisto exactly as the old RAM-resident design did; the only
   change is what the initrd does next (iSCSI login + ext4 root mount instead
   of unpacking a RAM squashfs).
+- **Served from two roots (see "Publishing the netboot assets" below):** the
+  TFTP root in europa's closure carries only `ipxe.efi`/`undionly.kpxe`; the
+  callisto-derived `boot.ipxe`/`bzImage`/`initrd` are published separately.
+
+## Publishing the netboot assets
+
+europa's system closure must not reference callisto's, or building/evaluating
+europa also builds callisto's whole skylake-tuned closure (which is what
+`nix build .#nixosConfigurations.europa...` used to do). So the netboot chain
+is split:
+
+| Artifact | Contents | Where it lives | Served over |
+|---|---|---|---|
+| `.#pxe-tftproot` | `ipxe.efi`, `undionly.kpxe` | europa's system closure (`jupiter.pxe.root`) | TFTP (:69) |
+| `.#pxe-netboot-assets` | `boot.ipxe`, `bzImage`, `initrd` | `/var/lib/pxe-netboot/current` — a symlink, not a closure reference | HTTP (:8082) |
+
+iPXE's embedded script is a static chainload to
+`http://10.1.1.2:8082/boot.ipxe`, so everything callisto-specific is fetched
+at runtime from the mutable half.
+
+**Publish (on europa, as root):**
+
+```bash
+systemctl start jupiter-pxe-assets.service   # nix build --out-link /var/lib/pxe-netboot/current
+```
+
+**Order matters.** `boot.ipxe` pins `init=<callisto-toplevel>/init`, and
+stage-1 `switch_root`s into that path *on callisto's own iSCSI root* — so the
+generation being served has to already exist there:
+
+1. commit + push to `main`
+2. `nixos-rebuild switch` **on callisto** (writes the new toplevel to its root)
+3. `systemctl start jupiter-pxe-assets.service` **on europa**
+
+The unit is one-shot with no timer on purpose: an automatic pull of `main`
+would race ahead of step 2 and serve a path callisto doesn't have. A failed
+run leaves the previous `current` symlink (and its indirect GC root)
+untouched, so callisto keeps netbooting the last-published generation.
+
+**First-time bootstrap (the one ordering trap).** nginx serves `current`, so
+between switching europa to the split config and the first publish there is a
+window where the HTTP half 404s and callisto cannot netboot. Close it by
+publishing *before* switching europa — the unit doesn't exist yet, but its
+command does, and it also GC-roots the kernel/initrd that europa's outgoing
+closure was pinning:
+
+```bash
+mkdir -p /var/lib/pxe-netboot
+nix build github:belikh/jupiter-os#pxe-netboot-assets \
+  --out-link /var/lib/pxe-netboot/current
+nixos-rebuild switch --flake github:belikh/jupiter-os#europa
+```
+
+The service can only ever succeed when the paths are already substitutable —
+they're `gccarch-skylake`-tagged and europa doesn't advertise that feature, so
+it substitutes from its own store (CI pushes callisto's closure there) or
+delegates to callisto; it never compiles a kernel on the NAS.
 
 ## Provisioning (what actually happened, for the next time this is needed)
 

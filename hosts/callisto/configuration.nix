@@ -191,14 +191,16 @@
   # did the required build+push, leaving nothing skylake-tagged in Harmonia
   # or cache.nixos.org for callisto to substitute).
   #
-  # KNOWN COST, not a failure: europa's netboot.ipxe embeds callisto's
-  # system.build.toplevel path (for the kexec init= cmdline), so ANYTHING
-  # that evaluates nixosConfigurations.callisto — including CI's europa
-  # build job — pulls in callisto's kernel/initrd. On the FIRST run after
-  # enabling this, before Harmonia has any skylake-tagged paths cached,
-  # europa's CI job may redundantly build callisto's entire closure from
-  # scratch (slow but not unsafe — the GH runner already declares
-  # gccarch-skylake). Subsequent runs substitute from Harmonia and are fast.
+  # No longer a shared cost with europa: europa's netboot chain used to embed
+  # this host's kernel/initrd/toplevel in its own system closure, so building
+  # europa also built callisto's whole skylake-tagged closure. That edge is
+  # gone — europa's closure now holds only the static iPXE binaries, and the
+  # callisto-derived boot.ipxe/bzImage/initrd are published out-of-band as
+  # `.#pxe-netboot-assets` into jupiter.pxe.assetsDir (see
+  # modules/network/pxe-server.nix). Consequence for THIS host: after a config
+  # change lands, `nixos-rebuild switch` here first, then publish on europa
+  # (`systemctl start jupiter-pxe-assets.service`) — boot.ipxe pins `init=` to
+  # a toplevel that must already exist on this host's iSCSI root.
   #
   # DO NOT REBUILD CALLISTO LOCALLY without verifying Harmonia has it first:
   # `nix path-info --substituters http://10.1.1.2:5000 <toplevel>` from
