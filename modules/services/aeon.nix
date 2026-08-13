@@ -179,9 +179,18 @@ in
       # dev` against the checkout's own source. `next` is invoked by its store
       # path rather than through `npx`, which would otherwise be free to reach
       # out to the network if local resolution ever missed.
+      #
+      # --webpack, not Turbopack (the Next 16 default): Turbopack's Filesystem
+      # Root sandbox refuses the node_modules symlink above because its target
+      # is in /nix/store, outside the project root — fatal "Symlink [project]
+      # /node_modules is invalid, it points out of the filesystem root". This
+      # is a documented known gap (nextjs.org/docs/app/api-reference/turbopack
+      # §Filesystem Root); webpack follows the store symlink fine. Confirmed
+      # locally 2026-08-14. Revisit only if the dashboard needs Turbopack's
+      # dev speed (it doesn't — it's a low-traffic internal UI).
       script = ''
         ln -sfn ${cfg.package}/node_modules node_modules
-        exec ${cfg.package}/node_modules/.bin/next dev \
+        exec ${cfg.package}/node_modules/.bin/next dev --webpack \
           --hostname ${cfg.host} --port ${toString cfg.port}
       '';
     };
