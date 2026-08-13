@@ -79,7 +79,6 @@
   jupiter.core.antigravity.enable = false;
   # Disable Lix (needs >8GB RAM to build); use standard Nix instead
   jupiter.core.lix.enable = false;
-  nix.distributedBuilds = true;
   nix.settings.system-features = lib.mkAfter [
     "gccarch-bdver4"
     "big-parallel"
@@ -92,23 +91,20 @@
   # them rebuilding it from source each run. Cost: europa's store grows to
   # the full build closure of the retained builds.
   nix.settings.keep-outputs = true;
-  nix.buildMachines = lib.mkForce [
-    {
-      hostName = "10.1.1.3";
-      system = "x86_64-linux";
-      protocol = "ssh-ng";
-      sshUser = "root";
-      sshKey = "/run/secrets/nix_build_ssh_key";
-      maxJobs = 1;
-      speedFactor = 2;
-      supportedFeatures = [
-        "gccarch-bdver4"
-        "gccarch-skylake"
-        "big-parallel"
-      ];
-      mandatoryFeatures = [ ];
-    }
-  ];
+
+  # No build delegation to callisto. This used to dispatch europa's builds
+  # to callisto via nix.distributedBuilds/buildMachines, with callisto's
+  # supportedFeatures listing BOTH gccarch-bdver4 and gccarch-skylake — that
+  # second one is a lie Nix's scheduler believed: callisto is real
+  # Coffee Lake/Skylake hardware with no XOP/TBM/FMA4 (Excavator-only
+  # extensions bdver4 code can emit), so every gccarch-bdver4 derivation
+  # dispatched there silently mis-executed on the wrong CPU instead of
+  # failing to schedule. Confirmed directly: perl-5.42.0's miniperl
+  # bootstrap SIGILLed building "on 'ssh-ng://root@10.1.1.3'" (callisto) —
+  # not a flaky remote runner, callisto itself. europa's own CPU IS bdver4
+  # (Excavator, verified via /proc/cpuinfo — see the CPU-tuned closure note
+  # below), so building locally is both correct and available; distributed
+  # dispatch here bought nothing but a wrong-hardware failure mode.
 
   # ---- Storage profile (OS SSD) --------------------------------------------
   # Stateful root (no impermanence — the NAS needs persistent state).
@@ -361,9 +357,8 @@
 
   # ---- sops secrets --------------------------------------------------------
   # harmonia_sign_key: private Nix binary-cache signing key for Harmonia
-  # (generated via nix-store --generate-binary-cache-key). 
+  # (generated via nix-store --generate-binary-cache-key).
   sops.secrets.harmonia_sign_key = { };
-  sops.secrets.nix_build_ssh_key = { };
 
   environment.systemPackages = with pkgs; [
     nix-output-monitor
