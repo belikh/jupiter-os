@@ -138,7 +138,7 @@
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILv1nEsuHqlA1ykn1p8wZmhhv1Y77cBxhgu2tAO3DhlP jupiter-fleet-nix-build"
   ];
 
-  # jupiter.build.microarch = "skylake";
+  jupiter.build.microarch = "skylake";
 
   sops.secrets.tailscale_fleet_authkey = { };
   jupiter.services.tailscale = {
