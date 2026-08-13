@@ -119,7 +119,7 @@
   jupiter.nas.enable = true;
 
   # ---- Phase 2: CPU-tuned closure ------------------------------------------
-  # jupiter.build.microarch = "bdver4"; # CI builds this host's closure with -march=bdver4
+  jupiter.build.microarch = "bdver4"; # CI builds this host's closure with -march=bdver4
 
   # ---- nixpkgs overlays ----------------------------------------------------
   # bmake's `deptgt-interrupt` unit test is timing-sensitive (it asserts a
