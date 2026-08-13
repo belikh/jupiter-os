@@ -17,12 +17,7 @@
 #
 # Phase 2 (active): jupiter.build.microarch = "bdver4" tunes the closure for
 # this exact CPU (Excavator core — family 15h model 60h, which GCC targets as
-# bdver4; the Opteron X3216 is NOT the Puma/Jaguar/btver2 core this was long
-# mis-identified as). The BinaryLane build server (pallene) compiles it and
-# pushes to europa's own store (served by Harmonia); europa then
-# substitutes from localhost:8080 ahead of cache.nixos.org. This is the
-# deliberate, mitigated exception to the "no microarch" buildability rule —
-# the private Harmonia cache exists precisely to serve what cache.nixos.org
+# bdver4. The private Harmonia cache exists precisely to serve what cache.nixos.org
 # cannot once gcc.arch is set.
 {
   imports = [
@@ -32,45 +27,19 @@
     ../../modules/storage/zfs-tuning.nix
     ../../modules/storage/nas-nfs.nix
     ../../modules/network/nas-bond.nix
-    # jupiter.pxe itself is enabled in flake.nix's pxeModule, not here — its
-    # TFTP root has to be built with the UNTUNED nixpkgs instance (ipxe under
-    # this host's bdver4 tag means a from-source toolchain rebuild), and that
-    # instance isn't reachable from a plain host module (see flake.nix,
-    # CLAUDE.md's "avoid specialArgs" note). It no longer reaches into
-    # callisto's config at all — the callisto-derived kernel/initrd are
-    # published separately into jupiter.pxe.assetsDir. This import just brings
-    # the option in scope.
     ../../modules/network/pxe-server.nix
-    # GitHub Actions CI nix-copy receiver (jupiter-ci user + per-build GC
-    # roots). CI builds on free GHA CPU, then `nix copy --to ssh://europa`
-    # over the tailnet; Harmonia (below) serves the result.
     ../../modules/core/ci-cache-receiver.nix
     ../../modules/services/syncthing.nix
     ../../modules/services/smart-monitoring.nix
     ../../modules/services/console-screensaver.nix
     ../../modules/services/cloudflare-tunnel.nix
     ../../modules/services/iscsi-target.nix
-    # Headscale control plane (self-hosted Tailscale)
     ../../modules/services/headscale.nix
-    # Tailscale client for this host
     ../../modules/services/tailscale.nix
-    # jupiterOS Arcade — europa-side cartridge ROM pipeline: bulk torrent
-    # acquisition + igir hash verification (rom-acquire), headless Skyscraper
-    # scraping into Pegasus metadata (rom-scraper), and a periodic library
-    # inventory JSON (arcade-inventory). Kiosks consume the results read-only
-    # over NFS; see modules/desktop/cartridges.nix and docs/adr/0001-*.
     ../../modules/services/rom-acquire.nix
     ../../modules/services/rom-scraper.nix
     ../../modules/services/arcade-inventory.nix
-    # Suno account library backup: always-on Go daemon (pkgs/suno-backup) that
-    # mirrors the account's WAV masters + complete per-clip metadata into
-    # tank/archive/suno. Authenticates via the Clerk __client cookie held in the
-    # suno_cookie sops secret (add it to secrets/secrets.yaml before activating).
     ../../modules/services/suno-backup.nix
-    # Browser UI over that archive (pkgs/suno-web): search/filter across every
-    # archived metadata field, browse personas, follow the clip derivation
-    # graph, build playlists, stream the WAV masters. Read-only against the
-    # dataset; its playlists live in its own StateDirectory.
     ../../modules/services/suno-web.nix
   ];
 
@@ -85,8 +54,7 @@
   # IDENTIFY times out, and the data drives never appear — so `tank` can't
   # import. Disabling AMD IOMMU is the proven, community-documented fix for
   # this exact machine (HPE even ships it with IOMMU off by default). This is a
-  # boot *parameter* on the stock linuxPackages kernel, NOT a custom kernel —
-  # rule-compliant for a ZFS host. europa runs no VMs, so IOMMU isn't needed.
+  # boot *parameter* on the stock linuxPackages kernel 
   boot.kernelParams = [ "amd_iommu=off" ];
 
   # common.nix enables the full redistributable-firmware blob fleet-wide
@@ -151,27 +119,6 @@
   jupiter.nas.enable = true;
 
   # ---- Phase 2: CPU-tuned closure ------------------------------------------
-  # Re-enabled: the tailnet/CI push pipeline this was blocked on now works
-  # end-to-end (headscale real TLS via Let's Encrypt, CI registers and
-  # pushes over neptune.jupiter.au:8080, confirmed live). The Opteron X3216
-  # is Excavator (AMD family 15h model 60h — verified empirically from
-  # /proc/cpuinfo, which also shows avx2/fma/bmi1/bmi2/f16c flags that
-  # Puma/Jaguar/btver2 lack), which GCC targets as bdver4. CI
-  # (.github/workflows/ci.yml, main-only) builds this host's closure with
-  # -march=bdver4 and pushes to Harmonia; europa then substitutes from its
-  # own cache ahead of cache.nixos.org. This is the deliberate, mitigated
-  # exception to the "no microarch" buildability rule — the private Harmonia
-  # cache exists precisely to serve what cache.nixos.org cannot once gcc.arch
-  # is set. Verify Harmonia actually has the pushed closure (`nix path-info
-  # --substituters http://10.1.1.2:5000 <toplevel>`) before switching this
-  # host.
-  # DISABLED 2026-08-13. Tuning makes cache.nixos.org useless for this host's
-  # ENTIRE closure, so every path has to reach europa over the CI→Harmonia
-  # push — a transpacific, DERP-relayed hop that has been timing out (see
-  # /var/log/jupiter-ci/cache-drainer.log). Untuned, europa substitutes
-  # straight from cache.nixos.org and that push path stops being load-bearing.
-  # Re-enable by uncommenting; the option is null by default, which is the
-  # portable baseline every other nixpkgs consumer gets.
   # jupiter.build.microarch = "bdver4"; # CI builds this host's closure with -march=bdver4
 
   # ---- nixpkgs overlays ----------------------------------------------------
@@ -348,14 +295,6 @@
       }
     ];
   };
-  # fleet (and the next CI run) can substitute closures CI pushed here. Read-
-  # only by design (issue #63 — replaces the decommissioned attic cache, which
-  # had its own store dataset). CI populates the store via `nix copy --to ssh://europa`
-  # (jupiter-ci user, see modules/core/ci-cache-receiver.nix); fleet hosts
-  # consume it via modules/core/harmonia-substituter.nix. The signing key is
-  # generated once via nix-store --generate-binary-cache-key (see
-  # docs/ci-harmonia-push-runbook.md) and held in the harmonia_sign_key sops
-  # secret; without it europa's activation fails, so it must be added first.
   services.harmonia.cache.enable = true;
   services.harmonia.cache.signKeyPaths = [ config.sops.secrets.harmonia_sign_key.path ];
   services.harmonia.cache.settings = {
@@ -383,16 +322,10 @@
   # SMART monitoring on all attached disks (OS SSD + WD 18TB drives).
   jupiter.storage.smartMonitoring.enable = true;
 
-  # Console screensaver — Matrix rain on tty1 for the (rare) moments a
-  # monitor is plugged in. Login stays on tty2 (Ctrl+Alt+F2). The module runs
-  # cmatrix at the lowest CPU priority (Nice=19) so the eye-candy always
-  # yields to real NAS work.
+  # Console screensaver — Matrix rain on tty1 Login stays on tty2 (Ctrl+Alt+F2). 
   jupiter.consoleScreensaver.enable = true;
 
-  # iSCSI target backing callisto's root filesystem (replaces the old
-  # NFS-backed /persist — see hosts/callisto/configuration.nix). ACL-scoped
-  # to callisto's initiator IQN only, no CHAP (see
-  # modules/services/iscsi-target.nix for why that's a supported shape).
+  # iSCSI target backing callisto's root filesystem — see hosts/callisto/configuration.nix). 
   jupiter.services.iscsiTarget = {
     enable = true;
     targetIqn = "iqn.2026-07.au.jupiter:europa:callisto-root";
@@ -428,18 +361,10 @@
 
   # ---- sops secrets --------------------------------------------------------
   # harmonia_sign_key: private Nix binary-cache signing key for Harmonia
-  # (generated via nix-store --generate-binary-cache-key). Must be added to
-  # secrets/secrets.yaml before first deploy or Harmonia's activation fails.
-  # (binarylane_api_token stays in secrets.yaml but is no longer materialized
-  # here — its consumer, the pallene-watchdog, was retired. Kept for potential
-  # future BinaryLane use.)
+  # (generated via nix-store --generate-binary-cache-key). 
   sops.secrets.harmonia_sign_key = { };
   sops.secrets.nix_build_ssh_key = { };
 
-  # ---- Dev tools for CI builds running in tmux on europa -------------------
-  # nix-output-monitor: formatted output for nix build; useful when watching
-  # builds live via CI's tmux session. Excluded from common.nix (headless NAS),
-  # but worth the small closure for build visibility.
   environment.systemPackages = with pkgs; [
     nix-output-monitor
   ];
