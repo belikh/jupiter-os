@@ -720,10 +720,11 @@ jobs:
       #
       # `tail -n +1` replays from byte 0, so nom's table reflects the whole
       # build even when you attach late; the same file replays after the fact
-      # with `nom --json < nom-<run_id>-<hosts>.jsonl`. It also retains every build
-      # log line (result type 101), which the CI transcript does not.
-      # Nix emits exactly one log format, so the human-readable CI transcript
-      # is reconstructed from the same stream with jq.
+      # with `nom --json < nom-<run_id>-<hosts>.jsonl`. The raw per-derivation build output (every GCC/configure/make line — GBs/run)
+      # is stripped before it lands here: NOM_FILTER keeps only start/stop/msg +
+      # progress results, dropping the build-output result lines so nom renders
+      # the full activity tree without per-builder stdout noise; the human-readable
+      # CI transcript (NOM_TO_HUMAN) is reconstructed from the same stream.
       - name: Build all hosts (parallel across 5 builders, nom log on europa)
         env:
           RUN_ID: ${{ github.run_id }}
@@ -753,12 +754,24 @@ jobs:
           # '…'", "querying info about '…'" chatter and the thousand-line
           # "these N derivations will be built:" listing — is dropped: it ran
           # to hundreds of thousands of lines per run and buried the failures
-          # this log exists to show. None of it is lost; the full stream is
-          # still written to europa verbatim and is what nom-web renders.
+          # this log exists to show. The raw per-derivation build
+          # output is stripped from BOTH views on purpose (NOM_FILTER for europa; the
+          # build-output result lines aren't msgs, so NOM_TO_HUMAN never showed them
+          # either) — GBs/run of GCC noise. Failures still surface: nix emits the
+          # failing derivation's tail as an error msg (level 0) that NOM_TO_HUMAN
+          # keeps, and nom still gets the full activity/progress stream it renders.
           NOM_TO_HUMAN='if (startswith("@nix ") | not) then .
             else (.[5:] | (fromjson? // empty)
                   | select((.level // 3) <= 2)
                   | if .action == "msg" then .msg else empty end)
+            end'
+          NOM_FILTER='if (startswith("@nix ") | not) then .
+            else (.[5:] | fromjson? // empty) as $j
+            | if (($j | .action // "") == "result")
+                  and (($j | .fields // []) | map(type) | any(. != "number"))
+              then empty
+              else ("@nix " + ($j | tostring))
+              end
             end'
 
           HOSTS="europa"
@@ -850,7 +863,7 @@ jobs:
             --keep-going \
             --print-out-paths --no-link --fallback \
             --log-format internal-json 2>&1 1>"$OUT_PATHS" \
-            | stdbuf -o0 tee >(ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-log "cat >> '$NOM_LOG'") \
+            | stdbuf -o0 tee >(stdbuf -o0 jq -rR --unbuffered "$NOM_FILTER" | ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-log "cat >> '$NOM_LOG'") \
             | { stdbuf -o0 jq -rR --unbuffered "$NOM_TO_HUMAN" || cat; }
           # pipefail is on, so $? is the pipeline's -- nix's own status is
           # PIPESTATUS[0].
