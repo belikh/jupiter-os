@@ -51,7 +51,11 @@ in
     };
 
     assetsDir = lib.mkOption {
-      type = lib.types.path;
+      # str, NOT path: types.path accepts a Nix path literal, and
+      # interpolating one copies it into the store — which would put a store
+      # path back into this host's config and silently reintroduce the exact
+      # coupling this split removes. A runtime directory is a string.
+      type = lib.types.str;
       default = "/var/lib/pxe-netboot";
       description = ''
         Mutable directory holding the HTTP-served half of the netboot chain.
