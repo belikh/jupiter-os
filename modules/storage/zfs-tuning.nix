@@ -9,11 +9,40 @@
 # and tuning Samba/NFS + the network stack for throughput.
 {
   # ---- ZFS ARC (read cache = serving speed) --------------------------------
-  # 8GB box, STORAGE-ONLY (all compute runs on other hosts). Reserve ~3GB for
-  # OS + Samba/NFS daemons + Attic + Syncthing + buffers; give ~5GB to ARC.
-  # NOTE: master branch assumed 16GB and set this to 11GB — would OOM.
+  # 3GiB, lowered from 5GiB on 2026-08-13. The old comment's premise —
+  # "STORAGE-ONLY (all compute runs on other hosts)" — expired: europa also
+  # runs the LIO iSCSI target serving callisto's ROOT, headscale + an embedded
+  # DERP relay, Harmonia, the ROM pipeline and suno-backup. ("Attic" in that
+  # note is decommissioned.) 5GiB of 7.7GiB left ~2.7GiB for all of it, and the
+  # box OOM-killed 5 times, including `iscsi_trx invoked oom-killer` inside
+  # transport_generic_new_cmd/target_core_mod — the thread serving callisto's
+  # root.
+  #
+  # Sized from measurement, not a guess. Live arcstats before the change:
+  #
+  #   overall hit 97%   demand-data hit 97%   demand-metadata hit 99.6%
+  #   size 4479MB   data 2055MB   metadata 1362MB   arc_meta_used 2289MB
+  #   mru 2597MB    mfu 807MB     memory_throttle_count 0
+  #
+  # MFU — blocks actually re-referenced — is only 807MB; MRU's 2597MB is mostly
+  # single-touch traffic (media streamed over Samba/NFS, sequential NAR reads
+  # out of Harmonia, ROM/syncthing scans) that will never be read twice. So
+  # most of the 5GiB was not earning its keep.
+  #
+  # 3GiB and NOT less: arc_meta_used is 2289MB and metadata is the high-value
+  # content here (99.6% hit over 1.28B accesses, and every metadata miss is a
+  # seek on tank's rust mirror). A 2GiB cap — the first number considered —
+  # would sit BELOW current metadata usage and evict exactly what's worth
+  # keeping. 3GiB fits metadata plus MFU headroom and returns ~2GiB.
+  #
+  # Note memory_throttle_count = 0: ZFS never registered memory pressure at
+  # all, yet the kernel OOM-killed. ARC's shrinker is asynchronous and did not
+  # return memory in time for a GFP_KERNEL allocation in the iSCSI path, so
+  # "it's only cache, the kernel will reclaim it" is not load-bearing here.
+  # Runtime-writable at /sys/module/zfs/parameters/zfs_arc_max if this needs
+  # retuning without a reboot.
   boot.extraModprobeConfig = ''
-    options zfs zfs_arc_max=5368709120
+    options zfs zfs_arc_max=3221225472
   '';
 
   # ---- Swap: zram, deliberately NOT the rpool/swap zvol --------------------

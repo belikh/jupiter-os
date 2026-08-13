@@ -98,6 +98,26 @@ in
       example = "iqn.2026-07.au.jupiter:europa:callisto-root";
     };
 
+    primarycache = lib.mkOption {
+      type = lib.types.enum [
+        "all"
+        "metadata"
+        "none"
+      ];
+      default = "metadata";
+      description = ''
+        ARC caching policy for the backing zvol. "metadata" by default, NOT
+        "all": the initiator has its own page cache and is caching this
+        filesystem already, so caching its data blocks a second time on the
+        target buys little and costs the target's RAM — which here is 7.7GiB
+        shared with Samba/NFS, Harmonia, headscale+DERP and the ROM pipeline,
+        on a box that has OOM-killed its own iSCSI receive thread. callisto
+        has 64GB to europa's 7.7GiB, so the duplicate copy is on exactly the
+        wrong machine. Metadata stays cached because a metadata miss is a
+        seek, not a read.
+      '';
+    };
+
     initiatorIqn = lib.mkOption {
       type = lib.types.str;
       description = ''
@@ -206,8 +226,14 @@ in
         fi
         if ! zfs list -H -o name "${cfg.zvolDataset}" >/dev/null 2>&1; then
           echo "Creating zvol ${cfg.zvolDataset} (${cfg.zvolSize})"
-          zfs create -V "${cfg.zvolSize}" -o volblocksize=16K "${cfg.zvolDataset}"
+          zfs create -V "${cfg.zvolSize}" -o volblocksize=16K \
+            -o primarycache="${cfg.primarycache}" "${cfg.zvolDataset}"
         fi
+        # Enforce on every start, not only at creation: the zvol usually
+        # already exists (it survives reinstalls, and this one was migrated in
+        # by `zfs send`), so a create-time-only property would silently never
+        # apply to the volume actually in use. `zfs set` is idempotent.
+        zfs set primarycache="${cfg.primarycache}" "${cfg.zvolDataset}"
       '';
     };
 
