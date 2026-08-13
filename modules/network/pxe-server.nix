@@ -145,6 +145,14 @@ in
         pkgs.gnutar
         pkgs.xz.bin
         pkgs.gzip
+        # openssh: europa stopped being skylake-tuned on 2026-08-13, so
+        # building callisto's gccarch-skylake closure means delegating to
+        # callisto over ssh-ng://root@10.1.1.3 (europa's only machine in
+        # /etc/nix/machines that advertises gccarch-skylake). nix shells out
+        # to `ssh` from PATH for that delegation, so without openssh here the
+        # publish dies "Could not find executable 'ssh' / Cannot build
+        # system-path.drv: missing system features". Confirmed 2026-08-14.
+        pkgs.openssh
         # No git: assetsFlakeRef is a `github:` (tarball) ref, and every flake
         # input is too, so nothing here shells out to git. Leaving it off keeps
         # a from-source git out of this host's microarch-tuned closure.

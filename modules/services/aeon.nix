@@ -95,6 +95,9 @@ in
     # catalog/, etc. via its API routes.
     systemd.services.aeon-clone = {
       description = "Clone aeon fork for dashboard";
+      # Without wantedBy the unit is only `linked`, not pulled into any target,
+      # so it never runs at boot — `enable` defines it but wires nothing.
+      wantedBy = [ "multi-user.target" ];
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
       serviceConfig = {
@@ -116,6 +119,9 @@ in
     # Main dashboard service — runs `next dev` with the pre-installed deps.
     systemd.services.aeon = {
       description = "Aeon dashboard (autonomous agent framework)";
+      # Without wantedBy the unit is only `linked`, not pulled into any target,
+      # so it never runs at boot — `enable` defines it but wires nothing.
+      wantedBy = [ "multi-user.target" ];
       after = [
         "network-online.target"
         "aeon-clone.service"
