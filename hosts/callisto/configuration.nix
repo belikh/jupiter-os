@@ -205,7 +205,14 @@
   # DO NOT REBUILD CALLISTO LOCALLY without verifying Harmonia has it first:
   # `nix path-info --substituters http://10.1.1.2:5000 <toplevel>` from
   # callisto — every path must resolve from Harmonia before `switch`.
-  jupiter.build.microarch = "skylake";
+  # DISABLED 2026-08-13, same reason as europa's: a tuned closure can't come
+  # from cache.nixos.org at all, so it depends entirely on the CI→Harmonia
+  # push that has been timing out. Untuned, callisto substitutes from
+  # cache.nixos.org directly. The gccarch-* system-features below are
+  # deliberately KEPT — they advertise what this host can BUILD for others
+  # (it is the fleet's remote builder), which is independent of how its own
+  # closure is compiled.
+  # jupiter.build.microarch = "skylake";
 
   # Tailscale client for Jupiter tailnet. Reusable (non-ephemeral) tag:fleet
   # pre-auth key, shared fleet-wide via sops — self-registers on switch, no

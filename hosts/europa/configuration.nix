@@ -165,7 +165,14 @@
   # is set. Verify Harmonia actually has the pushed closure (`nix path-info
   # --substituters http://10.1.1.2:5000 <toplevel>`) before switching this
   # host.
-  jupiter.build.microarch = "bdver4"; # CI builds this host's closure with -march=bdver4
+  # DISABLED 2026-08-13. Tuning makes cache.nixos.org useless for this host's
+  # ENTIRE closure, so every path has to reach europa over the CI→Harmonia
+  # push — a transpacific, DERP-relayed hop that has been timing out (see
+  # /var/log/jupiter-ci/cache-drainer.log). Untuned, europa substitutes
+  # straight from cache.nixos.org and that push path stops being load-bearing.
+  # Re-enable by uncommenting; the option is null by default, which is the
+  # portable baseline every other nixpkgs consumer gets.
+  # jupiter.build.microarch = "bdver4"; # CI builds this host's closure with -march=bdver4
 
   # ---- nixpkgs overlays ----------------------------------------------------
   # bmake's `deptgt-interrupt` unit test is timing-sensitive (it asserts a
