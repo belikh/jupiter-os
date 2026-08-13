@@ -125,6 +125,24 @@ in
         "aeon-clone.service"
       ];
 
+      # The dashboard's API routes shell out to these by BARE NAME at request
+      # time (child_process exec/spawn), so they have to be on the unit's PATH
+      # — absolute store paths in preStart/script don't help those callers:
+      #   gh    — 14 call sites (secrets, workflow dispatch, run list, content)
+      #   git   — lib/sync.ts + /api/outputs (stash/pull the fork checkout)
+      #   gnutar+gzip — `tar czf -` packs harness OAuth creds into gh secrets
+      #                 (GNU tar execs gzip for `z`)
+      #   nodejs — node_modules/.bin/next is a `#!/usr/bin/env node` shim
+      # Without this the unit gets systemd's default PATH (coreutils, findutils,
+      # gnugrep, gnused, systemd) and every one of those calls ENOENTs.
+      path = [
+        pkgs.gh
+        pkgs.git
+        pkgs.gnutar
+        pkgs.gzip
+        pkgs.nodejs
+      ];
+
       serviceConfig = {
         User = "aeon";
         Group = "aeon";
@@ -141,17 +159,24 @@ in
       # The dashboard's /api/* routes shell out to `gh` for every repo
       # operation (secrets, workflow dispatch, content reads), so this
       # must succeed before the server starts.
+      # `gh` writes its config under $HOME/.config/gh — systemd sets HOME from
+      # the aeon user's passwd entry (/var/lib/aeon), which the tmpfiles rule
+      # below creates. `gh auth setup-git` is deliberately NOT run: the
+      # dashboard only ever reads over git (stash/pull of a public repo) and
+      # does every write through `gh` itself, which carries its own auth.
       preStart = ''
-        ${pkgs.gh}/bin/gh auth login --with-token < ${cfg.ghTokenFile}
-        ${pkgs.gh}/bin/gh repo set-default ${repoSlug}
+        gh auth login --with-token < ${cfg.ghTokenFile}
+        gh repo set-default ${repoSlug}
       '';
 
-      # Symlink the pre-built node_modules into the dashboard dir, then
-      # run `next dev`. The --hostname/--port flags come from the module
-      # options. NODE_PATH ensures `next` resolves from the nix package.
+      # Symlink the pre-built node_modules into the checkout, then run `next
+      # dev` against the checkout's own source. `next` is invoked by its store
+      # path rather than through `npx`, which would otherwise be free to reach
+      # out to the network if local resolution ever missed.
       script = ''
         ln -sfn ${cfg.package}/node_modules node_modules
-        ${pkgs.nodejs}/bin/npx next dev --hostname ${cfg.host} --port ${toString cfg.port}
+        exec ${cfg.package}/node_modules/.bin/next dev \
+          --hostname ${cfg.host} --port ${toString cfg.port}
       '';
     };
 

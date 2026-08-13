@@ -69,7 +69,6 @@
     target = "iqn.2026-07.au.jupiter:europa:callisto-root";
   };
 
-  
   fileSystems."/" = {
     device = "/dev/disk/by-path/ip-10.1.1.2:3260-iscsi-iqn.2026-07.au.jupiter:europa:callisto-root-lun-0";
     fsType = "ext4";
@@ -211,7 +210,14 @@
   # Vulkan / Mesa diagnostics (vulkaninfo) — same tool modules/gaming/console.nix
   # installs for the same reason, kept independent here since that module is
   # gamescope-specific and not something callisto should pull in.
-  environment.systemPackages = [ pkgs.vulkan-tools ];
+  # `gh` is on aeon.service's own PATH (modules/services/aeon.nix) — it's here
+  # too so the CLI is available interactively for checking what the dashboard
+  # sees (`sudo -u aeon gh auth status`, `gh secret list`) without digging a
+  # store path out of the unit.
+  environment.systemPackages = [
+    pkgs.vulkan-tools
+    pkgs.gh
+  ];
 
   # ---- Aeon autonomous agent framework --------------------------------------
   # Runs the aeon dashboard (Next.js on port 5555, bound 0.0.0.0 for LAN +
@@ -220,7 +226,14 @@
   # STRATEGY.md, SOUL.md, API keys, notifications) is done through the web UI.
   # GitHub Actions runs skills on cron in the fork's repo (public = unlimited
   # free Actions minutes). See modules/services/aeon.nix.
-  sops.secrets.aeon_gh_token = { };
+  # The dashboard runs as the unprivileged `aeon` user and reads this token in
+  # ExecStartPre (`gh auth login --with-token < …`), so it must be readable by
+  # that user — the sops default (0400 root:root) fails the unit outright.
+  sops.secrets.aeon_gh_token = {
+    owner = "aeon";
+    group = "aeon";
+    mode = "0400";
+  };
 
   jupiter.services.aeon = {
     enable = true;
