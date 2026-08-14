@@ -332,6 +332,15 @@
         host = "10.1.1.3";
         port = 8092;
       }
+      {
+        # Home Assistant MCP server (mcp-ha-connect) on the HA box at 10.1.1.72.
+        # Exposed so Aeon — running on GitHub Actions — can reach it; the
+        # /private_<token> path is the shared secret and is NOT stored here
+        # (it lives as the MCP_HA_URL secret in the Aeon repo).
+        hostname = "ha-mcp.jupiter.au";
+        host = "10.1.1.72";
+        port = 9583;
+      }
     ];
   };
   services.harmonia.cache.enable = true;
