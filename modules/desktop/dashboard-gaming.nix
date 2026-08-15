@@ -142,7 +142,16 @@ let
   siblings = m: map (other: "jupiter-${other}.service") (lib.remove m enabledModes);
 in
 {
-  imports = [ ../gaming/console.nix ];
+  # console.nix for jupiter.gaming.console (the software stack this profile
+  # enables), ha-agent.nix because the config below contributes to
+  # jupiter.services.haAgent.launcherApps (the session select). Importing
+  # them here keeps any host importing THIS module eval-safe — only kiosks
+  # used to import it via tcxwave-kiosk.nix (which also imported ha-agent);
+  # arcade appliances reach it through cartridges/exodos, which don't.
+  imports = [
+    ../gaming/console.nix
+    ../services/ha-agent.nix
+  ];
 
   options.jupiter.dashboardGaming = {
     enable = lib.mkEnableOption "Dashboard ↔ gaming mode switch for a Cage kiosk (Home Assistant controlled)";
