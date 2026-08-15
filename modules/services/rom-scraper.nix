@@ -212,6 +212,15 @@ in
         systemd.services.jupiter-rom-scrape = {
           description = "Scrape console ROMs into Pegasus metadata with Skyscraper";
           serviceConfig.Type = "oneshot";
+          # Skyscraper's '--flags unpack' (ScreenScraper CRC pass) hard-exits
+          # with "Couldn't find '7z' command" unless 7z is on the unit's PATH.
+          # Without this, the CRC-exact primary dies in ~1s every run (observed
+          # nightly since the optical platforms landed), everything falls to
+          # keyed TheGamesDB onlymissing, and ps1's never-matching tail
+          # (~575 files re-attempted nightly) drains the key's quota before
+          # ps2 — last in bucket order — gets a single lookup, leaving its
+          # metadata.pegasus.txt at 0 bytes.
+          serviceConfig.Path = [ pkgs.p7zip ];
           # Never run before every dataset holding a scraped platform is mounted.
           unitConfig.RequiresMountsFor = [
             cfg.romRoot
