@@ -54,7 +54,7 @@
   # IDENTIFY times out, and the data drives never appear — so `tank` can't
   # import. Disabling AMD IOMMU is the proven, community-documented fix for
   # this exact machine (HPE even ships it with IOMMU off by default). This is a
-  # boot *parameter* on the stock linuxPackages kernel 
+  # boot *parameter* on the stock linuxPackages kernel
   boot.kernelParams = [ "amd_iommu=off" ];
 
   # common.nix enables the full redistributable-firmware blob fleet-wide
@@ -372,10 +372,10 @@
   # SMART monitoring on all attached disks (OS SSD + WD 18TB drives).
   jupiter.storage.smartMonitoring.enable = true;
 
-  # Console screensaver — Matrix rain on tty1 Login stays on tty2 (Ctrl+Alt+F2). 
+  # Console screensaver — Matrix rain on tty1 Login stays on tty2 (Ctrl+Alt+F2).
   jupiter.consoleScreensaver.enable = true;
 
-  # iSCSI target backing callisto's root filesystem — see hosts/callisto/configuration.nix). 
+  # iSCSI target backing callisto's root filesystem — see hosts/callisto/configuration.nix).
   jupiter.services.iscsiTarget = {
     enable = true;
     targetIqn = "iqn.2026-07.au.jupiter:europa:callisto-root";
