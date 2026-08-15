@@ -105,6 +105,8 @@
   # (Excavator, verified via /proc/cpuinfo — see the CPU-tuned closure note
   # below), so building locally is both correct and available; distributed
   # dispatch here bought nothing but a wrong-hardware failure mode.
+  nix.distributedBuilds = false;
+  nix.buildMachines = [];
 
   # ---- Storage profile (OS SSD) --------------------------------------------
   # Stateful root (no impermanence — the NAS needs persistent state).
