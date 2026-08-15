@@ -121,6 +121,14 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    # Boot default = graphical.target, which wants the session unit below.
+    # Same pairing as nixpkgs' cage module (services/wayland/cage.nix sets
+    # wantedBy graphical.target AND systemd.defaultUnit graphical.target):
+    # without the defaultUnit flip a host with no display manager (this one)
+    # boots to multi-user.target and never starts the session — found live on
+    # callisto, where the unit was enabled+inactive after the first switch.
+    systemd.defaultUnit = "graphical.target";
+
     # Pegasus + theme + per-user config seeding (game_dirs.txt from every
     # collection module contributing to jupiter.arcade.gameDirs).
     jupiter.arcade.enable = true;
