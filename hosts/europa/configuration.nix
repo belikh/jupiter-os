@@ -93,21 +93,53 @@
   # the full build closure of the retained builds.
   nix.settings.keep-outputs = true;
 
-  # No build delegation to callisto. This used to dispatch europa's builds
-  # to callisto via nix.distributedBuilds/buildMachines, with callisto's
-  # supportedFeatures listing BOTH gccarch-bdver4 and gccarch-skylake — that
-  # second one is a lie Nix's scheduler believed: callisto is real
-  # Coffee Lake/Skylake hardware with no XOP/TBM/FMA4 (Excavator-only
-  # extensions bdver4 code can emit), so every gccarch-bdver4 derivation
-  # dispatched there silently mis-executed on the wrong CPU instead of
-  # failing to schedule. Confirmed directly: perl-5.42.0's miniperl
-  # bootstrap SIGILLed building "on 'ssh-ng://root@10.1.1.3'" (callisto) —
-  # not a flaky remote runner, callisto itself. europa's own CPU IS bdver4
-  # (Excavator, verified via /proc/cpuinfo — see the CPU-tuned closure note
-  # below), so building locally is both correct and available; distributed
-  # dispatch here bought nothing but a wrong-hardware failure mode.
-  nix.distributedBuilds = false;
-  nix.buildMachines = [ ];
+  # ---- Remote builder: callisto --------------------------------------------
+  # Delegate eligible builds to callisto (10.1.1.3): 6c/6t i5-8500T vs this
+  # 2c/2t Opteron — several times faster per core. Inline rather than
+  # modules/core/build-machines.nix because that module also wires the 4
+  # kiosks; europa wants callisto alone.
+  #
+  # supportedFeatures deliberately OMITS gccarch-bdver4: callisto is Coffee
+  # Lake/Skylake with no XOP/TBM/FMA4 (Excavator-only extensions bdver4 code
+  # may emit). Advertising it (pre-08fd609) made perl's miniperl bootstrap
+  # SIGILL while "building on europa" — actually mis-executing on callisto.
+  # Delegation is safe again NOW precisely because europa is untuned: its
+  # derivations carry no gccarch-* tag. If microarch is ever re-enabled,
+  # this matrix needs revisiting first (build bdver4 locally or on CI only).
+  nix.distributedBuilds = true;
+  nix.buildMachines = [
+    {
+      hostName = "10.1.1.3"; # callisto, DHCP-reserved; no DNS yet (ganymede's role)
+      system = "x86_64-linux";
+      protocol = "ssh-ng";
+      sshUser = "root";
+      sshKey = config.sops.secrets.nix_build_ssh_key.path;
+      # Mirrors callisto's own nix.settings.max-jobs = 1 (cores=6): one
+      # derivation at a time using all 6 cores.
+      maxJobs = 1;
+      speedFactor = 2;
+      supportedFeatures = [
+        "gccarch-skylake"
+        "big-parallel"
+      ];
+      mandatoryFeatures = [ ];
+    }
+  ];
+
+  # Host key pinned declaratively (captured 2026-07-24, same key as
+  # modules/core/build-machines.nix) — the module's fleet-wide knownHosts is
+  # gone from common.nix, so europa carries its own. Keyed on the literal IP:
+  # buildMachines dials it directly and ssh_config Host patterns match the
+  # literal argument, not resolved names.
+  programs.ssh.knownHosts.callisto = {
+    hostNames = [ "10.1.1.3" ];
+    publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIINKUMgEPCzZRq74JtvkMmfmT6gOmZWGGq8G9lNqqKsU";
+  };
+  programs.ssh.extraConfig = ''
+    Host 10.1.1.3
+      IdentityFile ${config.sops.secrets.nix_build_ssh_key.path}
+      IdentitiesOnly yes
+  '';
 
   # ---- Storage profile (OS SSD) --------------------------------------------
   # Stateful root (no impermanence — the NAS needs persistent state).
@@ -387,6 +419,9 @@
   # harmonia_sign_key: private Nix binary-cache signing key for Harmonia
   # (generated via nix-store --generate-binary-cache-key).
   sops.secrets.harmonia_sign_key = { };
+  # nix_build_ssh_key: private half of the dedicated builder keypair; the
+  # public half is in callisto's root authorized_keys (buildMachines above).
+  sops.secrets.nix_build_ssh_key = { };
 
   environment.systemPackages = with pkgs; [
     nix-output-monitor
