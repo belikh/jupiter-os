@@ -229,6 +229,14 @@ let
   # wrapper resolves `-L <short>` against the wrapped retroarch's cores dir
   # — normalizing the beetle aliases — and passes everything else through.
   # Keeps the launch metadata stable regardless of nixpkgs' packaging names.
+  # `--fullscreen` is not cosmetic: retroarch otherwise starts WINDOWED
+  # (observed live: "Set video size to: 879x672" / "1439x1080"), and
+  # gamescope composites the child window into a corner of the output
+  # instead of scaling it — the user sees the game in one quadrant with
+  # the other three black (PS2 BIOS Sony-logo splash, 2026-08-16).
+  # Fullscreen makes retroarch request the full display mode, which
+  # gamescope composites edge-to-edge. Applies to every system uniformly;
+  # cemu's wrapper already passes -f for the same reason.
   jupiterRetroarch = pkgs.writeShellScriptBin "jupiter-retroarch" ''
     set -eu
     CORES_DIR="${retroarchWithCores}/lib/retroarch/cores"
@@ -252,7 +260,7 @@ let
       esac
       set -- -L "$core" "$@"
     fi
-    exec "${lib.getExe retroarchWithCores}" "$@"
+    exec "${lib.getExe retroarchWithCores}" --fullscreen "$@"
   '';
 
   # Wii U standalone path. Cemu has no libretro core; it loads a title via
