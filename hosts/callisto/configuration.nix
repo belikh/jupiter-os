@@ -292,11 +292,58 @@
   # Cloudflare tunnel below, whose cloudflared runs on this host and proxies
   # to localhost:3080. The web app's /api trust fence keys on the Host
   # header, so the public hostname must be passed as a trusted host.
-  # API key is entered in the web UI on first use (Settings → Models).
+  #
+  # Models: the settings/credentials UI plane is hard-gated to loopback by
+  # upstream rc.6 (PRIVILEGED_METHODS in dsh-client-connection — no auth
+  # layer exists yet), so providers are provisioned HOST-SIDE instead:
+  # settingsFile declares two OpenAI-compatible providers using the SAME
+  # keys the crush/zed wrappers already use (z.ai coding plan + groq), with
+  # apiKeyEnv references resolved from the dsh_env sops secret. DeepSeek
+  # itself stays available via Settings → Models if ever provisioned
+  # loopback-side. Model ids fetched live from each endpoint's /models
+  # 2026-08-17 (catalogs don't refresh themselves — see dsh-llm-pi-ai
+  # §Known Limitations).
   jupiter.services.dsh = {
     enable = true;
     trustedHosts = [ "dsh.jupiter.au" ];
+    environmentFile = config.sops.secrets.dsh_env.path;
+    settingsFile =
+      (pkgs.writeText "dsh-settings.yaml" ''
+        llm-pi-ai:
+          providers:
+            zai-coding:
+              displayName: Z.AI (coding plan)
+              apiKeyEnv: Z_AI_API_KEY
+              api: openai-completions
+              baseURL: https://api.z.ai/api/coding/paas/v4
+              models:
+                - id: glm-5.3
+                - id: glm-5.2
+                - id: glm-5.1
+                - id: glm-5
+                - id: glm-5-turbo
+                - id: glm-4.7
+                - id: glm-4.6
+                - id: glm-4.5-air
+            groq:
+              displayName: Groq
+              apiKeyEnv: GROQ_API_KEY
+              api: openai-completions
+              baseURL: https://api.groq.com/openai/v1
+              models:
+                - id: llama-3.3-70b-versatile
+                - id: llama-3.1-8b-instant
+                - id: openai/gpt-oss-120b
+                - id: openai/gpt-oss-20b
+                - id: qwen/qwen3.6-27b
+                - id: groq/compound
+                - id: groq/compound-mini
+      '').outPath;
   };
+
+  # Keys for the providers above (same values as the crush/zed secrets,
+  # packed as one env file — restic_env pattern).
+  sops.secrets.dsh_env = { };
 
   # ---- Cloudflare Tunnel (dedicated per-host tunnel) ------------------------
   # europa's tunnel can't serve dsh: its cloudflared can't reach THIS host's

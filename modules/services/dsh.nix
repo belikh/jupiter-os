@@ -88,6 +88,31 @@ in
       default = false;
       description = "Open `port` in the firewall (intended for the trusted LAN).";
     };
+
+    environmentFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      description = ''
+        Environment file (e.g. a sops secret) exported into the service.
+        dsh resolves provider credentials from the process environment by
+        NAME — a provider profile in settingsFile references e.g.
+        `apiKeyEnv: GROQ_API_KEY`, and this file supplies the value.
+      '';
+    };
+
+    settingsFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      description = ''
+        YAML file copied to `$DSH_HOME/settings.yaml` on activation, ONLY
+        if the file does not already exist (the app owns it afterwards and
+        rewrites it on settings changes — provisioning never clobbers).
+        Holds host-side dsh settings, e.g. the `llm-pi-ai:` provider
+        profiles for non-DeepSeek OpenAI-compatible endpoints. Contains
+        credential NAMES, never values — keys come from environmentFile.
+        Nix store paths are world-readable for exactly that reason.
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -104,7 +129,10 @@ in
     systemd.tmpfiles.rules = [
       "d ${cfg.dataDir} 0750 dsh dsh - -"
       "d ${cfg.dataDir}/workspace 0750 dsh dsh - -"
-    ];
+    ]
+    ++ lib.optional (
+      cfg.settingsFile != null
+    ) "C+ ${cfg.dataDir}/settings.yaml 0640 dsh dsh - ${cfg.settingsFile}";
 
     systemd.services.dsh = {
       description = "DeepSeek Harness (dsh) web UI";
@@ -148,7 +176,10 @@ in
         RestrictSUIDSGID = true;
         RestrictRealtime = true;
         LockPersonality = true;
-      };
+      }
+      // (lib.optionalAttrs (cfg.environmentFile != null) {
+        EnvironmentFile = [ cfg.environmentFile ];
+      });
 
       # Launcher grammar: `dsh web` == `dsh --profile web`; everything after
       # is handed to the web app, which owns --host/--port/--trusted-host.
