@@ -265,6 +265,17 @@ let
       esac
       set -- -L "$core" "$@"
     fi
+    # The inner gamescope must NEST as a Wayland client of the session's
+    # gamescope, not fight it for DRM master. Gamescope's backend auto-
+    # selection only picks Wayland when WAYLAND_DISPLAY is set; the session
+    # env exposes the parent socket as GAMESCOPE_WAYLAND_DISPLAY (usually
+    # "gamescope-0") but leaves WAYLAND_DISPLAY unset — without this export
+    # the inner instance tries the DRM backend, fails to take the seat
+    # ("Could not take control of session: Device or resource busy"), and
+    # crashes (observed live). Verified working with the export: inner
+    # gamescope runs as a wayland client, spawns its own Xwayland (:1), and
+    # the game runs inside (2026-08-16).
+    export WAYLAND_DISPLAY="''${GAMESCOPE_WAYLAND_DISPLAY:-gamescope-0}"
     exec ${pkgs.gamescope}/bin/gamescope -f -- \
       "${lib.getExe retroarchWithCores}" --fullscreen "$@"
   '';
