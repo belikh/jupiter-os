@@ -135,6 +135,26 @@ in
         the kiosks, minus Steam-specific pieces.
       '';
     };
+
+    audioOutput = lib.mkOption {
+      type = lib.types.nullOr (lib.types.enum [
+        "hdmi"
+        "analog"
+      ]);
+      default = null;
+      description = ''
+        Force the session's PulseAudio output to the TV (HDMI) or the
+        motherboard jack/speakers. PulseAudio's own heuristics prefer the
+        analog profile (its priority number is higher), so on a box whose
+        display IS its speaker setup (callisto: HDMI TV, no speakers wired)
+        the default routes game audio to silent built-in hardware — observed
+        live 2026-08-16, analog-stereo active with an LG TV on HDMI-A-1.
+        The switch is written into the shared default.pa so it survives the
+        impermanent home (module-card-restore's database lives under
+        ~/.config/pulse, which is not persisted). null leaves PulseAudio's
+        profile/default selection untouched.
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -198,6 +218,18 @@ in
     # it, so Pegasus/retroarch/dosbox get audio with no system daemon. Same
     # shape the kiosks use (modules/desktop/tcxwave-kiosk.nix).
     services.pulseaudio.enable = true;
+
+    # HDMI TV as the output, when asked for (see audioOutput). These run at
+    # the end of default.pa, after module-udev-detect has attached the card
+    # and after module-card-restore/module-default-device-restore have
+    # applied whatever they remember — so the explicit choice always wins,
+    # fresh boot or not. The card path pins the appliance's fixed audio
+    # controller (Intel PCH at 00:1f.3); HDMI profile keeps the analog mic
+    # input alive for hosts that want it later.
+    services.pulseaudio.extraConfig = lib.mkIf (cfg.audioOutput == "hdmi") ''
+      set-card-profile alsa_card.pci-0000_00_1f.3 output:hdmi-stereo+input:analog-stereo
+      set-default-sink alsa_output.pci-0000_00_1f.3.hdmi-stereo
+    '';
 
     # --- Controllers ---------------------------------------------------------
     hardware.xpadneo.enable = lib.mkIf cfg.controllers (lib.mkDefault true);

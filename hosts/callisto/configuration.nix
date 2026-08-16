@@ -214,6 +214,10 @@
   # stock nixpkgs gamescope, no Jovian/Steam/NM stack — see the module header
   # for why the kiosk's dashboard-gaming path is deliberately not used here.
   jupiter.arcadeConsole.enable = true;
+  # The office arcade's display IS its audio output: LG TV on HDMI-A-1.
+  # Without this, PulseAudio's heuristics pick the (silent) built-in analog
+  # speakers over HDMI — game audio went nowhere until routed 2026-08-16.
+  jupiter.arcadeConsole.audioOutput = "hdmi";
   jupiter.cartridges.enable = true;
   jupiter.exodos.enable = true;
 
