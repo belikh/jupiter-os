@@ -158,15 +158,14 @@ seed_launchable_metadata() {
       rel=${rel#./}
       base=${rel##*/}
       base=${base%.*}
-      base=${base//\'/}
       [ -n "$base" ] || continue
-      # file: values stay RAW (unquoted), matching Skyscraper's own
-      # enriched output — the only format Pegasus demonstrably parses
-      # clean (it keeps double quotes literally in the path; verified
-      # against the live session's Metafiles warnings 2026-08-16).
-      # A leading apostrophe ('96 Zenkoku...) is NOT quote-wrapping
-      # unless the value also ends with one, so raw stays correct there.
-      printf "game: '%s'\nfile: %s\n\n" "$base" "$rel"
+      # Pegasus' metafile parser (MetaFile.cpp) has NO quoting: a value is
+      # everything after the first ':', trimmed. So both game: and file:
+      # values stay raw — quotes would render literally in titles and break
+      # file paths (verified live 2026-08-16: double-quoted file: values
+      # were kept in the path and every entry was rejected). Colons in
+      # values are safe (first-colon split).
+      printf 'game: %s\nfile: %s\n\n' "$base" "$rel"
     done < <(
       cd "$platform_dir" \
         && find . -type f -regextype posix-extended -iregex "$ROM_RE" | LC_ALL=C sort
