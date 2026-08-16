@@ -77,6 +77,17 @@
     target = "iqn.2026-07.au.jupiter:europa:callisto-root";
   };
 
+  # networkd has NO managed interfaces in stage 2 (the root-initiator module
+  # forces networkd, but eno1's address comes from initrd DHCP and the
+  # interface stays "unmanaged"), so systemd-networkd-wait-online can never
+  # succeed — every nixos-rebuild restart of it hung 2 minutes, timed out, and
+  # aborted switch-to-configuration MID-ACTIVATION (after the stop phase,
+  # before the start phase), killing the arcade session on every switch and
+  # never writing a boot generation. Nothing on this host consumes
+  # network-online.target (the iSCSI root is up long before stage 2), so the
+  # blessed fix is to not run the waiter at all.
+  systemd.network.wait-online.enable = false;
+
   fileSystems."/" = {
     device = "/dev/disk/by-path/ip-10.1.1.2:3260-iscsi-iqn.2026-07.au.jupiter:europa:callisto-root-lun-0";
     fsType = "ext4";
