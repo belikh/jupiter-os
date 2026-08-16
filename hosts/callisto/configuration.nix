@@ -34,6 +34,9 @@
     ../../modules/services/nom-web.nix
     # DeepSeek Harness (dsh): agent harness web UI on :3080
     ../../modules/services/dsh.nix
+    # Dedicated Cloudflare tunnel for this host's public hostnames
+    # (dsh.jupiter.au → loopbound-bound dsh via cloudflared running here)
+    ../../modules/services/cloudflare-tunnel.nix
     # jupiterOS Arcade: boots straight into the gamescope/Pegasus session on
     # tty1 (modules/desktop/arcade-console.nix) with full kiosk collection
     # parity — console ROMs (modules/desktop/cartridges.nix) + eXo DOS/Win
@@ -283,10 +286,39 @@
   };
 
   # ---- DeepSeek Harness (dsh) — agent harness web UI ------------------------
-  # Loopback-only by upstream design (0.1.0-rc.6 rejects any non-loopback
-  # bind as a safety guard — see modules/services/dsh.nix). Use from the
-  # laptop via: ssh -L 3080:127.0.0.1:3080 root@10.1.1.3, then open
-  # http://localhost:3080. API key is entered in the web UI on first use
-  # (Settings → Models); no secret exists in sops for this yet.
-  jupiter.services.dsh.enable = true;
+  # Binds loopback ONLY by upstream design (0.1.0-rc.6's schema accepts just
+  # 127.0.0.1|0.0.0.0 and the CLI rejects 0.0.0.0 as a safety guard — see
+  # modules/services/dsh.nix). Public reachability is the dedicated
+  # Cloudflare tunnel below, whose cloudflared runs on this host and proxies
+  # to localhost:3080. The web app's /api trust fence keys on the Host
+  # header, so the public hostname must be passed as a trusted host.
+  # API key is entered in the web UI on first use (Settings → Models).
+  jupiter.services.dsh = {
+    enable = true;
+    trustedHosts = [ "dsh.jupiter.au" ];
+  };
+
+  # ---- Cloudflare Tunnel (dedicated per-host tunnel) ------------------------
+  # europa's tunnel can't serve dsh: its cloudflared can't reach THIS host's
+  # loopback-bound dsh, and a second connector on europa's tunnel would be
+  # edge-routed requests its ingress doesn't know (see
+  # modules/services/cloudflare-tunnel.nix). Tunnel "jupiter-callisto"
+  # (85534a9c) created 2026-08-16 via `cloudflared tunnel create`; creds in
+  # the cloudflare_callisto_cert sops secret; DNS dsh.jupiter.au → tunnel
+  # via `cloudflared tunnel route dns`.
+  jupiter.services.cloudflareTunnel = {
+    enable = true;
+    tunnelId = "85534a9c-2c13-412c-a658-322f7c36edc7";
+    credentialSecret = "cloudflare_callisto_cert";
+    # This host serves no Harmonia — leave europa's cache hostname out.
+    harmoniaHostname = null;
+    extraIngress = [
+      {
+        hostname = "dsh.jupiter.au";
+        # cloudflared runs here; dsh is loopback-only. host defaults to
+        # localhost, which is exactly right.
+        port = 3080;
+      }
+    ];
+  };
 }

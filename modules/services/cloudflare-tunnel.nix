@@ -26,16 +26,32 @@ in
       example = "a1b2c3d4-...";
       description = ''
         The Cloudflare tunnel UUID. The matching credentials JSON must be in
-        the cloudflare_cert sops secret, and the hostname routes must be
-        configured on the Cloudflare dashboard side (the tunnel's ingress).
-        Confirm at first run.
+        the sops secret named by `credentialSecret`, and the hostname routes
+        must be configured on the Cloudflare dashboard side (the tunnel's
+        ingress). Confirm at first run.
+      '';
+    };
+
+    # One tunnel per HOST: a second connector on the same tunnel would get
+    # edge-routed requests for hostnames its own ingress list doesn't know
+    # (Cloudflare picks any healthy connector), so each host runs a tunnel
+    # of its own with a complete ingress list for the hostnames routed to
+    # it. callisto's tunnel (dsh.jupiter.au) is cloudflare_callisto_cert.
+    credentialSecret = lib.mkOption {
+      type = lib.types.str;
+      default = "cloudflare_cert";
+      description = ''
+        Name of the sops secret holding this tunnel's credentials JSON.
       '';
     };
 
     harmoniaHostname = lib.mkOption {
-      type = lib.types.str;
+      type = lib.types.nullOr lib.types.str;
       default = "cache.jupiter.au";
-      description = "Public hostname routing to europa's Harmonia cache (localhost:5000).";
+      description = ''
+        Public hostname routing to europa's Harmonia cache (localhost:5000).
+        Set to null on hosts that don't serve Harmonia.
+      '';
     };
 
     harmoniaPort = lib.mkOption {
@@ -75,23 +91,24 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    sops.secrets.cloudflare_cert = { };
+    sops.secrets.${cfg.credentialSecret} = { };
 
     services.cloudflared = {
       enable = true;
       tunnels.${cfg.tunnelId} = {
-        credentialsFile = config.sops.secrets.cloudflare_cert.path;
+        credentialsFile = config.sops.secrets.${cfg.credentialSecret}.path;
         # Route the Harmonia cache hostname to local Harmonia; everything else 404.
         # Add more ingress rules here as services come back up.
-        ingress = {
-          ${cfg.harmoniaHostname} = "http://localhost:${toString cfg.harmoniaPort}";
-        }
-        // builtins.listToAttrs (
-          map (rule: {
-            name = rule.hostname;
-            value = "http://${rule.host}:${toString rule.port}";
-          }) cfg.extraIngress
-        );
+        ingress =
+          (lib.optionalAttrs (cfg.harmoniaHostname != null) {
+            ${cfg.harmoniaHostname} = "http://localhost:${toString cfg.harmoniaPort}";
+          })
+          // builtins.listToAttrs (
+            map (rule: {
+              name = rule.hostname;
+              value = "http://${rule.host}:${toString rule.port}";
+            }) cfg.extraIngress
+          );
         originRequest.noTLSVerify = true;
         default = "http_status:404";
       };
