@@ -194,20 +194,9 @@ in
     # can auto-reconnect by pad-initiated advertising the moment the box
     # boots — without it the DS4 sat paired-but-unreachable until someone
     # powered the adapter by hand (observed live on callisto).
-    #
-    # ControllerMode=bredr: arcade pads are dual-mode and get DISCOVERED via
-    # LE advertisement, so `bluetoothctl pair` bonds over LE (stores an LTK)
-    # — but the DS4's input connection is classic BR/EDR hidp, which needs a
-    # classic LinkKey. bluez then rejects the pad as "!bonded" and drops it
-    # seconds after every "successful" pair (the exact loop observed live on
-    # callisto: Pairing successful -> Paired: yes -> hidp_add_connection
-    # rejected, no [LinkKey] ever written to /var/lib/bluetooth). Forcing
-    # BR/EDR-only fixes it; this profile hosts gamepads only, so LE-only
-    # peripherals are not a loss.
     hardware.bluetooth = lib.mkIf cfg.controllers {
       enable = lib.mkDefault true;
       powerOnBoot = lib.mkDefault true;
-      settings.General.ControllerMode = lib.mkDefault "bredr";
     };
     services.udev.extraRules = lib.mkIf cfg.controllers ''
       ATTRS{name}=="Sony Interactive Entertainment Wireless Controller Touchpad", ENV{LIBINPUT_IGNORE_DEVICE}="1"
