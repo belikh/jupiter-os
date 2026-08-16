@@ -525,12 +525,19 @@ in
     # appliances; this just adds the mount + metadata deps so the session
     # always launches into mounted, metadata-ready collections. Gated on the
     # session actually being enabled so this is inert elsewhere.
+    # WantsMountsFor, NOT RequiresMountsFor: the NFS + overlay mounts
+    # idle-expire (x-systemd.idle-timeout in the fileSystems above), and
+    # Requires= propagates every expiry into a stop of the session itself —
+    # observed live on callisto 2026-08-16 (arcade dead ~10 min after each
+    # boot; Pegasus idles in menus holding no open files, automount expires,
+    # Requires chain stops jupiter-arcade). Ordering is all the session
+    # needs; the automount re-triggers synchronously on next access.
     systemd.services."jupiter-arcade" =
       lib.mkIf (config.jupiter.dashboardGaming.modes.arcade.enable || config.jupiter.arcadeConsole.enable)
         {
           requires = [ "jupiter-exodos-metadata.service" ];
           after = [ "jupiter-exodos-metadata.service" ];
-          unitConfig.RequiresMountsFor = mergeMounts;
+          unitConfig.WantsMountsFor = mergeMounts;
         };
   };
 }

@@ -166,17 +166,6 @@
     authKeyFile = config.sops.secrets.tailscale_fleet_authkey.path;
   };
 
-  # ---- StopUnit tracing (TEMP — remove once the arcade killer is caught) ----
-  # Something issues a root D-Bus StopUnit against jupiter-arcade.service
-  # ~10 min after boot (observed 2026-08-16 20:07:06, post-reboot, no local
-  # trace: no switch, no ssh beyond the admin's own status checks, no polkit,
-  # no timer, no mount-expiry propagation). StopUnit callers are invisible at
-  # the default info level; pid1 debug logging journals every incoming bus
-  # method with sender credentials. The runtime half was applied by hand the
-  # same evening (`systemctl log-level debug`); this makes it survive reboots.
-  # Expect elevated journal volume while this is live.
-  systemd.settings.Manager.LogLevel = "debug";
-
   # console-screensaver removed 2026-08-16: tty1 is the arcade session now
   # and the cmatrix-on-getty screensaver belongs to the pre-arcade headless
   # era. tty1 hosts Pegasus (arcade-console.nix); the rescue getty lives on

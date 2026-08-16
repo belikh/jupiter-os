@@ -436,10 +436,17 @@ in
     # modeSpecs on kiosks, or by arcade-console.nix on boot-to-arcade
     # appliances) must not start until every used console tree is mounted,
     # else Pegasus shows empty collections on a cold automount race.
+    # WantsMountsFor, NOT RequiresMountsFor: these mounts idle-expire
+    # (x-systemd.idle-timeout above), and Requires= propagates every expiry
+    # into a stop of the session itself — observed live on callisto
+    # 2026-08-16: the arcade died ~10 min after each boot because Pegasus
+    # idles in menus holding no open NFS files, the automount expired, and
+    # the Requires chain stopped jupiter-arcade.service. Ordering is all the
+    # session needs; the automount re-triggers synchronously on next access.
     systemd.services."jupiter-arcade" =
       lib.mkIf (config.jupiter.dashboardGaming.modes.arcade.enable || config.jupiter.arcadeConsole.enable)
         {
-          unitConfig.RequiresMountsFor = systemMounts;
+          unitConfig.WantsMountsFor = systemMounts;
         };
   };
 }
