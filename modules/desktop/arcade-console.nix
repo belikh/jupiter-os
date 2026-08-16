@@ -78,6 +78,12 @@ let
       "autovt@tty1.service"
       "cage-tty1.service"
     ];
+    # switch-to-configuration normally stops+restarts a unit whose definition
+    # changed; a stop of this session costs the full stop timeout (gamescope
+    # ignores SIGTERM, see TimeoutStopSec) and leaves the appliance dark after
+    # every deploy (observed 2026-08-16: six switches, six dead sessions).
+    # Let a changed unit file apply at the next organic restart instead.
+    stopIfChanged = false;
     serviceConfig = {
       TTYPath = "/dev/tty1";
       TTYReset = true;
@@ -90,6 +96,12 @@ let
       UtmpMode = "user";
       Restart = "always";
       RestartSec = 2;
+      # gamescope does not exit on SIGTERM while its children tear down, so
+      # the default 90s stop timeout ends in SIGKILL + Result=timeout ~80s
+      # later (observed live 2026-08-16). Bound it like Valve's own
+      # gamescope-session.service (Jovian ships TimeoutStopSec=10 for the
+      # same reason). Keep in sync with dashboard-gaming.nix's sessionOnTty1.
+      TimeoutStopSec = 10;
     };
   };
 in

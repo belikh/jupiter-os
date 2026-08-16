@@ -84,6 +84,10 @@ let
       "autovt@tty1.service"
       "cage-tty1.service"
     ];
+    # Deploy-proofing: a switch that touches the unit file must not stop the
+    # live tty1 session (stop = full stop-timeout hang, see TimeoutStopSec);
+    # let the change apply at the next organic mode flip instead.
+    stopIfChanged = false;
     unitConfig.ConditionPathExists = "/dev/tty1";
     serviceConfig = {
       TTYPath = "/dev/tty1";
@@ -97,6 +101,11 @@ let
       UtmpMode = "user";
       Restart = "always";
       RestartSec = 2;
+      # gamescope ignores SIGTERM while its children tear down; bound the
+      # stop (Valve's gamescope-session.service uses 10s) so a mode flip
+      # can't hang 90s and end in Result=timeout. Keep in sync with
+      # arcade-console.nix's sessionOnTty1.
+      TimeoutStopSec = 10;
     };
   };
 
