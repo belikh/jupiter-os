@@ -187,10 +187,10 @@
         "type": "github"
       },
       "original": {
-        "type": "github",
-        "owner": "NixOS",
+        "owner": "nixos",
         "repo": "nixpkgs",
-        "ref": "nixos-unstable"
+        "ref": "nixos-unstable",
+        "type": "github"
       }
     },
     "nixpkgs-unstable": {
