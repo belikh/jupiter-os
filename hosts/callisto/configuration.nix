@@ -33,6 +33,14 @@
     ../../modules/services/aeon.nix
     # nom-web: browser UI for jupiter-ci build logs
     ../../modules/services/nom-web.nix
+    # jupiterOS Arcade: boots straight into the gamescope/Pegasus session on
+    # tty1 (modules/desktop/arcade-console.nix) with full kiosk collection
+    # parity — console ROMs (modules/desktop/cartridges.nix) + eXo DOS/Win
+    # collections (modules/desktop/exodos.nix), both read from europa over
+    # NFS (export in modules/storage/nas-nfs.nix already covers the LAN).
+    ../../modules/desktop/arcade-console.nix
+    ../../modules/desktop/cartridges.nix
+    ../../modules/desktop/exodos.nix
   ];
 
   networking.hostName = "callisto";
@@ -170,42 +178,31 @@
     };
   };
 
-  # ---- Local model server (jupiter.services.llm) ---------------------------
-  # Serves Qwen3-Coder-30B-A3B (a 3B-active MoE — the sweet spot for this
-  # CPU-only, 6-thread, no-AVX-512 box with ~62Gi RAM) via llama-server on
-  # port 8081. This is the fleet's only model server: every other host's crush
-  # dials it over the LAN (modules/common.nix defaults clientUrl to callisto's
-  # static IP). We bind 0.0.0.0 + open the firewall for those hosts, then pin
-  # our own clientUrl back to localhost so crush here skips the LAN hop. It
-  # WILL share the CPU with the fleet builder workload (nix builds already use
-  # all 6 threads), so nThreads is kept at 6 but is operator-tunable down if
-  # builds suffer. The GGUF is self-downloaded on first start
-  # (--hf-repo/--hf-file) into llama-server's StateDirectory; nothing
-  # model-sized enters the nix store.
-  jupiter.services.llm.enable = true;
-  jupiter.services.llm.host = "0.0.0.0";
-  jupiter.services.llm.exposeLan = true;
-  jupiter.services.llm.clientUrl = "http://127.0.0.1:8081";
-
-  # ---- iGPU offload for the model server (Vulkan, UHD 630) -----------------
-  # i5-8500T's integrated UHD Graphics 630 is Gen9.5 (PCI 8086:3e92) — a
-  # sideline compute unit distinct from the 6 CPU cores the build-server and
-  # llama-server workloads already compete over, so offloading here doesn't
-  # take capacity from either. Picked Vulkan over SYCL/oneAPI for this specific
-  # part: SYCL's biggest wins are on Xe/Arc-class silicon, and Gen9.5 doesn't
-  # clear the extra oneAPI toolchain weight worth carrying. Mesa ships the ANV
-  # Vulkan ICD itself, so `hardware.graphics.enable` (below) is sufficient —
-  # no separate Intel compute-runtime package needed.
-  #
-  # `n-gpu-layers` uses llama.cpp's own convention of "any number ≥ the
-  # model's real layer count" to mean "offload everything" (Qwen3-Coder-30B-A3B
-  # has 48); 999 is comfortably past that. Operator-tunable down (or back to 0)
-  # if benchmarking shows offload losing to CPU-only on this box, same as
-  # nThreads above.
-  jupiter.services.llm.package = pkgs.llama-cpp.override { vulkanSupport = true; };
-  jupiter.services.llm.gpuLayers = 999;
+  # ---- Local model server (jupiter.services.llm) — DISABLED 2026-08-15 ----
+  # The box is now also the office arcade (arcadeConsole below): gamescope +
+  # the emulators need the UHD 630 iGPU, which llama-server's Vulkan offload
+  # was monopolizing. Disabled "for now" per io — re-enable by uncommenting
+  # when the arcade experiment ends or the GPU is re-partitioned. Until then
+  # the fleet has NO model server: every host's crush client still dials
+  # http://10.1.1.3:8081 (modules/common.nix default) and will fail.
+  # jupiter.services.llm.enable = true;
+  # jupiter.services.llm.host = "0.0.0.0";
+  # jupiter.services.llm.exposeLan = true;
+  # jupiter.services.llm.clientUrl = "http://127.0.0.1:8081";
 
   hardware.graphics.enable = true;
+
+  # ---- jupiterOS Arcade -----------------------------------------------------
+  # Boot straight into the Pegasus arcade on tty1 over the HDMI display
+  # (HDMI-A-1 confirmed connected 2026-08-15). Full kiosk collection parity:
+  # console ROM sets (PS1/PS2 incl. — the Resident Evil archive lives on
+  # europa's optical dataset) + the eXo DOS/Win3x/Win9x collections. gamescope
+  # + emulators render on the UHD 630 via Mesa (hardware.graphics above);
+  # stock nixpkgs gamescope, no Jovian/Steam/NM stack — see the module header
+  # for why the kiosk's dashboard-gaming path is deliberately not used here.
+  jupiter.arcadeConsole.enable = true;
+  jupiter.cartridges.enable = true;
+  jupiter.exodos.enable = true;
 
   # Vulkan / Mesa diagnostics (vulkaninfo) — same tool modules/gaming/console.nix
   # installs for the same reason, kept independent here since that module is
