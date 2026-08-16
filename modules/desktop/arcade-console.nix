@@ -165,6 +165,17 @@ in
     # gamescope (same as dashboard-gaming.nix wires for the kiosk modes).
     security.pam.services.jupiter-arcade.startSession = true;
 
+    # Move the boot-time getty off tty1 (the session's VT) onto tty2.
+    # nixpkgs hardwires `systemd.targets.getty.wants = [ "autovt@tty1" ]`
+    # whenever no display manager is enabled (nixos/modules/services/ttys/
+    # getty.nix:174 — its own comment admits this fights compositor
+    # sessions on tty1), so autovt@tty1 kept respawning during switches and
+    # grabbing tty1 in the gap when jupiter-arcade restarted (observed live
+    # on callisto: "new units started: autovt@tty1.service"). mkForce
+    # replaces that want with tty2, matching the unit-level Conflicts above;
+    # tty2 remains the rescue console (Ctrl+Alt+F2).
+    systemd.targets.getty.wants = lib.mkForce [ "autovt@tty2.service" ];
+
     # --- Audio ---------------------------------------------------------------
     # Per-user pulseaudio: the gamer user's logind session socket-activates
     # it, so Pegasus/retroarch/dosbox get audio with no system daemon. Same

@@ -25,7 +25,6 @@
 {
   imports = [
     ../../modules/common.nix
-    ../../modules/services/console-screensaver.nix
     ../../modules/services/mqtt.nix
     # Tailscale client for Jupiter tailnet
     ../../modules/services/tailscale.nix
@@ -167,7 +166,10 @@
     authKeyFile = config.sops.secrets.tailscale_fleet_authkey.path;
   };
 
-  jupiter.consoleScreensaver.enable = true;
+  # console-screensaver removed 2026-08-16: tty1 is the arcade session now
+  # and the cmatrix-on-getty screensaver belongs to the pre-arcade headless
+  # era. tty1 hosts Pegasus (arcade-console.nix); the rescue getty lives on
+  # tty2 (systemd.targets.getty.wants override in arcade-console.nix).
 
   sops.secrets.mqtt_homeassistant = { };
   sops.secrets.mqtt_ha_linux_agent = { };
