@@ -411,6 +411,21 @@
           makeWrapper = nixpkgs.legacyPackages.x86_64-linux.makeWrapper;
         }).aeon-cli;
 
+      # dsh — DeepSeek Harness CLI + web UI (see pkgs/dsh). Built from the
+      # published npm tarball with a generated prod-only lockfile; exposed
+      # standalone (untuned legacyPackages, like aeon/nom-web) so the npm
+      # lock hash can be recomputed via `nix build .#dsh` without pulling
+      # callisto's whole skylake-tuned closure. Consumed by the host via
+      # modules/services/dsh.nix's pkgs.callPackage.
+      packages.x86_64-linux.dsh = (
+        import ./pkgs/dsh {
+          lib = nixpkgs.lib;
+          buildNpmPackage = nixpkgs.legacyPackages.x86_64-linux.buildNpmPackage;
+          nodejs = nixpkgs.legacyPackages.x86_64-linux.nodejs;
+          fetchurl = nixpkgs.legacyPackages.x86_64-linux.fetchurl;
+        }
+      );
+
       # suno-backup — Go daemon that mirrors a Suno account's WAV masters +
       # the complete per-clip metadata into europa's tank/archive/suno dataset.
       # Built from in-tree stdlib-only source. Exposed standalone so the

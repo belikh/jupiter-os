@@ -32,6 +32,8 @@
     ../../modules/services/aeon.nix
     # nom-web: browser UI for jupiter-ci build logs
     ../../modules/services/nom-web.nix
+    # DeepSeek Harness (dsh): agent harness web UI on :3080
+    ../../modules/services/dsh.nix
     # jupiterOS Arcade: boots straight into the gamescope/Pegasus session on
     # tty1 (modules/desktop/arcade-console.nix) with full kiosk collection
     # parity — console ROMs (modules/desktop/cartridges.nix) + eXo DOS/Win
@@ -279,4 +281,12 @@
     enable = true;
     openFirewall = true;
   };
+
+  # ---- DeepSeek Harness (dsh) — agent harness web UI ------------------------
+  # Loopback-only by upstream design (0.1.0-rc.6 rejects any non-loopback
+  # bind as a safety guard — see modules/services/dsh.nix). Use from the
+  # laptop via: ssh -L 3080:127.0.0.1:3080 root@10.1.1.3, then open
+  # http://localhost:3080. API key is entered in the web UI on first use
+  # (Settings → Models); no secret exists in sops for this yet.
+  jupiter.services.dsh.enable = true;
 }
