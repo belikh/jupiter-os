@@ -59,7 +59,13 @@ let
   # A start/stoppable system unit that can grab DRM master on tty1 — same
   # wiring as nixpkgs' services.cage / dashboard-gaming.nix's sessionOnTty1.
   # The cage-tty1 conflict is inert on hosts without cage and harmless
-  # insurance on one that ever gains it.
+  # insurance on one that ever gains it. NOTE: deliberately NO
+  # ConditionPathExists=/dev/tty1 here (unlike dashboard-gaming's on-demand
+  # kiosk units): this unit starts at BOOT via graphical.target, and on
+  # callisto's iSCSI-root boot systemd recorded the condition as failed at
+  # job-dequeue time even with /dev/tty1 present (kernel VT devices always
+  # exist), silently skipping the session. A condition that can false-
+  # negative on the boot path is worse than no condition.
   sessionOnTty1 = {
     after = [
       "systemd-user-sessions.service"
@@ -72,7 +78,6 @@ let
       "autovt@tty1.service"
       "cage-tty1.service"
     ];
-    unitConfig.ConditionPathExists = "/dev/tty1";
     serviceConfig = {
       TTYPath = "/dev/tty1";
       TTYReset = true;
@@ -185,7 +190,14 @@ in
     # --- Controllers ---------------------------------------------------------
     hardware.xpadneo.enable = lib.mkIf cfg.controllers (lib.mkDefault true);
     hardware.xone.enable = lib.mkIf cfg.controllers (lib.mkDefault true);
-    hardware.bluetooth.enable = lib.mkIf cfg.controllers (lib.mkDefault true);
+    # powerOnBoot: bring hci0 up unattended so a trusted (paired) controller
+    # can auto-reconnect by pad-initiated advertising the moment the box
+    # boots — without it the DS4 sat paired-but-unreachable until someone
+    # powered the adapter by hand (observed live on callisto).
+    hardware.bluetooth = lib.mkIf cfg.controllers {
+      enable = lib.mkDefault true;
+      powerOnBoot = lib.mkDefault true;
+    };
     services.udev.extraRules = lib.mkIf cfg.controllers ''
       ATTRS{name}=="Sony Interactive Entertainment Wireless Controller Touchpad", ENV{LIBINPUT_IGNORE_DEVICE}="1"
       ATTRS{name}=="Sony Interactive Entertainment DualSense Wireless Controller Touchpad", ENV{LIBINPUT_IGNORE_DEVICE}="1"

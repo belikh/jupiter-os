@@ -411,11 +411,18 @@ in
         # overlayfs: NFS RO lower + persisted RW upper. Game saves and
         # first-run extractions land in the upper layer; the underlying eXo
         # collection on europa stays pristine. `depends` makes this mount
-        # unit Require+After the NFS mount unit.
+        # unit Require+After the NFS mount unit. `_netdev` moves the overlay
+        # out of local-fs.target into remote-fs.target: without it, a local
+        # mount ordered after a network lower loops through
+        # remote-fs-pre → iscsid → sysinit → local-fs on iSCSI-root hosts,
+        # and systemd deletes the mount jobs to break the cycle — which
+        # left the arcade session's RequiresMountsFor deps dead at boot
+        # (observed on callisto; kiosks never hit it, no iscid in the path).
         ${mergeMount name} = {
           device = "overlay";
           fsType = "overlay";
           options = [
+            "_netdev"
             "lowerdir=${roMount name}"
             "upperdir=${cfg.overlayBase}/${name}/upper"
             "workdir=${cfg.overlayBase}/${name}/work"
