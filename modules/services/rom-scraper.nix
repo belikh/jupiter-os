@@ -220,7 +220,13 @@ in
           # (~575 files re-attempted nightly) drains the key's quota before
           # ps2 — last in bucket order — gets a single lookup, leaving its
           # metadata.pegasus.txt at 0 bytes.
-          serviceConfig.Path = [ pkgs.p7zip ];
+          # serviceConfig.Path = [...] was tried first — NOT a systemd
+          # [Service] key, so systemd silently ignored it ("Unknown key
+          # 'Path' in section [Service], ignoring") and every ScreenScraper
+          # pass died on "Couldn't find '7z' command". The blessed NixOS
+          # option is the service-level `path`, which lands in the unit's
+          # generated PATH Environment.
+          path = [ pkgs.p7zip ];
           # Never run before every dataset holding a scraped platform is mounted.
           unitConfig.RequiresMountsFor = [
             cfg.romRoot

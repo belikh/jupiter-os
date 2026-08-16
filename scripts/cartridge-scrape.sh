@@ -19,6 +19,12 @@
 # second daily invocation re-reads the cache and only hits the network for
 # ROMs added since the last run.
 #
+# Launchability never depends on the scrape succeeding: whenever a platform's
+# metadata.pegasus.txt is missing, empty, or lacks a `launch:` line after
+# Skyscraper's compose (empty resource cache -> 0-byte file), a minimal
+# fallback (header + launch + explicit per-game file entries) is seeded so
+# the games RUN; enrichment replaces it on the next successful scrape.
+#
 # Usage:
 #   cartridge-scrape.sh <romRoot> <cacheDir> <source> <platform> [<platform> ...]
 #
@@ -97,6 +103,71 @@ declare -A SKYPLATFORM=(
 
 log() { printf '[cartridge-scrape] %s\n' "$*" >&2; }
 
+# ROM file extensions the tree may hold (shared by the emptiness guard below
+# and the launchable-metadata seed). Mirrors the shapes rom-acquire promotes:
+# cartridge zips, optical disc images, modern card/disc images.
+ROM_RE='.*\.(zip|iso|chd|gcm|gcz|wbfs|wad|elf|dol|ciso|cue|bin|gi|m3u|3ds|cia|cxi|cci|app|3dsx|wua|rpx|wud|wux|fds|vb|min|mgw|nds|ids|nes|sfc|smc|gb|gbc|gba|z64|n64|v64)'
+
+# system -> collection display title. Mirrors the `collection` field of the
+# systems catalogue in modules/desktop/cartridges.nix (single source of truth
+# for the kiosk-side view; keep in sync).
+declare -A COLLECTIONS=(
+  [nes]="Nintendo Entertainment System"
+  [snes]="Super Nintendo Entertainment System"
+  [gb]="Nintendo Game Boy"
+  [gbc]="Nintendo Game Boy Color"
+  [gba]="Nintendo Game Boy Advance"
+  [n64]="Nintendo 64"
+  [fds]="Nintendo Famicom Disk System"
+  [virtualboy]="Nintendo Virtual Boy"
+  [pokemonmini]="Nintendo Pokemon Mini"
+  [gameandwatch]="Nintendo Game & Watch"
+  [nds]="Nintendo DS"
+  [dsi]="Nintendo DSi"
+  [gamecube]="Nintendo GameCube"
+  [wii]="Nintendo Wii"
+  [ps1]="Sony PlayStation"
+  [ps2]="Sony PlayStation 2"
+  ["3ds"]="Nintendo 3DS"
+  [new3ds]="Nintendo New 3DS"
+  [wiiu]="Nintendo Wii U"
+)
+
+# Ensure the platform's metadata.pegasus.txt is LAUNCHABLE: if Skyscraper's
+# compose left it missing, empty, or without a `launch:` line (the empty-cache
+# case: compose writes a 0-byte file), emit a minimal fallback — collection
+# header + launch line + one explicit `game:`/`file:` entry per ROM, the same
+# entry shape Skyscraper's enriched files use, so nested No-Intro trees list
+# correctly. Games become launchable the moment this runs; a later successful
+# scrape overwrites it with enriched metadata (titles, art) — that overwrite
+# always carries a launch line, so this never masks enrichment.
+seed_launchable_metadata() {
+  local md="$platform_dir/metadata.pegasus.txt"
+  if [ -s "$md" ] && grep -q '^launch: ' "$md"; then
+    return 0
+  fi
+  log "  metadata missing/launch-less; seeding minimal launchable metadata"
+  local title=${COLLECTIONS[$platform]:-$platform}
+  {
+    printf 'collection: %s\n' "$title"
+    printf 'shortname: %s\n' "$platform"
+    printf 'launch: %s "{file.path}"\n' "$launch"
+    printf '\n'
+    local rel base
+    while IFS= read -r rel; do
+      rel=${rel#./}
+      base=${rel##*/}
+      base=${base%.*}
+      base=${base//\'/}
+      [ -n "$base" ] || continue
+      printf "game: '%s'\nfile: %s\n\n" "$base" "$rel"
+    done < <(
+      cd "$platform_dir" \
+        && find . -type f -regextype posix-extended -iregex "$ROM_RE" | LC_ALL=C sort
+    )
+  } > "$md"
+}
+
 for platform in "${PLATFORMS[@]}"; do
   launch=${LAUNCH[$platform]:-}
   if [ -z "$launch" ]; then
@@ -120,7 +191,7 @@ for platform in "${PLATFORMS[@]}"; do
   # regression this guards against). Recurse (no -maxdepth) so nested layouts
   # (e.g. Wii U Loadiine <game>/code/*.rpx) count too.
   rom_count=$(find "$platform_dir" -type f -regextype posix-extended \
-    -iregex '.*\.(zip|iso|chd|gcm|gcz|wbfs|wad|elf|dol|ciso|cue|bin|gi|m3u|3ds|cia|cxi|cci|app|3dsx|wua|rpx|wud|wux|fds|vb|min|mgw|nds|ids|nes|sfc|smc|gb|gbc|gba|z64|n64|v64)$' \
+    -iregex "$ROM_RE" \
     | wc -l)
   if [ "$rom_count" -eq 0 ]; then
     log "no ROM files in $platform_dir; skipping to protect Skyscraper cache"
@@ -128,6 +199,11 @@ for platform in "${PLATFORMS[@]}"; do
   fi
 
   mkdir -p "$platform_cache"
+
+  # Launchability must not depend on scrape-source health: seed the fallback
+  # BEFORE the network phases so the collection is playable immediately, and
+  # again after compose below in case Skyscraper zeroed it (empty cache).
+  seed_launchable_metadata
 
   # Per-platform Skyscraper config. The [pegasus] launch line becomes the
   # collection's `launch:` field in metadata.pegasus.txt. {file.path} is the
@@ -217,6 +293,11 @@ INI
   # separators -- Pegasus treats them as entry-ending blank lines and rejects
   # the next indented continuation. Truly-empty (0-char) separators survive.
   sed -i '/^[[:space:]][[:space:]]*$/d' "$platform_dir/metadata.pegasus.txt"
+
+  # Post-compose repair pass: if Skyscraper wrote an empty/launch-less file
+  # (its cache was empty), the pre-seeded fallback was overwritten with a
+  # 0-byte one — re-seed so the collection stays launchable.
+  seed_launchable_metadata
 done
 
 log "done: ${#PLATFORMS[@]} platform(s) processed"
