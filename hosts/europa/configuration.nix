@@ -15,10 +15,11 @@
 # flags). Gets the machine running with ZFS, Samba, NFS, Harmonia, Syncthing,
 # and SMART monitoring.
 #
-# Phase 2 (active): jupiter.build.microarch = "bdver4" tunes the closure for
-# this exact CPU (Excavator core — family 15h model 60h, which GCC targets as
-# bdver4. The private Harmonia cache exists precisely to serve what cache.nixos.org
-# cannot once gcc.arch is set.
+# Phase 2 (inactive since 2026-08-16): jupiter.build.microarch = "bdver4"
+# tunes the closure for this exact CPU — but no CI pipeline is delivering a
+# tuned closure (last push f58fc16/2026-08-06 was untuned), and untuned
+# europa substitutes its whole closure from cache.nixos.org + its own
+# Harmonia. See the note at the microarch setting below before re-enabling.
 {
   imports = [
     ../../modules/common.nix
@@ -106,7 +107,7 @@
   # below), so building locally is both correct and available; distributed
   # dispatch here bought nothing but a wrong-hardware failure mode.
   nix.distributedBuilds = false;
-  nix.buildMachines = [];
+  nix.buildMachines = [ ];
 
   # ---- Storage profile (OS SSD) --------------------------------------------
   # Stateful root (no impermanence — the NAS needs persistent state).
@@ -117,7 +118,12 @@
   jupiter.nas.enable = true;
 
   # ---- Phase 2: CPU-tuned closure ------------------------------------------
-  jupiter.build.microarch = "bdver4"; # CI builds this host's closure with -march=bdver4
+  # DISABLED again 2026-08-16: no CI pipeline is currently delivering a
+  # bdver4 closure (last successful push: f58fc16, 2026-08-06, which was
+  # itself UNTUNED — microarch was commented out at that commit). With this
+  # enabled and no substituter, every rebuild wants ~1830 local builds.
+  # Europa runs the untuned cache.nixos.org closure (gen 79) for now.
+  # jupiter.build.microarch = "bdver4"; # CI builds this host's closure with -march=bdver4
 
   # ---- nixpkgs overlays ----------------------------------------------------
   # bmake's `deptgt-interrupt` unit test is timing-sensitive (it asserts a
