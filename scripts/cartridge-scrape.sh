@@ -156,11 +156,16 @@ seed_launchable_metadata() {
     local rel base
     while IFS= read -r rel; do
       rel=${rel#./}
+      # Double-quote the file path: No-Intro year-prefix names may START
+      # with an apostrophe ('96 Zenkoku...), and a value-leading quote is
+      # parsed as an opening quoted-string by Pegasus' metafile parser.
+      # These sets never contain '"' themselves; strip defensively anyway.
+      rel=${rel//\"/}
       base=${rel##*/}
       base=${base%.*}
       base=${base//\'/}
       [ -n "$base" ] || continue
-      printf "game: '%s'\nfile: %s\n\n" "$base" "$rel"
+      printf "game: '%s'\nfile: \"%s\"\n\n" "$base" "$rel"
     done < <(
       cd "$platform_dir" \
         && find . -type f -regextype posix-extended -iregex "$ROM_RE" | LC_ALL=C sort
