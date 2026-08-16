@@ -218,7 +218,40 @@ let
   retroarchSystems = lib.filter (s: s ? core) systemValues;
   cores = lib.unique (map (s: s.core) retroarchSystems);
   retroarchWithCores = pkgs.retroarch.withCores (c: map (name: c.${name}) cores);
+
+  # The metadata launch lines (written by Skyscraper on europa, sourced from
+  # cartridge-scrape.sh's LAUNCH map) say `-L beetle-psx` — a short name.
+  # RetroArch's -L wants the actual core FILE, and nixpkgs packages some
+  # libretro cores under different filenames (the "beetle" cores are
+  # mednafen_*), so `-L beetle-psx` fails with "built for dynamic libretro
+  # cores, but path is not set" and NO hyphenated-name game ever launched
+  # (observed: every PlayStation launch died instantly on callisto). This
+  # wrapper resolves `-L <short>` against the wrapped retroarch's cores dir
+  # — normalizing the beetle aliases — and passes everything else through.
+  # Keeps the launch metadata stable regardless of nixpkgs' packaging names.
   jupiterRetroarch = pkgs.writeShellScriptBin "jupiter-retroarch" ''
+    set -eu
+    CORES_DIR="${retroarchWithCores}/lib/retroarch/cores"
+    if [ "$#" -ge 2 ] && [ "''${1:-}" = "-L" ]; then
+      name="$2"; shift 2
+      case "$name" in
+        *.so|/*) core="$name" ;;
+        *)
+          case "$name" in
+            beetle-psx) so="mednafen_psx_libretro.so" ;;
+            beetle-vb) so="mednafen_vb_libretro.so" ;;
+            *) so="''${name}_libretro.so" ;;
+          esac
+          if [ -f "$CORES_DIR/$so" ]; then
+            core="$CORES_DIR/$so"
+          else
+            echo "jupiter-retroarch: core '$name' ($so) not found in $CORES_DIR" >&2
+            exit 1
+          fi
+          ;;
+      esac
+      set -- -L "$core" "$@"
+    fi
     exec "${lib.getExe retroarchWithCores}" "$@"
   '';
 
