@@ -103,6 +103,11 @@ declare -A SKYPLATFORM=(
 
 log() { printf '[cartridge-scrape] %s\n' "$*" >&2; }
 
+# Sentinel marking the pending-collection section this script appends to a
+# metadata file (everything from this line to EOF is ours; split_pending
+# rebuilds it idempotently).
+PENDING_MARKER="# jupiter-pending-section (managed by cartridge-scrape.sh)"
+
 # ROM file extensions the tree may hold (shared by the emptiness guard below
 # and the launchable-metadata seed). Mirrors the shapes rom-acquire promotes:
 # cartridge zips, optical disc images, modern card/disc images.
@@ -171,6 +176,133 @@ seed_launchable_metadata() {
         && find . -type f -regextype posix-extended -iregex "$ROM_RE" | LC_ALL=C sort
     )
   } > "$md"
+}
+
+# A ROM is "complete" when its magic bytes match its format. While aria2 is
+# still torrenting a set it PREALLOCATES every file as zeros — the file
+# exists at full size but its header is 0x00000000, and the emulator aborts
+# on it (observed: pcsx2 "chd_open return error: invalid data" on a 715MB
+# all-zero .chd). Only formats with a reliable leading magic are checked;
+# everything else is optimistically complete (a raw .iso CAN legitimately
+# start with zeros — its descriptors live at offset 32768 — so isos are not
+# checkable this way).
+rom_complete() { # $1 = absolute path to the ROM file
+  local magic
+  case "$1" in
+    *.chd | *.CHD)
+      IFS= read -r -N 8 magic < "$1" 2>/dev/null || magic=""
+      [ "$magic" = "MComprHD" ] || case "$magic" in ComprHD*) true ;; *) false ;; esac
+      ;;
+    *.zip | *.ZIP)
+      IFS= read -r -N 2 magic < "$1" 2>/dev/null || magic=""
+      [ "$magic" = "PK" ]
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+}
+
+# Split the platform's metadata into playable vs PENDING: game blocks whose
+# file fails rom_complete move out of the main collection into an appended
+# "<Title> (Pending)" collection (same file — Pegasus supports multiple
+# collections per metadata file, and entries belong to the last-declared
+# collection). The pending collection deliberately has NO launch line, so
+# its entries are listed but not launchable — "coming soon", not a dead
+# black-screen launch. Idempotent: any previously appended pending section
+# (everything from PENDING_MARKER to EOF) is stripped and rebuilt, so games
+# migrate back into the main collection automatically once their download
+# finishes and the next run re-checks them.
+split_pending() {
+  local md="$platform_dir/metadata.pegasus.txt"
+  [ -s "$md" ] || return 0
+
+  # Incomplete ROMs (relative paths), if any.
+  local tmplist rel
+  tmplist=$(mktemp)
+  while IFS= read -r rel; do
+    rel=${rel#./}
+    rom_complete "$platform_dir/$rel" || printf '%s\n' "$rel" >> "$tmplist"
+  done < <(cd "$platform_dir" && find . -type f -regextype posix-extended -iregex "$ROM_RE" | LC_ALL=C sort)
+
+  # Nothing incomplete and no stale pending section -> leave the file alone
+  # (avoids rewriting enriched metadata every night for no reason).
+  if [ ! -s "$tmplist" ] && ! grep -qF "$PENDING_MARKER" "$md"; then
+    rm -f "$tmplist"
+    return 0
+  fi
+
+  local title=${COLLECTIONS[$platform]:-$platform}
+  local tmpmd
+  tmpmd=$(mktemp)
+  # Single rebuild pass. Every game block in the file — main body OR a
+  # previously appended pending section — is re-classified against the
+  # current completeness list, so games migrate main<->pending as their
+  # downloads progress. The main header (everything before the first
+  # game:) is preserved verbatim; our own marker line and the pending
+  # section's collection-level property lines are dropped and re-emitted.
+  # Output is assembled in memory (header, playable blocks, then the new
+  # pending section) so ordering stays deterministic.
+  awk -v listfile="$tmplist" -v marker="$PENDING_MARKER" \
+    -v pendcol="$title (Pending)" -v pendshort="${platform}-pending" '
+    BEGIN {
+      while ((getline line < listfile) > 0) bad[line] = 1
+      close(listfile)
+      ingame = 0; buf = ""; nmain = 0; pend = ""; seenfirst = 0
+    }
+    index($0, marker) == 1 { next }
+    /^game:/ {
+      if (ingame) flushgame()
+      ingame = 1; seenfirst = 1; buf = $0
+      next
+    }
+    # A collection-level property line AFTER the first game can only be ours
+    # (from the old pending section — Skyscraper emits game fields inline
+    # inside blocks, and the main header never follows games). Before the
+    # first game these same lines ARE the main header: keep them. This must
+    # run BEFORE the ingame accumulator, else the lines get swallowed into
+    # the buffer of the preceding game block.
+    seenfirst && /^(collection|shortname|summary): / { next }
+    ingame { buf = buf "\n" $0; next }
+    { header = header $0 "\n" }
+    function flushgame(   path, n, i) {
+      path = ""
+      n = split(buf, lines, "\n")
+      for (i = 1; i <= n; i++) {
+        if (lines[i] ~ /^file: ./) {
+          path = substr(lines[i], 7)
+          sub(/^[[:space:]]+/, "", path)
+          sub(/[[:space:]]+$/, "", path)
+          break
+        }
+      }
+      # Normalize: drop trailing blank lines picked up between blocks so
+      # re-parsing a previously processed file reproduces identical output
+      # (idempotency).
+      gsub(/\n[[:space:]]*\n+$/, "\n", buf)
+      if (path != "" && (path in bad))
+        pend = pend buf "\n\n"
+      else
+        main[++nmain] = buf "\n\n"
+      buf = ""
+    }
+    END {
+      if (ingame) flushgame()
+      printf "%s", header
+      for (i = 1; i <= nmain; i++) printf "%s", main[i]
+      if (pend != "") {
+        print ""
+        print marker
+        print "collection: " pendcol
+        print "shortname: " pendshort
+        print "summary: Still downloading or incomplete - listed but not yet playable."
+        print ""
+        printf "%s", pend
+      }
+    }
+  ' "$md" > "$tmpmd" && mv "$tmpmd" "$md" || rm -f "$tmpmd"
+  rm -f "$tmplist"
+  log "  pending split: incomplete ROMs moved to '${title} (Pending)'"
 }
 
 for platform in "${PLATFORMS[@]}"; do
@@ -303,6 +435,10 @@ INI
   # (its cache was empty), the pre-seeded fallback was overwritten with a
   # 0-byte one — re-seed so the collection stays launchable.
   seed_launchable_metadata
+
+  # Finally, split incomplete-download ROMs into the "(Pending)" collection
+  # so only playable games appear (launchable) in the main collection.
+  split_pending
 done
 
 log "done: ${#PLATFORMS[@]} platform(s) processed"
