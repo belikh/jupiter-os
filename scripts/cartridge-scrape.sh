@@ -186,16 +186,25 @@ seed_launchable_metadata() {
 # everything else is optimistically complete (a raw .iso CAN legitimately
 # start with zeros — its descriptors live at offset 32768 — so isos are not
 # checkable this way).
+#
+# IMPLEMENTATION NOTE: the sniff MUST be `od -An -tx1 -N8`, never bash's
+# `read -N 8` — read silently DROPS NUL bytes and keeps reading until it
+# has 8 non-NUL characters, so on a multi-hundred-MB zeroed-preallocated
+# file it reads the ENTIRE file hunting for them (observed live on europa:
+# split_pending stalled minutes-deep on the first zeroed chd, sandbox tests
+# passed because the fixture zeros were 100 bytes = instant EOF). od -N8
+# reads exactly 8 bytes and renders NULs as hex.
 rom_complete() { # $1 = absolute path to the ROM file
-  local magic
+  local hex
   case "$1" in
     *.chd | *.CHD)
-      IFS= read -r -N 8 magic < "$1" 2>/dev/null || magic=""
-      [ "$magic" = "MComprHD" ] || case "$magic" in ComprHD*) true ;; *) false ;; esac
+      hex=$(od -An -tx1 -N8 -- "$1" 2>/dev/null | tr -d ' \n')
+      # MComprHD (v2+) = 4d436f6d70724844 ; ComprHD (v1) prefix = 436f6d70724844
+      [ "$hex" = "4d436f6d70724844" ] || case "$hex" in 436f6d70724844*) true ;; *) false ;; esac
       ;;
     *.zip | *.ZIP)
-      IFS= read -r -N 2 magic < "$1" 2>/dev/null || magic=""
-      [ "$magic" = "PK" ]
+      hex=$(od -An -tx1 -N2 -- "$1" 2>/dev/null | tr -d ' \n')
+      [ "$hex" = "504b" ]
       ;;
     *)
       return 0
