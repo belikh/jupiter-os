@@ -21,4 +21,10 @@
     disk = "/dev/disk/by-id/ata-SanDisk_SD9SN8W128G1011_204903800540";
     wifi.enable = true; # NetGear A6210 / MediaTek MT7612U USB adapter
   };
+
+  # Symmetric peer-to-peer build pool: this kiosk + callisto + other kiosks
+  jupiter.core.buildMachines = {
+    enable = true;
+    selfHost = "thebe";
+  };
 }

@@ -132,7 +132,7 @@
   # on a disk-backed ext4 filesystem rather than tmpfs, but that headroom
   # math was never about tmpfs pressure in the
   # first place, it's about the build's own working set vs. RAM.
-  nix.settings.cores = 6;
+  nix.settings.cores = 4;
   nix.settings.max-jobs = 1;
 
   # Advertise capability to BUILD other hosts' microarch-tuned derivations.
@@ -161,6 +161,12 @@
   ];
 
   jupiter.build.microarch = "skylake";
+
+  # Symmetric peer-to-peer build pool: callisto + 4 kiosks
+  jupiter.core.buildMachines = {
+    enable = true;
+    selfHost = "callisto";
+  };
 
   sops.secrets.tailscale_fleet_authkey = { };
   jupiter.services.tailscale = {
@@ -289,6 +295,15 @@
       "timeo=50"
       "retrans=2"
     ];
+  };
+
+  # tmpfs for Nix sandbox build directory (/build) — speeds up I/O-heavy builds
+  # (linking, unpacking, writing build outputs). 20GB limit (callisto has 64GB RAM;
+  # maxJobs=1 * cores=4 means at most one large build at a time; 20GB leaves
+  # ample headroom for OS + services + the build's working set).
+  fileSystems."/build" = {
+    fsType = "tmpfs";
+    options = [ "size=20G" "mode=1777" "noatime" ];
   };
 
   jupiter.services.nomWeb = {

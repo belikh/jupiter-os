@@ -25,7 +25,7 @@
     ./core/lix.nix
     ./boot/fallout-splash.nix
     ./core/build-tuning.nix
-    # ./core/build-machines.nix  # disabled; enable per-host if needed
+    ./core/build-machines.nix
     ./core/harmonia-substituter.nix
     ./core/branding.nix
     ./services/llama-server.nix

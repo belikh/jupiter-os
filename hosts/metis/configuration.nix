@@ -20,4 +20,10 @@
     dashboardUrl = "https://iot.jupiter.au/main-floor/main";
     disk = "/dev/disk/by-id/ata-SanDisk_SD8SNAT128G1011_182056422305"; # confirmed via SSH to the live-booted unit, 2026-07-20
   };
+
+  # Symmetric peer-to-peer build pool: this kiosk + callisto + other kiosks
+  jupiter.core.buildMachines = {
+    enable = true;
+    selfHost = "metis";
+  };
 }

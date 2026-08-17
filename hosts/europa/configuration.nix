@@ -116,11 +116,132 @@
   #     again NOW precisely because europa is untuned: its derivations carry
   #     no gccarch-* tag. If microarch is ever re-enabled, revisit this
   #     matrix first (build bdver4 locally or on CI only).
-  jupiter.core.buildMachines = {
-    enable = true;
-    includeKiosks = false;
-    advertiseBdver4 = false;
+  # Europa (bdver4/Excavator) uses all Skylake hosts (callisto + 4 kiosks) as builders.
+  # Not part of the symmetric pool (different microarch).
+  nix.distributedBuilds = true;
+  nix.buildMachines = [
+    {
+      hostName = config.jupiter.fleet.addresses.callisto;
+      system = "x86_64-linux";
+      protocol = "ssh-ng";
+      sshUser = "root";
+      sshKey = config.sops.secrets.nix_build_ssh_key.path;
+      maxJobs = 1;
+      
+      speedFactor = 2;
+      supportedFeatures = [
+        "gccarch-skylake"
+        "gccarch-bdver4"
+        "big-parallel"
+      ];
+      mandatoryFeatures = [ ];
+    }
+    {
+      hostName = "amalthea.localdomain";
+      system = "x86_64-linux";
+      protocol = "ssh-ng";
+      sshUser = "root";
+      sshKey = config.sops.secrets.nix_build_ssh_key.path;
+      maxJobs = 1;
+      
+      speedFactor = 1;
+      supportedFeatures = [
+        "gccarch-skylake"
+        "gccarch-bdver4"
+        "big-parallel"
+      ];
+      mandatoryFeatures = [ ];
+    }
+    {
+      hostName = "metis.localdomain";
+      system = "x86_64-linux";
+      protocol = "ssh-ng";
+      sshUser = "root";
+      sshKey = config.sops.secrets.nix_build_ssh_key.path;
+      maxJobs = 1;
+      
+      speedFactor = 1;
+      supportedFeatures = [
+        "gccarch-skylake"
+        "gccarch-bdver4"
+        "big-parallel"
+      ];
+      mandatoryFeatures = [ ];
+    }
+    {
+      hostName = "adrastea.localdomain";
+      system = "x86_64-linux";
+      protocol = "ssh-ng";
+      sshUser = "root";
+      sshKey = config.sops.secrets.nix_build_ssh_key.path;
+      maxJobs = 1;
+      
+      speedFactor = 1;
+      supportedFeatures = [
+        "gccarch-skylake"
+        "gccarch-bdver4"
+        "big-parallel"
+      ];
+      mandatoryFeatures = [ ];
+    }
+    {
+      hostName = "thebe.localdomain";
+      system = "x86_64-linux";
+      protocol = "ssh-ng";
+      sshUser = "root";
+      sshKey = config.sops.secrets.nix_build_ssh_key.path;
+      maxJobs = 1;
+      
+      speedFactor = 1;
+      supportedFeatures = [
+        "gccarch-skylake"
+        "gccarch-bdver4"
+        "big-parallel"
+      ];
+      mandatoryFeatures = [ ];
+    }
+  ];
+
+  # SSH config for all builder hosts
+  programs.ssh.extraConfig = ''
+    Host ${config.jupiter.fleet.addresses.callisto}
+      IdentityFile ${config.sops.secrets.nix_build_ssh_key.path}
+      IdentitiesOnly yes
+    Host amalthea.localdomain
+      IdentityFile ${config.sops.secrets.nix_build_ssh_key.path}
+      IdentitiesOnly yes
+    Host metis.localdomain
+      IdentityFile ${config.sops.secrets.nix_build_ssh_key.path}
+      IdentitiesOnly yes
+    Host adrastea.localdomain
+      IdentityFile ${config.sops.secrets.nix_build_ssh_key.path}
+      IdentitiesOnly yes
+    Host thebe.localdomain
+      IdentityFile ${config.sops.secrets.nix_build_ssh_key.path}
+      IdentitiesOnly yes
+  '';
+
+  # Known host keys for all builders
+  programs.ssh.knownHosts = {
+    callisto = {
+      hostNames = [ config.jupiter.fleet.addresses.callisto ];
+      publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIINKUMgEPCzZRq74JtvkMmfmT6gOmZWGGq8G9lNqqKsU";
+    };
+    amalthea = {
+      hostNames = [ "amalthea.localdomain" ];
+      publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGQV+BzJbBfN+T3WKEUo4CzwJHS1B2bsnH5vglHmbP+Y";
+    };
+    thebe = {
+      hostNames = [ "thebe.localdomain" ];
+      publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOjnMhsh8PxlRW1tXYR4GjjDNa4J8os/4URkbD777JMg";
+    };
+    metis = {
+      hostNames = [ "metis.localdomain" ];
+      publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAB6bFJpQteERsDDg7otkc42JOWXDZUA9WprQ/gnEiAK";
+    };
   };
+
+  sops.secrets.nix_build_ssh_key = { };
 
   # ---- Storage profile (OS SSD) --------------------------------------------
   # Stateful root (no impermanence — the NAS needs persistent state).

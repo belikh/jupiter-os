@@ -20,4 +20,10 @@
     dashboardUrl = "https://iot.jupiter.au/office-command/office";
     disk = "/dev/disk/by-id/REPLACE-ME-adrastea-os-disk"; # set real by-id before install
   };
+
+  # Symmetric peer-to-peer build pool: this kiosk + callisto + other kiosks
+  jupiter.core.buildMachines = {
+    enable = true;
+    selfHost = "adrastea";
+  };
 }
