@@ -50,6 +50,25 @@ DRV_PATH="${DRV_PATH:-}"
 # 20-machine distributed build for.
 [ -z "$OUT_PATHS" ] && exit 0
 
+# SIGN every just-built path with the cache secret key before it is queued:
+# europa's nix daemon enforces require-sigs=true (re-enabled 2026-08-17; the
+# unsigned-import hole it closed is documented in
+# modules/core/ci-cache-receiver.nix), so an unsigned path is rejected by
+# `nix copy --to ssh://europa` at drain time — failing the whole run's push
+# after 40 minutes of building instead of 4 seconds here. Non-fatal (exit 0
+# always) but LOUD: the log line names the exact failure coming.
+# HARMONIA_SIGNING_KEY_FILE must point at a `nix store sign` key file
+# (secret-key:<name>:<base32>) readable by root — the workflows stage it from
+# the HARMONIA_SECRET_KEY secret next to the hook install.
+SIGN_KEY_FILE="${HARMONIA_SIGNING_KEY_FILE:-}"
+if command -v nix >/dev/null 2>&1 && [ -n "$SIGN_KEY_FILE" ] && [ -r "$SIGN_KEY_FILE" ]; then
+    # shellcheck disable=SC2086  # OUT_PATHS is deliberately space-split (set -f above)
+    nix store sign --key-file "$SIGN_KEY_FILE" $OUT_PATHS 2>>"$LOG" \
+        || printf '[%s] WARNING: nix store sign failed — europa (require-sigs=true) will reject these paths at push time\n' "$(date -u +%s)" >> "$LOG"
+else
+    printf '[%s] WARNING: no readable signing key (HARMONIA_SIGNING_KEY_FILE) — europa (require-sigs=true) will reject these paths at push time\n' "$(date -u +%s)" >> "$LOG"
+fi
+
 # Format per output: STATUS<TAB>STORE_PATH<TAB>DERIVATION<TAB>TIMESTAMP.
 # Count only paths that actually entered the FIFO — keeps the drainer's
 # enqueued/pending honest (a fallback'd path never reaches it).

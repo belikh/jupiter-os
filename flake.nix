@@ -252,6 +252,9 @@
       # login can't reach the portal without an address first, so this is
       # cheap insurance rather than an assumption.
       callistoCmdLine = "init=${callistoBuild.toplevel}/init loglevel=4 ip=dhcp ${toString callistoConfig.boot.kernelParams}";
+      # Keep in sync with modules/network/fleet.nix's
+      # jupiter.fleet.addresses.europa (this is flake-output scope, before any
+      # NixOS module exists to read the option from).
       europaLanIp = "10.1.1.2";
       europaPxeHttpPort = 8082; # keep in sync with jupiter.pxe.httpPort default
       # Embedded script is a STATIC chainload to a fixed URL (europaLanIp +
@@ -321,6 +324,30 @@
       sunoWebModule = { ... }: {
         jupiter.services.sunoWeb.package = suno-web.packages.x86_64-linux.suno-web;
       };
+
+      # Same lexical-closure pattern for aeon: hand callisto the PINNED aeon
+      # input (flake.lock rev) so the dashboard builds from exactly what the
+      # lock says — not from pkgs/aeon's internal fetchFromGitHub of a
+      # floating "main" whose hash pins a different snapshot (the two
+      # diverged silently until 2026-08-17).
+      aeonModule = { ... }: {
+        jupiter.services.aeon.source = aeon;
+      };
+
+      # Aeon dashboard, built from the PINN aeon input (flake.lock rev) —
+      # not the floating fetchFromGitHub inside pkgs/aeon (the two diverged
+      # silently until 2026-08-17). let-bound so packages.x86_64-linux can
+      # reference it (attrsets are not recursive).
+      aeonPackages = import ./pkgs/aeon/default.nix {
+        lib = nixpkgs.lib;
+        pkgs = untunedPkgs;
+        fetchFromGitHub = untunedPkgs.fetchFromGitHub;
+        stdenv = untunedPkgs.stdenv;
+        buildNpmPackage = untunedPkgs.buildNpmPackage;
+        nodejs = untunedPkgs.nodejs;
+        makeWrapper = untunedPkgs.makeWrapper;
+        src = aeon;
+      };
     in
     {
       nixosConfigurations = {
@@ -352,7 +379,9 @@
         # hosts/callisto/configuration.nix and
         # docs/callisto-iscsi-root-provisioning.md (live at 10.1.1.3, root
         # over ext4-iSCSI on europa's zvol).
-        callisto = mkHost ./hosts/callisto/configuration.nix [ ];
+        # aeonModule injects the pinned aeon input for the dashboard
+        # service callisto runs (see its definition above).
+        callisto = mkHost ./hosts/callisto/configuration.nix [ aeonModule ];
 
         # Kamatera VPS (persistent, disk-booted; not a fleet member — built
         # standalone, not via mkHost). The raw disk image is built with nixpkgs'
@@ -388,28 +417,7 @@
       # gccarch-skylake is available.
       packages.x86_64-linux.pxe-netboot-assets = pxeNetbootAssets;
 
-      # Aeon dashboard and CLI packages — built from upstream aeonfun/aeon main branch
-      # (not a flake, so we use fetchFromGitHub + buildNpmPackage)
-      packages.x86_64-linux.aeon-dashboard =
-        (import ./pkgs/aeon/default.nix {
-          lib = nixpkgs.lib;
-          pkgs = nixpkgs.legacyPackages.x86_64-linux;
-          fetchFromGitHub = nixpkgs.legacyPackages.x86_64-linux.fetchFromGitHub;
-          stdenv = nixpkgs.legacyPackages.x86_64-linux.stdenv;
-          buildNpmPackage = nixpkgs.legacyPackages.x86_64-linux.buildNpmPackage;
-          nodejs = nixpkgs.legacyPackages.x86_64-linux.nodejs;
-          makeWrapper = nixpkgs.legacyPackages.x86_64-linux.makeWrapper;
-        }).aeon-dashboard;
-      packages.x86_64-linux.aeon-cli =
-        (import ./pkgs/aeon/default.nix {
-          lib = nixpkgs.lib;
-          pkgs = nixpkgs.legacyPackages.x86_64-linux;
-          fetchFromGitHub = nixpkgs.legacyPackages.x86_64-linux.fetchFromGitHub;
-          stdenv = nixpkgs.legacyPackages.x86_64-linux.stdenv;
-          buildNpmPackage = nixpkgs.legacyPackages.x86_64-linux.buildNpmPackage;
-          nodejs = nixpkgs.legacyPackages.x86_64-linux.nodejs;
-          makeWrapper = nixpkgs.legacyPackages.x86_64-linux.makeWrapper;
-        }).aeon-cli;
+      packages.x86_64-linux.aeon-dashboard = aeonPackages.aeon-dashboard;
 
       # dsh — DeepSeek Harness CLI + web UI (see pkgs/dsh). Built from the
       # published npm tarball with a generated prod-only lockfile; exposed
@@ -467,7 +475,9 @@
       # Documentation site: auto-generated from all jupiter.* modules
       # Uses an existing host configuration (amalthea) which already has all
       # modules properly imported and evaluated with correct defaults.
-      docs =
+      # Exposed under packages (not a bare `docs` output, which flake check
+      # flags as unknown) so `nix build .#docs` keeps working.
+      packages.x86_64-linux.docs =
         let
           # Get the options from the amalthea host configuration
           # This includes all jupiter.* options plus all NixOS base options
@@ -480,9 +490,11 @@
           categoryDirs = builtins.filter (
             d: builtins.pathExists (modulesDir + "/${d}") && !lib.strings.hasSuffix ".nix" d
           ) (builtins.attrNames (builtins.readDir modulesDir));
-          # Generate timestamp and commit at build time via shell
+          # Pure derivation inputs (no `date`/`git rev-parse` in buildPhase —
+          # those made the build impure and uncacheable across checkouts):
+          # the commit comes from self.rev ("dirty" when the tree is dirty).
           timestamp = "";
-          commit = "";
+          commit = self.rev or "dirty";
         in
         untunedPkgs.stdenv.mkDerivation {
           name = "jupiter-os-docs";
@@ -548,9 +560,10 @@
                         echo "- [$cat](options.html)" >> src/index.md
                       done
 
-                      # Generate timestamp and commit for the landing page
-                      timestamp=$(date -u +"%Y-%m-%d %H:%M UTC")
-                      commit=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+                      # Pure: commit comes from self.rev (evaluated, not
+                      # shelled out); no timestamp — it made every build
+                      # uncached and differed per rebuild of the same tree.
+                      commit='${commit}'
 
                       cat >> src/index.md <<INDEX_EOF2
 
@@ -558,9 +571,8 @@
 
             ## Generation Info
 
-            - **Generated from**: \`flake.nix\` \`docs\` package
+            - **Generated from**: \`flake.nix\` \`packages.docs\`
             - **Toolchain**: \`nixosOptionsDoc\` + \`mdBook\`
-            - **Last updated**: $timestamp
             - **Commit**: $commit
 
             > This documentation is regenerated on every push to \`main\` via GitHub Actions.
@@ -584,7 +596,9 @@
           '';
         };
 
-      formatter.x86_64-linux = nixpkgs.legacyPackages.x86_64-linux.nixfmt-rfc-style;
+      # pkgs.nixfmt: nixfmt-rfc-style was merged upstream and is now an
+      # alias of exactly this package (eval warns on the old name).
+      formatter.x86_64-linux = nixpkgs.legacyPackages.x86_64-linux.nixfmt;
 
       devShells.x86_64-linux.default =
         let
@@ -595,7 +609,7 @@
             sops
             age
             ssh-to-age
-            nixfmt-rfc-style
+            nixfmt
           ];
         };
     };

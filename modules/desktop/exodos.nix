@@ -33,6 +33,8 @@
 let
   cfg = config.jupiter.exodos;
 
+  inherit (import ../lib.nix { inherit config lib pkgs; }) nfsRoMountOptions;
+
   # The collection catalogue. Not an option: the fleet is uniform and the
   # values are facts about the eXo releases on europa, not per-host tunables.
   #  - xml:      platform XML relative to the collection root (eXoWin9x's is
@@ -142,7 +144,8 @@ let
     # hugo3jd), so chown what was actually created, not what was expected.
     if [ ! -d "$TARGET_PARENT/$TARGET_NAME" ]; then
       ALT=$("${pkgs.coreutils}/bin/ls" -A "$TARGET_PARENT" \
-        | "${pkgs.gnugrep}/bin/grep" -ixF -- "$TARGET_NAME" | head -1)
+        | "${pkgs.gnugrep}/bin/grep" -ixF -- "$TARGET_NAME" \
+        | "${pkgs.coreutils}/bin/head" -n 1)
       if [ -n "$ALT" ]; then
         TARGET_NAME=$ALT
       fi
@@ -271,6 +274,8 @@ in
     ./arcade.nix
     ./dashboard-gaming.nix
     ./arcade-console.nix
+    # nfsHost default references the fleet topology module
+    ../network/fleet.nix
   ];
 
   options.jupiter.exodos = {
@@ -283,7 +288,7 @@ in
 
     nfsHost = lib.mkOption {
       type = lib.types.str;
-      default = "10.1.1.2"; # europa's static LAN IP (hosts/europa/configuration.nix)
+      default = config.jupiter.fleet.addresses.europa; # static LAN reservation
       description = ''
         NFS host serving the curated eXo collections. Defaults to europa's
         static DHCP reservation. Addressed by IP rather than hostname for the
@@ -398,15 +403,7 @@ in
         ${roMount name} = {
           device = "${cfg.nfsHost}:${cfg.curatedNfsPath}/${name}";
           fsType = "nfs";
-          options = [
-            "ro"
-            "noatime"
-            "soft"
-            "noauto"
-            "x-systemd.automount"
-            "x-systemd.idle-timeout=10min"
-            "x-systemd.mount-timeout=30"
-          ];
+          options = nfsRoMountOptions;
         };
         # overlayfs: NFS RO lower + persisted RW upper. Game saves and
         # first-run extractions land in the upper layer; the underlying eXo

@@ -22,8 +22,13 @@ let
   cfg = config.jupiter.services.aeon;
 
   # The aeon dashboard package from pkgs/aeon/default.nix — contains
-  # node_modules + source for `next dev`.
-  aeonPkg = pkgs.callPackage ../../pkgs/aeon/default.nix { };
+  # node_modules + source for `next dev`. Built from `source` when the
+  # flake injects its pinned aeon input (see flake.nix's aeonModule); the
+  # null fallback inside the package floats on fetchFromGitHub main, which
+  # is why the flake always injects.
+  aeonPkg = pkgs.callPackage ../../pkgs/aeon/default.nix {
+    src = cfg.source;
+  };
 
   # Derive owner/repo from the repoUrl for gh repo set-default + clone
   # repoUrl format: "github:owner/repo"
@@ -33,8 +38,30 @@ in
   options.jupiter.services.aeon = {
     enable = lib.mkEnableOption "Aeon dashboard (autonomous agent framework web UI)";
 
-    package = lib.mkPackageOption pkgs "aeon-dashboard" { } // {
+    # Plain mkOption, NOT `mkPackageOption pkgs "aeon-dashboard" { } //
+    # { default = ...; }`: mkPackageOption eagerly evaluates
+    # `pkgs.aeon-dashboard or ...` at option-declaration time, so the `//`
+    # trick only *looks* lazy — if pkgs.aeon-dashboard ever appears (or the
+    # attrpath's intermediates error), the two defaults fight. The dashboard
+    # is not in nixpkgs and never will be; name it explicitly.
+    package = lib.mkOption {
+      type = lib.types.package;
       default = aeonPkg.dashboard;
+      defaultText = "pkgs/aeon/default.nix: dashboard";
+      description = "Aeon dashboard package (node_modules + source for next dev).";
+    };
+
+    # Pinned upstream source (the flake's `aeon` input, injected via
+    # flake.nix's aeonModule — same lexical-closure pattern as sunoWebModule).
+    # Kept as an option so the module stays a plain NixOS module.
+    source = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      description = ''
+        Pinned aeon source tree. null falls back to the package's internal
+        fetchFromGitHub of main (floating — NOT what the fleet runs); the
+        flake always sets this to its locked input.
+      '';
     };
 
     repoUrl = lib.mkOption {
@@ -62,8 +89,14 @@ in
 
     host = lib.mkOption {
       type = lib.types.str;
-      default = "0.0.0.0";
-      description = "Address the dashboard binds.";
+      default = "127.0.0.1";
+      description = ''
+        Address the dashboard binds. Loopback by default: this UI wields a
+        GitHub PAT with repo scope (workflow dispatch, secrets writes), so it
+        must not be reachable from the LAN. Remote access goes through the
+        tailscale tunnel (100.x.y.z still works: set host to the tailscale IP
+        or 0.0.0.0 ONLY on a host whose firewall is already tailnet-scoped).
+      '';
     };
 
     exposeLan = lib.mkOption {
@@ -175,6 +208,13 @@ in
         gh repo set-default ${repoSlug}
       '';
 
+      # gh token persistence: gh stores the authenticated session in
+      # ~/.config/gh/hosts.yml (plaintext, mode 0600). /var/lib/aeon is NOT
+      # wiped between runs, so the PAT-equivalent session survives unit
+      # stops — treat /var/lib/aeon as credential-bearing state (it also
+      # holds the fork clone + harness OAuth creds packed by tar). The
+      # preStart re-login refreshes it each start; it is never revoked.
+      #
       # Symlink the pre-built node_modules into the checkout, then run `next
       # dev` against the checkout's own source. `next` is invoked by its store
       # path rather than through `npx`, which would otherwise be free to reach

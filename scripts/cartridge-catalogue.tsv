@@ -1,0 +1,41 @@
+# THE jupiterOS Arcade console-system catalogue — single source of truth,
+# consumed by BOTH sides of the ROM pipeline:
+#   * modules/services/arcade-catalogue.nix parses this file into the
+#     jupiter.arcade.catalogue option (rom-acquire / rom-scraper /
+#     arcade-inventory / cartridges all derive from it), and
+#   * scripts/cartridge-scrape.sh builds its LAUNCH / SKYPLATFORM /
+#     COLLECTIONS maps + ROM_RE from the same rows at runtime.
+# Adding or removing a system is ONE row here; every consumer follows. (The
+# five former hand-copied maps DID drift — an 'acorn' system once existed
+# only in rom-acquire and would have promoted to the pool invisible.)
+#
+# Columns (TAB-separated, "-" = not applicable):
+#   system      dir key + Pegasus shortname (nes, snes, ... 3ds)
+#   collection  Pegasus collection display title
+#   core        libretro core basename for 'jupiter-retroarch -L <core>'
+#   emulator    standalone emulator wrapper when core is "-" (cemu)
+#   extensions  ROM file extensions (comma-separated, no dots)
+#   sky         Skyscraper -p handle when it differs from 'system'
+#   bucket      europa dataset: cartridge | optical | modern
+#   torrent     Minerva/Myrient torrent basename for rom-acquire
+# Notes: cartridge sets ship as .zip (No-Intro) and cue/bin pairs travel
+# together — both live in cartridge-scrape.sh's GLOBAL_EXTS, not per-system.
+nes	Nintendo Entertainment System	fceumm	-	nes	-	cartridge	Minerva_Myrient - No-Intro - Nintendo - Nintendo Entertainment System (Headerless).torrent
+snes	Super Nintendo Entertainment System	snes9x	-	sfc,smc	-	cartridge	Minerva_Myrient - No-Intro - Nintendo - Super Nintendo Entertainment System.torrent
+gb	Nintendo Game Boy	gambatte	-	gb	-	cartridge	Minerva_Myrient - No-Intro - Nintendo - Game Boy.torrent
+gbc	Nintendo Game Boy Color	gambatte	-	gbc	-	cartridge	Minerva_Myrient - No-Intro - Nintendo - Game Boy Color.torrent
+gba	Nintendo Game Boy Advance	mgba	-	gba	-	cartridge	Minerva_Myrient - No-Intro - Nintendo - Game Boy Advance.torrent
+n64	Nintendo 64	mupen64plus	-	z64,n64,v64	-	cartridge	Minerva_Myrient - No-Intro - Nintendo - Nintendo 64 (BigEndian).torrent
+fds	Nintendo Famicom Disk System	fceumm	-	fds	-	cartridge	Minerva_Myrient - No-Intro - Nintendo - Family Computer Disk System (FDS).torrent
+virtualboy	Nintendo Virtual Boy	beetle-vb	-	vb	-	cartridge	Minerva_Myrient - No-Intro - Nintendo - Virtual Boy.torrent
+pokemonmini	Nintendo Pokemon Mini	pokemini	-	min	pokemini	cartridge	Minerva_Myrient - No-Intro - Nintendo - Pokemon Mini.torrent
+gameandwatch	Nintendo Game & Watch	gw	-	mgw	-	cartridge	Minerva_Myrient - No-Intro - Nintendo - Game & Watch.torrent
+nds	Nintendo DS	desmume2015	-	nds,ids	-	cartridge	Minerva_Myrient - No-Intro - Nintendo - Nintendo DS (Decrypted).torrent
+dsi	Nintendo DSi	desmume2015	-	nds,ids	nds	cartridge	Minerva_Myrient - No-Intro - Nintendo - Nintendo DSi (Decrypted).torrent
+gamecube	Nintendo GameCube	dolphin	-	iso,gcm,gcz,elf,dol,ciso	gc	optical	Minerva_Myrient - No-Intro - Non-Redump - Nintendo - Nintendo GameCube.torrent
+wii	Nintendo Wii	dolphin	-	iso,wbfs,gcz,wad,ciso	-	optical	Minerva_Myrient - No-Intro - Non-Redump - Nintendo - Wii.torrent
+ps1	Sony PlayStation	beetle-psx	-	chd,cue,iso,m3u	psx	optical	Minerva_Myrient - RetroAchievements - RA - Sony Playstation.torrent
+ps2	Sony PlayStation 2	pcsx2	-	chd,iso,gi,m3u	-	optical	Minerva_Myrient - RetroAchievements - RA - Sony Playstation 2.torrent
+3ds	Nintendo 3DS	citra	-	3ds,cia,cxi,cci,app,3dsx	3ds	modern	Minerva_Myrient - No-Intro - Nintendo - Nintendo 3DS (Decrypted).torrent
+new3ds	Nintendo New 3DS	citra	-	3ds,cia,cxi,cci,app,3dsx	3ds	modern	Minerva_Myrient - No-Intro - Nintendo - New Nintendo 3DS (Decrypted).torrent
+wiiu	Nintendo Wii U	-	cemu	wua,rpx,wud,wux,iso	-	modern	Minerva_Myrient - No-Intro - Non-Redump - Nintendo - Wii U.torrent

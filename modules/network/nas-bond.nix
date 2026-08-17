@@ -19,6 +19,22 @@ in
       ];
       description = "The two NICs to bond (both BCM5720 ports on the MicroServer).";
     };
+
+    # Explicit MOVE semantics: enabling the bond with this address requires
+    # deleting the host's own static assignment on the physical NIC (europa's
+    # networking.interfaces.enp2s0f1 block) — otherwise two interfaces hold
+    # the same IP. Nothing here can do that for you; it would be a silent
+    # conflict instead of a declarative one.
+    address = lib.mkOption {
+      type = lib.types.str;
+      description = "Static IPv4 address bond0 takes over from the physical NIC.";
+    };
+
+    prefixLength = lib.mkOption {
+      type = lib.types.int;
+      default = 24;
+      description = "Prefix length for bond0's static address.";
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -34,8 +50,8 @@ in
 
     networking.interfaces.bond0.ipv4.addresses = [
       {
-        address = "10.1.1.2";
-        prefixLength = 24;
+        address = cfg.address;
+        prefixLength = cfg.prefixLength;
       }
     ];
   };

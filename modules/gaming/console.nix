@@ -7,9 +7,12 @@
 #
 # chaotic-nyx was evaluated and deliberately NOT pulled in: forcing it to follow
 # this flake's nixpkgs (the repo convention) caused patch skew that broke the
-# build (mangohud double-patch). Jovian alone covers everything the fleet needs;
-# the cachyOsKernel / mesaGit toggles stay in the interface for documentation but
-# are inert here (kept off on ZFS hosts regardless, per CLAUDE.md).
+# build (mangohud double-patch). Jovian alone covers everything the fleet needs.
+# This module once carried `cachyOsKernel`/`mesaGit` toggles referencing
+# chaotic-only packages (linuxPackages_cachyos does not exist in nixpkgs);
+# they were removed 2026-08-17 — dead interface surface that could only ever
+# fail eval, since no host can supply those packages without the chaotic
+# input. The stock kernel is also a hard buildability rule for ZFS hosts.
 #
 # Attach it to ANY host by flipping `jupiter.gaming.console.enable = true;`.
 # jovian's nixos module is imported for every host in flake.nix (inert until
@@ -117,8 +120,12 @@ let
   ) (lib.attrNames appCatalog);
 in
 {
+  # The shared controller stack (also imported by arcade-console.nix); the
+  # import is idempotent so both paths can pull it in.
+  imports = [ ./controllers.nix ];
+
   options.jupiter.gaming.console = {
-    enable = lib.mkEnableOption "Bazzite-style gaming stack (Jovian gaming mode + chaotic CachyOS)";
+    enable = lib.mkEnableOption "Bazzite-style gaming stack (Jovian gaming mode)";
 
     gpu = lib.mkOption {
       type = lib.types.enum [
@@ -134,22 +141,6 @@ in
       type = lib.types.str;
       default = "io";
       description = "User that owns the Steam install and auto-logs into gaming mode.";
-    };
-
-    cachyOsKernel = lib.mkOption {
-      type = lib.types.bool;
-      default = true;
-      description = ''
-        Use the CachyOS kernel (linuxPackages_cachyos) from chaotic-nyx.
-        Set to false on ZFS-root hosts if the kernel outpaces OpenZFS support,
-        which would otherwise fail the build.
-      '';
-    };
-
-    mesaGit = lib.mkOption {
-      type = lib.types.bool;
-      default = true;
-      description = "Use bleeding-edge Mesa (chaotic.mesa-git), matching Bazzite's shipping Mesa.";
     };
 
     gamingMode = {
@@ -249,23 +240,14 @@ in
   };
 
   config = lib.mkIf cfg.enable {
-    # --- Kernel (chaotic / CachyOS) ------------------------------------------
-    # Opt-in: the stock NixOS kernel is the only one ZFS always supports and
-    # cache.nixos.org always carries, so ZFS-root hosts (every fleet host today)
-    # must keep cachyOsKernel off.
-    boot.kernelPackages = lib.mkIf cfg.cachyOsKernel pkgs.linuxPackages_cachyos;
+    # --- Kernel --------------------------------------------------------------
+    # The STOCK nixpkgs kernel, deliberately: it is the one ZFS always
+    # supports and cache.nixos.org always has built (CLAUDE.md buildability
+    # rule #1 — the old tree's per-host CachyOS/latest kernels were a primary
+    # reason it never built). No kernel selection happens here at all.
 
     # ntsync gives Proton/Wine a fast in-kernel sync primitive (Bazzite default).
     boot.kernelModules = [ "ntsync" ];
-
-    # --- Mesa (chaotic) ------------------------------------------------------
-    # Enabling mesaGit requires importing chaotic's nixos module (for the
-    # chaotic.mesa-git option to exist). This minimal repo deliberately imports
-    # only chaotic's OVERLAY (for packages like gamescope_git/proton-cachyos),
-    # not its module — its module would auto-apply chaotic's overlay + cache
-    # fleet-wide, breaking the buildability rules for europa/callisto. So
-    # mesaGit is a no-op here unless a host imports chaotic's module itself.
-    # Keep it off on ZFS/cache-sensitive hosts regardless.
 
     # --- Gaming mode session (Jovian) ----------------------------------------
     jovian = {
@@ -364,23 +346,17 @@ in
     ];
 
     # --- Game peripherals (controllers, wheels, tablets, RGB) ----------------
-    # input-remapper lets pads/keyboards be remapped; Bluetooth covers wireless
-    # controllers. Both are wanted on any gaming host.
+    # input-remapper lets pads/keyboards be remapped; wanted on any gaming host.
     services.input-remapper.enable = true;
-    hardware.bluetooth.enable = lib.mkDefault true;
 
-    # Xbox controllers: xpadneo (Bluetooth) + xone (official dongle / wired).
-    hardware.xpadneo.enable = lib.mkIf cfg.peripherals.controllers (lib.mkDefault true);
-    hardware.xone.enable = lib.mkIf cfg.peripherals.controllers (lib.mkDefault true);
-
-    # The PlayStation pad exposes its touchpad as a mouse, which fires phantom
-    # clicks mid-game; mask it the way GLF-OS does. (DualShock 4 + DualSense.)
-    services.udev.extraRules = lib.mkIf cfg.peripherals.controllers ''
-      ATTRS{name}=="Sony Interactive Entertainment Wireless Controller Touchpad", ENV{LIBINPUT_IGNORE_DEVICE}="1"
-      ATTRS{name}=="Sony Interactive Entertainment DualSense Wireless Controller Touchpad", ENV{LIBINPUT_IGNORE_DEVICE}="1"
-      ATTRS{name}=="Wireless Controller Touchpad", ENV{LIBINPUT_IGNORE_DEVICE}="1"
-      ATTRS{name}=="DualSense Wireless Controller Touchpad", ENV{LIBINPUT_IGNORE_DEVICE}="1"
-    '';
+    # Controllers (xpadneo/xone, Bluetooth power-on, DualSense touchpad mask)
+    # live in the shared modules/gaming/controllers.nix — the identical stack
+    # arcade-console.nix needs — so the udev rules can never be defined twice
+    # (extraRules is types.lines; duplicate copies used to land 2x on hosts
+    # importing both profiles).
+    jupiter.gaming.controllers.enable = lib.mkIf cfg.peripherals.controllers true;
+    # The shared module sets bluetooth.enable itself under the same gate.
+    hardware.bluetooth.enable = lib.mkIf (!cfg.peripherals.controllers) (lib.mkDefault true);
 
     # Sim-racing wheels — force-feedback Logitech (new-lg4ff). Oversteer and
     # Solaar ship udev rules of their own, so devices are usable without manual
@@ -414,7 +390,10 @@ in
       )
       ++ cfg.extraPackages;
 
-    # 32-bit OpenGL/Vulkan + unfree (Steam) need to be allowed.
+    # 32-bit OpenGL/Vulkan + unfree (Steam) need to be allowed. NOTE: this is
+    # a GLOBAL nixpkgs.config side effect of a gaming toggle — hosts that
+    # enable this profile get allowUnfree for everything. Accepted here only
+    # because every console-profile host is a single-purpose gaming machine.
     nixpkgs.config.allowUnfree = true;
   };
 }

@@ -1,10 +1,15 @@
 name: CI
 
 on:
-  # Disabled: use ci-europa.yml instead
-  # push:
-  #   branches: [main]
-  # pull_request:
+  # Re-enabled 2026-08-17 (audit): the runbook (docs/ci-harmonia-push-runbook.md)
+  # designs CI as push-on-main + PR build/smoke without push; the commented-out
+  # triggers were a debugging leftover whose comment even pointed at a
+  # nonexistent "ci-europa.yml" (the distributed pipeline is
+  # ci-distributed-europa.yml, and it stays workflow_dispatch-only — the heavy
+  # coordinated build is run on demand).
+  push:
+    branches: [main]
+  pull_request:
   workflow_dispatch:
 
 concurrency:
@@ -19,7 +24,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: cachix/install-nix-action@b4b293eae0b79aac8a161bb32925a5508c9cca93 # v31
       - name: Check formatting
-        run: nix run nixpkgs#nixfmt-rfc-style -- --check .
+        run: nix run nixpkgs#nixfmt -- --check .
       - name: Flake check (evaluates every host)
         run: nix flake check --no-build
 

@@ -61,6 +61,9 @@ let
   # (discover_models defaults to true and the provider carries no explicit
   # models list), so Qwen3-Coder shows up in Crush's model picker alongside
   # GLM-4.6 without hard-coding the GGUF here.
+  # The z.ai endpoint + GLM-4.6 constants are shared with zed.nix's
+  # language_models block (same account); schemas are tool-specific so they
+  # are NOT merged — keep the URLs/model names in sync by hand.
   crushSettings = pkgs.writeText "crush.json" (
     builtins.toJSON {
       "$schema" = "https://charm.land/crush.json";

@@ -105,12 +105,20 @@ in
       ConditionUser = "io";
     };
 
+    # 0664 (not 0666): world-WRITABLE sysfs nodes would let any local user
+    # rewrite CPU governor / backlight — and on a kiosk where the dashboard
+    # user's browser context counts as "any local user", that is a real
+    # stepdown. Group-writable suffices: the agent's hardware backend reads
+    # these, io is in the groups that own the nodes (video for backlight,
+    # root-owned cpufreq reads need no write for its read-only sensors — the
+    # write targets below are the agent's own actuators). The `|| true`
+    # keeps hosts without cpufreq (or with Intel P-state EPP absent) green.
     systemd.services.ha-linux-agent-sysfs-perms = {
       description = "Set permissions for ha-linux-agent sysfs files";
       wantedBy = [ "multi-user.target" ];
       serviceConfig = {
         Type = "oneshot";
-        ExecStart = "${pkgs.bash}/bin/bash -c 'chmod 0666 /sys/class/backlight/*/brightness /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor /sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference || true'";
+        ExecStart = "${pkgs.bash}/bin/bash -c 'chmod 0664 /sys/class/backlight/*/brightness /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor /sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference || true'";
         RemainAfterExit = true;
       };
     };

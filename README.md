@@ -57,8 +57,9 @@ Seven hosts are wired into the flake today:
   and pushes the skylake-tagged closure to Harmonia.
 - **pallene** — Kamatera VPS build server (persistent, disk-booted). Not a
   fleet member; the raw disk image is built with `nix build .#pallene-raw`,
-  compressed, and served to Kamatera's image library via europa's
-  vps-image-server + Cloudflare Tunnel.
+  compressed, and served to Kamatera's image library via a public URL
+  (the `vps-image-server` module that served it was removed 2026-08-17 as
+  an unwired orphan — recover from git history if the flow returns).
 
 ```bash
 make check              # nix flake check --no-build (eval every registered host)

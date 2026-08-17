@@ -21,6 +21,8 @@
 # snapshotted as one by modules/storage/sanoid.nix).
 let
   cfg = config.jupiter.services.sunoWeb;
+
+  inherit (import ../lib.nix { inherit config lib pkgs; }) commonServiceHardening;
 in
 {
   options.jupiter.services.sunoWeb = {
@@ -49,11 +51,16 @@ in
 
     dataDir = lib.mkOption {
       type = lib.types.str;
-      default = config.jupiter.services.sunoBackup.dataDir;
-      defaultText = lib.literalExpression "config.jupiter.services.sunoBackup.dataDir";
+      # Literal, NOT config.jupiter.services.sunoBackup.dataDir: a
+      # cross-module default would throw "option does not exist" on any host
+      # that imports this module without suno-backup.nix. The literal matches
+      # sunoBackup.dataDir's own default — keep the two in sync, or set this
+      # explicitly when they differ.
+      default = "/tank/archive/suno";
       description = ''
-        Root of the Suno archive — the same path the backup daemon writes.
-        Mounted read-only; the service never writes here.
+        Root of the Suno archive — the same path the backup daemon
+        (modules/services/suno-backup.nix) writes. Mounted read-only; the
+        service never writes here.
       '';
     };
 
@@ -112,26 +119,11 @@ in
         StateDirectoryMode = "0750";
 
         # Hardening: read-only access to the archive, a listening socket, and
-        # its own state directory. Nothing else.
+        # its own state directory. Nothing else. Common stanza shared with
+        # nom-web/suno-backup (modules/lib.nix: commonServiceHardening).
         ReadOnlyPaths = [ cfg.dataDir ];
-        NoNewPrivileges = true;
-        PrivateTmp = true;
-        PrivateDevices = true;
-        ProtectSystem = "strict";
-        ProtectHome = true;
-        ProtectKernelTunables = true;
-        ProtectKernelModules = true;
-        ProtectControlGroups = true;
-        RestrictAddressFamilies = [
-          "AF_INET"
-          "AF_INET6"
-        ];
-        RestrictNamespaces = true;
-        LockPersonality = true;
-        MemoryDenyWriteExecute = false; # Go runtime needs writable+executable memory
-        RestrictRealtime = true;
-        RestrictSUIDSGID = true;
-      };
+      }
+      // commonServiceHardening;
     };
 
     networking.firewall.allowedTCPPorts = lib.mkIf cfg.openFirewall [ cfg.port ];

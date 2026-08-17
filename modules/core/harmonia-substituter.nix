@@ -42,6 +42,8 @@ let
   url = "http://${host}:${toString cfg.port}";
 in
 {
+  imports = [ ../network/fleet.nix ];
+
   options.jupiter.core.harmoniaSubstituter = {
     enable = lib.mkOption {
       type = lib.types.bool;
@@ -56,7 +58,7 @@ in
 
     serverIp = lib.mkOption {
       type = lib.types.str;
-      default = "10.1.1.2";
+      default = config.jupiter.fleet.addresses.europa;
       description = ''
         europa's LAN IP — every host but europa itself reaches harmonia here.
         Ignored on europa (jupiter.services.harmonia / services.harmonia.enable

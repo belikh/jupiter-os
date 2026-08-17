@@ -20,6 +20,8 @@
 let
   cfg = config.jupiter.services.nomWeb;
 
+  inherit (import ../lib.nix { inherit config lib pkgs; }) commonServiceHardening;
+
   pkg = pkgs.callPackage ../../pkgs/nom-web { };
 in
 {
@@ -74,26 +76,11 @@ in
         DynamicUser = true;
 
         # Hardening: read-only access to the log mount, a listening socket,
-        # nothing else.
+        # nothing else. Common stanza shared with suno-web/suno-backup
+        # (modules/lib.nix: commonServiceHardening).
         ReadOnlyPaths = [ cfg.logDir ];
-        NoNewPrivileges = true;
-        PrivateTmp = true;
-        PrivateDevices = true;
-        ProtectSystem = "strict";
-        ProtectHome = true;
-        ProtectKernelTunables = true;
-        ProtectKernelModules = true;
-        ProtectControlGroups = true;
-        RestrictAddressFamilies = [
-          "AF_INET"
-          "AF_INET6"
-        ];
-        RestrictNamespaces = true;
-        LockPersonality = true;
-        MemoryDenyWriteExecute = false; # Go runtime needs writable+executable memory
-        RestrictRealtime = true;
-        RestrictSUIDSGID = true;
-      };
+      }
+      // commonServiceHardening;
     };
 
     networking.firewall.allowedTCPPorts = lib.mkIf cfg.openFirewall [ cfg.port ];

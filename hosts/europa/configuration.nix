@@ -42,9 +42,16 @@
     ../../modules/services/arcade-inventory.nix
     ../../modules/services/suno-backup.nix
     ../../modules/services/suno-web.nix
+    ../../modules/core/build-machines.nix
   ];
 
   networking.hostName = "europa";
+  # FIXME(maintenance-window): borrowed placeholder hostId on a LIVE ZFS host.
+  # Mint a real random 8-hex hostId and apply it together with `zpool
+  # reguid`/export-import at a planned maintenance window — changing it
+  # remotely in git alone risks breaking tank import on the next deploy
+  # (forceImportRoot=false here), so this is deliberately left as-is until
+  # the operator can sit at the console.
   networking.hostId = "deadbeef"; # Stable per-host 8-char hex, required for ZFS
 
   # ---- Platform / kernel ---------------------------------------------------
@@ -94,52 +101,26 @@
   nix.settings.keep-outputs = true;
 
   # ---- Remote builder: callisto --------------------------------------------
-  # Delegate eligible builds to callisto (10.1.1.3): 6c/6t i5-8500T vs this
-  # 2c/2t Opteron — several times faster per core. Inline rather than
-  # modules/core/build-machines.nix because that module also wires the 4
-  # kiosks; europa wants callisto alone.
-  #
-  # supportedFeatures deliberately OMITS gccarch-bdver4: callisto is Coffee
-  # Lake/Skylake with no XOP/TBM/FMA4 (Excavator-only extensions bdver4 code
-  # may emit). Advertising it (pre-08fd609) made perl's miniperl bootstrap
-  # SIGILL while "building on europa" — actually mis-executing on callisto.
-  # Delegation is safe again NOW precisely because europa is untuned: its
-  # derivations carry no gccarch-* tag. If microarch is ever re-enabled,
-  # this matrix needs revisiting first (build bdver4 locally or on CI only).
-  nix.distributedBuilds = true;
-  nix.buildMachines = [
-    {
-      hostName = "10.1.1.3"; # callisto, DHCP-reserved; no DNS yet (ganymede's role)
-      system = "x86_64-linux";
-      protocol = "ssh-ng";
-      sshUser = "root";
-      sshKey = config.sops.secrets.nix_build_ssh_key.path;
-      # Mirrors callisto's own nix.settings.max-jobs = 1 (cores=6): one
-      # derivation at a time using all 6 cores.
-      maxJobs = 1;
-      speedFactor = 2;
-      supportedFeatures = [
-        "gccarch-skylake"
-        "big-parallel"
-      ];
-      mandatoryFeatures = [ ];
-    }
-  ];
-
-  # Host key pinned declaratively (captured 2026-07-24, same key as
-  # modules/core/build-machines.nix) — the module's fleet-wide knownHosts is
-  # gone from common.nix, so europa carries its own. Keyed on the literal IP:
-  # buildMachines dials it directly and ssh_config Host patterns match the
-  # literal argument, not resolved names.
-  programs.ssh.knownHosts.callisto = {
-    hostNames = [ "10.1.1.3" ];
-    publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIINKUMgEPCzZRq74JtvkMmfmT6gOmZWGGq8G9lNqqKsU";
+  # Delegate eligible builds to callisto (fleet address in
+  # modules/network/fleet.nix): 6c/6t i5-8500T vs this 2c/2t Opteron —
+  # several times faster per core. Formerly inlined here; now the shared
+  # modules/core/build-machines.nix with its two europa-specific deviations
+  # as explicit flags — behavior identical to the old inline slice:
+  #   * includeKiosks=false — europa delegates to callisto ALONE (the module
+  #     defaults to also wiring the 4 kiosks).
+  #   * advertiseBdver4=false — supportedFeatures deliberately OMITS
+  #     gccarch-bdver4: callisto is Coffee Lake/Skylake with no XOP/TBM/FMA4
+  #     (Excavator-only extensions bdver4 code may emit). Advertising it
+  #     (pre-08fd609) made perl's miniperl bootstrap SIGILL while "building
+  #     on europa" — actually mis-executing on callisto. Delegation is safe
+  #     again NOW precisely because europa is untuned: its derivations carry
+  #     no gccarch-* tag. If microarch is ever re-enabled, revisit this
+  #     matrix first (build bdver4 locally or on CI only).
+  jupiter.core.buildMachines = {
+    enable = true;
+    includeKiosks = false;
+    advertiseBdver4 = false;
   };
-  programs.ssh.extraConfig = ''
-    Host 10.1.1.3
-      IdentityFile ${config.sops.secrets.nix_build_ssh_key.path}
-      IdentitiesOnly yes
-  '';
 
   # ---- Storage profile (OS SSD) --------------------------------------------
   # Stateful root (no impermanence — the NAS needs persistent state).
@@ -223,18 +204,21 @@
   networking.useDHCP = false;
   networking.interfaces.enp2s0f1.ipv4.addresses = [
     {
-      address = "10.1.1.2";
+      # Single source of truth: this interface IS what
+      # jupiter.fleet.addresses.europa (modules/network/fleet.nix) points every
+      # other host at.
+      address = config.jupiter.fleet.addresses.europa;
       prefixLength = 24;
     }
   ];
-  networking.defaultGateway = "10.1.1.1";
+  networking.defaultGateway = config.jupiter.fleet.addresses.gateway;
 
   # Static networking leaves no nameservers behind — common.nix defers DNS to
   # DHCP, which europa disabled above, so without this /etc/resolv.conf ends
   # up empty and the box can't resolve cache.nixos.org or any substituter.
   # The UniFi gateway resolves; 1.1.1.1 is the fallback if it's ever down.
   networking.nameservers = [
-    "10.1.1.1"
+    config.jupiter.fleet.addresses.gateway
     "1.1.1.1"
   ];
 
@@ -337,7 +321,7 @@
         # not here — cloudflared can proxy to any LAN host it can reach.
         # See modules/services/nom-web.nix / hosts/callisto/configuration.nix.
         hostname = "nom.jupiter.au";
-        host = "10.1.1.3";
+        host = config.jupiter.fleet.addresses.callisto;
         port = 8092;
       }
       {
@@ -346,7 +330,7 @@
         # /private_<token> path is the shared secret and is NOT stored here
         # (it lives as the MCP_HA_URL secret in the Aeon repo).
         hostname = "ha-mcp.jupiter.au";
-        host = "10.1.1.72";
+        host = config.jupiter.fleet.addresses.homeassistant;
         port = 9583;
       }
     ];
@@ -373,6 +357,10 @@
   jupiter.services.syncthing = {
     enable = true;
     dataDir = "/tank/personal";
+    # The WebUI is the device/folder management plane; exposing it to the
+    # LAN is an explicit opt-in on this trusted home segment (the module
+    # default is loopback-only).
+    exposeLan = true;
   };
 
   # SMART monitoring on all attached disks (OS SSD + WD 18TB drives).
@@ -392,7 +380,9 @@
   # Bulk-stage No-Intro Nintendo cartridge ROMs via Minerva torrents, verify
   # against DATs with igir, scrape Pegasus metadata with Skyscraper, and emit
   # a periodic library inventory. Acquisition/verify are manual oneshots (no
-  # timer — start them explicitly); scraping runs daily; inventory every 15min.
+  # timer — start them explicitly); scraping runs daily; inventory hourly
+  # (arcade-inventory.nix: OnBootSec=2m, OnUnitActiveSec=1h — a full walk
+  # stats every file on multi-TB trees, so it is deliberately not frequent).
   # Kiosks mount /tank/archive/retro/games/cartridge read-only.
   jupiter.services.romAcquire.enable = true;
   jupiter.services.romScraper.enable = true;

@@ -15,7 +15,19 @@ let
 in
 {
   options.jupiter.services.syncthing = {
-    enable = lib.mkEnableOption "Enable Syncthing for user io";
+    enable = lib.mkEnableOption "Syncthing for user io";
+
+    exposeLan = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        Bind the GUI to all interfaces and open its port. The WebUI is the
+        device/folder management plane (overrideDevices/overrideFolders are
+        false below) and Syncthing applies its own admin/GUI auth only to
+        non-local connections — loopback-only is the safe default. Flip on
+        only where the LAN is an accepted trust boundary (europa does).
+      '';
+    };
 
     dataDir = lib.mkOption {
       type = lib.types.str;
@@ -38,18 +50,13 @@ in
       configDir = "${cfg.dataDir}/.config/syncthing";
       overrideDevices = false; # Let the user manage devices via WebUI
       overrideFolders = false; # Let the user manage folders via WebUI
-      guiAddress = "0.0.0.0:8384"; # Accessible over LAN/Headscale
+      guiAddress = if cfg.exposeLan then "0.0.0.0:8384" else "127.0.0.1:8384";
+      # Upstream covers 22000/tcp+udp + 21027/udp (discovery); the GUI port
+      # is ours to open.
+      openDefaultPorts = true;
     };
 
-    # Open firewall for syncthing discovery, transfers, and GUI
-    networking.firewall.allowedTCPPorts = [
-      8384
-      22000
-    ];
-    networking.firewall.allowedUDPPorts = [
-      22000
-      21027
-    ];
+    networking.firewall.allowedTCPPorts = lib.optional cfg.exposeLan 8384;
 
     # Ensure the data dir exists and is owned by the service user. ZFS dataset
     # mountpoints (e.g. /tank/personal) are created root-owned by the NAS

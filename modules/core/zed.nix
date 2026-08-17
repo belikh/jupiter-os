@@ -8,6 +8,9 @@
 let
   cfg = config.jupiter.core.zed;
 
+  # The z.ai endpoint + GLM-4.6 constants are shared with crush.nix's
+  # provider block (both wrap the same account); the schemas are tool-specific
+  # so they are NOT merged — keep the URLs/model names in sync by hand.
   zedSettings = pkgs.writeText "zed-settings.json" (
     builtins.toJSON {
       language_models = {
@@ -68,7 +71,7 @@ in
     # so this survives reboots. Re-synced on every activation, so the
     # committed config always wins over local edits made through Zed's UI.
     system.activationScripts.zedSettings = lib.stringAfter [ "users" ] ''
-      install -D -m 0644 -o io -g users ${zedSettings} /home/io/.config/zed/settings.json
+      install -D -m 0644 -o io -g users ${zedSettings} ${config.users.users.io.home}/.config/zed/settings.json
     '';
   };
 }

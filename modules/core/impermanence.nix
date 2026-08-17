@@ -83,8 +83,13 @@ in
       ]
       ++ cfg.extraFiles;
       # Persist the primary admin account's home (unless this is an appliance),
-      # merged with any host-specific service accounts in `users`.
-      users =
+      # merged with any host-specific service accounts in `users`. mkMerge,
+      # NOT `//`: `//` replaces the whole io attrset, so a host setting
+      # jupiter.core.impermanence.users.io would silently DROP these admin
+      # defaults instead of extending them. Under mkMerge the submodule
+      # option merge applies and the lists concatenate (e.g. dashboard-gaming
+      # adds the gamer user; cartridges adds its own entry).
+      users = lib.mkMerge [
         (lib.optionalAttrs cfg.persistAdminHome {
           io = {
             directories = [
@@ -100,7 +105,8 @@ in
             ];
           };
         })
-        // cfg.users;
+        cfg.users
+      ];
     };
   };
 }

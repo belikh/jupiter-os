@@ -33,6 +33,12 @@
 let
   cfg = config.jupiter.dashboardGaming;
 
+  # Session helpers shared with arcade-console.nix (single source of truth).
+  inherit (import ../lib.nix { inherit config lib pkgs; })
+    mkSessionLauncher
+    mkSessionOnTty1
+    ;
+
   # Launch a mode's session through a PATH that resolves the programs.steam /
   # heroic / lutris wrappers (/run/current-system/sw/bin). The explicit
   # XDG_RUNTIME_DIR / DBUS env is needed because a plain systemd service does
@@ -57,57 +63,18 @@ let
   # risk). Clearing the ambient set here, before gamescope ever execs the app,
   # means nothing downstream inherits it. The dashboard (Chromium under cage)
   # never hits this because it doesn't sandbox with bwrap.
-  mkLauncher =
-    mode: command:
-    pkgs.writeShellScript "jupiter-${mode}-session" ''
-      export PATH=/run/current-system/sw/bin:$PATH
-      export XDG_RUNTIME_DIR="/run/user/$(id -u ${cfg.sessionUser})"
-      export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
-      exec ${pkgs.libcap}/bin/capsh --noamb -- -c 'exec ${command}'
-    '';
+  #
+  # The launcher script itself lives in modules/lib.nix now (mkSessionLauncher)
+  # — shared byte-for-byte with arcade-console.nix so the two cannot drift.
+  mkLauncher = mode: command: mkSessionLauncher mode cfg.sessionUser command;
 
   # Shared tty1 PAM/logind seat wiring — a start/stoppable system unit that can
   # grab DRM master on tty1. Modelled on nixpkgs' services.cage: pam_systemd
   # registers a seat session on the VT, which is what grants DRM master. tty1
   # is SHARED with cage and every other mode (not a separate VT per session):
   # the launcher's group mutex stops the others before this starts, so only one
-  # ever holds the display.
-  sessionOnTty1 = {
-    after = [
-      "systemd-user-sessions.service"
-      "systemd-logind.service"
-      "getty@tty1.service"
-    ];
-    before = [ "graphical.target" ];
-    conflicts = [
-      "getty@tty1.service"
-      "autovt@tty1.service"
-      "cage-tty1.service"
-    ];
-    # Deploy-proofing: a switch that touches the unit file must not stop the
-    # live tty1 session (stop = full stop-timeout hang, see TimeoutStopSec);
-    # let the change apply at the next organic mode flip instead.
-    stopIfChanged = false;
-    unitConfig.ConditionPathExists = "/dev/tty1";
-    serviceConfig = {
-      TTYPath = "/dev/tty1";
-      TTYReset = true;
-      TTYVHangup = true;
-      TTYVTDisallocate = true;
-      StandardInput = "tty-fail";
-      StandardOutput = "journal";
-      StandardError = "journal";
-      UtmpIdentifier = "tty1";
-      UtmpMode = "user";
-      Restart = "always";
-      RestartSec = 2;
-      # gamescope ignores SIGTERM while its children tear down; bound the
-      # stop (Valve's gamescope-session.service uses 10s) so a mode flip
-      # can't hang 90s and end in Result=timeout. Keep in sync with
-      # arcade-console.nix's sessionOnTty1.
-      TimeoutStopSec = 10;
-    };
-  };
+  # ever holds the display. Full key-by-key rationale in modules/lib.nix.
+  sessionOnTty1 = mkSessionOnTty1 { conditionOnTty1 = true; };
 
   # Single source of truth for the mode catalogue. Drives both the option
   # interface (modes.<name>.enable / .command, generated below) and the session
@@ -203,13 +170,12 @@ in
     # Stock kernel + stock Mesa: these are low-power Intel (HD 520) kiosks on
     # ZFS, not CachyOS boxes. gamingMode.autoStart = false is load-bearing:
     # jovian's autoStart would enable SDDM (conflicts with cage); we drive each
-    # session via the jupiter-<mode> services below instead.
+    # session via the jupiter-<mode> services below instead. (The console
+    # module pins the stock kernel itself — no kernel/Mesa toggles here.)
     jupiter.gaming.console = {
       enable = true;
       gpu = "intel";
       user = cfg.sessionUser;
-      cachyOsKernel = false;
-      mesaGit = false;
       gamingMode = {
         enable = true;
         autoStart = false;

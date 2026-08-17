@@ -10,13 +10,15 @@ let
 
   ecc = pkgs.buildNpmPackage rec {
     pname = "ecc-universal";
-    version = "2.0.0";
+    # Rev-suffixed so the version string identifies the pinned commit
+    # (upstream tags moved past this rev).
+    version = "2.0.0-unstable-2026-07-19";
 
     src = pkgs.fetchFromGitHub {
       owner = "affaan-m";
       repo = "ecc";
       rev = "4130457d674d2180c5af2c5f634f3cae4cbc6c4f";
-      sha256 = "17sdpi95in7956imnkvw4682c44l4sa7fx9pq72wgb7v9d6k1whk";
+      sha256 = "sha256-E/IwTUv7rMfFwTd1d5QmlBAmkCF8T1ujKenYWFK8TZ8=";
     };
 
     postPatch = ''
@@ -32,6 +34,7 @@ let
       description = "Harness-native agent operating system (Everything Claude Code)";
       homepage = "https://github.com/affaan-m/ecc";
       license = licenses.mit;
+      mainProgram = "ecc";
     };
   };
 in

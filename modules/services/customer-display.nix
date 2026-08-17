@@ -43,6 +43,11 @@
 let
   cfg = config.jupiter.customerDisplay;
 
+  inherit (import ../lib.nix { inherit config lib pkgs; })
+    polkitUnitRule
+    tcxwaveMqttPy
+    ;
+
   cdpAnim =
     pkgs.writers.writePython3Bin "tcxwave-cdp-anim"
       {
@@ -70,6 +75,10 @@ let
         import sys
         import threading
         import time
+
+        # Shared MQTT/password/hostname scaffolding (modules/lib.nix) —
+        # identical in customer-msr.nix's daemon.
+        ${tcxwaveMqttPy}
 
         VENDOR = 0x0F66
         PRODUCT = 0x4500
@@ -408,33 +417,20 @@ let
 
         def start_mqtt(notif, broker, port, username, password, base, host,
                        default_ttl):
-            import paho.mqtt.client as mqtt
-
-            try:
-                client = mqtt.Client(
-                    mqtt.CallbackAPIVersion.VERSION1,
-                    client_id='cdp-%s-%d' % (host, os.getpid()),
-                )
-            except (AttributeError, TypeError):
-                client = mqtt.Client(client_id='cdp-%s-%d' % (host, os.getpid()))
-
-            if username:
-                client.username_pw_set(username, password or None)
-            client.reconnect_delay_set(min_delay=2, max_delay=30)
-            client.will_set('%s/%s/state' % (base, host),
-                             payload='offline', retain=True)
-            subs = ['%s/%s' % (base, host), '%s/all' % base]
-
+            # Client construction/credentials/LWT/reconnect live in the shared
+            # tcxwaveMqttPy block (modules/lib.nix) — identical scaffolding to
+            # customer-msr.nix; only the subscriptions differ per daemon.
             def on_connect(c, _u, _flags, rc):
                 if rc == 0:
-                    for tp in subs:
+                    for tp in ('%s/%s' % (base, host), '%s/all' % base):
                         c.subscribe(tp)
                     c.publish('%s/%s/state' % (base, host),
                               payload='online', retain=True)
                 else:
                     print('mqtt connect rc=%s' % rc, file=sys.stderr)
 
-            client.on_connect = on_connect
+            client = make_mqtt_client('cdp', username, password, base, host,
+                                      on_connect)
             client.on_message = lambda c, _u, m: parse_message(
                 m.payload, notif, default_ttl)
             client.connect_async(broker, port, 60)
@@ -458,25 +454,19 @@ let
             ap.add_argument('--per-effect', type=float, default=10.0)
             ap.add_argument('--notif-ttl', type=float, default=8.0)
             ap.add_argument('--mqtt', action='store_true')
-            ap.add_argument('--broker', default='10.1.1.3')
+            ap.add_argument('--broker', default='${config.jupiter.fleet.addresses.callisto}')
             ap.add_argument('--port', type=int, default=1883)
             ap.add_argument('--username', default="")
             ap.add_argument('--password-file', default="")
             ap.add_argument('--topic', default='ha-linux-agent/customer-display')
             args = ap.parse_args()
             delay = 1.0 / max(args.fps, 0.1)
-            host = socket.gethostname().split('.')[0]
+            host = short_hostname()
 
             notif = Notification()
             if args.mqtt:
-                password = ""
-                if args.password_file:
-                    try:
-                        with open(args.password_file) as f:
-                            password = f.read().strip()
-                    except OSError as e:
-                        print('cannot read password file: %s' % e,
-                              file=sys.stderr)
+                password = read_password_file(args.password_file) \
+                    if args.password_file else ""
                 start_mqtt(notif, args.broker, args.port, args.username,
                            password, args.topic, host, args.notif_ttl)
                 print('mqtt: %s@%s:%d %s/*' %
@@ -571,6 +561,8 @@ let
       '';
 in
 {
+  imports = [ ../network/fleet.nix ];
+
   options.jupiter.customerDisplay = {
     enable = lib.mkEnableOption "TCxWave customer display animation + notifier";
 
@@ -622,7 +614,7 @@ in
 
       broker = lib.mkOption {
         type = lib.types.str;
-        default = "10.1.1.3";
+        default = config.jupiter.fleet.addresses.callisto;
         description = "Mosquitto broker address (the fleet broker on callisto).";
       };
 
@@ -700,14 +692,8 @@ in
     # in homeassistant, does nothing" — found live 2026-07-26, the exact gap
     # tcxwave-touch-wake.nix's matching rule for tcxwave-screen-power.service
     # already closed for that unit).
-    security.polkit.extraConfig = ''
-      polkit.addRule(function(action, subject) {
-        if (action.id == "org.freedesktop.systemd1.manage-units" &&
-            action.lookup("unit") == "tcxwave-cdp-anim.service" &&
-            subject.user == "io") {
-          return polkit.Result.YES;
-        }
-      });
-    '';
+    # (rule body shared with tcxwave-touch-wake.nix in modules/lib.nix:
+    # polkitUnitRule — scoped to exactly this unit and the `io` user.)
+    security.polkit.extraConfig = polkitUnitRule "io" "tcxwave-cdp-anim.service";
   };
 }

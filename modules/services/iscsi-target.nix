@@ -38,7 +38,11 @@
 let
   cfg = config.jupiter.services.iscsiTarget;
 
-  backstoreName = "callisto-root";
+  # An option, not a hardcoded literal: the header claims this module is
+  # host-agnostic, and the backstore name leaks into targetcli error
+  # messages (see the ExecStartPost note below), so a second diskless host
+  # must be able to rename it.
+  backstoreName = cfg.backstoreName;
   zvolPath = "/dev/zvol/${cfg.zvolDataset}";
 
   # Derived from zvolDataset rather than hardcoded, so moving the backing
@@ -51,8 +55,16 @@ let
   parentDataset = lib.concatStringsSep "/" (lib.init datasetParts);
 in
 {
+  imports = [ ../network/fleet.nix ];
+
   options.jupiter.services.iscsiTarget = {
     enable = lib.mkEnableOption "a declarative LIO iSCSI target exporting one zvol as one LUN to one initiator";
+
+    backstoreName = lib.mkOption {
+      type = lib.types.str;
+      default = "callisto-root";
+      description = "LIO block-backstore name for the exported zvol (appears in targetcli state and its warnings).";
+    };
 
     zvolDataset = lib.mkOption {
       type = lib.types.str;
@@ -82,7 +94,7 @@ in
 
     portalAddress = lib.mkOption {
       type = lib.types.str;
-      default = "10.1.1.2";
+      default = config.jupiter.fleet.addresses.europa;
       description = "iSCSI portal (target) bind address.";
     };
 
