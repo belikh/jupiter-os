@@ -204,8 +204,8 @@ in
         # (keyed gap-fill). Both are optional at runtime -- the script degrades
         # to unkeyed thegamesdb when a file is empty/absent. The values live in
         # secrets/secrets.yaml. Declared unconditionally here (matching
-        # attic-server.nix / cloudflare-tunnel.nix) since every host that
-        # enables this module imports sops-nix via common.nix.
+        # cloudflare-tunnel.nix) since every host that enables this module
+        # imports sops-nix via common.nix.
         sops.secrets.screenscraper_creds = { };
         sops.secrets.tgdb_apikey = { };
 

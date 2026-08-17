@@ -29,6 +29,12 @@ global launcher script).
   / `extract-launchbox-metadata.sh` — one-shot europa provisioning/migration
   scripts whose jobs are done (consolidate-collections.sh is destructive if
   re-run: it zfs-destroys staging datasets)
+- `cartridge-integrate.sh` — the transitional bulk-load watcher from the
+  2026-07-31 cartridge pull (commit 4ba4f7f). Superseded by the declarative
+  `jupiter-rom-verify` + `jupiter-rom-scrape` units; never wired into any
+  module. Do not run it against the live tree: it promotes staged ROMs
+  WITHOUT igir DAT verification and its minimal metadata seeds an unquoted
+  `{file.path}` launch line that word-splits No-Intro paths.
 - `validate-arcade-metadata.sh` / `verify-pegasus-artwork.sh` — validators
   that never worked: under `set -eu`, `((PASS++))` exits 1 on the first
   passing check; superseded by scripts/verify-exo-collections.sh

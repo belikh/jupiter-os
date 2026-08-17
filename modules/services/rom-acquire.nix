@@ -103,11 +103,6 @@ let
       core = "desmume2015"; # no DSi mode; boots the NDS-compatible majority
       bucket = "cartridge";
     };
-    acorn = {
-      torrent = "Minerva_Myrient - No-Intro - Acorn - Archimedes.torrent";
-      core = "mame";
-      bucket = "cartridge";
-    };
     # --- optical bucket (large disc images, 1M dataset) ---
     gamecube = {
       torrent = "Minerva_Myrient - No-Intro - Non-Redump - Nintendo - Nintendo GameCube.torrent";

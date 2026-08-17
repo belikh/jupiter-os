@@ -451,7 +451,13 @@ if [ "$EMULATOR" = "86box" ]; then
     # line from Pegasus passes the lowercase `86box` token, which we use only
     # to branch above. -F fullscreen, -N no confirm-on-quit, -P VM root,
     # -R ROM dir, then the staged per-game cfg.
-    exec env PULSE_SINK=bluez_output.D8_E3_5E_8A_72_E5.1 86Box \
+    #
+    # Audio: PULSE_SINK used to hardcode the BT speaker paired to one kiosk.
+    # It is a fallback only now — an inherited PULSE_SINK or EXO_AUDIO_SINK
+    # (settable by the session unit / a future exodos module option) wins, so
+    # hosts without that device follow the declarative default routing
+    # (jupiter.arcadeConsole.audioOutput) instead of a dead sink name.
+    exec env PULSE_SINK="${EXO_AUDIO_SINK:-${PULSE_SINK:-bluez_output.D8_E3_5E_8A_72_E5.1}}" 86Box \
         -F -N -P "$VMPATH" -R "$VMPATH/roms" "$WRITABLE_CFG"
 fi
 
@@ -465,4 +471,5 @@ fi
 if [ -n "$OVERRIDE" ] && [ -f "$OVERRIDE" ]; then
     set -- "$@" -conf "$OVERRIDE"
 fi
-exec env PULSE_SINK=bluez_output.D8_E3_5E_8A_72_E5.1 "$EMULATOR" "$@" -noconsole -c exit
+# Audio: same overridable fallback as the 86Box branch above.
+exec env PULSE_SINK="${EXO_AUDIO_SINK:-${PULSE_SINK:-bluez_output.D8_E3_5E_8A_72_E5.1}}" "$EMULATOR" "$@" -noconsole -c exit

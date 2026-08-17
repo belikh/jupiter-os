@@ -1,6 +1,27 @@
 # Game Collection Archival Guide
 
-This document outlines the process for archiving full game collections to the jupiter-os arcade system.
+> **⚠️ STALE (2026-08): the procedures below describe the RETIRED issue-30
+> stack and must not be followed.** `consolidate-collections.sh` and
+> `setup-exowin9x.sh` now live in `scripts/deprecated/` (the former is
+> destructive if re-run — it zfs-destroys staging datasets), the
+> `jupiter.services.arcadeCollectionDownloader` option and
+> `/etc/download-arcade-torrent.sh` do not exist in any module, and
+> `pegasus-rom-launch` was never a Pegasus setting. The live acquisition +
+> archival pipeline is:
+>
+> - **Console ROM sets** — `modules/services/rom-acquire.nix`
+>   (`jupiter-rom-acquire` aria2 oneshot → `jupiter-rom-verify` igir DAT
+>   verify/promote) + `modules/services/rom-scraper.nix` (Skyscraper →
+> Pegasus metadata). See `docs/adr/0001-bulk-staged-rom-acquisition.md`.
+> - **Large curated collections (eXo & friends)** — stage the data under
+>   `/tank/archive/retro/games/curated/<name>/` (own ZFS dataset per
+>   collection, `modules/storage/zfs-nas.nix`), then wire it kiosk-side the
+>   way `modules/desktop/exodos.nix` does (per-collection RO NFS mount +
+>   metadata generator + launcher). There is no generic downloader service;
+>   fetching a collection torrent is a one-time manual step on europa.
+>
+> The directory-layout notes and the collection table below remain accurate
+> reference material.
 
 ## Current Status
 

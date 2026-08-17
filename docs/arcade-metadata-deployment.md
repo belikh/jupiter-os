@@ -1,6 +1,17 @@
 # Pegasus Arcade Metadata Deployment Plan
 
-**Status:** Ready for deployment  
+> **⚠️ SUPERSEDED (2026-08) — do not deploy this plan.** It targets the
+> retired issue-30 metadata stack: `generate-arcade-metadata.py` and
+> `extract-launchbox-metadata.sh` are quarantined in `scripts/deprecated/`
+> (never worked — see that dir's README), and `launch: pegasus-rom-launch`
+> was never a valid Pegasus launch path. The live generators are
+> `scripts/exo-to-pegasus.py` (eXo collections, run per-session by
+> `jupiter-exodos-metadata.service` from `modules/desktop/exodos.nix`) and
+> `scripts/cartridge-scrape.sh` (console collections, driven daily by
+> `jupiter-rom-scrape` from `modules/services/rom-scraper.nix`). Kept for
+> historical reference only.
+
+**Status:** ~~Ready for deployment~~ superseded  
 **Last Updated:** 2026-07-30  
 **Verified:** Field names fixed, directory structure corrected, trap fixture checklist prepared  
 

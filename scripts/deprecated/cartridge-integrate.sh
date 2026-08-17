@@ -1,4 +1,13 @@
 #!/usr/bin/env bash
+# DEPRECATED 2026-08 — superseded by the declarative pipeline
+# (modules/services/rom-acquire.nix jupiter-rom-acquire + jupiter-rom-verify,
+# modules/services/rom-scraper.nix jupiter-rom-scrape). Kept as the
+# operational record of the initial No-Intro bulk load. DO NOT RUN against
+# the live tree: its promote path moves staged ROMs into games/cartridge
+# WITHOUT the igir DAT verification that jupiter-rom-verify exists to
+# perform, and its minimal metadata writes an UNQUOTED {file.path} launch
+# token that word-splits No-Intro paths (spaces/parens) at launch time.
+#
 # cartridge-integrate: persistent watcher. As aria2 marks each No-Intro
 # Nintendo cartridge system complete, it (A) promotes the ROMs into the
 # playable tree + writes a minimal Pegasus collection file so the system is

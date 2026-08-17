@@ -29,6 +29,12 @@
 # Idempotent + safe to re-run: an empty staged tree is a no-op, and a re-run
 # that re-stages a ROM already present in the cartridge tree (same canonical
 # No-Intro name) just deletes the duplicate instead of re-quarantining it.
+#
+# A system whose staged tree still holds aria2 control files (*.aria2) is
+# SKIPPED entirely: the control files are aria2's resume state and the
+# partial/preallocated ROM files cannot DAT-match, so processing a
+# mid-download system would quarantine both and destroy the download's
+# progress.
 
 set -euo pipefail
 
@@ -53,18 +59,26 @@ log()  { printf '[cartridge-verify] %s\n' "$*" >&2; }
 warn() { printf '[cartridge-verify] WARNING: %s\n' "$*" >&2; }
 
 # Move every regular file left staged for <sys> (i.e. not consumed by igir)
-# into the quarantine tree. A leftover whose canonical relative path already
-# exists under the cartridge tree was promoted on a previous run, so delete it
-# rather than duplicating it under quarantine. Echoes the count of files
-# actually quarantined (duplicates deleted are not counted).
+# into the quarantine tree. aria2 control files are never touched (they are
+# resume state, not ROMs). A leftover already promoted on a previous run is
+# deleted rather than duplicated under quarantine — igir writes promotions
+# under the ROM's CANONICAL DAT name (flattened by --dir-game-subdir never),
+# which usually differs from the staged Minerva_Myrient/... relative path, so
+# the basename is checked under the cartridge tree (any depth) as well as the
+# literal relative path. Echoes the count of files actually quarantined
+# (duplicates deleted are not counted).
 quarantine_leftovers() {
   local incoming="$1" cartridge="$2" quarantine="$3"
   mkdir -p "$quarantine"
-  local qcount=0 f rel dest
+  local qcount=0 f rel base
   while IFS= read -r -d '' f; do
+    case "$f" in
+      *.aria2) continue ;;
+    esac
     rel="${f#"$incoming"/}"
-    dest="$cartridge/$rel"
-    if [ -e "$dest" ]; then
+    base=$(basename -- "$f")
+    if [ -e "$cartridge/$rel" ] || [ -e "$cartridge/$base" ] \
+       || [ -n "$(find "$cartridge" -type f -name "$base" -print -quit 2>/dev/null)" ]; then
       rm -f -- "$f"
       log "dropping already-promoted duplicate: $rel"
     else
@@ -89,6 +103,14 @@ process_system() (
   if [ ! -d "$incoming" ] \
      || [ -z "$(find "$incoming" -type f -print -quit)" ]; then
     log "$sys: nothing staged, skipping"
+    exit 0
+  fi
+
+  # Download still in flight? The .aria2 control files are aria2's resume
+  # state, and the partial files cannot DAT-match — verifying now would
+  # quarantine both and destroy the download's progress.
+  if [ -n "$(find "$incoming" -name '*.aria2' -print -quit 2>/dev/null)" ]; then
+    log "$sys: still downloading (aria2 control files present), skipping"
     exit 0
   fi
 

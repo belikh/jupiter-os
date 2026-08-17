@@ -29,7 +29,7 @@
 # only the datasets actually used and contributes per-system collection roots.
 #
 # Launch strategy: libretro cores exist in nixpkgs for every system except Wii U,
-# so 16 of 17 systems launch through the uniform `jupiter-retroarch -L <core>`
+# so 18 of 19 systems launch through the uniform `jupiter-retroarch -L <core>`
 # wrapper (the launch line lives in each collection's metadata.pegasus.txt,
 # written by Skyscraper on europa). Wii U has no libretro core, so it launches
 # through the standalone `jupiter-cemu` wrapper instead (gate on needsCemu).

@@ -3,7 +3,7 @@
 # on europa. Emits Pegasus frontend metadata (metadata.pegasus.txt + media/)
 # for each console system, with launch lines that hand off to the kiosk-side
 # launch wrappers (see modules/desktop/cartridges.nix): `jupiter-retroarch
-# -L <core>` for the 16 libretro systems, `jupiter-cemu` for Wii U:
+# -L <core>` for the 18 libretro-core systems, `jupiter-cemu` for Wii U:
 #
 #     launch: jupiter-retroarch -L <core> "{file.path}"
 #
@@ -61,7 +61,7 @@ PLATFORMS=("$@")
 SKYSCRAPER=${SKYSCRAPER:-Skyscraper}
 
 # system -> launch command prefix (the Pegasus `launch:` line written into each
-# collection's metadata.pegasus.txt). 16 of 17 systems use the uniform
+# collection's metadata.pegasus.txt). 18 of 19 systems use the uniform
 # `jupiter-retroarch -L <core>` path; Wii U has no libretro core, so it launches
 # through the standalone `jupiter-cemu` wrapper instead. Keep in sync with
 # modules/desktop/cartridges.nix's systems catalogue (the source of truth for

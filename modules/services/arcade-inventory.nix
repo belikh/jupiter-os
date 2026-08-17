@@ -1,12 +1,18 @@
 # Fleet arcade inventory — europa-side snapshot of the retro game library.
 #
-# Not an always-on daemon. A 15-minute systemd timer fires a oneshot that
+# Not an always-on daemon. An hourly systemd timer fires a oneshot that
 # walks the console trees across all three datasets (cartridge/optical/modern:
 # per-system ROM counts + du -sb), the three eXo curated collections (game vs.
 # box_front line coverage in each metadata.pegasus.txt), and the current
 # rom-acquire unit state, then writes
 # a single JSON document to the retro state dir. kiosks and operators read
 # that file; nothing polls europa.
+#
+# Cadence note: hourly, not every few minutes, on purpose — the count/size
+# walk stats every file on multi-TB optical/modern trees, and the library
+# only changes when the manual rom-acquire/rom-verify oneshots or the daily
+# scrape run. `make status-arcade` reads whatever was last written; boot +
+# 2m still gives a fresh document after a reboot.
 #
 # Optional MQTT publishing: when `publishMqtt` is on, the same JSON is
 # `mosquitto_pub`'d (retained) to the callisto broker under
@@ -317,7 +323,7 @@ in
       wantedBy = [ "timers.target" ];
       timerConfig = {
         OnBootSec = "2m";
-        OnUnitActiveSec = "15m";
+        OnUnitActiveSec = "1h";
         Persistent = true;
       };
     };
