@@ -91,7 +91,7 @@ let
           # block) — same extension lists cartridges.nix mounts and
           # cartridge-scrape.sh matches against.
           case "''$1" in
-    ''${patternCase}
+    ${patternCase}
             *) : ;; # unknown system → empty pattern, skipped below
           esac
         }
