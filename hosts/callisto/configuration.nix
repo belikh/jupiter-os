@@ -309,6 +309,11 @@
     environmentFile = config.sops.secrets.dsh_env.path;
     settingsFile =
       (pkgs.writeText "dsh-settings.yaml" ''
+        # Default model for new sessions/agents (settings ns: agent-default-model)
+        agent-default-model:
+          provider: zai-coding
+          model: glm-5.3
+
         llm-pi-ai:
           providers:
             zai-coding:
