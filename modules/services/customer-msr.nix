@@ -38,6 +38,8 @@
 let
   cfg = config.jupiter.customerMsr;
 
+  inherit (import ../lib.nix { inherit config lib pkgs; }) tcxwaveMqttPy;
+
   msrDaemon =
     pkgs.writers.writePython3Bin "tcxwave-msr"
       {
@@ -61,6 +63,10 @@ let
         import struct
         import sys
         import time
+
+        # Shared MQTT/password/hostname scaffolding (modules/lib.nix) —
+        # identical in customer-display.nix's daemon.
+        ${tcxwaveMqttPy}
 
         VENDOR = 0x0F66
         PRODUCT = 0x4500
@@ -159,21 +165,10 @@ let
 
 
         def connect_mqtt(broker, port, username, password, base, host):
-            import paho.mqtt.client as mqtt
-
-            try:
-                client = mqtt.Client(
-                    mqtt.CallbackAPIVersion.VERSION1,
-                    client_id='msr-%s-%d' % (host, os.getpid()),
-                )
-            except (AttributeError, TypeError):
-                client = mqtt.Client(client_id='msr-%s-%d' % (host, os.getpid()))
-            if username:
-                client.username_pw_set(username, password or None)
-            client.reconnect_delay_set(min_delay=2, max_delay=30)
-            client.will_set('%s/%s/state' % (base, host),
-                             payload='offline', retain=True)
-
+            # Client construction/credentials/LWT/reconnect live in the shared
+            # tcxwaveMqttPy block (modules/lib.nix) — identical scaffolding to
+            # customer-display.nix; only on_connect (HA discovery instead of
+            # topic subscriptions) differs per daemon.
             def on_connect(c, _u, _f, rc):
                 if rc == 0:
                     c.publish('%s/%s/state' % (base, host),
@@ -182,7 +177,8 @@ let
                 else:
                     print('mqtt connect rc=%s' % rc, file=sys.stderr)
 
-            client.on_connect = on_connect
+            client = make_mqtt_client('msr', username, password, base, host,
+                                      on_connect)
             client.connect_async(broker, port, 60)
             client.loop_start()
             return client
@@ -190,21 +186,16 @@ let
 
         def main():
             ap = argparse.ArgumentParser()
-            ap.add_argument('--broker', default='10.1.1.3')
+            ap.add_argument('--broker', default='${config.jupiter.fleet.addresses.callisto}')
             ap.add_argument('--port', type=int, default=1883)
             ap.add_argument('--username', default="")
             ap.add_argument('--password-file', default="")
             ap.add_argument('--topic', default='ha-linux-agent/msr')
             args = ap.parse_args()
-            host = socket.gethostname().split('.')[0]
+            host = short_hostname()
 
-            password = ""
-            if args.password_file:
-                try:
-                    with open(args.password_file) as f:
-                        password = f.read().strip()
-                except OSError as e:
-                    print('cannot read password file: %s' % e, file=sys.stderr)
+            password = read_password_file(args.password_file) \
+                if args.password_file else ""
             client = connect_mqtt(args.broker, args.port, args.username,
                                   password, args.topic, host)
             pub = '%s/%s' % (args.topic, host)
@@ -273,16 +264,22 @@ let
 
 
         def publish(client, topic, host, swipe):
+            # Only the PAN digits cross the wire. The RAW magstripe track
+            # (sentinels, field separators, LRC, and on track1 the cardholder
+            # NAME + expiry + discretionary data incl. CVV-ish service codes)
+            # is deliberately NOT published or logged: mosquitto on callisto
+            # retains topic history for every fleet host, and MQTT has no
+            # per-message confidentiality — a full track in a topic is a
+            # PCI-DSS non-starter sitting next to the kiosk network.
             card = digits(swipe)
             payload = json.dumps({
                 'host': host,
                 'card': card,
-                'raw': swipe,
                 'ts': int(time.time()),
             })
             try:
                 client.publish(topic, payload=payload, qos=1, retain=False)
-                print('swipe: card=%s raw=%r' % (card, swipe), file=sys.stderr)
+                print('swipe: card=%s' % card, file=sys.stderr)
             except Exception as e:
                 print('publish failed: %s' % e, file=sys.stderr)
 
@@ -295,13 +292,15 @@ let
       '';
 in
 {
+  imports = [ ../network/fleet.nix ];
+
   options.jupiter.customerMsr = {
     enable = lib.mkEnableOption "TCxWave MSR card-swipe -> MQTT publisher";
 
     mqtt = {
       broker = lib.mkOption {
         type = lib.types.str;
-        default = "10.1.1.3";
+        default = config.jupiter.fleet.addresses.callisto;
         description = "Mosquitto broker address (the fleet broker on callisto).";
       };
 

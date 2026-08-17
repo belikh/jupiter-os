@@ -53,12 +53,15 @@
 let
   cfg = config.jupiter.cartridges;
 
-  # The console catalogue. Facts about the systems, not per-host tunables (the
-  # fleet is uniform). `dataset` selects which europa ZFS dataset (and thus NFS
-  # mount + recordsize) the ROMs live on. `core` is the libretro core basename
-  # retroarch loads with `-L`; systems without a `core` attr use the standalone
-  # `emulator` field instead (currently only wiiu → cemu, which has no libretro
-  # core).
+  inherit (import ../lib.nix { inherit config lib pkgs; }) nfsRoMountOptions;
+
+  # The console catalogue — DERIVED from scripts/cartridge-catalogue.tsv via
+  # modules/services/arcade-catalogue.nix (single source of truth shared with
+  # rom-acquire, rom-scraper, arcade-inventory and cartridge-scrape.sh).
+  # Fields not already in the catalogue are derived: shortname = the key,
+  # dataset = the catalogue's bucket (which europa ZFS dataset / NFS mount +
+  # recordsize the ROMs live on). `core`/`emulator` attrs are OMITTED when
+  # null so downstream `s ? core` presence checks keep working.
   #
   # nds/dsi use desmume2015 (HLE, no BIOS — works immediately). melonds has
   # better compat but needs bios7/bios9/firmware; switch once those are on-pool.
@@ -67,130 +70,16 @@ let
   # "viable for most titles" with a known failure tail on some EA/Konami
   # dual-core games; switch to standalone dolphin-emu (also in nixpkgs) if a
   # kiosk needs one of those.
-  systems = {
-    # --- original cartridge sets ---
-    nes = {
-      collection = "Nintendo Entertainment System";
-      shortname = "nes";
-      core = "fceumm";
-      dataset = "cartridge";
-    };
-    snes = {
-      collection = "Super Nintendo Entertainment System";
-      shortname = "snes";
-      core = "snes9x";
-      dataset = "cartridge";
-    };
-    gb = {
-      collection = "Nintendo Game Boy";
-      shortname = "gb";
-      core = "gambatte";
-      dataset = "cartridge";
-    };
-    gbc = {
-      collection = "Nintendo Game Boy Color";
-      shortname = "gbc";
-      core = "gambatte";
-      dataset = "cartridge";
-    };
-    gba = {
-      collection = "Nintendo Game Boy Advance";
-      shortname = "gba";
-      core = "mgba";
-      dataset = "cartridge";
-    };
-    n64 = {
-      collection = "Nintendo 64";
-      shortname = "n64";
-      core = "mupen64plus";
-      dataset = "cartridge";
-    };
-    # --- cartridge-era extras (small leaf ROMs, No-Intro Nintendo) ---
-    fds = {
-      collection = "Nintendo Famicom Disk System";
-      shortname = "fds";
-      core = "fceumm"; # same engine as NES; needs disksys.rom BIOS (see header)
-      dataset = "cartridge";
-    };
-    virtualboy = {
-      collection = "Nintendo Virtual Boy";
-      shortname = "virtualboy";
-      core = "beetle-vb";
-      dataset = "cartridge";
-    };
-    pokemonmini = {
-      collection = "Nintendo Pokemon Mini";
-      shortname = "pokemonmini";
-      core = "pokemini"; # FreeBIOS fallback, no BIOS required
-      dataset = "cartridge";
-    };
-    gameandwatch = {
-      collection = "Nintendo Game & Watch";
-      shortname = "gameandwatch";
-      core = "gw"; # runs .mgw simulators, no BIOS required
-      dataset = "cartridge";
-    };
-    nds = {
-      collection = "Nintendo DS";
-      shortname = "nds";
-      core = "desmume2015"; # HLE, no BIOS. melonds (better) needs bios7/9+firmware
-      dataset = "cartridge";
-    };
-    dsi = {
-      collection = "Nintendo DSi";
-      shortname = "dsi";
-      core = "desmume2015"; # no DSi mode; boots the NDS-compatible majority
-      dataset = "cartridge";
-    };
-    # --- optical (large disc images) ---
-    # Nintendo Non-Redump (GameCube/Wii) + Sony 1G1R (PlayStation/PS2, via the
-    # RetroAchievements one-rom-per-game sets). PS2 (pcsx2) is heavy — marginal
-    # on the HD 520 kiosks; PS1 (beetle-psx) is fine.
-    gamecube = {
-      collection = "Nintendo GameCube";
-      shortname = "gamecube";
-      core = "dolphin";
-      dataset = "optical";
-    };
-    wii = {
-      collection = "Nintendo Wii";
-      shortname = "wii";
-      core = "dolphin";
-      dataset = "optical";
-    };
-    ps1 = {
-      collection = "Sony PlayStation";
-      shortname = "ps1";
-      core = "beetle-psx";
-      dataset = "optical";
-    };
-    ps2 = {
-      collection = "Sony PlayStation 2";
-      shortname = "ps2";
-      core = "pcsx2"; # heavy on HD 520; expect marginal performance
-      dataset = "optical";
-    };
-    # --- modern (large disc/card images) ---
-    "3ds" = {
-      collection = "Nintendo 3DS";
-      shortname = "3ds";
-      core = "citra"; # libretro citra is unmaintained but builds here
-      dataset = "modern";
-    };
-    new3ds = {
-      collection = "Nintendo New 3DS";
-      shortname = "new3ds";
-      core = "citra";
-      dataset = "modern";
-    };
-    # --- Wii U: no libretro core; standalone Cemu ---
-    wiiu = {
-      collection = "Nintendo Wii U";
-      shortname = "wiiu";
-      emulator = "cemu"; # no `core` attr → standalone launch path
-      dataset = "modern";
-    };
-  };
+  systems = lib.mapAttrs (
+    name: v:
+    ({
+      inherit (v) collection;
+      shortname = name;
+      dataset = v.bucket;
+    })
+    // (lib.optionalAttrs (v.core != null) { inherit (v) core; })
+    // (lib.optionalAttrs (v.emulator != null) { inherit (v) emulator; })
+  ) config.jupiter.arcade.catalogue;
 
   systemNames = lib.attrNames systems;
   systemValues = builtins.attrValues systems;
@@ -288,16 +177,9 @@ let
     exec "${lib.getExe pkgs.cemu}" -f -g "$1"
   '';
 
-  # Shared NFS mount options (read-only, automounted, soft) for every dataset.
-  nfsMountOptions = [
-    "ro"
-    "noatime"
-    "soft"
-    "noauto"
-    "x-systemd.automount"
-    "x-systemd.idle-timeout=10min"
-    "x-systemd.mount-timeout=30"
-  ];
+  # NFS mount options live in modules/lib.nix (nfsRoMountOptions) — shared
+  # with exodos.nix so the two collections' mount semantics cannot drift.
+  nfsMountOptions = nfsRoMountOptions;
 
   # retroarch.cfg seed: saves redirected out of the read-only ROM tree into
   # per-kiosk persisted dirs, and the keyboardless exit combo (Start+Select
@@ -323,6 +205,10 @@ in
     ./arcade.nix
     ./dashboard-gaming.nix
     ./arcade-console.nix
+    # nfsHost default references the fleet topology module
+    ../network/fleet.nix
+    # the systems catalogue this module derives everything from
+    ../services/arcade-catalogue.nix
   ];
 
   options.jupiter.cartridges = {
@@ -337,7 +223,7 @@ in
 
     nfsHost = lib.mkOption {
       type = lib.types.str;
-      default = "10.1.1.2"; # europa's static LAN IP
+      default = config.jupiter.fleet.addresses.europa; # static LAN reservation
       description = ''
         NFS host serving the scraped console trees. Defaults to europa.
         Addressed by IP for the same reason every other cross-host wire is
@@ -412,16 +298,11 @@ in
     # hang emulator reads forever; automount + idle-timeout so each mount exists
     # only while something uses it. No overlay: ROMs are read directly and saves
     # don't write back here.
-    fileSystems = builtins.listToAttrs (
-      map (d: {
-        name = datasetMount.${d};
-        value = {
-          device = datasetNfsDevice d;
-          fsType = "nfs";
-          options = nfsMountOptions;
-        };
-      }) usedDatasets
-    );
+    fileSystems = lib.genAttrs usedDatasets (d: {
+      device = datasetNfsDevice d;
+      fsType = "nfs";
+      options = nfsMountOptions;
+    });
 
     environment.systemPackages = [
       jupiterRetroarch
@@ -448,6 +329,10 @@ in
         Type = "oneshot";
         User = cfg.sessionUser;
         Group = "users";
+        # `install` is coreutils — a system unit's default PATH does not
+        # include it on a bare system (found 2026-08-17 audit: the unit relied
+        # on the ambient profile PATH, which is empty for systemd services).
+        path = [ pkgs.coreutils ];
       };
       script = ''
         CFG="${cfg.sessionUserHome}/.config/retroarch/retroarch.cfg"

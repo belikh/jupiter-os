@@ -25,6 +25,17 @@
 let
   cfg = config.jupiter.services.romScraper;
 
+  # The console-system catalogue (single source: the parsed TSV).
+  catalogue = config.jupiter.arcade.catalogue;
+
+  # The committed TSV, copied into the store so cartridge-scrape.sh (inlined
+  # below) can parse it at runtime — the script builds its LAUNCH/SKYPLATFORM/
+  # COLLECTIONS maps + ROM_RE from the same rows this module derives its
+  # defaults from (see scripts/cartridge-catalogue.tsv).
+  catalogueTsv = pkgs.writeText "cartridge-catalogue.tsv" (
+    builtins.readFile ../../scripts/cartridge-catalogue.tsv
+  );
+
   # Inlined from scripts/ (single source of truth) exactly the way exodos
   # wraps exo-launch.sh, so the store path carries the script's shebang-free
   # runtime shell from writeShellScriptBin.
@@ -47,6 +58,8 @@ let
   platformsInBucket = bucket: lib.filter (p: datasetFor p == bucket) cfg.platforms;
 in
 {
+  imports = [ ./arcade-catalogue.nix ];
+
   options.jupiter.services.romScraper = {
     enable = lib.mkEnableOption ''
       headless Skyscraper scraper that builds Pegasus metadata + artwork for
@@ -90,37 +103,20 @@ in
 
     platforms = lib.mkOption {
       type = lib.types.listOf lib.types.str;
-      default = [
-        "gamecube"
-        "wii"
-        "ps1"
-        "ps2"
-        "nes"
-        "snes"
-        "gb"
-        "gbc"
-        "gba"
-        "n64"
-        "fds"
-        "virtualboy"
-        "pokemonmini"
-        "gameandwatch"
-        "nds"
-        "dsi"
-        "3ds"
-        "new3ds"
-        "wiiu"
-      ];
+      # Derived: every console system in the catalogue, in TSV row order.
+      default = lib.attrNames catalogue;
       description = ''
         Skyscraper platform names to scrape (one per system subdir under
-        <romRoot>). Defaults to every console system the kiosks expose. These
+        <romRoot>). Defaults to every console system the kiosks expose —
+        derived from scripts/cartridge-catalogue.tsv (single source). These
         are passed straight to `Skyscraper -p <platform>`, so each name must be
         a platform Skyscraper recognises; an unrecognised alias is logged and
         skipped by cartridge-scrape.sh (scraping is best-effort — the kiosk
         launch wiring works regardless of whether metadata was generated).
-        Verify Skyscraper aliases for the obscure platforms (fds, virtualboy,
-        pokemonmini, gameandwatch, dsi, new3ds, wiiu) on first run and adjust
-        here if a name differs.
+        The catalogue's per-system `skyHandle` column maps our dir keys to
+        Skyscraper's handles (ps1->psx, gamecube->gc, pokemonmini->pokemini,
+        dsi->nds, new3ds->3ds); verify the obscure ones (fds, virtualboy,
+        gameandwatch, wiiu) on first run and adjust the TSV if a name differs.
       '';
     };
 
@@ -150,35 +146,16 @@ in
           "modern"
         ]
       );
-      default = {
-        nes = "cartridge";
-        snes = "cartridge";
-        gb = "cartridge";
-        gbc = "cartridge";
-        gba = "cartridge";
-        n64 = "cartridge";
-        fds = "cartridge";
-        virtualboy = "cartridge";
-        pokemonmini = "cartridge";
-        gameandwatch = "cartridge";
-        nds = "cartridge";
-        dsi = "cartridge";
-        gamecube = "optical";
-        wii = "optical";
-        ps1 = "optical";
-        ps2 = "optical";
-        "3ds" = "modern";
-        new3ds = "modern";
-        wiiu = "modern";
-      };
+      # Derived from the catalogue's `bucket` column — rom-acquire's verify
+      # routing and cartridges.nix's dataset mounts read the same source.
+      default = lib.mapAttrs (_: v: v.bucket) catalogue;
       description = ''
         Which dataset (cartridge/optical/modern) each platform's ROMs live on.
         The scraper resolves each platform's ROM dir as
         `<root of its bucket>/<platform>/`, so optical platforms scrape from
         <option>opticalRoot</option> and modern from <option>modernRoot</option>
-        (mirroring the per-bucket verify routing in rom-acquire.nix). Keep in
-        sync with rom-acquire.nix's per-system `bucket` and cartridges.nix's
-        per-system `dataset`.
+        (mirroring the per-bucket verify routing in rom-acquire.nix). Defaults
+        derive from scripts/cartridge-catalogue.tsv — no hand-sync needed.
       '';
     };
 
@@ -238,6 +215,9 @@ in
             # construct a platform offscreen surface and aborts.
             QT_QPA_PLATFORM = "offscreen";
             SKYSCRAPER = "${pkgs.skyscraper}/bin/Skyscraper";
+            # The catalogue TSV (store copy) the inlined script parses its
+            # maps from — same rows this module's defaults derive from.
+            JUPITER_CATALOGUE_TSV = "${catalogueTsv}";
             # Activation-time sops secret paths (declarations above); the
             # scripts read these at runtime. ScreenScraper is the primary
             # source, TheGamesDB the keyed onlymissing gap-fill.

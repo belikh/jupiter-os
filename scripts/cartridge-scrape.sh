@@ -60,83 +60,41 @@ PLATFORMS=("$@")
 
 SKYSCRAPER=${SKYSCRAPER:-Skyscraper}
 
-# system -> launch command prefix (the Pegasus `launch:` line written into each
-# collection's metadata.pegasus.txt). 18 of 19 systems use the uniform
-# `jupiter-retroarch -L <core>` path; Wii U has no libretro core, so it launches
-# through the standalone `jupiter-cemu` wrapper instead. Keep in sync with
-# modules/desktop/cartridges.nix's systems catalogue (the source of truth for
-# cores + the cemu wrapper).
-declare -A LAUNCH=(
-  [nes]=jupiter-retroarch\ -L\ fceumm
-  [snes]=jupiter-retroarch\ -L\ snes9x
-  [gb]=jupiter-retroarch\ -L\ gambatte
-  [gbc]=jupiter-retroarch\ -L\ gambatte
-  [gba]=jupiter-retroarch\ -L\ mgba
-  [n64]=jupiter-retroarch\ -L\ mupen64plus
-  [fds]=jupiter-retroarch\ -L\ fceumm
-  [virtualboy]=jupiter-retroarch\ -L\ beetle-vb
-  [pokemonmini]=jupiter-retroarch\ -L\ pokemini
-  [gameandwatch]=jupiter-retroarch\ -L\ gw
-  [nds]=jupiter-retroarch\ -L\ desmume2015
-  [dsi]=jupiter-retroarch\ -L\ desmume2015
-  [gamecube]=jupiter-retroarch\ -L\ dolphin
-  [wii]=jupiter-retroarch\ -L\ dolphin
-  [ps1]=jupiter-retroarch\ -L\ beetle-psx
-  [ps2]=jupiter-retroarch\ -L\ pcsx2
-  ["3ds"]=jupiter-retroarch\ -L\ citra
-  [new3ds]=jupiter-retroarch\ -L\ citra
-  [wiiu]=jupiter-cemu
-)
+# THE console-system catalogue — parsed at runtime from the committed TSV
+# (JUPITER_CATALOGUE_TSV; defaults to the repo copy beside this script for
+# standalone runs — the Nix module copies it into the store because a store
+# script can't see the repo tree). This REPLACES four hand-synced bash maps
+# (LAUNCH / SKYPLATFORM / COLLECTIONS / ROM_RE) that used to drift from the
+# Nix-side catalogues; adding or removing a system is ONE row in
+# scripts/cartridge-catalogue.tsv, and modules/services/arcade-catalogue.nix
+# derives its option from the same file.
+CATALOGUE_TSV=${JUPITER_CATALOGUE_TSV:-"$(dirname "$0")/cartridge-catalogue.tsv"}
+if [ ! -r "$CATALOGUE_TSV" ]; then
+  echo "$0: catalogue TSV not readable: $CATALOGUE_TSV (set JUPITER_CATALOGUE_TSV)" >&2
+  exit 64
+fi
 
-# system (dir key) -> Skyscraper `-p` platform handle. Skyscraper's platform
-# keys (peas.json) differ from our dir keys for some systems: ps1->psx,
-# gamecube->gc, pokemonmini->pokemini; and there is no separate Skyscraper
-# handle for new3ds (scrapes under 3ds) or dsi (scrapes under nds). The ROM dir
-# + cache dir keep our key; only the Skyscraper -p handle is mapped.
-declare -A SKYPLATFORM=(
-  [ps1]=psx
-  [gamecube]=gc
-  [pokemonmini]=pokemini
-  [new3ds]=3ds
-  [dsi]=nds
-)
-
-log() { printf '[cartridge-scrape] %s\n' "$*" >&2; }
-
-# Sentinel marking the pending-collection section this script appends to a
-# metadata file (everything from this line to EOF is ours; split_pending
-# rebuilds it idempotently).
-PENDING_MARKER="# jupiter-pending-section (managed by cartridge-scrape.sh)"
-
-# ROM file extensions the tree may hold (shared by the emptiness guard below
-# and the launchable-metadata seed). Mirrors the shapes rom-acquire promotes:
-# cartridge zips, optical disc images, modern card/disc images.
-ROM_RE='.*\.(zip|iso|chd|gcm|gcz|wbfs|wad|elf|dol|ciso|cue|bin|gi|m3u|3ds|cia|cxi|cci|app|3dsx|wua|rpx|wud|wux|fds|vb|min|mgw|nds|ids|nes|sfc|smc|gb|gbc|gba|z64|n64|v64)'
-
-# system -> collection display title. Mirrors the `collection` field of the
-# systems catalogue in modules/desktop/cartridges.nix (single source of truth
-# for the kiosk-side view; keep in sync).
-declare -A COLLECTIONS=(
-  [nes]="Nintendo Entertainment System"
-  [snes]="Super Nintendo Entertainment System"
-  [gb]="Nintendo Game Boy"
-  [gbc]="Nintendo Game Boy Color"
-  [gba]="Nintendo Game Boy Advance"
-  [n64]="Nintendo 64"
-  [fds]="Nintendo Famicom Disk System"
-  [virtualboy]="Nintendo Virtual Boy"
-  [pokemonmini]="Nintendo Pokemon Mini"
-  [gameandwatch]="Nintendo Game & Watch"
-  [nds]="Nintendo DS"
-  [dsi]="Nintendo DSi"
-  [gamecube]="Nintendo GameCube"
-  [wii]="Nintendo Wii"
-  [ps1]="Sony PlayStation"
-  [ps2]="Sony PlayStation 2"
-  ["3ds"]="Nintendo 3DS"
-  [new3ds]="Nintendo New 3DS"
-  [wiiu]="Nintendo Wii U"
-)
+declare -A LAUNCH SKYPLATFORM COLLECTIONS
+GLOBAL_RE='.*\.('
+while IFS=$'\t' read -r sys collection core emulator extensions sky bucket torrent; do
+  case "$sys" in ''|'#'*) continue ;; esac
+  # launch: uniform 'jupiter-retroarch -L <core>' path; systems with no
+  # libretro core (core "-") launch through their standalone wrapper.
+  if [ "$core" != "-" ]; then
+    LAUNCH[$sys]="jupiter-retroarch -L $core"
+  elif [ "$emulator" != "-" ]; then
+    LAUNCH[$sys]="jupiter-$emulator"
+  fi
+  # Skyscraper's -p handle when it differs from our dir key (ps1->psx,
+  # gamecube->gc, pokemonmini->pokemini, dsi->nds, new3ds->3ds).
+  [ "$sky" != "-" ] && SKYPLATFORM[$sys]="$sky"
+  COLLECTIONS[$sys]="$collection"
+  GLOBAL_RE="$GLOBAL_RE${extensions//,/|}|"
+done < "$CATALOGUE_TSV"
+# global extras no per-system list carries: No-Intro cartridge sets ship as
+# .zip archives, and cue/bin pairs travel together.
+GLOBAL_RE="$GLOBAL_RE"'zip|bin)'
+ROM_RE="$GLOBAL_RE"
 
 # Ensure the platform's metadata.pegasus.txt is LAUNCHABLE: if Skyscraper's
 # compose left it missing, empty, or without a `launch:` line (the empty-cache

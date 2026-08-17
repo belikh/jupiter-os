@@ -117,6 +117,9 @@ in
       };
     };
 
+    # Upstream's own firewall knob — no reason to re-implement it here.
+    services.llama-cpp.openFirewall = lib.mkDefault cfg.exposeLan;
+
     # nixpkgs' services.llama-cpp unit runs as a systemd DynamicUser with
     # PrivateDevices=false specifically "for GPU support" (see the module's
     # own comment), but a DynamicUser's transient UID isn't a member of the
@@ -133,7 +136,5 @@ in
       "render"
       "video"
     ];
-
-    networking.firewall.allowedTCPPorts = lib.optional cfg.exposeLan cfg.port;
   };
 }

@@ -58,6 +58,8 @@ in
     ../services/customer-msr.nix
     # Tailscale client for Jupiter tailnet
     ../../modules/services/tailscale.nix
+    # mqttHost default references the fleet topology module
+    ../network/fleet.nix
   ];
 
   options.jupiter.tcxWaveKiosk = {
@@ -171,6 +173,13 @@ in
     # if a unit has no MSR. See modules/services/customer-msr.nix.
     jupiter.customerMsr.enable = true;
 
+    # Power/kernel tuning (TLP, zram, i915 power-saving): the module is
+    # mkEnableOption-gated (default off — it was an ungated side-effecting
+    # module until 2026-08-17), and every kiosk wants it, so flip it HERE
+    # rather than per-host. A non-kiosk host importing this profile gets it
+    # too, which is the point of the profile.
+    jupiter.tcxWavePowerTuning.enable = true;
+
     # Touch-wake: power the panel off after idleTimeout and wake it on touch.
     # Exposes tcxwave-screen-power.service, which ha-agent surfaces as the
     # "screen-power" HA switch below.
@@ -192,7 +201,7 @@ in
     # comment for why not by hostname).
     jupiter.services.haAgent = {
       enable = true;
-      mqttHost = lib.mkDefault "10.1.1.3";
+      mqttHost = lib.mkDefault config.jupiter.fleet.addresses.callisto;
       # 1s poll so the screen light's on/off + brightness track physical
       # button/touch changes in HA without a noticeable lag (io: "i want
       # updates every second"). Applies to every sensor this agent exposes

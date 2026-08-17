@@ -34,144 +34,153 @@
 let
   cfg = config.jupiter.services.arcadeInventory;
 
+  # Console-system catalogue (single source: scripts/cartridge-catalogue.tsv
+  # via modules/services/arcade-catalogue.nix).
+  catalogue = config.jupiter.arcade.catalogue;
+
+  # bash case labels: keys that are not valid bare identifiers ("3ds") need
+  # quoting in the generated pattern_for below.
+  caseLabel = n: if builtins.match "[a-zA-Z_][a-zA-Z0-9_]*" n != null then n else "\"" + n + "\"";
+
+  # The pattern_for case body, generated from the catalogue's per-system
+  # extension lists (was: a 20-line hand-copied case that drifted from
+  # cartridges.nix / rom-acquire's own maps). Each emitted line is a bash case
+  # arm:  nes) printf '%s' '.*\.(nes)$' ;;
+  patternCase = lib.concatStringsSep "\n" (
+    lib.mapAttrsToList (
+      name: v:
+      "        ${caseLabel name}) printf '%s' '.*\\.(${lib.concatStringsSep "|" v.extensions})$' ;;"
+    ) catalogue
+  );
+
   inventoryRun = pkgs.writeShellScriptBin "jupiter-arcade-inventory-run" ''
-    set -uo pipefail
+        set -uo pipefail
 
-    STATE_FILE="${cfg.stateFile}"
-    CARTRIDGE_ROOT="${cfg.cartridgeRoot}"
-    OPTICAL_ROOT="${cfg.opticalRoot}"
-    MODERN_ROOT="${cfg.modernRoot}"
-    EXO_ROOT="${cfg.exoRoot}"
-    PUBLISH_MQTT=${if cfg.publishMqtt then "1" else "0"}
-    MQTT_HOST="${cfg.mqttHost}"
-    # MQTT_PASSWORD_FILE is handed in via the service environment (conditionally,
-    # only when publishMqtt is on) so this script never forces a reference to a
-    # sops secret that may not be declared on hosts with publishMqtt=false.
-    : "''${MQTT_PASSWORD_FILE:=}"
-    ROM_ACQUIRE_UNIT="jupiter-rom-acquire.service"
-    SYSTEMS=(${lib.escapeShellArgs cfg.cartridgeSystems})
-    OPT_SYSTEMS=(${lib.escapeShellArgs cfg.opticalSystems})
-    MOD_SYSTEMS=(${lib.escapeShellArgs cfg.modernSystems})
-    EXO_COLLECTIONS=(dos win3x win9x)
+        STATE_FILE="${cfg.stateFile}"
+        CARTRIDGE_ROOT="${cfg.cartridgeRoot}"
+        OPTICAL_ROOT="${cfg.opticalRoot}"
+        MODERN_ROOT="${cfg.modernRoot}"
+        EXO_ROOT="${cfg.exoRoot}"
+        PUBLISH_MQTT=${if cfg.publishMqtt then "1" else "0"}
+        MQTT_HOST="${cfg.mqttHost}"
+        # MQTT_PASSWORD_FILE is handed in via the service environment (conditionally,
+        # only when publishMqtt is on) so this script never forces a reference to a
+        # sops secret that may not be declared on hosts with publishMqtt=false.
+        : "''${MQTT_PASSWORD_FILE:=}"
+        ROM_ACQUIRE_UNIT="jupiter-rom-acquire.service"
+        SYSTEMS=(${lib.escapeShellArgs cfg.cartridgeSystems})
+        OPT_SYSTEMS=(${lib.escapeShellArgs cfg.opticalSystems})
+        MOD_SYSTEMS=(${lib.escapeShellArgs cfg.modernSystems})
+        EXO_COLLECTIONS=(dos win3x win9x)
 
-    JQ="${pkgs.jq}/bin/jq"
-    FIND="${pkgs.findutils}/bin/find"
-    GREP="${pkgs.gnugrep}/bin/grep"
-    DU="${pkgs.coreutils}/bin/du"
-    CUT="${pkgs.coreutils}/bin/cut"
-    WC="${pkgs.coreutils}/bin/wc"
-    SYSTEMCTL="${pkgs.systemd}/bin/systemctl"
-    MOSQ="${pkgs.mosquitto}/bin/mosquitto_pub"
+        JQ="${pkgs.jq}/bin/jq"
+        FIND="${pkgs.findutils}/bin/find"
+        GREP="${pkgs.gnugrep}/bin/grep"
+        DU="${pkgs.coreutils}/bin/du"
+        CUT="${pkgs.coreutils}/bin/cut"
+        WC="${pkgs.coreutils}/bin/wc"
+        SYSTEMCTL="${pkgs.systemd}/bin/systemctl"
+        MOSQ="${pkgs.mosquitto}/bin/mosquitto_pub"
 
-    mkdir -p "$(dirname "''${STATE_FILE}")"
+        mkdir -p "$(dirname "''${STATE_FILE}")"
 
-    # Full-path posix-extended regex for each known console system.
-    pattern_for() {
-      case "''$1" in
-        nes)         printf '%s' '.*\.nes$' ;;
-        snes)        printf '%s' '.*\.(sfc|smc)$' ;;
-        gb)          printf '%s' '.*\.gb$' ;;
-        gbc)         printf '%s' '.*\.gbc$' ;;
-        gba)         printf '%s' '.*\.gba$' ;;
-        n64)         printf '%s' '.*\.(z64|n64|v64)$' ;;
-        fds)         printf '%s' '.*\.fds$' ;;
-        virtualboy)  printf '%s' '.*\.vb$' ;;
-        pokemonmini) printf '%s' '.*\.min$' ;;
-        gameandwatch)printf '%s' '.*\.mgw$' ;;
-        nds)         printf '%s' '.*\.(nds|ids)$' ;;
-        dsi)         printf '%s' '.*\.(nds|ids)$' ;;
-        gamecube)    printf '%s' '.*\.(iso|gcm|gcz|elf|dol|ciso)$' ;;
-        wii)         printf '%s' '.*\.(iso|wbfs|gcz|wad|ciso)$' ;;
-        ps1)         printf '%s' '.*\.(chd|cue|iso|m3u)$' ;;
-        ps2)         printf '%s' '.*\.(chd|iso|gi|m3u)$' ;;
-        "3ds")       printf '%s' '.*\.(3ds|cia|cxi|cci|app|3dsx)$' ;;
-        new3ds)      printf '%s' '.*\.(3ds|cia|cxi|cci|app|3dsx)$' ;;
-        wiiu)        printf '%s' '.*\.(wua|rpx|wud|wux|iso)$' ;;
-        *)           : ;; # unknown system → empty pattern, skipped below
-      esac
-    }
+        # Full-path posix-extended regex for each known console system.
+        pattern_for() {
+          # Generated from scripts/cartridge-catalogue.tsv (patternCase in the let
+          # block) — same extension lists cartridges.nix mounts and
+          # cartridge-scrape.sh matches against.
+          case "''$1" in
+    \${patternCase}
+            *) : ;; # unknown system → empty pattern, skipped below
+          esac
+        }
 
-    # Count one bucket: per-system ROM count + du -sb under <root>/<sys>/.
-    # Prints a jq object { "<sys>": {count, size_bytes}, ... } on stdout.
-    count_bucket() {
-      local root="$1"; shift
-      local out='{}' sys dir pat count size
-      for sys in "$@"; do
-        dir="''${root}/''${sys}"
-        pat="''$(pattern_for "''${sys}")"
-        count=0
-        size=0
-        if [ -d "''${dir}" ] && [ -n "''${pat}" ]; then
-          count=$("''${FIND}" "''${dir}" -type f -regextype posix-extended -iregex "''${pat}" 2>/dev/null | "''${WC}" -l || echo 0)
-          size=$("''${DU}" -sb "''${dir}" 2>/dev/null | "''${CUT}" -f1 || echo 0)
+        # Count one bucket: per-system ROM count + du -sb under <root>/<sys>/.
+        # Prints a jq object { "<sys>": {count, size_bytes}, ... } on stdout.
+        count_bucket() {
+          local root="$1"; shift
+          local out='{}' sys dir pat count size
+          for sys in "$@"; do
+            dir="''${root}/''${sys}"
+            pat="''$(pattern_for "''${sys}")"
+            count=0
+            size=0
+            if [ -d "''${dir}" ] && [ -n "''${pat}" ]; then
+              count=$("''${FIND}" "''${dir}" -type f -regextype posix-extended -iregex "''${pat}" 2>/dev/null | "''${WC}" -l || echo 0)
+              size=$("''${DU}" -sb "''${dir}" 2>/dev/null | "''${CUT}" -f1 || echo 0)
+            fi
+            out="$(printf '%s' "''${out}" | "''${JQ}" \
+              --arg k "''${sys}" --argjson n "''${count:-0}" --argjson b "''${size:-0}" \
+              '. + {($k): {count:$n, size_bytes:$b}}')"
+          done
+          printf '%s' "''${out}"
+        }
+
+        # --- console systems across all three datasets ---
+        cart="$(count_bucket "''${CARTRIDGE_ROOT}" "''${SYSTEMS[@]}")"
+        opt="$(count_bucket "''${OPTICAL_ROOT}" "''${OPT_SYSTEMS[@]}")"
+        mod="$(count_bucket "''${MODERN_ROOT}" "''${MOD_SYSTEMS[@]}")"
+
+        # --- eXo curated collections: game vs. box_front coverage ---
+        exo='{}'
+        for name in "''${EXO_COLLECTIONS[@]}"; do
+          meta="''${EXO_ROOT}/exo-''${name}/metadata.pegasus.txt"
+          games=0
+          art=0
+          if [ -f "''${meta}" ]; then
+            games=$("''${GREP}" -c '^game: ' "''${meta}" 2>/dev/null || echo 0)
+            art=$("''${GREP}" -c '^assets\.box_front: ' "''${meta}" 2>/dev/null || echo 0)
+          fi
+          exo="$(printf '%s' "''${exo}" | "''${JQ}" \
+            --arg k "''${name}" --argjson g "''${games:-0}" --argjson a "''${art:-0}" \
+            '. + {($k): {games:$g, art:$a, coverage_pct: (if $g > 0 then (($a/$g*1000)|floor)/10 else 0 end)}}')"
+        done
+
+        # --- rom-acquire download unit state ---
+        active_state="$("''${SYSTEMCTL}" show -p ActiveState --value "''${ROM_ACQUIRE_UNIT}" 2>/dev/null || true)"
+        if [ -z "''${active_state}" ]; then
+          active_state="unknown"
         fi
-        out="$(printf '%s' "''${out}" | "''${JQ}" \
-          --arg k "''${sys}" --argjson n "''${count:-0}" --argjson b "''${size:-0}" \
-          '. + {($k): {count:$n, size_bytes:$b}}')"
-      done
-      printf '%s' "''${out}"
-    }
 
-    # --- console systems across all three datasets ---
-    cart="$(count_bucket "''${CARTRIDGE_ROOT}" "''${SYSTEMS[@]}")"
-    opt="$(count_bucket "''${OPTICAL_ROOT}" "''${OPT_SYSTEMS[@]}")"
-    mod="$(count_bucket "''${MODERN_ROOT}" "''${MOD_SYSTEMS[@]}")"
+        now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        tmp="$(mktemp)"
+        "''${JQ}" -n \
+          --arg generated_at "''${now}" \
+          --argjson cartridge "''${cart}" \
+          --argjson optical "''${opt}" \
+          --argjson modern "''${mod}" \
+          --argjson exo "''${exo}" \
+          --arg active_state "''${active_state}" \
+          --arg unit "''${ROM_ACQUIRE_UNIT}" \
+          '{generated_at:$generated_at,
+            cartridge:$cartridge,
+            optical:$optical,
+            modern:$modern,
+            exo:$exo,
+            rom_acquire:{unit:$unit, active_state:$active_state}}' > "''${tmp}"
+        mv "''${tmp}" "''${STATE_FILE}"
+        echo "jupiter-arcade-inventory: wrote ''${STATE_FILE}"
 
-    # --- eXo curated collections: game vs. box_front coverage ---
-    exo='{}'
-    for name in "''${EXO_COLLECTIONS[@]}"; do
-      meta="''${EXO_ROOT}/exo-''${name}/metadata.pegasus.txt"
-      games=0
-      art=0
-      if [ -f "''${meta}" ]; then
-        games=$("''${GREP}" -c '^game: ' "''${meta}" 2>/dev/null || echo 0)
-        art=$("''${GREP}" -c '^assets\.box_front: ' "''${meta}" 2>/dev/null || echo 0)
-      fi
-      exo="$(printf '%s' "''${exo}" | "''${JQ}" \
-        --arg k "''${name}" --argjson g "''${games:-0}" --argjson a "''${art:-0}" \
-        '. + {($k): {games:$g, art:$a, coverage_pct: (if $g > 0 then (($a/$g*1000)|floor)/10 else 0 end)}}')"
-    done
-
-    # --- rom-acquire download unit state ---
-    active_state="$("''${SYSTEMCTL}" show -p ActiveState --value "''${ROM_ACQUIRE_UNIT}" 2>/dev/null || true)"
-    if [ -z "''${active_state}" ]; then
-      active_state="unknown"
-    fi
-
-    now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-    tmp="$(mktemp)"
-    "''${JQ}" -n \
-      --arg generated_at "''${now}" \
-      --argjson cartridge "''${cart}" \
-      --argjson optical "''${opt}" \
-      --argjson modern "''${mod}" \
-      --argjson exo "''${exo}" \
-      --arg active_state "''${active_state}" \
-      --arg unit "''${ROM_ACQUIRE_UNIT}" \
-      '{generated_at:$generated_at,
-        cartridge:$cartridge,
-        optical:$optical,
-        modern:$modern,
-        exo:$exo,
-        rom_acquire:{unit:$unit, active_state:$active_state}}' > "''${tmp}"
-    mv "''${tmp}" "''${STATE_FILE}"
-    echo "jupiter-arcade-inventory: wrote ''${STATE_FILE}"
-
-    # --- optional MQTT publish (retained, for HA discovery later) ---
-    if [ "''${PUBLISH_MQTT}" = "1" ]; then
-      pw="$(cat "''${MQTT_PASSWORD_FILE}" 2>/dev/null || true)"
-      if [ -n "''${pw}" ]; then
-        "''${MOSQ}" -h "''${MQTT_HOST}" -u jupiter-arcade -P "''${pw}" -r \
-          -t jupiter/arcade/inventory -f "''${STATE_FILE}" \
-          && echo "jupiter-arcade-inventory: published to ''${MQTT_HOST}" \
-          || echo "jupiter-arcade-inventory: MQTT publish failed (non-fatal)"
-      else
-        echo "jupiter-arcade-inventory: empty MQTT password, skipping publish"
-      fi
-    fi
+        # --- optional MQTT publish (retained, for HA discovery later) ---
+        if [ "''${PUBLISH_MQTT}" = "1" ]; then
+          pw="$(cat "''${MQTT_PASSWORD_FILE}" 2>/dev/null || true)"
+          if [ -n "''${pw}" ]; then
+            "''${MOSQ}" -h "''${MQTT_HOST}" -u jupiter-arcade -P "''${pw}" -r \
+              -t jupiter/arcade/inventory -f "''${STATE_FILE}" \
+              && echo "jupiter-arcade-inventory: published to ''${MQTT_HOST}" \
+              || echo "jupiter-arcade-inventory: MQTT publish failed (non-fatal)"
+          else
+            echo "jupiter-arcade-inventory: empty MQTT password, skipping publish"
+          fi
+        fi
   '';
 in
 {
+  imports = [
+    ../network/fleet.nix
+    ./arcade-catalogue.nix
+  ];
+
   options.jupiter.services.arcadeInventory = {
     enable = lib.mkEnableOption "periodic fleet arcade ROM/library inventory JSON generator";
 
@@ -224,44 +233,24 @@ in
 
     cartridgeSystems = lib.mkOption {
       type = lib.types.listOf lib.types.str;
-      default = [
-        "nes"
-        "snes"
-        "gb"
-        "gbc"
-        "gba"
-        "n64"
-        "fds"
-        "virtualboy"
-        "pokemonmini"
-        "gameandwatch"
-        "nds"
-        "dsi"
-      ];
+      default = lib.attrNames (lib.filterAttrs (_: v: v.bucket == "cartridge") catalogue);
       description = ''
         Cartridge-bucket systems to inventory (leaf ROMs on the cartridge
-        dataset). An unknown system here yields count 0 / size 0.
+        dataset). Default derives from the catalogue's bucket column
+        (scripts/cartridge-catalogue.tsv). An unknown system here yields
+        count 0 / size 0.
       '';
     };
 
     opticalSystems = lib.mkOption {
       type = lib.types.listOf lib.types.str;
-      default = [
-        "gamecube"
-        "wii"
-        "ps1"
-        "ps2"
-      ];
+      default = lib.attrNames (lib.filterAttrs (_: v: v.bucket == "optical") catalogue);
       description = "Optical-bucket systems to inventory (disc images).";
     };
 
     modernSystems = lib.mkOption {
       type = lib.types.listOf lib.types.str;
-      default = [
-        "3ds"
-        "new3ds"
-        "wiiu"
-      ];
+      default = lib.attrNames (lib.filterAttrs (_: v: v.bucket == "modern") catalogue);
       description = "Modern-bucket systems to inventory (3DS/Wii U images).";
     };
 
@@ -281,7 +270,7 @@ in
 
     mqttHost = lib.mkOption {
       type = lib.types.str;
-      default = "10.1.1.3";
+      default = config.jupiter.fleet.addresses.callisto;
       description = ''
         Broker host the inventory is published to when `publishMqtt` is on.
         Defaults to the callisto broker's static LAN reservation.

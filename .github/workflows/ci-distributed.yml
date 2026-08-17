@@ -396,6 +396,11 @@ jobs:
       - name: Install async push system (post-build-hook + cache-drainer)
         env:
           EUROPA_SSH_KEY: ${{ secrets.EUROPA_SSH_KEY }}
+          # The Harmonia cache SECRET key (secret-key:...:<base32>) — same key
+          # europa's harmonia sops secret holds. TODO(operator): add this
+          # GitHub secret; until it exists the hook logs a loud warning per
+          # build and europa (require-sigs=true) rejects the pushes.
+          HARMONIA_SECRET_KEY: ${{ secrets.HARMONIA_SECRET_KEY }}
         run: |
           # The coordinator is the SOLE pusher. Its post-build-hook fires once
           # per path built (the remote builders stream results back here over
@@ -441,6 +446,18 @@ jobs:
             echo "  ControlPath $HOME/.ssh/controlmasters/%r@%h:%p"
             echo "  ControlPersist 30m"
           } >> "$HOME/.ssh/config"
+
+          # Stage the cache signing key root-readable: the post-build-hook
+          # runs via nix-daemon (as root) and signs every path before it is
+          # queued (europa enforces require-sigs=true — unsigned pushes are
+          # rejected). systemctl set-environment is how the restarted daemon
+          # (and thus the hook) receives HARMONIA_SIGNING_KEY_FILE.
+          if [ -n "$HARMONIA_SECRET_KEY" ]; then
+            printf '%s\n' "$HARMONIA_SECRET_KEY" | sudo install -m 600 /dev/stdin /etc/nix/harmonia-signing-key
+            sudo systemctl set-environment HARMONIA_SIGNING_KEY_FILE=/etc/nix/harmonia-signing-key
+          else
+            echo "WARNING: HARMONIA_SECRET_KEY not set — paths will be unsigned and europa (require-sigs=true) will reject the push" >&2
+          fi
 
           # Configure nix to use post-build-hook (requires daemon restart).
           sudo tee -a /etc/nix/nix.conf > /dev/null <<'EOF'

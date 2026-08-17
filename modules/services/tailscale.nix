@@ -8,6 +8,17 @@
 let
   cfg = config.jupiter.services.tailscale;
 
+  # TODO(upstream-port decision): nixpkgs' services.tailscale exists at this
+  # pin and covers most of this module (package, daemon, up-flags via
+  # services.tailscale.extraUpFlags... plus openFirewall/authKey handling).
+  # This hand-rolled module predates verifying that, and carries fleet-specific
+  # deviations (custom stateDir + socket path, loginServer pointing at
+  # europa's headscale, authKeyFile via sops, the reset semantics documented
+  # below). Migrating is a behavior change on 6 live hosts and must be done as
+  # an eval-diff + on-host verification pass (`nix eval` both trees' units,
+  # then one host at a time) — not silently in a refactor commit. Same applies
+  # to modules/services/headscale.nix vs nixpkgs' services.headscale.
+
   # Build the tailscale up command as a list of arguments. --socket must
   # match tailscaled's own --socket below (custom stateDir path, not the
   # tailscale CLI's default /var/run/tailscale/tailscaled.sock) — it's a

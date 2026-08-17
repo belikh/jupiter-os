@@ -15,6 +15,8 @@
   };
 
   config = lib.mkIf config.jupiter.core.lix.enable {
-    nix.package = lib.mkForce pkgs.lix;
+    # Plain assignment: nothing else in the tree sets nix.package, so mkForce
+    # would only beat a future host-level override for no reason.
+    nix.package = pkgs.lix;
   };
 }

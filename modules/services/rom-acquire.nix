@@ -29,118 +29,20 @@
 let
   cfg = config.jupiter.services.romAcquire;
 
-  # Canonical Minerva/Myrient No-Intro Nintendo torrent basenames (the leaf name
-  # under Myrient's tree, prefixed with the Minerva naming scheme). NES is the
-  # Headerless set per the fleet choice; the rest follow the standard Myrient
-  # leaf names. Cartridge-era systems sit under "No-Intro - Nintendo -"; optical
-  # (GameCube/Wii) and Wii U sit under "No-Intro - Non-Redump - Nintendo -".
-  # `bucket` routes the verify oneshot's promotion destination: cartridge-bucket
-  # ROMs go to games/cartridge/<sys>, optical to games/optical/<sys>, modern to
-  # games/modern/<sys> — matching the ZFS datasets in modules/storage/zfs-nas.nix
-  # and the kiosk-side mounts in modules/desktop/cartridges.nix. `core` is
-  # informational (the kiosk-side cartridges.nix systems map is the source of
-  # truth for which libretro core each system uses); null for Wii U (Cemu
-  # standalone, no libretro core).
-  defaultSystems = {
-    # --- cartridge bucket (small leaf ROMs, 64K dataset) ---
-    nes = {
-      torrent = "Minerva_Myrient - No-Intro - Nintendo - Nintendo Entertainment System (Headerless).torrent";
-      core = "fceumm";
-      bucket = "cartridge";
-    };
-    snes = {
-      torrent = "Minerva_Myrient - No-Intro - Nintendo - Super Nintendo Entertainment System.torrent";
-      core = "snes9x";
-      bucket = "cartridge";
-    };
-    gb = {
-      torrent = "Minerva_Myrient - No-Intro - Nintendo - Game Boy.torrent";
-      core = "gambatte";
-      bucket = "cartridge";
-    };
-    gbc = {
-      torrent = "Minerva_Myrient - No-Intro - Nintendo - Game Boy Color.torrent";
-      core = "gambatte";
-      bucket = "cartridge";
-    };
-    gba = {
-      torrent = "Minerva_Myrient - No-Intro - Nintendo - Game Boy Advance.torrent";
-      core = "mgba";
-      bucket = "cartridge";
-    };
-    n64 = {
-      torrent = "Minerva_Myrient - No-Intro - Nintendo - Nintendo 64 (BigEndian).torrent";
-      core = "mupen64plus";
-      bucket = "cartridge";
-    };
-    fds = {
-      torrent = "Minerva_Myrient - No-Intro - Nintendo - Family Computer Disk System (FDS).torrent";
-      core = "fceumm"; # needs disksys.rom BIOS on the kiosk (see cartridges.nix)
-      bucket = "cartridge";
-    };
-    virtualboy = {
-      torrent = "Minerva_Myrient - No-Intro - Nintendo - Virtual Boy.torrent";
-      core = "beetle-vb";
-      bucket = "cartridge";
-    };
-    pokemonmini = {
-      torrent = "Minerva_Myrient - No-Intro - Nintendo - Pokemon Mini.torrent";
-      core = "pokemini";
-      bucket = "cartridge";
-    };
-    gameandwatch = {
-      torrent = "Minerva_Myrient - No-Intro - Nintendo - Game & Watch.torrent";
-      core = "gw";
-      bucket = "cartridge";
-    };
-    nds = {
-      torrent = "Minerva_Myrient - No-Intro - Nintendo - Nintendo DS (Decrypted).torrent";
-      core = "desmume2015";
-      bucket = "cartridge";
-    };
-    dsi = {
-      torrent = "Minerva_Myrient - No-Intro - Nintendo - Nintendo DSi (Decrypted).torrent";
-      core = "desmume2015"; # no DSi mode; boots the NDS-compatible majority
-      bucket = "cartridge";
-    };
-    # --- optical bucket (large disc images, 1M dataset) ---
-    gamecube = {
-      torrent = "Minerva_Myrient - No-Intro - Non-Redump - Nintendo - Nintendo GameCube.torrent";
-      core = "dolphin";
-      bucket = "optical";
-    };
-    wii = {
-      torrent = "Minerva_Myrient - No-Intro - Non-Redump - Nintendo - Wii.torrent";
-      core = "dolphin";
-      bucket = "optical";
-    };
-    ps1 = {
-      torrent = "Minerva_Myrient - RetroAchievements - RA - Sony Playstation.torrent";
-      core = "beetle-psx";
-      bucket = "optical";
-    };
-    ps2 = {
-      torrent = "Minerva_Myrient - RetroAchievements - RA - Sony Playstation 2.torrent";
-      core = "pcsx2";
-      bucket = "optical";
-    };
-    # --- modern bucket (large disc/card images, 1M dataset) ---
-    "3ds" = {
-      torrent = "Minerva_Myrient - No-Intro - Nintendo - Nintendo 3DS (Decrypted).torrent";
-      core = "citra"; # libretro citra core is unmaintained but builds here
-      bucket = "modern";
-    };
-    new3ds = {
-      torrent = "Minerva_Myrient - No-Intro - Nintendo - New Nintendo 3DS (Decrypted).torrent";
-      core = "citra";
-      bucket = "modern";
-    };
-    wiiu = {
-      torrent = "Minerva_Myrient - No-Intro - Non-Redump - Nintendo - Wii U.torrent";
-      core = null; # Cemu standalone, no libretro core
-      bucket = "modern";
-    };
-  };
+  # Derived from the console-system catalogue (scripts/cartridge-catalogue.tsv
+  # via modules/services/arcade-catalogue.nix) — single source of truth shared
+  # with rom-scraper, arcade-inventory, cartridges and cartridge-scrape.sh.
+  # torrent: canonical Minerva/Myrient No-Intro basenames (NES = Headerless
+  # per the fleet choice; cartridge-era under "No-Intro - Nintendo -", optical
+  # and Wii U under "No-Intro - Non-Redump - Nintendo -"). `bucket` routes the
+  # verify oneshot's promotion destination: cartridge -> games/cartridge/<sys>,
+  # optical -> games/optical/<sys>, modern -> games/modern/<sys> — matching the
+  # ZFS datasets in modules/storage/zfs-nas.nix and the kiosk-side mounts in
+  # modules/desktop/cartridges.nix. `core` is informational (cartridges.nix's
+  # view — same TSV — is what launches); null for Wii U (Cemu standalone).
+  defaultSystems = lib.mapAttrs (_: v: {
+    inherit (v) torrent core bucket;
+  }) config.jupiter.arcade.catalogue;
 
   systemKeys = lib.attrNames cfg.systems;
 
@@ -176,6 +78,8 @@ let
   ];
 in
 {
+  imports = [ ./arcade-catalogue.nix ];
+
   options.jupiter.services.romAcquire = {
     enable = lib.mkEnableOption ''
       No-Intro Nintendo console ROM acquisition + verification: an aria2
@@ -299,12 +203,10 @@ in
         Console systems to acquire + verify. Keys are short system names used
         for the incoming/destination/DAT subdirs; each value names its torrent
         basename, libretro core (informational), and the bucket whose
-        destination tree its verified ROMs promote into. Defaults to the full
-        No-Intro Nintendo console set the fleet stages: the six original
-        cartridge systems (nes, snes, gb, gbc, gba, n64), the cartridge-era
-        extras (fds, virtualboy, pokemonmini, gameandwatch, nds, dsi), the
-        optical disc systems (gamecube, wii), and the modern systems
-        (3ds, new3ds, wiiu).
+        destination tree its verified ROMs promote into. Defaults derive from
+        scripts/cartridge-catalogue.tsv (every system the fleet stages — the
+        catalogue is shared with the scraper, inventory, kiosk mounts and the
+        scrape script, so the views cannot drift).
       '';
     };
   };

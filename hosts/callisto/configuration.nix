@@ -77,7 +77,7 @@
   boot.initrd.availableKernelModules = [ "e1000e" ]; # onboard Intel I219-LM
   boot.iscsi-initiator = {
     name = "iqn.2026-07.au.jupiter:callisto";
-    discoverPortal = "10.1.1.2:3260";
+    discoverPortal = "${config.jupiter.fleet.addresses.europa}:3260";
     target = "iqn.2026-07.au.jupiter:europa:callisto-root";
   };
 
@@ -93,7 +93,7 @@
   systemd.network.wait-online.enable = false;
 
   fileSystems."/" = {
-    device = "/dev/disk/by-path/ip-10.1.1.2:3260-iscsi-iqn.2026-07.au.jupiter:europa:callisto-root-lun-0";
+    device = "/dev/disk/by-path/ip-${config.jupiter.fleet.addresses.europa}:3260-iscsi-iqn.2026-07.au.jupiter:europa:callisto-root-lun-0";
     fsType = "ext4";
     options = [ "relatime" ];
   };
@@ -239,7 +239,7 @@
   ];
 
   # ---- Aeon autonomous agent framework --------------------------------------
-  # Runs the aeon dashboard (Next.js on port 5555, bound 0.0.0.0 for LAN +
+  # Runs the aeon dashboard (Next.js on port 5555, loopback + tunnel for
   # Tailscale access). The dashboard manages belikh/agent (a public fork of
   # aeonfun/aeon) via the `gh` CLI — all config (skills, schedules,
   # STRATEGY.md, SOUL.md, API keys, notifications) is done through the web UI.
@@ -258,8 +258,19 @@
     enable = true;
     repoUrl = "github:belikh/aeon";
     ghTokenFile = config.sops.secrets.aeon_gh_token.path;
-    host = "0.0.0.0";
-    exposeLan = true;
+    # Loopback + the Cloudflare tunnel below (aeon.jupiter.au ingress), NOT a
+    # LAN bind: the dashboard wields a repo-scope GitHub PAT (workflow
+    # dispatch, secrets writes) — 0.0.0.0 + an open LAN port made that
+    # reachable from every device on 10.1.1.0/24 (P0, fixed 2026-08-17).
+    # dsh.jupiter.au uses the same loopback+tunnel shape.
+    #
+    # ONE manual step completes the cutover (run once, from anywhere with
+    # the cloudflare cert — same command that routed dsh.jupiter.au):
+    #   cloudflared tunnel route dns jupiter-callisto aeon.jupiter.au
+    # Until then the tunnel 502s for that name; `ssh -L 5555:localhost:5555`
+    # bridges the gap.
+    host = "127.0.0.1";
+    exposeLan = false;
   };
 
   # ---- nom-web: browser UI for ci-distributed.yml's build logs -------------
@@ -269,7 +280,7 @@
   # Tunnel (extraIngress in hosts/europa/configuration.nix), so the port only
   # needs to be open to the LAN, not the internet.
   fileSystems."/mnt/jupiter-ci-logs" = {
-    device = "10.1.1.2:/var/log/jupiter-ci";
+    device = "${config.jupiter.fleet.addresses.europa}:/var/log/jupiter-ci";
     fsType = "nfs";
     options = [
       "ro"
@@ -370,6 +381,13 @@
         # cloudflared runs here; dsh is loopback-only. host defaults to
         # localhost, which is exactly right.
         port = 3080;
+      }
+      {
+        # Loopback-bound aeon dashboard (see the aeon block above) — needs
+        # `cloudflared tunnel route dns jupiter-callisto aeon.jupiter.au`
+        # once, same as dsh.
+        hostname = "aeon.jupiter.au";
+        port = 5555;
       }
     ];
   };

@@ -46,21 +46,31 @@ let
   # (offloads the CPU), and trimming background networking/sync/updates
   # that would otherwise wake the box for no benefit on a single-purpose
   # kiosk.
+  #
+  # Removed 2026-08-17 (audit):
+  #   --remote-debugging-port=9222 / --remote-allow-origins=* — an open CDP
+  #     endpoint on a LAN kiosk: ANY host on 10.1.1.0/24 could drive the
+  #     dashboard session (read DOM, exfil the HA token in the URL, execute
+  #     in page context). Nothing in the fleet uses it.
+  #   --disable-translate — dead flag; Chrome Translate moved to a component
+  #     (kIsTranslateComponent) in ~M96, the switch is a no-op.
+  #   VaapiVideoDecoder feature flag — stale; VA-API decode is default-on for
+  #     years (VaapiVideoDecodeLinuxGL is the current name if ever needed).
+  #     VaapiIgnoreDriverChecks stays: it's what actually permits the HD 520.
+  # --app is escaped: a URL with spaces/operators must not word-split or
+  # inject further argv into chromium.
   chromiumFlags = [
     "--kiosk"
-    "--app=${cfg.url}"
+    "--app=${lib.escapeShellArg cfg.url}"
     "--ozone-platform=wayland"
     "--use-gl=egl"
-    "--enable-features=VaapiVideoDecoder,VaapiIgnoreDriverChecks"
+    "--enable-features=VaapiIgnoreDriverChecks"
     "--disable-background-networking"
     "--disable-sync"
-    "--disable-translate"
     "--disable-component-update"
     "--disable-extensions-except=${hideCursorExtension}"
     "--load-extension=${hideCursorExtension}"
     "--no-first-run"
-    "--remote-debugging-port=9222"
-    "--remote-allow-origins=*"
   ];
 
   # cage-tty1 is ordered only against the display/session stack, NOT

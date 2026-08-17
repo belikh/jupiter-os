@@ -44,8 +44,14 @@ in
   options.jupiter.services.dsh = {
     enable = lib.mkEnableOption "DeepSeek Harness (dsh) web UI";
 
-    package = lib.mkPackageOption pkgs "dsh" { } // {
+    # Plain mkOption, NOT `mkPackageOption pkgs "dsh" { } // { default = …; }`:
+    # the `//` trick only looks lazy and eagerly evaluates pkgs.dsh, masking
+    # a nonexistent attr. dsh is not in nixpkgs; name the in-tree package.
+    package = lib.mkOption {
+      type = lib.types.package;
       default = dshPkg;
+      defaultText = "pkgs/dsh";
+      description = "dsh package to run.";
     };
 
     port = lib.mkOption {

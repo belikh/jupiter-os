@@ -8,6 +8,14 @@
 let
   cfg = config.jupiter.services.headscale;
 
+  # TODO(upstream-port decision): nixpkgs' services.headscale exists at this
+  # pin and renders config from a settings attrset (services.headscale.settings)
+  # that covers most of the YAML emitted below. This module predates that and
+  # adds a YAML-quoting helper (yamlList) that upstream's typed settings make
+  # unnecessary. Migrating is a behavior change on the live europa coordination
+  # server and must follow the eval-diff + one-host-at-a-time process noted in
+  # modules/services/tailscale.nix — not a silent refactor.
+
   # Emit a YAML sequence for a list-valued key, newlines and indentation
   # supplied entirely from inside the interpolation. Nix's '' de-indentation
   # only strips the common prefix of LITERAL source lines — interpolated text
@@ -101,6 +109,9 @@ let
   '';
 in
 {
+  # Self-contained: dns.upstream's default interpolates the fleet gateway.
+  imports = [ ../network/fleet.nix ];
+
   options.jupiter.services.headscale = {
     enable = lib.mkEnableOption "Headscale control plane server (self-hosted Tailscale)";
 
@@ -294,7 +305,7 @@ in
         # Use MagicDNS
         enabled = "true";
         # Upstream DNS for tailnet
-        upstream = "10.1.1.1,1.1.1.1";
+        upstream = "${config.jupiter.fleet.addresses.gateway},1.1.1.1";
         # Base domain MagicDNS serves node names under (<node>.<baseDomain>).
         # Deliberately distinct from serverUrl's headscale.jupiter.au to avoid
         # the control-plane hostname colliding with the tailnet DNS zone.

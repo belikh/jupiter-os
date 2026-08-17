@@ -33,6 +33,8 @@
 let
   cfg = config.jupiter.services.sunoBackup;
 
+  inherit (import ../lib.nix { inherit config lib pkgs; }) commonServiceHardening;
+
   # Built from in-tree source alongside this module. Stdlib-only, so it
   # substitutes clean on europa's bdver4-tuned closure (Go ignores gccarch) and
   # needs no new flake input. Exposed standalone as `.#suno-backup` in flake.nix
@@ -144,11 +146,14 @@ in
     systemd.services.jupiter-suno-backup = {
       description = "Suno account library backup (WAV masters + full metadata)";
       wantedBy = [ "multi-user.target" ];
-      after = [
-        "network-online.target"
-        "sops-nix.service"
-      ];
+      after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
+      # NOTE: deliberately NOT ordered after any "sops-nix.service" — that
+      # unit does not exist. sops-nix renders secrets via a preactivation
+      # script (systemd.services... never defined); the templated file this
+      # unit reads at start already exists by the time it launches. (A
+      # fabricated after= entry is inert ordering noise at best and masks
+      # intent at worst — removed 2026-08-17.)
 
       # Don't start until the dataset is mounted (mirrors rom-acquire.nix).
       unitConfig.RequiresMountsFor = [ cfg.dataDir ];
@@ -172,27 +177,13 @@ in
 
         # Hardening: the daemon needs the network (Suno + Clerk + the CDN),
         # read access to the sops secret under /run/secrets, and write access
-        # only to the dataset. Everything else is locked down.
-        NoNewPrivileges = true;
-        PrivateTmp = true;
-        PrivateDevices = true;
-        ProtectSystem = "strict";
-        ProtectHome = true;
+        # only to the dataset. Everything else is locked down. Common stanza
+        # shared with nom-web/suno-web (modules/lib.nix:
+        # commonServiceHardening).
         ReadWritePaths = [ cfg.dataDir ];
         ReadOnlyPaths = [ "/run/secrets" ];
-        ProtectKernelTunables = true;
-        ProtectKernelModules = true;
-        ProtectControlGroups = true;
-        RestrictAddressFamilies = [
-          "AF_INET"
-          "AF_INET6"
-        ];
-        RestrictNamespaces = true;
-        LockPersonality = true;
-        MemoryDenyWriteExecute = false; # Go runtime needs writable+executable memory
-        RestrictRealtime = true;
-        RestrictSUIDSGID = true;
-      };
+      }
+      // commonServiceHardening;
     };
   };
 }

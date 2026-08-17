@@ -211,9 +211,6 @@ in
     # pool's disks aren't attached (no 10TB drives present).
     boot.zfs.extraPools = [ "tank" ];
 
-    # Disable ZFS automatic sharing (SMB shares are disabled)
-    systemd.services.zfs-share.enable = false;
-
     # Pool maintenance
     services.zfs.autoScrub.enable = true;
     services.zfs.trim.enable = true;
@@ -231,60 +228,21 @@ in
       script = createScript;
     };
 
-    # ---- SMB shares --------------------------------------------------------
-    services.samba = {
-      enable = false;
-      openFirewall = false;
-      settings = {
-        global = {
-          "workgroup" = "WORKGROUP";
-          "server string" = "Jupiter OS NAS";
-          "netbios name" = "jupiter-europa";
-          "security" = "user";
-          "map to guest" = "bad user";
-        };
-
-        # Media library — writable for the admin/*arr stack, browseable on LAN.
-        "media" = {
-          "path" = "/tank/media";
-          "browseable" = "yes";
-          "read only" = "no";
-          "guest ok" = "no";
-          "valid users" = "io";
-          "create mask" = "0664";
-          "directory mask" = "0775";
-        };
-
-        # Irreplaceable personal data — private.
-        "personal" = {
-          "path" = "/tank/personal";
-          "browseable" = "yes";
-          "read only" = "no";
-          "guest ok" = "no";
-          "valid users" = "io";
-          "create mask" = "0644";
-          "directory mask" = "0755";
-        };
-
-        # In-flight file transfer data — read-only share for monitoring.
-        "junk" = {
-          "path" = "/junk";
-          "browseable" = "yes";
-          "read only" = "yes";
-          "guest ok" = "no";
-          "valid users" = "io";
-        };
-      };
-    };
-
-    services.samba-wsdd = {
-      enable = false;
-      openFirewall = false;
-    };
+    # ---- SMB: REMOVED 2026-08-17 ---------------------------------------------
+    # This module carried a fully-disabled Samba block (enable=false,
+    # openFirewall=false, a three-share settings tree, wsdd disabled) plus the
+    # zfs-share.service disable below — ~50 lines of dead config implying a
+    # NAS feature that has never run on this fleet (SMB was evaluated and
+    # dropped in favor of NFS + Syncthing; nothing mounts a share).
+    # Re-enabling Samba later means writing a real, enabled config — not
+    # resurrecting this tombstone. The throughput knobs live in
+    # modules/storage/zfs-tuning.nix, gated on services.samba.enable, so they
+    # apply if/when Samba returns.
+    # Disable ZFS automatic sharing (shares are managed by NFS, not ZFS/SMB).
+    systemd.services.zfs-share.enable = false;
 
     environment.systemPackages = with pkgs; [
       zfs
-      samba
       sanoid # provides syncoid too, for manual runs
     ];
   };

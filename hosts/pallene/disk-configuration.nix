@@ -8,8 +8,9 @@
 
 # Disk-bootable NixOS configuration for a Kamatera VPS build server.
 # The raw disk image is built with nixos-generators (10 GB, ext4, BIOS/MBR)
-# and uploaded to Kamatera's private image library via a public URL served
-# by europa's vps-image-server + Cloudflare Tunnel.
+# and uploaded to Kamatera's private image library via a public URL (the
+# vps-image-server module that used to serve it was removed 2026-08-17 as
+# an unwired orphan; re-provision from git history if the flow returns).
 #
 # On first boot boot.growPartition auto-expands the root partition to fill
 # whatever disk size the VPS was created with. This is stateless: the VPS

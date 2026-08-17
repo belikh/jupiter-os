@@ -34,10 +34,10 @@
 # jupiter.gaming.console hosts, and staying off it keeps this closure plain
 # nixpkgs — same rationale console.nix gives for its non-gamingMode path.
 #
-# sessionOnTty1/mkLauncher below are lifted from dashboard-gaming.nix (same
-# TTY/DRM/PAM semantics; capsh --noamb keeps pam_systemd's CAP_WAKE_ALARM out
-# of bubblewrap sandboxes). Keep the two in sync if the session wiring ever
-# changes shape.
+# sessionOnTty1/mkLauncher come from modules/lib.nix — shared byte-for-byte
+# with dashboard-gaming.nix (same TTY/DRM/PAM semantics; capsh --noamb keeps
+# pam_systemd's CAP_WAKE_ALARM out of bubblewrap sandboxes), so the two
+# cannot drift.
 #
 # First consumer: callisto (the fleet build server + MQTT broker doubles as
 # the office arcade, HDMI display on its UHD 630 iGPU).
@@ -45,68 +45,33 @@
 let
   cfg = config.jupiter.arcadeConsole;
 
-  # See the header note in dashboard-gaming.nix for the rationale of each
-  # line (PATH so programs.* wrappers resolve; XDG_RUNTIME_DIR/DBUS because a
-  # plain system service lacks the pam_systemd session env; capsh --noamb so
-  # nothing downstream inherits CAP_WAKE_ALARM).
-  mkLauncher = pkgs.writeShellScript "jupiter-arcade-console-session" ''
-    export PATH=/run/current-system/sw/bin:$PATH
-    export XDG_RUNTIME_DIR="/run/user/$(id -u ${cfg.sessionUser})"
-    export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
-    exec ${pkgs.libcap}/bin/capsh --noamb -- -c 'exec gamescope -f -- pegasus-fe'
-  '';
+  # Session launcher + tty1 seat wiring live in modules/lib.nix now — shared
+  # byte-for-byte with dashboard-gaming.nix, so the two can never drift (the
+  # old "Keep the two in sync" copies did exactly that).
+  inherit (import ../lib.nix { inherit config lib pkgs; })
+    mkSessionLauncher
+    mkSessionOnTty1
+    gamescopePrograms
+    ;
 
-  # A start/stoppable system unit that can grab DRM master on tty1 — same
-  # wiring as nixpkgs' services.cage / dashboard-gaming.nix's sessionOnTty1.
-  # The cage-tty1 conflict is inert on hosts without cage and harmless
-  # insurance on one that ever gains it. NOTE: deliberately NO
-  # ConditionPathExists=/dev/tty1 here (unlike dashboard-gaming's on-demand
-  # kiosk units): this unit starts at BOOT via graphical.target, and on
-  # callisto's iSCSI-root boot systemd recorded the condition as failed at
-  # job-dequeue time even with /dev/tty1 present (kernel VT devices always
-  # exist), silently skipping the session. A condition that can false-
-  # negative on the boot path is worse than no condition.
-  sessionOnTty1 = {
-    after = [
-      "systemd-user-sessions.service"
-      "systemd-logind.service"
-      "getty@tty1.service"
-    ];
-    before = [ "graphical.target" ];
-    conflicts = [
-      "getty@tty1.service"
-      "autovt@tty1.service"
-      "cage-tty1.service"
-    ];
-    # switch-to-configuration normally stops+restarts a unit whose definition
-    # changed; a stop of this session costs the full stop timeout (gamescope
-    # ignores SIGTERM, see TimeoutStopSec) and leaves the appliance dark after
-    # every deploy (observed 2026-08-16: six switches, six dead sessions).
-    # Let a changed unit file apply at the next organic restart instead.
-    stopIfChanged = false;
-    serviceConfig = {
-      TTYPath = "/dev/tty1";
-      TTYReset = true;
-      TTYVHangup = true;
-      TTYVTDisallocate = true;
-      StandardInput = "tty-fail";
-      StandardOutput = "journal";
-      StandardError = "journal";
-      UtmpIdentifier = "tty1";
-      UtmpMode = "user";
-      Restart = "always";
-      RestartSec = 2;
-      # gamescope does not exit on SIGTERM while its children tear down, so
-      # the default 90s stop timeout ends in SIGKILL + Result=timeout ~80s
-      # later (observed live 2026-08-16). Bound it like Valve's own
-      # gamescope-session.service (Jovian ships TimeoutStopSec=10 for the
-      # same reason). Keep in sync with dashboard-gaming.nix's sessionOnTty1.
-      TimeoutStopSec = 10;
-    };
-  };
+  mkLauncher = mkSessionLauncher "arcade-console" cfg.sessionUser "gamescope -f -- pegasus-fe";
+
+  # conditionOnTty1 = false: this unit starts at BOOT via graphical.target,
+  # and on callisto's iSCSI-root boot systemd recorded the condition as
+  # failed at job-dequeue time even with /dev/tty1 present (kernel VT
+  # devices always exist), silently skipping the session. A condition that
+  # can false-negative on the boot path is worse than no condition. Full
+  # rationale for every other key lives in modules/lib.nix.
+  sessionOnTty1 = mkSessionOnTty1 { conditionOnTty1 = false; };
 in
 {
-  imports = [ ./arcade.nix ];
+  imports = [
+    ./arcade.nix
+    # Shared controller stack (identical wiring console.nix gives the kiosks
+    # — importing it twice is idempotent, and keeps the udev rules from ever
+    # being defined in two places).
+    ../gaming/controllers.nix
+  ];
 
   options.jupiter.arcadeConsole = {
     enable = lib.mkEnableOption ''
@@ -137,10 +102,12 @@ in
     };
 
     audioOutput = lib.mkOption {
-      type = lib.types.nullOr (lib.types.enum [
-        "hdmi"
-        "analog"
-      ]);
+      type = lib.types.nullOr (
+        lib.types.enum [
+          "hdmi"
+          "analog"
+        ]
+      );
       default = null;
       description = ''
         Force the session's PulseAudio output to the TV (HDMI) or the
@@ -174,13 +141,9 @@ in
     # isNormalUser half normally comes from dashboard-gaming on kiosks.
     users.users.${cfg.sessionUser}.isNormalUser = true;
 
-    # Stock nixpkgs gamescope (see header). capSysNice gives it the
-    # sched-priority wrapper, matching the kiosk session's behavior closely
-    # enough for an appliance (kiosks use jovian's equivalent wrapper).
-    programs.gamescope = {
-      enable = true;
-      capSysNice = true;
-    };
+    # Stock nixpkgs gamescope (see header). Shared value with console.nix so
+    # the two definitions can never diverge (lib.nix: gamescopePrograms).
+    programs.gamescope = gamescopePrograms;
 
     # --- The session unit (same name the collection modules target) ---------
     systemd.services.jupiter-arcade = lib.mkMerge [
@@ -232,21 +195,12 @@ in
     '';
 
     # --- Controllers ---------------------------------------------------------
-    hardware.xpadneo.enable = lib.mkIf cfg.controllers (lib.mkDefault true);
-    hardware.xone.enable = lib.mkIf cfg.controllers (lib.mkDefault true);
-    # powerOnBoot: bring hci0 up unattended so a trusted (paired) controller
-    # can auto-reconnect by pad-initiated advertising the moment the box
-    # boots — without it the DS4 sat paired-but-unreachable until someone
-    # powered the adapter by hand (observed live on callisto).
-    hardware.bluetooth = lib.mkIf cfg.controllers {
-      enable = lib.mkDefault true;
-      powerOnBoot = lib.mkDefault true;
-    };
-    services.udev.extraRules = lib.mkIf cfg.controllers ''
-      ATTRS{name}=="Sony Interactive Entertainment Wireless Controller Touchpad", ENV{LIBINPUT_IGNORE_DEVICE}="1"
-      ATTRS{name}=="Sony Interactive Entertainment DualSense Wireless Controller Touchpad", ENV{LIBINPUT_IGNORE_DEVICE}="1"
-      ATTRS{name}=="Wireless Controller Touchpad", ENV{LIBINPUT_IGNORE_DEVICE}="1"
-      ATTRS{name}=="DualSense Wireless Controller Touchpad", ENV{LIBINPUT_IGNORE_DEVICE}="1"
-    '';
+    # xpadneo (Bluetooth) + xone (dongle/wired), Bluetooth powered on at boot
+    # so a trusted (paired) controller can auto-reconnect, and the udev rule
+    # that stops DualSense/DualShock touchpads firing phantom mouse clicks
+    # mid-game — all of it in the shared modules/gaming/controllers.nix
+    # (same wiring the kiosks get via modules/gaming/console.nix), gated on
+    # this module's controllers flag.
+    jupiter.gaming.controllers.enable = lib.mkIf cfg.controllers true;
   };
 }

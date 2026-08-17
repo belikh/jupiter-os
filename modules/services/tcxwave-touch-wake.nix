@@ -8,6 +8,8 @@
 let
   cfg = config.jupiter.touchWake;
 
+  inherit (import ../lib.nix { inherit config lib pkgs; }) polkitUnitRule;
+
   touchWakeScript = pkgs.writers.writePython3Bin "tcxwave-touch-wake" { } ''
     import sys
     import os
@@ -219,7 +221,10 @@ in
         # brought touch events back immediately. brightness=0 alone gives
         # the correct dark appearance without that side effect.
         ExecStart = "${pkgs.writeShellScript "tcxwave-screen-on" ''
-          export XDG_RUNTIME_DIR=/run/user/1001
+          # io's runtime dir resolved at RUNTIME, never a hardcoded UID —
+          # /run/user/1001 silently stopped matching the day io's uid was
+          # re-allocated. Same pattern mkLauncher uses.
+          export XDG_RUNTIME_DIR="/run/user/$(id -u io)"
           export WAYLAND_DISPLAY=wayland-0
           ${pkgs.wlr-randr}/bin/wlr-randr --output eDP-1 --on
           for bl in /sys/class/backlight/*; do
@@ -228,7 +233,7 @@ in
           done
         ''}";
         ExecStop = "${pkgs.writeShellScript "tcxwave-screen-off" ''
-          export XDG_RUNTIME_DIR=/run/user/1001
+          export XDG_RUNTIME_DIR="/run/user/$(id -u io)"
           export WAYLAND_DISPLAY=wayland-0
           ${pkgs.wlr-randr}/bin/wlr-randr --output eDP-1 --off
           for bl in /sys/class/backlight/*; do
@@ -270,21 +275,15 @@ in
         RestartSec = "5s";
         User = "root";
         Environment = [
-          "XDG_RUNTIME_DIR=/run/user/1001"
           "WAYLAND_DISPLAY=wayland-0"
           "PYTHONUNBUFFERED=1"
         ];
       };
     };
 
-    security.polkit.extraConfig = ''
-      polkit.addRule(function(action, subject) {
-        if (action.id == "org.freedesktop.systemd1.manage-units" &&
-            action.lookup("unit") == "tcxwave-screen-power.service" &&
-            subject.user == "io") {
-          return polkit.Result.YES;
-        }
-      });
-    '';
+    # io may power the touchscreen on/off via systemd — scoped to exactly
+    # this unit and this user (rule body shared with customer-display.nix in
+    # modules/lib.nix: polkitUnitRule).
+    security.polkit.extraConfig = polkitUnitRule "io" "tcxwave-screen-power.service";
   };
 }

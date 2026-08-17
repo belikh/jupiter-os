@@ -81,11 +81,39 @@ let
   ];
 in
 {
+  imports = [ ../network/fleet.nix ];
+
   options.jupiter.core.buildMachines = {
     enable = lib.mkOption {
       type = lib.types.bool;
       default = false;
-      description = "Delegate eligible builds to callisto + the dashboard kiosks as remote Nix builders.";
+      description = "Delegate eligible builds to callisto (+ the dashboard kiosks, see includeKiosks) as remote Nix builders.";
+    };
+
+    includeKiosks = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Also wire the 4 dashboard kiosks as builders. europa sets this to
+        false: it delegates to callisto ALONE (the kiosks' 7.6GiB RAM is a
+        swap/OOM risk for its large tuned derivations, and their
+        gccarch-bdver4 advert would re-open the Excavator path europa must
+        not delegate — see advertiseBdver4).
+      '';
+    };
+
+    advertiseBdver4 = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Include gccarch-bdver4 in callisto's supportedFeatures. europa MUST
+        keep this false: callisto is Coffee Lake/Skylake with no XOP/TBM/FMA4
+        (Excavator-only extensions bdver4 code may emit). Advertising it
+        (pre-08fd609) made perl's miniperl bootstrap SIGILL while "building
+        on europa" — actually mis-executing on callisto. Delegation is safe
+        for europa NOW precisely because europa is untuned: its derivations
+        carry no gccarch-* tag. Revisit only together with microarch tuning.
+      '';
     };
   };
 
@@ -95,7 +123,7 @@ in
     nix.distributedBuilds = true;
     nix.buildMachines = [
       {
-        hostName = "10.1.1.3"; # callisto, DHCP-reserved (see comment above)
+        hostName = config.jupiter.fleet.addresses.callisto; # DHCP-reserved (see comment above)
         system = "x86_64-linux";
         protocol = "ssh-ng";
         sshUser = "root";
@@ -114,25 +142,28 @@ in
         # registered, dispatch happens regardless; the value only biases
         # choice once a second builder exists.
         speedFactor = 2;
+        # gccarch-bdver4 is conditional (see advertiseBdver4): hosts whose
+        # tuned closures may legally execute there must not send Excavator
+        # code to a Coffee Lake builder.
         supportedFeatures = [
-          "gccarch-bdver4"
           "gccarch-skylake"
           "big-parallel"
-        ];
+        ]
+        ++ lib.optional cfg.advertiseBdver4 "gccarch-bdver4";
         mandatoryFeatures = [ ];
       }
     ]
-    ++ kioskBuilders;
+    ++ lib.optionals cfg.includeKiosks kioskBuilders;
 
     # callisto now has a persistent iSCSI root with a stable host key
     # (captured 2026-07-24 onwards). Pin it here and enable strict checking
     # like the kiosks. Configure SSH to use the build key for nix-copy-closure.
     #
-    # Keyed on the literal 10.1.1.3 (not "callisto"): nix.buildMachines dials
+    # Keyed on the literal address (not "callisto"): nix.buildMachines dials
     # callisto by IP (see hostName above), and ssh_config Host patterns match
     # the literal argument passed to ssh, not a resolved/aliased name.
     programs.ssh.extraConfig = ''
-      Host 10.1.1.3
+      Host ${config.jupiter.fleet.addresses.callisto}
         IdentityFile ${config.sops.secrets.nix_build_ssh_key.path}
         IdentitiesOnly yes
     '';
@@ -145,9 +176,11 @@ in
     # unresolvable), add its key here once it's provisioned.
     programs.ssh.knownHosts = {
       callisto = {
-        hostNames = [ "10.1.1.3" ];
+        hostNames = [ config.jupiter.fleet.addresses.callisto ];
         publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIINKUMgEPCzZRq74JtvkMmfmT6gOmZWGGq8G9lNqqKsU";
       };
+    }
+    // lib.optionalAttrs cfg.includeKiosks {
       amalthea = {
         hostNames = [ "amalthea.localdomain" ];
         publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGQV+BzJbBfN+T3WKEUo4CzwJHS1B2bsnH5vglHmbP+Y";

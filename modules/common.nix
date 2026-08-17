@@ -11,6 +11,12 @@
 # need them are brought back up.
 {
   imports = [
+    # Fleet topology (jupiter.fleet.addresses) — imported FIRST: option
+    # defaults in other modules reference it, and NixOS resolves option
+    # defaults lazily so import order doesn't matter, but keeping it here
+    # makes the dependency visible. Per-module imports of fleet.nix remain
+    # valid (idempotent) for hosts that don't take all of common.nix.
+    ./network/fleet.nix
     ./core/impermanence.nix
     ./core/antigravity-cli.nix
     ./core/ecc.nix
@@ -41,7 +47,7 @@
   # callisto's static DHCP-reserved IP (same pattern as the broker address in
   # modules/services/customer-display.nix / arcade-inventory.nix). callisto
   # itself overrides clientUrl back to localhost in its own config.
-  jupiter.services.llm.clientUrl = lib.mkDefault "http://10.1.1.3:8081";
+  jupiter.services.llm.clientUrl = lib.mkDefault "http://${config.jupiter.fleet.addresses.callisto}:8081";
 
   nixpkgs.config.allowUnfree = true;
   hardware.enableRedistributableFirmware = lib.mkDefault true;

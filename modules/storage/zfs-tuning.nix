@@ -1,4 +1,4 @@
-{ lib, ... }:
+{ config, lib, ... }:
 
 # Performance tuning for the NAS (HPE MicroServer Gen10: Opteron X3216 APU,
 # 2c/2t 1.6GHz base / 3.0GHz boost, 8GB ECC single-channel, 2×1GbE BCM5720,
@@ -66,9 +66,10 @@
   # Same mechanism the kiosks already use (services/tcxwave-power-tuning.nix).
   #
   # 25%, not the kiosks' 50%: zram's pages are stored compressed IN RAM, and
-  # ARC is still holding up to 5GiB here. Revisit upward once that cap comes
-  # down. lz4 for the same reason the kiosks use it — this CPU is weak
-  # (2c/2t) and ratio matters less than cycles.
+  # ARC is still holding up to 3GiB here (zfs_arc_max=3221225472 above — the
+  # old 5GiB cap is what co-occurred with the OOMs; see the header). Revisit
+  # upward only together with that cap. lz4 for the same reason the kiosks
+  # use it — this CPU is weak (2c/2t) and ratio matters less than cycles.
   zramSwap = {
     enable = true;
     algorithm = "lz4";
@@ -91,7 +92,11 @@
   };
 
   # ---- Samba throughput (CPU is weak — offload to the kernel) ---------------
-  services.samba.settings.global = {
+  # mkIf services.samba.enable: this module is imported by any ZFS host for
+  # the ARC/zram/sysctl tuning; the Samba block only applies where Samba
+  # actually runs (europa). Ungated it set options on a disabled service —
+  # inert but scatter (it reads as if Samba were part of every ZFS host).
+  services.samba.settings.global = lib.mkIf config.services.samba.enable {
     "use sendfile" = "yes";
     "aio read size" = "1"; # enable async IO for all reads
     "aio write size" = "1";

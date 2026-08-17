@@ -1,7 +1,7 @@
 {
   config,
-  pkgs,
   lib,
+  pkgs,
   ...
 }:
 
@@ -36,7 +36,9 @@ let
       description = "Google Antigravity CLI";
       homepage = "https://antigravity.google";
       license = licenses.unfree;
-      platforms = platforms.linux;
+      # The pinned release URL is linux-x64 only.
+      platforms = [ "x86_64-linux" ];
+      mainProgram = "agy";
     };
   };
 in

@@ -68,8 +68,13 @@ in
     # Allow the daemon to accept store-path imports over this SSH user's
     # `nix copy --to ssh://...`. Merges with any other trusted-users entries.
     nix.settings.trusted-users = [ cfg.user ];
-    # Allow unsigned paths from CI (built on runner, not signed by Harmonia key)
-    nix.settings.require-sigs = false;
+    # Signatures stay REQUIRED (the nix default). CI signs every path it
+    # pushes: scripts/ci/post-build-hook.sh runs `nix store sign` with the
+    # HARMONIA_KEY before `nix store copy`, so europa verifies instead of
+    # trusting whatever arrives over SSH. (require-sigs=false here was a
+    # P0: it made europa's store accept unsigned imports from ANY
+    # trusted-user context, silently corrupting the trust chain Harmonia
+    # downstream relies on — europa serves these paths to the fleet.)
 
     # Per-user GC-roots dir owned by the receiver, where CI registers one
     # indirect root per build (<host>.<sha>) for the retain-recent rotation.

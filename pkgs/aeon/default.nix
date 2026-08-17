@@ -6,19 +6,27 @@
   nodejs,
   makeWrapper,
   pkgs,
+  # Pinned source (the flake's `aeon` input from flake.lock). When omitted
+  # (standalone `nix build -f pkgs/aeon`), fall back to fetching main — note
+  # that fallback FLOATS: its hash pins a snapshot of "main" at the time it
+  # was last bumped, which is NOT the same commit the flake input pins. The
+  # flake always passes src; the two sources used to diverge silently.
+  src ? null,
   ...
 }:
 
 let
-  # Fetch aeonfun/aeon from GitHub main branch.
-  # Bump sha256 when updating: set to lib.fakeHash, build, paste the got: hash.
-  aeonSrc = fetchFromGitHub {
-    owner = "aeonfun";
-    repo = "aeon";
-    rev = "main";
-    sha256 = "sha256-5CjJYn8DrcBR+Q7Y+V4PfmfRIhHJK8qpFND3FVXnOgQ=";
-    fetchSubmodules = false;
-  };
+  aeonSrc =
+    if src != null then
+      src
+    else
+      fetchFromGitHub {
+        owner = "aeonfun";
+        repo = "aeon";
+        rev = "main";
+        sha256 = "sha256-5CjJYn8DrcBR+Q7Y+V4PfmfRIhHJK8qpFND3FVXnOgQ=";
+        fetchSubmodules = false;
+      };
 
   # Install the dashboard's npm dependencies (offline via fetchNpmDeps).
   #
@@ -31,8 +39,10 @@ let
     pname = "aeon-dashboard";
     version = "0.1.0";
 
-    src = aeonSrc;
-    sourceRoot = "source/apps/dashboard";
+    # aeonSrc may be a flake input (no "source/" unpack prefix) or a
+    # fetchFromGitHub result (has one), so address the subpath directly —
+    # buildNpmPackage accepts a subdir path as src.
+    src = "${aeonSrc}/apps/dashboard";
 
     npmDepsHash = "sha256-1I71PGGBoZaDxDb58ag/S/PuqxRyxZNX/LYSlMxe6zU=";
 
@@ -69,6 +79,7 @@ let
 in
 {
   inherit dashboard;
+  # (an `aeon-cli` alias of the same derivation existed here until
+  # 2026-08-17 — it was the dashboard twice under two names)
   aeon-dashboard = dashboard;
-  aeon-cli = dashboard;
 }

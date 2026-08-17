@@ -6,8 +6,8 @@ keys:
   - &callisto age1ss3a2y2swk003cpczd7qvdzy3raftxa9nemwhcaukw7dtutz2u5s940g82
   # adrastea isn't installed yet — still a throwaway placeholder key, not
   # derived from any real SSH host key. Replace it with the unit's real
-  # SSH-derived age key at install time (see docs/07-secrets-management.md
-  # §4), then `sops updatekeys`.
+  # SSH-derived age key at install time (the docs/ secrets-management page
+  # this once pointed at no longer exists), then `sops updatekeys`.
   # metis: real key, captured 2026-07-24 from its live SSH host key
   # (ssh root@metis.localdomain 'cat /etc/ssh/ssh_host_ed25519_key.pub' |
   # nix run nixpkgs#ssh-to-age) — the box was installed 2026-07-20 but this
