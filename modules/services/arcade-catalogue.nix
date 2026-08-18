@@ -32,10 +32,9 @@ let
   # "-" is the TSV's "not applicable" marker.
   orNull = v: if v == "-" then null else v;
 
-  raw = lib.splitString "\n" (
-    lib.removeSuffix "\n" (builtins.readFile ../../scripts/cartridge-catalogue.tsv)
-  );
-  dataLines = lib.filter (l: l != "" && !lib.hasPrefix "#" l) raw;
+  raw = lib.splitString "\n" (builtins.readFile ../../scripts/cartridge-catalogue.tsv);
+  # Trim each line and filter out empty/comment lines. Handles missing trailing newline.
+  dataLines = lib.filter (l: l != "" && !lib.hasPrefix "#" l) (map lib.trim raw);
 
   # system collection core emulator extensions sky bucket torrent
   row = builtins.match "([^\t]+)	([^	]+)	([^	]+)	([^	]+)	([^	]+)	([^	]+)	([^	]+)	(.*)";

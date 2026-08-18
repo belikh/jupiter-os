@@ -42,6 +42,7 @@
     ../../modules/services/arcade-inventory.nix
     ../../modules/services/suno-backup.nix
     ../../modules/services/suno-web.nix
+    ../../modules/services/aria2.nix
     ../../modules/core/build-machines.nix
   ];
 
@@ -127,7 +128,7 @@
       sshUser = "root";
       sshKey = config.sops.secrets.nix_build_ssh_key.path;
       maxJobs = 1;
-      
+
       speedFactor = 2;
       supportedFeatures = [
         "gccarch-skylake"
@@ -143,7 +144,7 @@
       sshUser = "root";
       sshKey = config.sops.secrets.nix_build_ssh_key.path;
       maxJobs = 1;
-      
+
       speedFactor = 1;
       supportedFeatures = [
         "gccarch-skylake"
@@ -159,7 +160,7 @@
       sshUser = "root";
       sshKey = config.sops.secrets.nix_build_ssh_key.path;
       maxJobs = 1;
-      
+
       speedFactor = 1;
       supportedFeatures = [
         "gccarch-skylake"
@@ -175,7 +176,7 @@
       sshUser = "root";
       sshKey = config.sops.secrets.nix_build_ssh_key.path;
       maxJobs = 1;
-      
+
       speedFactor = 1;
       supportedFeatures = [
         "gccarch-skylake"
@@ -191,7 +192,7 @@
       sshUser = "root";
       sshKey = config.sops.secrets.nix_build_ssh_key.path;
       maxJobs = 1;
-      
+
       speedFactor = 1;
       supportedFeatures = [
         "gccarch-skylake"
@@ -523,6 +524,13 @@
   # transcoding first.
   jupiter.services.sunoWeb = {
     enable = true;
+    openFirewall = true;
+  };
+
+  # aria2 + AriaNg web UI — LAN at http://10.1.1.2:8083
+  jupiter.services.aria2 = {
+    enable = true;
+    downloadDir = "/tank/downloads";
     openFirewall = true;
   };
 

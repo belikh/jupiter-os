@@ -303,7 +303,11 @@
   # ample headroom for OS + services + the build's working set).
   fileSystems."/build" = {
     fsType = "tmpfs";
-    options = [ "size=20G" "mode=1777" "noatime" ];
+    options = [
+      "size=20G"
+      "mode=1777"
+      "noatime"
+    ];
   };
 
   jupiter.services.nomWeb = {

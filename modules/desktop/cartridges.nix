@@ -140,8 +140,21 @@ let
         *.so|/*) core="$name" ;;
         *)
           case "$name" in
+            beetle-lynx) so="mednafen_lynx_libretro.so" ;;
+            beetle-ngp) so="mednafen_ngp_libretro.so" ;;
+            beetle-pce-fast) so="mednafen_pce_fast_libretro.so" ;;
+            beetle-pcfx) so="mednafen_pcfx_libretro.so" ;;
             beetle-psx) so="mednafen_psx_libretro.so" ;;
+            beetle-saturn) so="mednafen_saturn_libretro.so" ;;
+            beetle-supergrafx) so="mednafen_supergrafx_libretro.so" ;;
             beetle-vb) so="mednafen_vb_libretro.so" ;;
+            beetle-wswan) so="mednafen_wswan_libretro.so" ;;
+            genesis-plus-gx) so="genesis_plus_gx_libretro.so" ;;
+            mupen64plus) so="mupen64plus_next_libretro.so" ;;
+            vice-x128) so="vice_x128_libretro.so" ;;
+            vice-x64) so="vice_x64_libretro.so" ;;
+            vice-xplus4) so="vice_xplus4_libretro.so" ;;
+            vice-xvic) so="vice_xvic_libretro.so" ;;
             *) so="''${name}_libretro.so" ;;
           esac
           if [ -f "$CORES_DIR/$so" ]; then
@@ -205,6 +218,8 @@ in
     ./arcade.nix
     ./dashboard-gaming.nix
     ./arcade-console.nix
+    # BIOS deployment for cores that need it (FDS, optionally DSi/3DS)
+    ./bios.nix
     # nfsHost default references the fleet topology module
     ../network/fleet.nix
     # the systems catalogue this module derives everything from
@@ -279,6 +294,12 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    # BIOS deployment for cores that require it (FDS, optionally DSi/3DS)
+    jupiter.bios = {
+      enable = true;
+      sessionUser = cfg.sessionUser;
+    };
+
     # Each per-system subdir is a Pegasus collection root (holds the
     # metadata.pegasus.txt Skyscraper generates on europa). Pegasus discovers
     # them via the game_dirs.txt arcade.nix seeds from this list.

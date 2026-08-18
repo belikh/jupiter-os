@@ -25,31 +25,57 @@ let
 
   # All Skylake hosts in the fleet (callisto + 4 kiosks)
   allSkylakeHosts = [
-    { name = "callisto"; host = config.jupiter.fleet.addresses.callisto; isKiosk = false; }
-    { name = "amalthea"; host = "amalthea.localdomain"; isKiosk = true; }
-    { name = "metis"; host = "metis.localdomain"; isKiosk = true; }
-    { name = "adrastea"; host = "adrastea.localdomain"; isKiosk = true; }
-    { name = "thebe"; host = "thebe.localdomain"; isKiosk = true; }
+    {
+      name = "callisto";
+      host = config.jupiter.fleet.addresses.callisto;
+      isKiosk = false;
+    }
+    {
+      name = "amalthea";
+      host = "amalthea.localdomain";
+      isKiosk = true;
+    }
+    {
+      name = "metis";
+      host = "metis.localdomain";
+      isKiosk = true;
+    }
+    {
+      name = "adrastea";
+      host = "adrastea.localdomain";
+      isKiosk = true;
+    }
+    {
+      name = "thebe";
+      host = "thebe.localdomain";
+      isKiosk = true;
+    }
   ];
 
   # Build a builder spec for any Skylake host
-  mkBuilder = { name, host, isKiosk }: {
-    hostName = host;
-    system = "x86_64-linux";
-    protocol = "ssh-ng";
-    sshUser = "root";
-    sshKey = config.sops.secrets.nix_build_ssh_key.path;
-    # maxJobs=1: one derivation at a time, using all 4 cores
-    # (cores is set on the builder host via nix.settings.cores = 4)
-    maxJobs = 1;
-    speedFactor = if isKiosk then 1 else 2; # callisto 2x faster than kiosks
-    supportedFeatures = [
-      "gccarch-skylake"
-      "gccarch-bdver4"
-      "big-parallel"
-    ];
-    mandatoryFeatures = [ ];
-  };
+  mkBuilder =
+    {
+      name,
+      host,
+      isKiosk,
+    }:
+    {
+      hostName = host;
+      system = "x86_64-linux";
+      protocol = "ssh-ng";
+      sshUser = "root";
+      sshKey = config.sops.secrets.nix_build_ssh_key.path;
+      # maxJobs=1: one derivation at a time, using all 4 cores
+      # (cores is set on the builder host via nix.settings.cores = 4)
+      maxJobs = 1;
+      speedFactor = if isKiosk then 1 else 2; # callisto 2x faster than kiosks
+      supportedFeatures = [
+        "gccarch-skylake"
+        "gccarch-bdver4"
+        "big-parallel"
+      ];
+      mandatoryFeatures = [ ];
+    };
 
   # All builders (the full symmetric pool)
   allBuilders = map mkBuilder allSkylakeHosts;

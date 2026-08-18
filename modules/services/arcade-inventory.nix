@@ -47,12 +47,14 @@ let
   # cartridges.nix / rom-acquire's own maps). Each emitted line is a bash case
   # arm:  nes) printf '%s' '.*\.(nes)$' ;;
   # Ensure trailing newline so the *) guard is on its own line.
-  patternCase = lib.concatStringsSep "\n" (
-    lib.mapAttrsToList (
-      name: v:
-      "        ${caseLabel name}) printf '%s' '.*\\.(${lib.concatStringsSep "|" v.extensions})$' ;;"
-    ) catalogue
-  ) + "\n";
+  patternCase =
+    lib.concatStringsSep "\n" (
+      lib.mapAttrsToList (
+        name: v:
+        "        ${caseLabel name}) printf '%s' '.*\\.(${lib.concatStringsSep "|" v.extensions})$' ;;"
+      ) catalogue
+    )
+    + "\n";
 
   inventoryRun = pkgs.writeShellScriptBin "jupiter-arcade-inventory-run" ''
         set -uo pipefail
