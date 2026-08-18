@@ -30,7 +30,7 @@ buildNpmPackage rec {
     owner = "mayswind";
     repo = "AriaNg";
     rev = "d6a765377e1eecfbcc387dcb824124df114decfb";
-    hash = "sha256-IDYBeqGPjkIWXZW5L5bn8YOkGL6bE3MKnM+93Cm6RH0=";
+    hash = "sha256-NLXgszZUBF/LC2moWe4wQQbMDkhdvNxYeL+AO1fhQMw=";
   };
 
   patches = [ ./aria-task-name-from-dir.patch ];
@@ -51,9 +51,13 @@ buildNpmPackage rec {
 
   dontNpmTest = true;
 
+  # npm v11 needs to write to the cache (the fetcher's store copy is
+  # read-only); buildNpmPackage copies it to $TMPDIR when this is set.
+  makeCacheWritable = true;
+
   inherit nodejs;
 
-  npmDepsHash = "sha256-yvKSLb3oCpmIIhkrdFPVui9Hpxz68wBLqibDAFlBfbU=";
+  npmDepsHash = "sha256-FwGD+XXJ9YOxfNQ6Rvj/J/+E8yLxXyW7qjYe7nYkqhE=";
 
   meta = {
     description = "AriaNg web UI for aria2, built with a task-name-from-dir patch";

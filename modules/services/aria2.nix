@@ -16,13 +16,11 @@
 let
   cfg = config.jupiter.services.aria2;
 
-  # Fetch AriaNg release from GitHub. The AllInOne zip is a flat archive
-  # (index.html + assets at the zip root), so fetchzip needs stripRoot=false.
-  ariaNg = pkgs.fetchzip {
-    url = "https://github.com/mayswind/AriaNg/releases/download/1.3.12/AriaNg-1.3.12-AllInOne.zip";
-    sha256 = "sha256-KTI6f/T4MQ07/SMz3UMnVFaVCvedsq/4w8rgZ0GphUE=";
-    stripRoot = false;
-  };
+  # AriaNg built from source (see pkgs/ariang): upstream master d6a7653 +
+  # the in-tree task-name-from-dir patch, with the dist/ output served
+  # directly. Building from source lets the patch apply cleanly where the
+  # old prebuilt AllInOne zip (1.3.12) had no source-level patch site.
+  ariaNg = pkgs.callPackage ../../pkgs/ariang { };
 in
 {
   options.jupiter.services.aria2 = {
