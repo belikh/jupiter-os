@@ -120,7 +120,12 @@ let
     }
     # Staging ground for in-flight torrent downloads (aria2 → cache/incoming).
     # NOT exported to kiosks; promotion to games/cartridge happens only after
-    # igir hash verification (modules/services/rom-acquire.nix).
+    # igir hash verification (modules/services/rom-acquire.nix). `incoming` is
+    # deliberately a PLAIN SUBDIR of this dataset, not a child dataset: the live
+    # tree (nointro-nintendo/*) already holds multi-TB of partial downloads +
+    # .aria2 resume state, and zfs-creating a dataset at that mountpoint would
+    # mount OVER it and hide the partials (the daemon resumes them in place via
+    # the RPC dir= option). tank/downloads is the daemon's default dir dataset.
     {
       name = "tank/archive/retro/cache";
       mountpoint = "/tank/archive/retro/cache";

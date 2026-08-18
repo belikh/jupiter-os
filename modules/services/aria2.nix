@@ -46,6 +46,21 @@ in
       description = "Directory where aria2 stores completed downloads";
     };
 
+    extraWritableDirs = lib.mkOption {
+      type = lib.types.listOf lib.types.path;
+      default = [ ];
+      description = ''
+        Additional directories the daemon may write to besides
+        <option>downloadDir</option>. The arcade's per-system torrent
+        downloads land under the rom-acquire incoming root (submitted via the
+        RPC <literal>dir=</literal> option), which is outside the default
+        download dir — list that root here so <literal>ProtectSystem=strict</literal>
+        doesn't block the daemon's writes. Each entry gets a tmpfiles rule
+        (created as <literal>io:users</literal>) plus a
+        <literal>ReadWritePaths</literal> entry.
+      '';
+    };
+
     openFirewall = lib.mkOption {
       type = lib.types.bool;
       default = true;
@@ -57,7 +72,8 @@ in
     # Ensure download directory exists
     systemd.tmpfiles.rules = [
       "d ${cfg.downloadDir} 0755 io users -"
-    ];
+    ]
+    ++ map (dir: "d ${dir} 0755 io users -") cfg.extraWritableDirs;
 
     # aria2 daemon. The RPC secret is read from the sops file at runtime:
     # sops secrets are only decryptable at activation, so the ExecStart
@@ -100,7 +116,7 @@ in
         ProtectSystem = "strict";
         ProtectHome = true;
         NoNewPrivileges = true;
-        ReadWritePaths = [ cfg.downloadDir ];
+        ReadWritePaths = [ cfg.downloadDir ] ++ cfg.extraWritableDirs;
       };
     };
 

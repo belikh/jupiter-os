@@ -544,6 +544,10 @@
     enable = true;
     downloadDir = "/tank/downloads";
     openFirewall = true;
+    # The arcade's rom-acquire submits its per-system torrents with
+    # dir=<incomingDir>/<sys> (fire-and-forget via the JSON-RPC endpoint), so
+    # the daemon needs the incoming root writable to resume partials in place.
+    extraWritableDirs = [ config.jupiter.services.romAcquire.incomingDir ];
   };
 
   # ---- sops secrets --------------------------------------------------------

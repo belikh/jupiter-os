@@ -10,9 +10,13 @@
 > archival pipeline is:
 >
 > - **Console ROM sets** — `modules/services/rom-acquire.nix`
->   (`jupiter-rom-acquire` aria2 oneshot → `jupiter-rom-verify` igir DAT
->   verify/promote) + `modules/services/rom-scraper.nix` (Skyscraper →
-> Pegasus metadata). See `docs/adr/0001-bulk-staged-rom-acquisition.md`.
+>   (`jupiter-rom-acquire` submits each system's Minerva torrent fire-and-forget
+>   to the fleet aria2 JSON-RPC daemon `modules/services/aria2.nix` via
+>   `scripts/aria2-rpc.sh`, resuming partials in place under
+>   `tank/archive/retro/cache/incoming/`; then `jupiter-rom-verify` igir DAT
+>   verify/promote once downloads finish) + `modules/services/rom-scraper.nix`
+>   (Skyscraper → Pegasus metadata). See
+>   `docs/adr/0001-bulk-staged-rom-acquisition.md`.
 > - **Large curated collections (eXo & friends)** — stage the data under
 >   `/tank/archive/retro/games/curated/<name>/` (own ZFS dataset per
 >   collection, `modules/storage/zfs-nas.nix`), then wire it kiosk-side the
