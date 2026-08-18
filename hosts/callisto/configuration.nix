@@ -373,6 +373,38 @@
                 - id: qwen/qwen3.6-27b
                 - id: groq/compound
                 - id: groq/compound-mini
+            opencode-go:
+              displayName: OpenCode Go
+              apiKeyEnv: OPENCODE_API_KEY
+              api: openai-completions
+              baseURL: https://opencode.ai/zen/go/v1
+              models:
+                - id: deepseek-v4-pro
+                - id: deepseek-v4-flash
+                - id: glm-5.3
+                - id: glm-5.2
+                - id: glm-5.1
+                - id: glm-5
+                - id: minimax-m3
+                - id: minimax-m2.7
+                - id: minimax-m2.5
+                - id: kimi-k3
+                - id: kimi-k2.7-code
+                - id: kimi-k2.6
+                - id: kimi-k2.5
+                - id: qwen3.8-max
+                - id: qwen3.7-max
+                - id: qwen3.7-plus
+                - id: qwen3.6-plus
+                - id: qwen3.5-plus
+                - id: mimo-v2-pro
+                - id: mimo-v2-omni
+                - id: mimo-v2.5-pro
+                - id: mimo-v2.5
+                - id: hy3
+                - id: hy3-preview
+                - id: gpt-5.6-luna
+                - id: grok-4.5
       '').outPath;
   };
 
