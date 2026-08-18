@@ -148,8 +148,27 @@ in
 
       # `dsh plugin` forwards to pnpm; git-hosted plugin specs need git;
       # the agent's own bash tool and any spawned node scripts need bash +
-      # node. systemd's default PATH only carries coreutils-class tools.
+      # node. systemd's default PATH only carries coreutils-class tools, so
+      # the extra binaries below are explicit.
+      #
+      # The agent's model-facing bash tool inherits THIS unit's PATH as its
+      # spawn base (dsh-subprocess's childEnv starts from the scrubbed parent
+      # env), so anything the agent shell needs must be reachable here. Without
+      # the system-wide entry below the agent shell can NOT run `ssh`/`scp`/
+      # `sftp`, `curl`, `awk`, `diff`, `ps`, `gpg`, … — those all live only
+      # under /run/current-system/sw/bin (the NixOS system package set from
+      # environment.systemPackages) and were missing from agent commands
+      # ("ssh: command not found", fixed 2026-08-19).
+      #
+      # `/run/current-system/sw` is the active system-path symlink; adding it
+      # puts every currently-installed systemPackage tool on the unit PATH (and
+      # therefore in the agent shell) without enumerating them — anything added
+      # to environment.systemPackages later shows up there too. It comes FIRST
+      # so the system-wide `ssh`/`curl`/`awk`/… win over any shadowing, while
+      # the harness's own nodejs (NOT in systemPackages) still resolves from
+      # pkgs.nodejs below.
       path = [
+        "/run/current-system/sw"
         pkgs.bash
         pkgs.git
         pkgs.pnpm
