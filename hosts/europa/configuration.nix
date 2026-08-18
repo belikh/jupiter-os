@@ -548,6 +548,9 @@
     # dir=<incomingDir>/<sys> (fire-and-forget via the JSON-RPC endpoint), so
     # the daemon needs the incoming root writable to resume partials in place.
     extraWritableDirs = [ config.jupiter.services.romAcquire.incomingDir ];
+    # Enable IPv6 DHT (--enable-dht6). Bind to europa's stable global unicast
+    # address (the mngtmpaddr EUI-64 one, not the rotating temporaries).
+    dhtListenAddr6 = "2402:1060:2305:0:d267:26ff:fed3:b0a5";
   };
 
   # ---- sops secrets --------------------------------------------------------

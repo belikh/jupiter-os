@@ -66,6 +66,23 @@ in
       default = true;
       description = "Open RPC and web UI ports in firewall for LAN access";
     };
+
+    btListenPort = lib.mkOption {
+      type = lib.types.port;
+      default = 6881;
+      description = "TCP/UDP port for incoming BitTorrent peer connections and DHT";
+    };
+
+    dhtListenAddr6 = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = ''
+        Global unicast IPv6 address the IPv6 DHT socket binds to
+        (<literal>--dht-listen-addr6</literal>). Set to the host's stable
+        global address to enable IPv6 DHT (<literal>--enable-dht6</literal>).
+        Leave <literal>null</literal> to keep IPv6 DHT disabled.
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -107,8 +124,11 @@ in
             --bt-request-peer-speed-limit=50K \
             --seed-ratio=1.0 \
             --seed-time=60 \
-            --dht-listen-port=6881 \
-            --listen-port=6881
+            --dht-listen-port=${toString cfg.btListenPort} \
+            --listen-port=${toString cfg.btListenPort} \
+            ${lib.optionalString (
+              cfg.dhtListenAddr6 != null
+            ) "--enable-dht6=true --dht-listen-addr6=${cfg.dhtListenAddr6} "}
         '';
         Restart = "on-failure";
         RestartSec = "10s";
@@ -145,10 +165,15 @@ in
       };
     };
 
-    # Firewall
+    # Firewall. The BT listen port needs both TCP (peer connections) and UDP
+    # (DHT/tracker).
     networking.firewall.allowedTCPPorts = lib.mkIf cfg.openFirewall [
       cfg.port
       cfg.rpcPort
+      cfg.btListenPort
+    ];
+    networking.firewall.allowedUDPPorts = lib.mkIf cfg.openFirewall [
+      cfg.btListenPort
     ];
 
     # Ensure RPC secret is available (declared unconditionally - the RPC
