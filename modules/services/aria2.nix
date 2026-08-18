@@ -18,7 +18,7 @@ let
   # (index.html + assets at the zip root), so fetchzip needs stripRoot=false.
   ariaNg = pkgs.fetchzip {
     url = "https://github.com/mayswind/AriaNg/releases/download/1.3.12/AriaNg-1.3.12-AllInOne.zip";
-    sha256 = "1l2is4yr0jap9lxawwpj45ga9im2px35qghkanj7hgxvlzwkhmgy";
+    sha256 = "sha256-KTI6f/T4MQ07/SMz3UMnVFaVCvedsq/4w8rgZ0GphUE=";
     stripRoot = false;
   };
 in
