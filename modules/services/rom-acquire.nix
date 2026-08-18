@@ -8,10 +8,15 @@
 # No-Intro Nintendo console ROM acquisition + verification (europa-side).
 #
 # Declarifies the old transient `ninty-rom-dl` unit that ran aria2 by hand
-# against the 17 Minerva/Myrient No-Intro Nintendo torrents. Two manual
+# against the 17 Minerva/Myrient No-Intro Nintendo torrents. Three manual
 # oneshots (NO timer - ROM acquisition is a one-time provisioning step, kicked
 # explicitly via `systemctl start`):
 #
+#   jupiter-rom-dats    : scripts/fetch-mclean-1g1r-dats.sh - downloads the
+#                         McLean 1G1R No-Intro/Redump DAT files (one <sys>.dat
+#                         per catalogue system) from Fresh1G1R into datDir so
+#                         verify hash-checks instead of promoting as-is.
+#                         Idempotent: re-fetching overwrites in place.
 #   jupiter-rom-acquire : submits each declared system's torrent to the fleet
 #                         aria2 JSON-RPC daemon (modules/services/aria2.nix,
 #                         jupiter.services.aria2), fire-and-forget — the daemon
@@ -27,11 +32,15 @@
 #                         staged tree still holds .aria2 control files (in-
 #                         flight), so it is safe to run before a download has
 #                         fully finished — promotion happens only for complete
-#                         sets.
+#                         sets. Chained after jupiter-rom-dats (wants, not
+#                         requires): kicking verify first fetches the DATs, but
+#                         a failed fetch never blocks verify — it still runs
+#                         and degrades per missing DAT.
 #
-# DATs are non-redistributable and live on-pool (never in this repo); a missing
-# DAT degrades verify to promote-without-checking for that system rather than
-# blocking ("better partial than blocked").
+# DATs are non-redistributable and live on-pool (never in this repo) — the
+# jupiter-rom-dats oneshot fetches them at runtime; a missing DAT degrades
+# verify to promote-without-checking for that system rather than blocking
+# ("better partial than blocked").
 #
 # igir command reference: https://igir.io/commands/ and
 # https://igir.io/output/reporting/ (the `move test report` combination).
@@ -82,8 +91,15 @@ let
     builtins.readFile ../../scripts/aria2-rpc.sh
   );
 
-  # Pool paths the oneshots touch - used for RequiresMountsFor so neither unit
-  # can start before europa's tank is mounted.
+  # Inlined from scripts/ (single source of truth): the Fresh1G1R McLean 1G1R
+  # DAT downloader that populates datDir (one <sys>.dat per catalogue system)
+  # so the verify oneshot hash-checks instead of promoting as-is.
+  datFetchScript = pkgs.writeShellScriptBin "jupiter-fetch-dats" (
+    builtins.readFile ../../scripts/fetch-mclean-1g1r-dats.sh
+  );
+
+  # Pool paths the oneshots touch - used for RequiresMountsFor so the
+  # acquire/verify units can't start before europa's tank is mounted.
   poolPaths = [
     cfg.incomingDir
     cfg.torrentDir
@@ -269,6 +285,7 @@ in
       pkgs.p7zip
       pkgs.rsync
       pkgs.unzip
+      datFetchScript
       verifyScript
     ];
 
@@ -279,6 +296,22 @@ in
       owner = "io";
       group = "users";
       mode = "0400";
+    };
+
+    systemd.services.jupiter-rom-dats = {
+      description = "No-Intro/Redump 1G1R DAT download (Fresh1G1R McLean)";
+      serviceConfig.Type = "oneshot";
+      # Only the DAT dir is touched - keep the mount gate minimal.
+      unitConfig.RequiresMountsFor = [ cfg.datDir ];
+      environment.DAT_DIR = cfg.datDir;
+      path = [
+        pkgs.coreutils
+        pkgs.curl
+        pkgs.gawk
+        pkgs.jq
+        pkgs.gnused
+      ];
+      script = "${lib.getExe datFetchScript}";
     };
 
     systemd.services.jupiter-rom-acquire = {
@@ -355,6 +388,11 @@ in
       description = "No-Intro Nintendo console ROM verification + promotion (igir)";
       serviceConfig.Type = "oneshot";
       unitConfig.RequiresMountsFor = poolPaths;
+      # DATs first: kicking verify also pulls the DAT fetch oneshot. wants,
+      # not requires — a failed fetch must not block verify, which degrades
+      # per missing DAT by design ("better partial than blocked").
+      after = [ "jupiter-rom-dats.service" ];
+      wants = [ "jupiter-rom-dats.service" ];
       # Both pool paths and the igir/rsync store paths are handed to the script
       # explicitly so it is robust to a sanitized PATH. CARTRIDGE_DIR is set
       # per-bucket in the script (not here) so each bucket promotes into its own
