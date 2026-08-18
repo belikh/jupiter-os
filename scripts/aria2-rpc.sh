@@ -70,7 +70,7 @@ rpc() { # method, then a JSON params array (without the token)
   pfile2="$(mktemp)"
   _tmpfiles+=("$pfile2")
   printf '%s' "$payload" > "$pfile2"
-  "$CURL" -fsS --max-time 30 -H 'Content-Type: application/json' \
+  "$CURL" -fsS --max-time 120 --connect-timeout 10 -H 'Content-Type: application/json' \
     -d "@$pfile2" "http://${RPC_HOST}:${RPC_PORT}/jsonrpc"
 }
 

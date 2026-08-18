@@ -307,6 +307,7 @@ in
         mkdir -p "$SCRATCH_DIR" "$INCOMING_DIR"
         skipped=""
         submitted=0
+        failed=0
         ${lib.concatMapStringsSep "\n" (name: ''
           __torrent="$TORRENT_DIR/${cfg.systems.${name}.torrent}"
           if [ -f "$__torrent" ]; then
@@ -318,10 +319,17 @@ in
             # Idempotent: re-adding a torrent the daemon already knows fails
             # asynchronously (its GID errors with code 12 "already registered")
             # and never becomes a duplicate active download — so a rerun just
-            # re-logs GIDs. A hard submission failure aborts here via set -e
-            # (the RPC script's stderr is what's reported).
-            echo "jupiter-rom-acquire: ${name} -> gid=$( ${lib.getExe rpcScript} submit-torrent "$__torrent" "$INCOMING_DIR/${name}" )"
-            submitted=$((submitted + 1))
+            # re-logs GIDs. A hard submission failure (unreachable daemon,
+            # timeout ingesting a large metainfo) aborts the unit via set -e;
+            # capture the status explicitly so we do NOT swallow it (echo
+            # would mask the failure like the ARG_MAX bug did).
+            if gid="$(${lib.getExe rpcScript} submit-torrent "$__torrent" "$INCOMING_DIR/${name}")"; then
+              echo "jupiter-rom-acquire: ${name} -> gid=$gid"
+              submitted=$((submitted + 1))
+            else
+              echo "jupiter-rom-acquire: FAILED to submit ${name}" >&2
+              failed=$((failed + 1))
+            fi
           else
             echo "jupiter-rom-acquire: torrent not found, skipping ${name}: $__torrent" >&2
             skipped="$skipped ${name}"
@@ -332,6 +340,10 @@ in
           exit 1
         fi
         [ -n "$skipped" ] && echo "jupiter-rom-acquire: skipped:$skipped" >&2
+        if [ "$failed" -gt 0 ]; then
+          echo "jupiter-rom-acquire: $failed submission(s) FAILED - rerun after fixing (see above)" >&2
+          exit 1
+        fi
         # Fire-and-forget: submissions accepted; the daemon downloads in the
         # background. Progress is visible via AriaNg or
         # scripts/aria2-rpc.sh get-global-stat / tell-active.
