@@ -95,6 +95,7 @@ in
             --rpc-listen-all=true \
             --rpc-listen-port=${toString cfg.rpcPort} \
             --rpc-secret="$(cat ${config.sops.secrets.jupiter_aria2_rpc_secret.path})" \
+            --rpc-max-request-size=64M \
             --dir=${cfg.downloadDir} \
             --file-allocation=falloc \
             --continue=true \
