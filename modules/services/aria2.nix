@@ -38,6 +38,49 @@ in
       description = "TCP port for aria2 JSON-RPC";
     };
 
+    rpcHost = lib.mkOption {
+      type = lib.types.str;
+      default = "127.0.0.1";
+      description = ''
+        Host under which AriaNg (the web UI) reaches the JSON-RPC daemon. The
+        daemon binds all interfaces (<literal>--rpc-listen-all</literal>); over
+        the LAN it is usually the routable host (e.g. the NAS'
+        <literal>10.1.1.2</literal>), or a public/TLS reverse-proxy hostname
+        when the endpoint is fronted by a tunnel (see europa's
+        <literal>rpc.jupiter.au</literal>). Combine with
+        <option>rpcProtocol</option> and <option>rpcWebPort</option> to build
+        the exact URL AriaNg defaults to.
+      '';
+    };
+
+    rpcProtocol = lib.mkOption {
+      type = lib.types.enum [
+        "http"
+        "https"
+        "ws"
+        "wss"
+      ];
+      default = "http";
+      description = ''
+        Protocol AriaNg uses to reach the JSON-RPC daemon. Default
+        <literal>http</literal> for a plain LAN endpoint; set
+        <literal>wss</literal> when the endpoint is fronted by TLS/WebSocket
+        termination (e.g. europa's <literal>rpc.jupiter.au</literal> via
+        cloudflared), or <literal>https</literal>/<literal>ws</literal> as
+        appropriate.
+      '';
+    };
+
+    rpcWebPort = lib.mkOption {
+      type = lib.types.port;
+      default = 6800;
+      description = ''
+        Port AriaNg uses to reach the JSON-RPC daemon. Defaults to the daemon's
+        local <option>rpcPort</option> (6800); set to 443 when the endpoint is
+        fronted by a TLS-terminating reverse proxy / tunnel.
+      '';
+    };
+
     downloadDir = lib.mkOption {
       type = lib.types.str;
       default = "/tank/downloads";
@@ -150,6 +193,16 @@ in
           }
         ];
         root = ariaNg;
+        # Default AriaNg straight to the daemon's RPC settings so the "missing
+        # RPC settings" don't have to be hand-entered on first visit. AriaNg
+        # (no static config.js in this version) reads its RPC host/port/path
+        # from the Command-API hash, so an exact-`/` redirect to that hash
+        # pre-seeds them (the hash travels to the browser, never to nginx).
+        # The RPC secret is intentionally left out — embedding it on the LAN
+        # would defeat the daemon's auth. Each browser enters it once.
+        locations."= /" = {
+          return = "302 /#!/settings/rpc/set/${cfg.rpcProtocol}/${cfg.rpcHost}/${toString cfg.rpcWebPort}/jsonrpc";
+        };
         # AriaNg is a SPA - serve index.html for all routes
         locations."/" = {
           tryFiles = "$uri $uri/ /index.html";

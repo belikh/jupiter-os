@@ -32,6 +32,16 @@ set -euo pipefail
 RPC_HOST="${RPC_HOST:-127.0.0.1}"
 RPC_PORT="${RPC_PORT:-6800}"
 RPC_SECRET_FILE="${RPC_SECRET_FILE:-/run/secrets/jupiter_aria2_rpc_secret}"
+# The RPC endpoint shares aria2's single-threaded event loop with all download
+# and socket I/O, so under heavy load (many concurrent torrents, big metainfo)
+# the daemon can take a long time to answer even a trivial request (observed
+# >30s for getVersion, >120s for addTorrent on large sets). --max-time must
+# therefore be generous or a busy daemon spuriously aborts a submission.
+RPC_MAX_TIME="${RPC_MAX_TIME:-600}"
+# How many transport attempts per RPC call. A JSON-RPC error in the body is a
+# HARD result and is never retried; only a transport failure (timeout, HTTP
+# 5xx, connection reset) triggers a retry, with exponential backoff.
+RPC_MAX_RETRIES="${RPC_MAX_RETRIES:-4}"
 
 JQ="${JQ:-jq}"
 CURL="${CURL:-curl}"
@@ -70,8 +80,29 @@ rpc() { # method, then a JSON params array (without the token)
   pfile2="$(mktemp)"
   _tmpfiles+=("$pfile2")
   printf '%s' "$payload" > "$pfile2"
-  "$CURL" -fsS --max-time 120 --connect-timeout 10 -H 'Content-Type: application/json' \
-    -d "@$pfile2" "http://${RPC_HOST}:${RPC_PORT}/jsonrpc"
+  # Retry loop: the daemon's JSON-RPC runs on the same single-threaded event
+  # loop as all download/socket I/O, so under load it can pause for a long
+  # time (even >120s on a busy addTorrent). A JSON-RPC error in the body comes
+  # back on HTTP 200 so -f does NOT trip on it — those are hard results we
+  # intentionally never retry. Only a transport failure (timeout, HTTP >=400,
+  # connection reset) triggers a retry, with exponential backoff, so a brief
+  # loop stall no longer spurious-drops a whole system's submission.
+  local attempt=0 rc
+  while :; do
+    if "$CURL" -fsS --max-time "$RPC_MAX_TIME" --connect-timeout 10 \
+        -H 'Content-Type: application/json' \
+        -d "@$pfile2" "http://${RPC_HOST}:${RPC_PORT}/jsonrpc"; then
+      return 0
+    fi
+    rc=$?
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge "$RPC_MAX_RETRIES" ]; then
+      echo "aria2-rpc: ${CURL} failed (curl rc=$rc) after $RPC_MAX_RETRIES attempt(s) for $method" >&2
+      return 1
+    fi
+    echo "aria2-rpc: ${CURL} transient failure (curl rc=$rc) for $method, retry $attempt/$RPC_MAX_RETRIES" >&2
+    sleep "$((2 ** attempt))"
+  done
 }
 
 case "${1:-}" in
