@@ -42,6 +42,7 @@
     ../../modules/services/arcade-inventory.nix
     ../../modules/services/suno-backup.nix
     ../../modules/services/suno-web.nix
+    ../../modules/services/aria2.nix
     ../../modules/core/build-machines.nix
   ];
 
@@ -116,11 +117,132 @@
   #     again NOW precisely because europa is untuned: its derivations carry
   #     no gccarch-* tag. If microarch is ever re-enabled, revisit this
   #     matrix first (build bdver4 locally or on CI only).
-  jupiter.core.buildMachines = {
-    enable = true;
-    includeKiosks = false;
-    advertiseBdver4 = false;
+  # Europa (bdver4/Excavator) uses all Skylake hosts (callisto + 4 kiosks) as builders.
+  # Not part of the symmetric pool (different microarch).
+  nix.distributedBuilds = true;
+  nix.buildMachines = [
+    {
+      hostName = config.jupiter.fleet.addresses.callisto;
+      system = "x86_64-linux";
+      protocol = "ssh-ng";
+      sshUser = "root";
+      sshKey = config.sops.secrets.nix_build_ssh_key.path;
+      maxJobs = 1;
+
+      speedFactor = 2;
+      supportedFeatures = [
+        "gccarch-skylake"
+        "gccarch-bdver4"
+        "big-parallel"
+      ];
+      mandatoryFeatures = [ ];
+    }
+    {
+      hostName = "amalthea.localdomain";
+      system = "x86_64-linux";
+      protocol = "ssh-ng";
+      sshUser = "root";
+      sshKey = config.sops.secrets.nix_build_ssh_key.path;
+      maxJobs = 1;
+
+      speedFactor = 1;
+      supportedFeatures = [
+        "gccarch-skylake"
+        "gccarch-bdver4"
+        "big-parallel"
+      ];
+      mandatoryFeatures = [ ];
+    }
+    {
+      hostName = "metis.localdomain";
+      system = "x86_64-linux";
+      protocol = "ssh-ng";
+      sshUser = "root";
+      sshKey = config.sops.secrets.nix_build_ssh_key.path;
+      maxJobs = 1;
+
+      speedFactor = 1;
+      supportedFeatures = [
+        "gccarch-skylake"
+        "gccarch-bdver4"
+        "big-parallel"
+      ];
+      mandatoryFeatures = [ ];
+    }
+    {
+      hostName = "adrastea.localdomain";
+      system = "x86_64-linux";
+      protocol = "ssh-ng";
+      sshUser = "root";
+      sshKey = config.sops.secrets.nix_build_ssh_key.path;
+      maxJobs = 1;
+
+      speedFactor = 1;
+      supportedFeatures = [
+        "gccarch-skylake"
+        "gccarch-bdver4"
+        "big-parallel"
+      ];
+      mandatoryFeatures = [ ];
+    }
+    {
+      hostName = "thebe.localdomain";
+      system = "x86_64-linux";
+      protocol = "ssh-ng";
+      sshUser = "root";
+      sshKey = config.sops.secrets.nix_build_ssh_key.path;
+      maxJobs = 1;
+
+      speedFactor = 1;
+      supportedFeatures = [
+        "gccarch-skylake"
+        "gccarch-bdver4"
+        "big-parallel"
+      ];
+      mandatoryFeatures = [ ];
+    }
+  ];
+
+  # SSH config for all builder hosts
+  programs.ssh.extraConfig = ''
+    Host ${config.jupiter.fleet.addresses.callisto}
+      IdentityFile ${config.sops.secrets.nix_build_ssh_key.path}
+      IdentitiesOnly yes
+    Host amalthea.localdomain
+      IdentityFile ${config.sops.secrets.nix_build_ssh_key.path}
+      IdentitiesOnly yes
+    Host metis.localdomain
+      IdentityFile ${config.sops.secrets.nix_build_ssh_key.path}
+      IdentitiesOnly yes
+    Host adrastea.localdomain
+      IdentityFile ${config.sops.secrets.nix_build_ssh_key.path}
+      IdentitiesOnly yes
+    Host thebe.localdomain
+      IdentityFile ${config.sops.secrets.nix_build_ssh_key.path}
+      IdentitiesOnly yes
+  '';
+
+  # Known host keys for all builders
+  programs.ssh.knownHosts = {
+    callisto = {
+      hostNames = [ config.jupiter.fleet.addresses.callisto ];
+      publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIINKUMgEPCzZRq74JtvkMmfmT6gOmZWGGq8G9lNqqKsU";
+    };
+    amalthea = {
+      hostNames = [ "amalthea.localdomain" ];
+      publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGQV+BzJbBfN+T3WKEUo4CzwJHS1B2bsnH5vglHmbP+Y";
+    };
+    thebe = {
+      hostNames = [ "thebe.localdomain" ];
+      publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOjnMhsh8PxlRW1tXYR4GjjDNa4J8os/4URkbD777JMg";
+    };
+    metis = {
+      hostNames = [ "metis.localdomain" ];
+      publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAB6bFJpQteERsDDg7otkc42JOWXDZUA9WprQ/gnEiAK";
+    };
   };
+
+  sops.secrets.nix_build_ssh_key = { };
 
   # ---- Storage profile (OS SSD) --------------------------------------------
   # Stateful root (no impermanence — the NAS needs persistent state).
@@ -333,6 +455,18 @@
         host = config.jupiter.fleet.addresses.homeassistant;
         port = 9583;
       }
+      {
+        # AriaNg web UI for the aria2 download manager (see aria2.nix).
+        hostname = "ariang.jupiter.au";
+        port = 8083;
+      }
+      {
+        # aria2 JSON-RPC. Cloudflare terminates TLS at the edge, so AriaNg
+        # reaches this as wss://rpc.jupiter.au/jsonrpc (auth = RPC secret).
+        # WebSocket upgrades are carried by cloudflared.
+        hostname = "rpc.jupiter.au";
+        port = 6800;
+      }
     ];
   };
   services.harmonia.cache.enable = true;
@@ -403,6 +537,20 @@
   jupiter.services.sunoWeb = {
     enable = true;
     openFirewall = true;
+  };
+
+  # aria2 + AriaNg web UI — LAN at http://10.1.1.2:8083
+  jupiter.services.aria2 = {
+    enable = true;
+    downloadDir = "/tank/downloads";
+    openFirewall = true;
+    # The arcade's rom-acquire submits its per-system torrents with
+    # dir=<incomingDir>/<sys> (fire-and-forget via the JSON-RPC endpoint), so
+    # the daemon needs the incoming root writable to resume partials in place.
+    extraWritableDirs = [ config.jupiter.services.romAcquire.incomingDir ];
+    # Enable IPv6 DHT (--enable-dht6). Bind to europa's stable global unicast
+    # address (the mngtmpaddr EUI-64 one, not the rotating temporaries).
+    dhtListenAddr6 = "2402:1060:2305:0:d267:26ff:fed3:b0a5";
   };
 
   # ---- sops secrets --------------------------------------------------------

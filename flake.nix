@@ -434,6 +434,20 @@
         }
       );
 
+      # ariang — AriaNg web UI for aria2, built from source at the commit
+      # the in-tree task-name patch targets (upstream master d6a7653). Exposed
+      # standalone (untuned legacyPackages, same as dsh) so the npm lock hash
+      # can be recomputed via `nix build .#ariang`; consumed by europa via
+      # modules/services/aria2.nix's pkgs.callPackage.
+      packages.x86_64-linux.ariang = (
+        import ./pkgs/ariang {
+          lib = nixpkgs.lib;
+          fetchFromGitHub = nixpkgs.legacyPackages.x86_64-linux.fetchFromGitHub;
+          buildNpmPackage = nixpkgs.legacyPackages.x86_64-linux.buildNpmPackage;
+          nodejs = nixpkgs.legacyPackages.x86_64-linux.nodejs;
+        }
+      );
+
       # suno-backup — Go daemon that mirrors a Suno account's WAV masters +
       # the complete per-clip metadata into europa's tank/archive/suno dataset.
       # Built from in-tree stdlib-only source. Exposed standalone so the

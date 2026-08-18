@@ -46,12 +46,15 @@ let
   # extension lists (was: a 20-line hand-copied case that drifted from
   # cartridges.nix / rom-acquire's own maps). Each emitted line is a bash case
   # arm:  nes) printf '%s' '.*\.(nes)$' ;;
-  patternCase = lib.concatStringsSep "\n" (
-    lib.mapAttrsToList (
-      name: v:
-      "        ${caseLabel name}) printf '%s' '.*\\.(${lib.concatStringsSep "|" v.extensions})$' ;;"
-    ) catalogue
-  );
+  # Ensure trailing newline so the *) guard is on its own line.
+  patternCase =
+    lib.concatStringsSep "\n" (
+      lib.mapAttrsToList (
+        name: v:
+        "        ${caseLabel name}) printf '%s' '.*\\.(${lib.concatStringsSep "|" v.extensions})$' ;;"
+      ) catalogue
+    )
+    + "\n";
 
   inventoryRun = pkgs.writeShellScriptBin "jupiter-arcade-inventory-run" ''
         set -uo pipefail
@@ -90,7 +93,7 @@ let
           # block) — same extension lists cartridges.nix mounts and
           # cartridge-scrape.sh matches against.
           case "''$1" in
-    \${patternCase}
+    ${patternCase}
             *) : ;; # unknown system → empty pattern, skipped below
           esac
         }

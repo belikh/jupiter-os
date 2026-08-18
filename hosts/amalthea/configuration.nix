@@ -23,4 +23,10 @@
     dashboardUrl = "https://iot.jupiter.au/jupiter-room/quarters";
     disk = "/dev/disk/by-id/ata-SanDisk_SD9SN8W128G1011_204903800470";
   };
+
+  # Symmetric peer-to-peer build pool: this kiosk + callisto + other kiosks
+  jupiter.core.buildMachines = {
+    enable = true;
+    selfHost = "amalthea";
+  };
 }

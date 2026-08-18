@@ -100,15 +100,25 @@ refs (MQTT, builds) dial it by IP.
   and `nix flake check` work without the age key.
 - **Find the accepted "modern method" first.** Before wiring up any NixOS
   service/module — especially anything with several evolving approaches
-  (secrets, networking/wifi, NetworkManager, sops integration) — **websearch
-  for the current canonical method** (e.g. nixpkgs option docs, discourse,
-  upstream module READMEs) and use it. Do not reverse-engineer a mechanism
-  from first principles, copy a stale pattern from the archive branch, or
-  hand-roll a workaround (a racy envsubst/systemd hack, a plaintext fallback,
-  etc.) when nixpkgs already ships the blessed option. Hard-won example: thebe
-  wifi PSK must go through `networking.networkmanager.ensureProfiles.secrets`
-  (the `nm-file-secret-agent` D-Bus secret agent), NOT an `environmentFiles` +
-  `envsubst` + custom service pipeline.
+  (secrets, networking/wifi, NetworkManager, sops integration) — **use
+  `parallel-search` / `parallel-fetch` for the current canonical method** (e.g.
+  nixpkgs option docs, discourse, upstream module READMEs, release notes) and
+  use it. Do not reverse-engineer a mechanism from first principles, copy a
+  stale pattern from the archive branch, or hand-roll a workaround (a racy
+  envsubst/systemd hack, a plaintext fallback, etc.) when nixpkgs already
+  ships the blessed option. Hard-won example: thebe wifi PSK must go through
+  `networking.networkmanager.ensureProfiles.secrets` (the `nm-file-secret-agent`
+  D-Bus secret agent), NOT an `environmentFiles` + `envsubst` + custom service
+  pipeline.
+- **Stay bleeding-edge with parallel tools.** Training data is stale. For any
+  question about current language versions (Rust 1.97, Go 1.26, NixOS 26.11),
+  recent CVEs, pre-release features, or evolving best practices — **use
+  `parallel-search` with dated queries** (e.g. "Rust 1.97 release notes 2026",
+  "Go 1.26.6 August 2026", "NixOS 26.11 pre-release") and `parallel-fetch` to
+  pull official release notes. Batch related queries in one call. The parallel
+  tools hit live sources (project blogs, GitHub releases, Hydra, discourse)
+  and return precisely dated, authoritative results — verified working as of
+  August 2026.
 - **Git:** always `git push` after committing — the user wants every commit
   pushed to the remote immediately, no holding locally. Commit messages
   reference any GitHub issue/PR found during the work and include a section

@@ -8,21 +8,39 @@
 # No-Intro Nintendo console ROM acquisition + verification (europa-side).
 #
 # Declarifies the old transient `ninty-rom-dl` unit that ran aria2 by hand
-# against the 17 Minerva/Myrient No-Intro Nintendo torrents. Two manual
+# against the 17 Minerva/Myrient No-Intro Nintendo torrents. Three manual
 # oneshots (NO timer - ROM acquisition is a one-time provisioning step, kicked
 # explicitly via `systemctl start`):
 #
-#   jupiter-rom-acquire : aria2 each declared system's torrent into its own
-#                         incoming subdir, built straight from `systems`.
+#   jupiter-rom-dats    : scripts/fetch-mclean-1g1r-dats.sh - downloads the
+#                         McLean 1G1R No-Intro/Redump DAT files (one <sys>.dat
+#                         per catalogue system) from Fresh1G1R into datDir so
+#                         verify hash-checks instead of promoting as-is.
+#                         Idempotent: re-fetching overwrites in place.
+#   jupiter-rom-acquire : submits each declared system's torrent to the fleet
+#                         aria2 JSON-RPC daemon (modules/services/aria2.nix,
+#                         jupiter.services.aria2), fire-and-forget — the daemon
+#                         downloads into <incomingDir>/<sys>/ and RESUMES any
+#                         partial data + .aria2 control file already staged
+#                         there. Acquisition completes asynchronously; see the
+#                         verify gating below.
 #   jupiter-rom-verify  : scripts/cartridge-verify.sh - igir hashes each staged
 #                         set against its No-Intro DAT, quarantines unmatched/
 #                         corrupt files, and promotes the verified ROMs into
 #                         the cartridge games tree (the romScraper/arcade
-#                         modules read from there).
+#                         modules read from there). SKIPS any system whose
+#                         staged tree still holds .aria2 control files (in-
+#                         flight), so it is safe to run before a download has
+#                         fully finished — promotion happens only for complete
+#                         sets. Chained after jupiter-rom-dats (wants, not
+#                         requires): kicking verify first fetches the DATs, but
+#                         a failed fetch never blocks verify — it still runs
+#                         and degrades per missing DAT.
 #
-# DATs are non-redistributable and live on-pool (never in this repo); a missing
-# DAT degrades verify to promote-without-checking for that system rather than
-# blocking ("better partial than blocked").
+# DATs are non-redistributable and live on-pool (never in this repo) — the
+# jupiter-rom-dats oneshot fetches them at runtime; a missing DAT degrades
+# verify to promote-without-checking for that system rather than blocking
+# ("better partial than blocked").
 #
 # igir command reference: https://igir.io/commands/ and
 # https://igir.io/output/reporting/ (the `move test report` combination).
@@ -65,8 +83,23 @@ let
     builtins.readFile ../../scripts/cartridge-verify.sh
   );
 
-  # Pool paths the oneshots touch - used for RequiresMountsFor so neither unit
-  # can start before europa's tank is mounted.
+  # Inlined from scripts/ (single source of truth): the JSON-RPC client that
+  # submits torrents to the fleet aria2 daemon (modules/services/aria2.nix).
+  # script is testable standalone (scripts/aria2-rpc.sh), and this store path
+  # is what the acquire oneshot actually runs.
+  rpcScript = pkgs.writeShellScriptBin "jupiter-aria2-rpc" (
+    builtins.readFile ../../scripts/aria2-rpc.sh
+  );
+
+  # Inlined from scripts/ (single source of truth): the Fresh1G1R McLean 1G1R
+  # DAT downloader that populates datDir (one <sys>.dat per catalogue system)
+  # so the verify oneshot hash-checks instead of promoting as-is.
+  datFetchScript = pkgs.writeShellScriptBin "jupiter-fetch-dats" (
+    builtins.readFile ../../scripts/fetch-mclean-1g1r-dats.sh
+  );
+
+  # Pool paths the oneshots touch - used for RequiresMountsFor so the
+  # acquire/verify units can't start before europa's tank is mounted.
   poolPaths = [
     cfg.incomingDir
     cfg.torrentDir
@@ -83,8 +116,9 @@ in
   options.jupiter.services.romAcquire = {
     enable = lib.mkEnableOption ''
       No-Intro Nintendo console ROM acquisition + verification: an aria2
-      oneshot that fetches each declared system's Minerva/Myrient torrent into
-      its own incoming subdir, and an igir-backed verify oneshot that
+      JSON-RPC oneshot that submits each declared system's Minerva/Myrient
+      torrent to the fleet aria2 daemon (jupiter.services.aria2) into its own
+      incoming subdir (fire-and-forget), and an igir-backed verify oneshot that
       hash-checks each staged set against its No-Intro DAT, quarantines
       failures, and promotes the verified ROMs into the matching dataset tree
       (cartridge/optical/modern). Acquisition is manual (no timer) - start the
@@ -95,8 +129,41 @@ in
       type = lib.types.str;
       default = "/tank/archive/retro/cache/incoming/nointro-nintendo";
       description = ''
-        aria2 download roots, one subdir per system. Each declared system's
-        torrent is fetched into <dir>/<system>/.
+        Download root managed by the aria2 daemon (the fleet aria2 service's
+        writable set must include it - see
+        <option>jupiter.services.aria2.extraWritableDirs</option>), one subdir
+        per system. Each declared system's torrent is submitted to the daemon
+        with <literal>dir=<dir>/<system>/</literal>, so the daemon RESUMES any
+        partial data + .aria2 control file already staged there.
+      '';
+    };
+
+    rpcHost = lib.mkOption {
+      type = lib.types.str;
+      default = "127.0.0.1";
+      description = ''
+        Host of the aria2 JSON-RPC endpoint downloads are submitted to
+        (the fleet daemon, <option>jupiter.services.aria2</option>).
+      '';
+    };
+
+    rpcPort = lib.mkOption {
+      type = lib.types.port;
+      default = 6800;
+      description = ''
+        Port of the aria2 JSON-RPC endpoint. Defaults to aria2's
+        <option>jupiter.services.aria2.rpcPort</option> (6800).
+      '';
+    };
+
+    rpcSecretFile = lib.mkOption {
+      type = lib.types.path;
+      default = config.sops.secrets.jupiter_aria2_rpc_secret.path;
+      description = ''
+        File containing the aria2 RPC secret used to authenticate submissions.
+        Defaults to the sops-declared <literal>jupiter_aria2_rpc_secret</literal>
+        (declared here so the module is self-contained, identical to the one
+        the aria2 daemon reads at startup).
       '';
     };
 
@@ -213,59 +280,107 @@ in
 
   config = lib.mkIf cfg.enable {
     environment.systemPackages = [
-      pkgs.aria2
       pkgs.bzip2
       pkgs.igir
       pkgs.p7zip
       pkgs.rsync
       pkgs.unzip
+      datFetchScript
       verifyScript
     ];
 
+    # The daemon runs as io:users, so the RPC secret must be readable by that
+    # user (sops defaults to 0400 root:root). Identical declaration to the
+    # aria2 module's so the two merge cleanly when both are enabled.
+    sops.secrets.jupiter_aria2_rpc_secret = {
+      owner = "io";
+      group = "users";
+      mode = "0400";
+    };
+
+    systemd.services.jupiter-rom-dats = {
+      description = "No-Intro/Redump 1G1R DAT download (Fresh1G1R McLean)";
+      serviceConfig.Type = "oneshot";
+      # Only the DAT dir is touched - keep the mount gate minimal.
+      unitConfig.RequiresMountsFor = [ cfg.datDir ];
+      environment.DAT_DIR = cfg.datDir;
+      path = [
+        pkgs.coreutils
+        pkgs.curl
+        pkgs.gawk
+        pkgs.jq
+        pkgs.gnused
+      ];
+      script = "${lib.getExe datFetchScript}";
+    };
+
     systemd.services.jupiter-rom-acquire = {
-      description = "No-Intro Nintendo console ROM acquisition (aria2)";
+      description = "No-Intro Nintendo console ROM acquisition (aria2 JSON-RPC)";
       serviceConfig.Type = "oneshot";
       unitConfig.RequiresMountsFor = poolPaths;
+      # Downloads land in the aria2 daemon, so this must run only when the
+      # daemon is up. RequiresMountsFor on the incoming/torrent dirs stays.
+      after = [ "aria2.service" ];
+      wants = [ "aria2.service" ];
       environment = {
         INCOMING_DIR = cfg.incomingDir;
         TORRENT_DIR = cfg.torrentDir;
         SCRATCH_DIR = cfg.scratchDir;
+        RPC_HOST = cfg.rpcHost;
+        RPC_PORT = toString cfg.rpcPort;
+        RPC_SECRET_FILE = cfg.rpcSecretFile;
       };
+      path = [
+        pkgs.coreutils
+        pkgs.curl
+        pkgs.jq
+      ];
       script = ''
         set -euo pipefail
         mkdir -p "$SCRATCH_DIR" "$INCOMING_DIR"
-        INPUT="$SCRATCH_DIR/aria2-input.txt"
-        : > "$INPUT"
         skipped=""
+        submitted=0
+        failed=0
         ${lib.concatMapStringsSep "\n" (name: ''
           __torrent="$TORRENT_DIR/${cfg.systems.${name}.torrent}"
           if [ -f "$__torrent" ]; then
-            mkdir -p "$INCOMING_DIR/${name}"
-            {
-              printf '%s\n' "$__torrent"
-              printf '  dir=%s\n' "$INCOMING_DIR/${name}"
-              printf '\n'
-            } >> "$INPUT"
+            # Create the system dir as io:users so the daemon (which runs as
+            # io) can write partials + .aria2 control files into it and RESUME
+            # any already-staged data. install -d with -o/-g chowns existing
+            # dirs too, covering the previously root-owned tree.
+            install -d -o io -g users "$INCOMING_DIR/${name}"
+            # Idempotent: re-adding a torrent the daemon already knows fails
+            # asynchronously (its GID errors with code 12 "already registered")
+            # and never becomes a duplicate active download — so a rerun just
+            # re-logs GIDs. A hard submission failure (unreachable daemon,
+            # timeout ingesting a large metainfo) aborts the unit via set -e;
+            # capture the status explicitly so we do NOT swallow it (echo
+            # would mask the failure like the ARG_MAX bug did).
+            if gid="$(${lib.getExe rpcScript} submit-torrent "$__torrent" "$INCOMING_DIR/${name}")"; then
+              echo "jupiter-rom-acquire: ${name} -> gid=$gid"
+              submitted=$((submitted + 1))
+            else
+              echo "jupiter-rom-acquire: FAILED to submit ${name}" >&2
+              failed=$((failed + 1))
+            fi
           else
             echo "jupiter-rom-acquire: torrent not found, skipping ${name}: $__torrent" >&2
             skipped="$skipped ${name}"
           fi
         '') systemKeys}
-        if [ ! -s "$INPUT" ]; then
+        if [ "$submitted" -eq 0 ]; then
           echo "jupiter-rom-acquire: no torrents resolved under $TORRENT_DIR - nothing to fetch" >&2
           exit 1
         fi
         [ -n "$skipped" ] && echo "jupiter-rom-acquire: skipped:$skipped" >&2
-        exec ${lib.getExe pkgs.aria2} \
-          --input-file="$INPUT" \
-          --continue=true \
-          --file-allocation=none \
-          --max-concurrent-downloads=6 \
-          --enable-dht=true \
-          --bt-enable-lpd=true \
-          --listen-port=51413 \
-          --dht-listen-port=51413 \
-          --seed-time=0
+        if [ "$failed" -gt 0 ]; then
+          echo "jupiter-rom-acquire: $failed submission(s) FAILED - rerun after fixing (see above)" >&2
+          exit 1
+        fi
+        # Fire-and-forget: submissions accepted; the daemon downloads in the
+        # background. Progress is visible via AriaNg or
+        # scripts/aria2-rpc.sh get-global-stat / tell-active.
+        echo "jupiter-rom-acquire: submitted $submitted torrent(s) to aria2 RPC (fire-and-forget)"
       '';
     };
 
@@ -273,6 +388,11 @@ in
       description = "No-Intro Nintendo console ROM verification + promotion (igir)";
       serviceConfig.Type = "oneshot";
       unitConfig.RequiresMountsFor = poolPaths;
+      # DATs first: kicking verify also pulls the DAT fetch oneshot. wants,
+      # not requires — a failed fetch must not block verify, which degrades
+      # per missing DAT by design ("better partial than blocked").
+      after = [ "jupiter-rom-dats.service" ];
+      wants = [ "jupiter-rom-dats.service" ];
       # Both pool paths and the igir/rsync store paths are handed to the script
       # explicitly so it is robust to a sanitized PATH. CARTRIDGE_DIR is set
       # per-bucket in the script (not here) so each bucket promotes into its own

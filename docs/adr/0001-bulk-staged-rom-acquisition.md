@@ -28,6 +28,13 @@ with retroarch (already in `modules/desktop/arcade.nix`) as the launcher.
 Do NOT revive the `arcade-api` / `bubbletea-game-loader` on-demand fetch
 service. Acquisition (aria2, in nixpkgs) is a europa-side provisioning step
 owned by `modules/services/rom-acquire.nix`, never a kiosk runtime path.
+Downloads are requested fire-and-forget through the fleet aria2 JSON-RPC
+daemon (`modules/services/aria2.nix`, port 6800, `scripts/aria2-rpc.sh`), one
+RPC submission per system with `dir=<incomingDir>/<sys>` so already-partial
+data + `.aria2` resume state in the staging tree is resumed in place. The
+acquire oneshot only verifies the submissions landed (GIDs returned); the
+daemon completes them in the background and verify (`jupiter-rom-verify`)
+skips systems with in-flight `.aria2` control files.
 
 ## Consequences
 

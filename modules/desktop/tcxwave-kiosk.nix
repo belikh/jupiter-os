@@ -396,6 +396,11 @@ in
       "big-parallel"
     ];
 
+    # Build server config: one job at a time using 4 cores (leaves 2 cores
+    # free for the dashboard session on the 2c/4t i5-6300U).
+    nix.settings.cores = 4;
+    nix.settings.max-jobs = 1;
+
     users.users.root.openssh.authorizedKeys.keys = [
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILv1nEsuHqlA1ykn1p8wZmhhv1Y77cBxhgu2tAO3DhlP jupiter-fleet-nix-build"
     ];

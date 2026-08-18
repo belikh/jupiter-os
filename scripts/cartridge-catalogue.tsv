@@ -9,10 +9,17 @@
 # five former hand-copied maps DID drift — an 'acorn' system once existed
 # only in rom-acquire and would have promoted to the pool invisible.)
 #
+# Scope: the McLean 1G1R collection (Fresh1G1R) integrated into the arcade.
+# Systems are included only when nixpkgs ships a libretro core (core column,
+# loaded via 'jupiter-retroarch -L <core>'; unfree is fine — allowUnfree is
+# set fleet-wide) or a supported standalone emulator (Wii U -> cemu). Arcade
+# disc systems (Naomi/Lindbergh/System 573/RingEdge) are deliberately
+# excluded for now. Obscure systems with no libretro core are excluded.
+#
 # Columns (TAB-separated, "-" = not applicable):
 #   system      dir key + Pegasus shortname (nes, snes, ... 3ds)
 #   collection  Pegasus collection display title
-#   core        libretro core basename for 'jupiter-retroarch -L <core>'
+#   core        nixpkgs libretro attr name for 'jupiter-retroarch -L <core>'
 #   emulator    standalone emulator wrapper when core is "-" (cemu)
 #   extensions  ROM file extensions (comma-separated, no dots)
 #   sky         Skyscraper -p handle when it differs from 'system'
@@ -34,8 +41,50 @@ nds	Nintendo DS	desmume2015	-	nds,ids	-	cartridge	Minerva_Myrient - No-Intro - N
 dsi	Nintendo DSi	desmume2015	-	nds,ids	nds	cartridge	Minerva_Myrient - No-Intro - Nintendo - Nintendo DSi (Decrypted).torrent
 gamecube	Nintendo GameCube	dolphin	-	iso,gcm,gcz,elf,dol,ciso	gc	optical	Minerva_Myrient - No-Intro - Non-Redump - Nintendo - Nintendo GameCube.torrent
 wii	Nintendo Wii	dolphin	-	iso,wbfs,gcz,wad,ciso	-	optical	Minerva_Myrient - No-Intro - Non-Redump - Nintendo - Wii.torrent
-ps1	Sony PlayStation	beetle-psx	-	chd,cue,iso,m3u	psx	optical	Minerva_Myrient - RetroAchievements - RA - Sony Playstation.torrent
-ps2	Sony PlayStation 2	pcsx2	-	chd,iso,gi,m3u	-	optical	Minerva_Myrient - RetroAchievements - RA - Sony Playstation 2.torrent
 3ds	Nintendo 3DS	citra	-	3ds,cia,cxi,cci,app,3dsx	3ds	modern	Minerva_Myrient - No-Intro - Nintendo - Nintendo 3DS (Decrypted).torrent
 new3ds	Nintendo New 3DS	citra	-	3ds,cia,cxi,cci,app,3dsx	3ds	modern	Minerva_Myrient - No-Intro - Nintendo - New Nintendo 3DS (Decrypted).torrent
 wiiu	Nintendo Wii U	-	cemu	wua,rpx,wud,wux,iso	-	modern	Minerva_Myrient - No-Intro - Non-Redump - Nintendo - Wii U.torrent
+sms	Sega Master System - Mark III	genesis-plus-gx	-	sms,sg	mastersystem	cartridge	Minerva_Myrient - No-Intro - Sega - Master System - Mark III.torrent
+megadrive	Sega Mega Drive - Genesis	genesis-plus-gx	-	md,smd,gen	-	cartridge	Minerva_Myrient - No-Intro - Sega - Mega Drive - Genesis.torrent
+gamegear	Sega Game Gear	genesis-plus-gx	-	gg	-	cartridge	Minerva_Myrient - No-Intro - Sega - Game Gear.torrent
+sega32x	Sega 32X	picodrive	-	32x	sega32x	cartridge	Minerva_Myrient - No-Intro - Sega - 32X.torrent
+sg1000	Sega SG-1000 - SC-3000	genesis-plus-gx	-	sg	sg-1000	cartridge	Minerva_Myrient - No-Intro - Sega - SG-1000 - SC-3000.torrent
+segacd	Sega Mega CD & Sega CD	genesis-plus-gx	-	iso,cue,chd	segacd	optical	Minerva_Myrient - Redump - Sega - Mega CD & Sega CD.torrent
+saturn	Sega Saturn	beetle-saturn	-	iso,cue,chd	saturn	optical	Minerva_Myrient - Redump - Sega - Saturn.torrent
+dreamcast	Sega Dreamcast	flycast	-	gdi,chd,cue,iso	dreamcast	optical	Minerva_Myrient - Redump - Sega - Dreamcast.torrent
+ps1	Sony PlayStation	beetle-psx	-	chd,cue,iso,m3u	psx	optical	Minerva_Myrient - RetroAchievements - RA - Sony Playstation.torrent
+ps2	Sony PlayStation 2	pcsx2	-	chd,iso,gi,m3u	-	optical	Minerva_Myrient - RetroAchievements - RA - Sony Playstation 2.torrent
+psp	Sony PlayStation Portable	ppsspp	-	iso,cso,chd,pbp	psp	optical	Minerva_Myrient - Redump - Sony - PlayStation Portable.torrent
+a2600	Atari 2600	stella	-	bin,a26	atari2600	cartridge	Minerva_Myrient - No-Intro - Atari - Atari 2600.torrent
+a5200	Atari 5200	atari800	-	bin,a52	atari5200	cartridge	Minerva_Myrient - No-Intro - Atari - Atari 5200.torrent
+a7800	Atari 7800	prosystem	-	bin,a78	atari7800	cartridge	Minerva_Myrient - No-Intro - Atari - Atari 7800 (BIN).torrent
+a800	Atari 8-bit Family	atari800	-	atr,xfd,atx	atari800	cartridge	Minerva_Myrient - No-Intro - Atari - 8-bit Family.torrent
+lynx	Atari Lynx	beetle-lynx	-	lnx	atarilynx	cartridge	Minerva_Myrient - No-Intro - Atari - Atari Lynx (LYX).torrent
+jaguar	Atari Jaguar	virtualjaguar	-	j64,jag	atarijaguar	cartridge	Minerva_Myrient - No-Intro - Atari - Atari Jaguar (J64).torrent
+atari_st	Atari ST	hatari	-	st,msa,stx	atarist	cartridge	Minerva_Myrient - No-Intro - Atari - Atari ST.torrent
+jaguar_cd	Atari Jaguar CD	virtualjaguar	-	iso,cue,chd	atarijaguarcd	optical	Minerva_Myrient - Redump - Atari - Jaguar CD Interactive Multimedia System.torrent
+pce	NEC PC Engine - TurboGrafx-16	beetle-pce-fast	-	pce,sgx,bin	pcengine	cartridge	Minerva_Myrient - No-Intro - NEC - PC Engine - TurboGrafx-16.torrent
+pce_cd	NEC PC Engine CD & TurboGrafx CD	beetle-pce-fast	-	iso,cue,chd	pcenginecd	optical	Minerva_Myrient - Redump - NEC - PC Engine CD & TurboGrafx CD.torrent
+supergrafx	NEC PC Engine SuperGrafx	beetle-supergrafx	-	pce,sgx	-	cartridge	Minerva_Myrient - No-Intro - NEC - PC Engine SuperGrafx.torrent
+pcfx	NEC PC-FX	beetle-pcfx	-	iso,cue,chd	pcfx	optical	Minerva_Myrient - Redump - NEC - PC-FX.torrent
+pc98	NEC PC-98 series	np2kai	-	d88,2hd,hdm,fdi	pc98	cartridge	Minerva_Myrient - Redump - NEC - PC-98 series.torrent
+ngp	SNK NeoGeo Pocket	beetle-ngp	-	ngp	ngp	cartridge	Minerva_Myrient - No-Intro - SNK - NeoGeo Pocket.torrent
+ngpc	SNK NeoGeo Pocket Color	beetle-ngp	-	ngc	ngpc	cartridge	Minerva_Myrient - No-Intro - SNK - NeoGeo Pocket Color.torrent
+neocd	SNK Neo Geo CD	neocd	-	iso,cue,chd	neogeocd	optical	Minerva_Myrient - Redump - SNK - Neo Geo CD.torrent
+c64	Commodore 64	vice-x64	-	d64,tap,prg,bin	c64	cartridge	Minerva_Myrient - No-Intro - Commodore - Commodore 64.torrent
+vic20	Commodore VIC-20	vice-xvic	-	prg,bin	vic20	cartridge	Minerva_Myrient - No-Intro - Commodore - VIC-20.torrent
+plus4	Commodore Plus-4	vice-xplus4	-	prg,bin	plus4	cartridge	Minerva_Myrient - No-Intro - Commodore - Plus-4.torrent
+amiga	Commodore Amiga	puae	-	adf,ipf,hdf,lha	amiga	cartridge	Minerva_Myrient - No-Intro - Commodore - Amiga.torrent
+amiga_cd	Commodore Amiga CD	puae	-	iso,cue,chd	amiga	optical	Minerva_Myrient - Redump - Commodore - Amiga CD.torrent
+amiga_cd32	Commodore Amiga CD32	puae	-	iso,cue,chd	cd32	optical	Minerva_Myrient - Redump - Commodore - Amiga CD32.torrent
+amiga_cdtv	Commodore Amiga CDTV	puae	-	iso,cue,chd	cdtv	optical	Minerva_Myrient - Redump - Commodore - Amiga CDTV.torrent
+msx	Microsoft MSX	bluemsx	-	rom,dsk,msx	msx	cartridge	Minerva_Myrient - No-Intro - Microsoft - MSX.torrent
+msx2	Microsoft MSX2	bluemsx	-	rom,dsk,msx	msx2	cartridge	Minerva_Myrient - No-Intro - Microsoft - MSX2.torrent
+coleco	ColecoVision	bluemsx	-	col,rom	coleco	cartridge	Minerva_Myrient - No-Intro - Coleco - ColecoVision.torrent
+intellivision	Mattel Intellivision	freeintv	-	rom,bin	intellivision	cartridge	Minerva_Myrient - No-Intro - Mattel - Intellivision.torrent
+vectrex	GCE Vectrex	vecx	-	vec,gam,bin	vectrex	cartridge	Minerva_Myrient - No-Intro - GCE - Vectrex.torrent
+odyssey2	Magnavox Odyssey 2	o2em	-	bin,rom	videopac	cartridge	Minerva_Myrient - No-Intro - Magnavox - Odyssey 2.torrent
+videopac	Philips Videopac+	o2em	-	bin,rom	videopac	cartridge	Minerva_Myrient - No-Intro - Philips - Videopac+.torrent
+zxspectrum	Sinclair ZX Spectrum	fuse	-	tap,z80,sna,szx	zxspectrum	cartridge	Minerva_Myrient - No-Intro - Sinclair - ZX Spectrum.torrent
+apple2	Apple II	mame	-	dsk,do,po,nib,woz	apple2	cartridge	Minerva_Myrient - No-Intro - Apple - II (WOZ).torrent
+fmtowns	Fujitsu FM-Towns	mame	-	iso,cue,chd	fmtowns	optical	Minerva_Myrient - Redump - Fujitsu - FM-Towns.torrent

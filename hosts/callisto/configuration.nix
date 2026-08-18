@@ -132,7 +132,7 @@
   # on a disk-backed ext4 filesystem rather than tmpfs, but that headroom
   # math was never about tmpfs pressure in the
   # first place, it's about the build's own working set vs. RAM.
-  nix.settings.cores = 6;
+  nix.settings.cores = 4;
   nix.settings.max-jobs = 1;
 
   # Advertise capability to BUILD other hosts' microarch-tuned derivations.
@@ -161,6 +161,12 @@
   ];
 
   jupiter.build.microarch = "skylake";
+
+  # Symmetric peer-to-peer build pool: callisto + 4 kiosks
+  jupiter.core.buildMachines = {
+    enable = true;
+    selfHost = "callisto";
+  };
 
   sops.secrets.tailscale_fleet_authkey = { };
   jupiter.services.tailscale = {
@@ -291,6 +297,19 @@
     ];
   };
 
+  # tmpfs for Nix sandbox build directory (/build) — speeds up I/O-heavy builds
+  # (linking, unpacking, writing build outputs). 20GB limit (callisto has 64GB RAM;
+  # maxJobs=1 * cores=4 means at most one large build at a time; 20GB leaves
+  # ample headroom for OS + services + the build's working set).
+  fileSystems."/build" = {
+    fsType = "tmpfs";
+    options = [
+      "size=20G"
+      "mode=1777"
+      "noatime"
+    ];
+  };
+
   jupiter.services.nomWeb = {
     enable = true;
     openFirewall = true;
@@ -354,6 +373,38 @@
                 - id: qwen/qwen3.6-27b
                 - id: groq/compound
                 - id: groq/compound-mini
+            opencode-go:
+              displayName: OpenCode Go
+              apiKeyEnv: OPENCODE_API_KEY
+              api: openai-completions
+              baseURL: https://opencode.ai/zen/go/v1
+              models:
+                - id: deepseek-v4-pro
+                - id: deepseek-v4-flash
+                - id: glm-5.3
+                - id: glm-5.2
+                - id: glm-5.1
+                - id: glm-5
+                - id: minimax-m3
+                - id: minimax-m2.7
+                - id: minimax-m2.5
+                - id: kimi-k3
+                - id: kimi-k2.7-code
+                - id: kimi-k2.6
+                - id: kimi-k2.5
+                - id: qwen3.8-max
+                - id: qwen3.7-max
+                - id: qwen3.7-plus
+                - id: qwen3.6-plus
+                - id: qwen3.5-plus
+                - id: mimo-v2-pro
+                - id: mimo-v2-omni
+                - id: mimo-v2.5-pro
+                - id: mimo-v2.5
+                - id: hy3
+                - id: hy3-preview
+                - id: gpt-5.6-luna
+                - id: grok-4.5
       '').outPath;
   };
 
