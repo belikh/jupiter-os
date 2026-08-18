@@ -1,0 +1,48 @@
+diff --git a/src/scripts/services/aria2TaskService.js b/src/scripts/services/aria2TaskService.js
+index 5c57d54..2514e6b 100644
+--- a/src/scripts/services/aria2TaskService.js
++++ b/src/scripts/services/aria2TaskService.js
+@@ -49,6 +49,28 @@
+             return remainBytes / downloadSpeed;
+         };
+ 
++        var getDirSegmentName = function (dir) {
++            if (!dir) {
++                return null;
++            }
++
++            var segments = dir.split(/[\\/]+/);
++            var segment = null;
++
++            for (var i = segments.length - 1; i >= 0; i--) {
++                if (segments[i]) {
++                    segment = segments[i];
++                    break;
++                }
++            }
++
++            if (!segment || segment === '.' || segment === '..' || /^[A-Za-z]:$/.test(segment)) {
++                return null;
++            }
++
++            return segment;
++        };
++
+         var getTaskName = function (task) {
+             var taskName = '';
+             var success = true;
+@@ -57,6 +79,14 @@
+                 taskName = task.bittorrent.info.name;
+             }
+ 
++            if (taskName && task.dir) {
++                var dirSegmentName = getDirSegmentName(task.dir);
++
++                if (dirSegmentName) {
++                    taskName = dirSegmentName;
++                }
++            }
++
+             if (!taskName && task.files && task.files.length > 0) {
+                 taskName = getFileName(task.files[0]);
+             }
