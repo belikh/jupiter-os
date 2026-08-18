@@ -7,9 +7,11 @@
 
 # aria2 download manager + AriaNg web UI.
 #
-# aria2 runs as a systemd service with JSON-RPC on localhost:6800.
-# AriaNg (pure HTML/JS) is served via nginx on a separate port.
-# RPC secret is provided via sops (jupiter_aria2_rpc_secret).
+# aria2 runs as a systemd service with JSON-RPC on :6800, bound to all
+# interfaces so AriaNg and other LAN clients can reach it (auth is via the
+# RPC secret, never via network isolation). AriaNg (pure HTML/JS) is served
+# via nginx on a separate port. RPC secret is provided via sops
+# (jupiter_aria2_rpc_secret).
 
 let
   cfg = config.jupiter.services.aria2;
@@ -74,7 +76,7 @@ in
           set -eu
           exec ${pkgs.aria2}/bin/aria2c \
             --enable-rpc \
-            --rpc-listen-all=false \
+            --rpc-listen-all=true \
             --rpc-listen-port=${toString cfg.rpcPort} \
             --rpc-secret="$(cat ${config.sops.secrets.jupiter_aria2_rpc_secret.path})" \
             --dir=${cfg.downloadDir} \
