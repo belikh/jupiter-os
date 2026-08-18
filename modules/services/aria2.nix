@@ -14,10 +14,12 @@
 let
   cfg = config.jupiter.services.aria2;
 
-  # Fetch AriaNg release from GitHub
+  # Fetch AriaNg release from GitHub. The AllInOne zip is a flat archive
+  # (index.html + assets at the zip root), so fetchzip needs stripRoot=false.
   ariaNg = pkgs.fetchzip {
     url = "https://github.com/mayswind/AriaNg/releases/download/1.3.12/AriaNg-1.3.12-AllInOne.zip";
     sha256 = "1l2is4yr0jap9lxawwpj45ga9im2px35qghkanj7hgxvlzwkhmgy";
+    stripRoot = false;
   };
 in
 {
@@ -42,15 +44,6 @@ in
       description = "Directory where aria2 stores completed downloads";
     };
 
-    rpcSecret = lib.mkOption {
-      type = lib.types.nullOr lib.types.str;
-      default = null;
-      description = ''
-        RPC secret for aria2 JSON-RPC authentication. If null, reads from
-        sops.secrets.jupiter_aria2_rpc_secret. Set explicitly to disable auth.
-      '';
-    };
-
     openFirewall = lib.mkOption {
       type = lib.types.bool;
       default = true;
@@ -64,7 +57,9 @@ in
       "d ${cfg.downloadDir} 0755 io users -"
     ];
 
-    # aria2 daemon
+    # aria2 daemon. The RPC secret is read from the sops file at runtime:
+    # sops secrets are only decryptable at activation, so the ExecStart
+    # caches the value via `$(cat ...)` (aria2 has no --rpc-secret-file).
     systemd.services.aria2 = {
       description = "aria2 download manager (JSON-RPC)";
       wantedBy = [ "multi-user.target" ];
@@ -75,12 +70,13 @@ in
         Type = "exec";
         User = "io";
         Group = "users";
-        ExecStart = ''
-          ${pkgs.aria2}/bin/aria2c \
+        ExecStart = pkgs.writeShellScript "aria2-exec" ''
+          set -eu
+          exec ${pkgs.aria2}/bin/aria2c \
             --enable-rpc \
             --rpc-listen-all=false \
             --rpc-listen-port=${toString cfg.rpcPort} \
-            --rpc-secret=${lib.optionalString (cfg.rpcSecret != null) cfg.rpcSecret} \
+            --rpc-secret="$(cat ${config.sops.secrets.jupiter_aria2_rpc_secret.path})" \
             --dir=${cfg.downloadDir} \
             --file-allocation=falloc \
             --continue=true \
@@ -136,7 +132,8 @@ in
       cfg.rpcPort
     ];
 
-    # Ensure RPC secret is available if not explicitly set
-    sops.secrets.jupiter_aria2_rpc_secret = lib.mkIf (cfg.rpcSecret == null) { };
+    # Ensure RPC secret is available (declared unconditionally - the RPC
+    # secret is required for the JSON-RPC endpoint to authenticate).
+    sops.secrets.jupiter_aria2_rpc_secret = { };
   };
 }
