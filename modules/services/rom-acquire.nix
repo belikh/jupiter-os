@@ -259,6 +259,7 @@ in
         exec ${lib.getExe pkgs.aria2} \
           --input-file="$INPUT" \
           --continue=true \
+          --allow-overwrite=true \
           --file-allocation=none \
           --max-concurrent-downloads=6 \
           --enable-dht=true \

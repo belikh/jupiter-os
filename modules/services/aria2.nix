@@ -133,7 +133,13 @@ in
     ];
 
     # Ensure RPC secret is available (declared unconditionally - the RPC
-    # secret is required for the JSON-RPC endpoint to authenticate).
-    sops.secrets.jupiter_aria2_rpc_secret = { };
+    # secret is required for the JSON-RPC endpoint to authenticate). The
+    # service runs as io:users, so the secret file must be readable by that
+    # user (sops defaults to 0400 root:root).
+    sops.secrets.jupiter_aria2_rpc_secret = {
+      owner = "io";
+      group = "users";
+      mode = "0400";
+    };
   };
 }
