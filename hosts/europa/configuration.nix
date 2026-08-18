@@ -455,6 +455,18 @@
         host = config.jupiter.fleet.addresses.homeassistant;
         port = 9583;
       }
+      {
+        # AriaNg web UI for the aria2 download manager (see aria2.nix).
+        hostname = "ariang.jupiter.au";
+        port = 8083;
+      }
+      {
+        # aria2 JSON-RPC. Cloudflare terminates TLS at the edge, so AriaNg
+        # reaches this as wss://rpc.jupiter.au/jsonrpc (auth = RPC secret).
+        # WebSocket upgrades are carried by cloudflared.
+        hostname = "rpc.jupiter.au";
+        port = 6800;
+      }
     ];
   };
   services.harmonia.cache.enable = true;
