@@ -315,12 +315,13 @@ in
             # any already-staged data. install -d with -o/-g chowns existing
             # dirs too, covering the previously root-owned tree.
             install -d -o io -g users "$INCOMING_DIR/${name}"
-            if gid="$(${lib.getExe rpcScript} submit-torrent "$__torrent" "$INCOMING_DIR/${name}")"; then
-              echo "jupiter-rom-acquire: ${name} submitted -> gid=$gid"
-              submitted=$((submitted + 1))
-            else
-              echo "jupiter-rom-acquire: FAILED to submit ${name} (daemon unreachable?)" >&2
-            fi
+            # Idempotent: re-adding a torrent the daemon already knows fails
+            # asynchronously (its GID errors with code 12 "already registered")
+            # and never becomes a duplicate active download — so a rerun just
+            # re-logs GIDs. A hard submission failure aborts here via set -e
+            # (the RPC script's stderr is what's reported).
+            echo "jupiter-rom-acquire: ${name} -> gid=$( ${lib.getExe rpcScript} submit-torrent "$__torrent" "$INCOMING_DIR/${name}" )"
+            submitted=$((submitted + 1))
           else
             echo "jupiter-rom-acquire: torrent not found, skipping ${name}: $__torrent" >&2
             skipped="$skipped ${name}"

@@ -36,25 +36,42 @@ RPC_SECRET_FILE="${RPC_SECRET_FILE:-/run/secrets/jupiter_aria2_rpc_secret}"
 JQ="${JQ:-jq}"
 CURL="${CURL:-curl}"
 
+# Temp files to clean on exit (b64 staging + params materialization). A single
+# shared trap avoids the nested-trap overwrite problem of per-call traps.
+_tmpfiles=()
+die() {
+  echo "aria2-rpc: $*" >&2
+  exit 1
+}
+cleanup() {
+  rm -f "${_tmpfiles[@]}"
+}
+trap cleanup EXIT
+
 rpc() { # method, then a JSON params array (without the token)
   local method="$1" params="$2"
-  local secret token payload
+  local secret token payload pfile pfile2
   secret="$(cat "$RPC_SECRET_FILE")"
   token="token:${secret}"
+  # A large params array (torrent base64) must never reach jq via argv
+  # (MAX_ARG_STRLEN), so materialize it to a temp file first — bash args to
+  # this function are fine, only the exec'd jq has the limit.
+  pfile="$(mktemp)"
+  _tmpfiles+=("$pfile")
+  printf '%s' "$params" > "$pfile"
   payload="$(
     "$JQ" -nc \
       --arg method "$method" \
       --arg token "$token" \
-      --argjson params "$params" \
-      '{jsonrpc:"2.0", id:"jupiter-aria2", method:$method, params:([$token] + $params)}'
+      --slurpfile params "$pfile" \
+      '{jsonrpc:"2.0", id:"jupiter-aria2", method:$method, params:([$token] + $params[0])}'
   )"
+  # curl has the same argv limit — hand it the payload via a file (-d @file).
+  pfile2="$(mktemp)"
+  _tmpfiles+=("$pfile2")
+  printf '%s' "$payload" > "$pfile2"
   "$CURL" -fsS --max-time 30 -H 'Content-Type: application/json' \
-    -d "$payload" "http://${RPC_HOST}:${RPC_PORT}/jsonrpc"
-}
-
-die() {
-  echo "aria2-rpc: $*" >&2
-  exit 1
+    -d "@$pfile2" "http://${RPC_HOST}:${RPC_PORT}/jsonrpc"
 }
 
 case "${1:-}" in
@@ -63,13 +80,19 @@ case "${1:-}" in
     torrent="$2"
     dir="$3"
     [ -f "$torrent" ] || die "torrent not found: $torrent"
-    b64="$(base64 -w0 < "$torrent")"
+    # The base64 of a large .torrent (many-file sets like PS1/Saturn) exceeds
+    # MAX_ARG_STRLEN, so it cannot go through --arg (jq would fail to exec
+    # with "Argument list too long"). Stage it in a temp file and let jq read
+    # it via --rawfile.
+    b64file="$(mktemp)"
+    _tmpfiles+=("$b64file")
+    base64 -w0 < "$torrent" > "$b64file"
     # [token, b64, [], {dir, seed-time, allow-overwrite}] — the empty URIs
     # array is load-bearing (issue #2075), see header.
-    params="$("$JQ" -nc \
-      --arg b64 "$b64" \
-      --arg dir "$dir" \
-      '[$b64, [], {dir:$dir, "seed-time":"0", "allow-overwrite":"true"}]')"
+    params="$(
+      "$JQ" -nc --rawfile b64 "$b64file" --arg dir "$dir" \
+        '[$b64, [], {dir:$dir, "seed-time":"0", "allow-overwrite":"true"}]'
+    )"
     resp="$(rpc aria2.addTorrent "$params")"
     echo "$resp" | "$JQ" -r '
       if .error then
