@@ -544,6 +544,14 @@
     enable = true;
     downloadDir = "/tank/downloads";
     openFirewall = true;
+    # AriaNg (web UI) defaults its RPC connection to rpc.jupiter.au:443, which
+    # cloudflared tunnels to the local daemon (:6800); Cloudflare terminates
+    # TLS / carries the WebSocket upgrade, so AriaNg talks wss://rpc.jupiter.au/jsonrpc.
+    # The RPC secret is still entered once per browser (never embedded in the
+    # served page — would leak the daemon's auth to anyone on the LAN).
+    rpcHost = "rpc.jupiter.au";
+    rpcProtocol = "wss";
+    rpcWebPort = 443;
     # The arcade's rom-acquire submits its per-system torrents with
     # dir=<incomingDir>/<sys> (fire-and-forget via the JSON-RPC endpoint), so
     # the daemon needs the incoming root writable to resume partials in place.
