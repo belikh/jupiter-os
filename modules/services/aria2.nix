@@ -212,6 +212,9 @@ in
             --split=16 \
             --bt-max-peers=500 \
             --bt-request-peer-speed-limit=50K \
+            --bt-max-open-files=20 \
+            --check-integrity=false \
+            --external-ip=157.85.248.45 \
             --seed-ratio=1.0 \
             --seed-time=60 \
             --dht-listen-port=${toString cfg.btListenPort} \
