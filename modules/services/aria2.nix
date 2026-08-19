@@ -173,6 +173,12 @@ in
     # aria2 daemon. The RPC secret is read from the sops file at runtime:
     # sops secrets are only decryptable at activation, so the ExecStart
     # caches the value via `$(cat ...)` (aria2 has no --rpc-secret-file).
+    # WARNING: no shell comments (`#`) inside the ExecStart script below. The
+    # script is built from this Nix string, and a `#` mid-command swallows the
+    # backslash-continuation AND, because the script is `exec`, everything
+    # after the comment block silently never runs (observed live: aria2 lost
+    # --save-session/--max-concurrent-downloads/--enable-dht6 after the save-
+    # session comments were added, until this was fixed).
     systemd.services.aria2 = {
       description = "aria2 download manager (JSON-RPC)";
       wantedBy = [ "multi-user.target" ];
@@ -194,11 +200,6 @@ in
             --dir=${cfg.downloadDir} \
             --file-allocation=falloc \
             --continue=true \
-            # Persist the download queue across daemon restarts. Without
-            # --save-session/--input-file a nixos-rebuild switch (which restarts
-            # aria2) wipes every registered download, orphaning the .aria2
-            # resume state on the pool. Saved on SIGTERM and every
-            # save-session-interval seconds, restored on the next start.
             --save-session=${cfg.downloadDir}/aria2.session \
             --save-session-interval=60 \
             --input-file=${cfg.downloadDir}/aria2.session \
