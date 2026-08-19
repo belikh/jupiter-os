@@ -21,9 +21,11 @@
 #   * The empty URIs array [] is REQUIRED: aria2.addTorrent IGNORES the
 #     options struct unless an (even empty) URIs list is present (aria2 issue
 #     #2075). params must be [token, b64, [], {dir: ...}].
-#   * Download resume is global on the daemon (--continue=true), so a torrent
-#     submitted with the same dir= as its partials/.aria2 control file resumes
-#     in place.
+#   * Torrent resume is driven per-submission by check-integrity=true, which
+#     makes aria2 SHA-1 hash-verify the existing chunks in dir= and fetch only
+#     the missing/corrupt pieces — so partial data resumes in place even if
+#     the .aria2 control file was lost. (--continue=true on the daemon is a
+#     no-op for BitTorrent; it only applies to HTTP(S)/FTP.)
 #   * seed-time=0 per download keeps the acquired torrent from seeding forever
 #     (the daemon global default is 60m) — bulk ROM sets are staged, not seeded.
 
@@ -118,11 +120,11 @@ case "${1:-}" in
     b64file="$(mktemp)"
     _tmpfiles+=("$b64file")
     base64 -w0 < "$torrent" > "$b64file"
-    # [token, b64, [], {dir, seed-time, allow-overwrite}] — the empty URIs
-    # array is load-bearing (issue #2075), see header.
+    # [token, b64, [], {dir, seed-time, allow-overwrite, check-integrity}] —
+    # the empty URIs array is load-bearing (issue #2075), see header.
     params="$(
       "$JQ" -nc --rawfile b64 "$b64file" --arg dir "$dir" \
-        '[$b64, [], {dir:$dir, "seed-time":"0", "allow-overwrite":"true"}]'
+        '[$b64, [], {dir:$dir, "seed-time":"0", "allow-overwrite":"true", "check-integrity":"true"}]'
     )"
     resp="$(rpc aria2.addTorrent "$params")"
     echo "$resp" | "$JQ" -r '
