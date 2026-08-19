@@ -39,6 +39,22 @@ let
   cfg = config.jupiter.services.dsh;
 
   dshPkg = pkgs.callPackage ../../pkgs/dsh { };
+
+  # Git credential helper for github.com: answers git's credential request
+  # with the GitHub token from ghTokenFile, so `git push` over HTTPS works
+  # from the agent shell. The username is arbitrary for token auth (GitHub
+  # ignores it); "x-access-token" is the conventional marker and works for
+  # fine-grained PATs. Only referenced (lazily) when ghTokenFile is set.
+  gitCredentialHelper = pkgs.writeShellScript "git-credential-github" ''
+    printf 'username=x-access-token\npassword=%s\n' "$(cat ${cfg.ghTokenFile})"
+  '';
+
+  # The dsh user's ~/.gitconfig: point git at the credential helper above.
+  # Written to <dataDir>/.gitconfig (the dsh home) by a tmpfiles rule.
+  gitConfig = pkgs.writeText "dsh-gitconfig" ''
+    [credential]
+        helper = ${lib.getExe gitCredentialHelper}
+  '';
 in
 {
   options.jupiter.services.dsh = {
@@ -119,6 +135,22 @@ in
         Nix store paths are world-readable for exactly that reason.
       '';
     };
+
+    ghTokenFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      description = ''
+        Path to a file holding a GitHub token used to authenticate
+        <literal>git push</literal> from the agent shell (e.g.
+        <literal>config.sops.secrets.aeon_gh_token.path</literal>). When
+        set, the module installs a git credential helper and a
+        <literal>.gitconfig</literal> for the dsh user so HTTPS pushes to
+        github.com authenticate with it. The token file must be readable by
+        the <literal>dsh</literal> user (shared group + 0440, or a
+        dedicated dsh-owned sops secret). Leave null to skip git-push auth
+        (public pulls still work).
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -135,6 +167,11 @@ in
     systemd.tmpfiles.rules = [
       "d ${cfg.dataDir} 0750 dsh dsh - -"
       "d ${cfg.dataDir}/workspace 0750 dsh dsh - -"
+    ]
+    ++ lib.optionals (cfg.ghTokenFile != null) [
+      # ~/.gitconfig -> credential.helper reads the GitHub token, so the
+      # agent's `git push` authenticates without a credential prompt.
+      "C+ ${cfg.dataDir}/.gitconfig 0640 dsh dsh - ${gitConfig}"
     ]
     ++ lib.optional (
       cfg.settingsFile != null

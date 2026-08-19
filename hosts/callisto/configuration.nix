@@ -257,8 +257,16 @@
   sops.secrets.aeon_gh_token = {
     owner = "aeon";
     group = "aeon";
-    mode = "0400";
+    # 0440 (group-readable) so the dsh user — a member of the aeon group,
+    # below — can also read it for `git push`. Both agent harnesses on this
+    # host share the one GitHub token.
+    mode = "0440";
   };
+
+  # dsh shares aeon's GitHub token for git push (see jupiter.services.dsh.
+  # ghTokenFile) — membership here is what lets the dsh user read the 0440
+  # secret above.
+  users.users.dsh.extraGroups = [ "aeon" ];
 
   jupiter.services.aeon = {
     enable = true;
@@ -337,6 +345,9 @@
     enable = true;
     trustedHosts = [ "dsh.jupiter.au" ];
     environmentFile = config.sops.secrets.dsh_env.path;
+    # GitHub token for `git push` from the agent shell — reuses aeon's token
+    # (same value, already in sops); see modules/services/dsh.nix ghTokenFile.
+    ghTokenFile = config.sops.secrets.aeon_gh_token.path;
     settingsFile =
       (pkgs.writeText "dsh-settings.yaml" ''
         # Default model for new sessions/agents (settings ns: agent-default-model)
