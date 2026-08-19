@@ -210,7 +210,7 @@ in
             --max-connection-per-server=16 \
             --min-split-size=1M \
             --split=16 \
-            --bt-max-peers=1000 \
+            --bt-max-peers=500 \
             --bt-request-peer-speed-limit=50K \
             --seed-ratio=1.0 \
             --seed-time=60 \
