@@ -216,6 +216,8 @@ in
             --seed-time=60 \
             --dht-listen-port=${toString cfg.btListenPort} \
             --listen-port=${toString cfg.btListenPort} \
+            --dht-file-path=${cfg.downloadDir}/aria2-dht.dat \
+            --dht-file-path6=${cfg.downloadDir}/aria2-dht6.dat \
             ${lib.optionalString (
               cfg.dhtListenAddr6 != null
             ) "--enable-dht6=true --dht-listen-addr6=${cfg.dhtListenAddr6} "}
