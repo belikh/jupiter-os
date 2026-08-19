@@ -250,8 +250,14 @@ in
         # pre-seeds them (the hash travels to the browser, never to nginx).
         # The RPC secret is intentionally left out — embedding it on the LAN
         # would defeat the daemon's auth. Each browser enters it once.
+        # NOTE: the redirect target is `/index.html#!...`, NOT `/#!...`: a 302
+        # to `/` would loop forever, because the browser strips the hash
+        # fragment before requesting (it's client-side state), so every request
+        # lands back on `= /` and redirects again (ERR_TOO_MANY_REDIRECTS on
+        # the LAN path). `/index.html` is a real file (served 200) and the hash
+        # still reaches AriaNg's JS — one redirect, no loop.
         locations."= /" = {
-          return = "302 /#!/settings/rpc/set/${cfg.rpcProtocol}/${cfg.rpcHost}/${toString cfg.rpcWebPort}/jsonrpc";
+          return = "302 /index.html#!/settings/rpc/set/${cfg.rpcProtocol}/${cfg.rpcHost}/${toString cfg.rpcWebPort}/jsonrpc";
         };
         # AriaNg is a SPA - serve index.html for all routes
         locations."/" = {
