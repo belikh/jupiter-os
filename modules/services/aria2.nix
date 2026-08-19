@@ -167,6 +167,9 @@ in
     # Ensure download directory exists
     systemd.tmpfiles.rules = [
       "d ${cfg.downloadDir} 0755 io users -"
+      # aria2 hard-fails at startup if --input-file doesn't exist (exit 1,
+      # "Failed to open the file .../aria2.session"), so pre-create it.
+      "f ${cfg.downloadDir}/aria2.session 0644 io users -"
     ]
     ++ map (dir: "d ${dir} 0755 io users -") cfg.extraWritableDirs;
 
