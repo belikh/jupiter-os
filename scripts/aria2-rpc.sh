@@ -21,11 +21,15 @@
 #   * The empty URIs array [] is REQUIRED: aria2.addTorrent IGNORES the
 #     options struct unless an (even empty) URIs list is present (aria2 issue
 #     #2075). params must be [token, b64, [], {dir: ...}].
-#   * Torrent resume is driven per-submission by check-integrity=true, which
-#     makes aria2 SHA-1 hash-verify the existing chunks in dir= and fetch only
-#     the missing/corrupt pieces — so partial data resumes in place even if
-#     the .aria2 control file was lost. (--continue=true on the daemon is a
-#     no-op for BitTorrent; it only applies to HTTP(S)/FTP.)
+#   * Torrent resume is driven per-submission by check-integrity. When a .aria2
+#     control file is already present in dir=, aria2's piece state in it is
+#     authoritative, so submit passes check-integrity=false and resumes straight
+#     from it — no re-hashing of the whole staged tree. Only when the control
+#     file was lost does submit use check-integrity=true, which makes aria2
+#     SHA-1 hash-verify the existing chunks in dir= and fetch only the
+#     missing/corrupt pieces, so partial data still resumes in place.
+#     (--continue=true on the daemon is a no-op for BitTorrent; it only applies
+#     to HTTP(S)/FTP.)
 #   * seed-time=0 per download keeps the acquired torrent from seeding forever
 #     (the daemon global default is 60m) — bulk ROM sets are staged, not seeded.
 
@@ -120,11 +124,21 @@ case "${1:-}" in
     b64file="$(mktemp)"
     _tmpfiles+=("$b64file")
     base64 -w0 < "$torrent" > "$b64file"
+    # check-integrity only when the .aria2 control file is missing: a present
+    # control file holds authoritative piece state, so re-hashing the whole
+    # staged tree would be pure wasted I/O/CPU on the multi-GB bulk sets.
+    # (find on a not-yet-created dir yields nothing -> hash-check, the safe
+    # default.)
+    if [ -n "$(find "$dir" -name '*.aria2' -print -quit 2>/dev/null)" ]; then
+      check_integrity="false"
+    else
+      check_integrity="true"
+    fi
     # [token, b64, [], {dir, seed-time, allow-overwrite, check-integrity}] —
     # the empty URIs array is load-bearing (issue #2075), see header.
     params="$(
-      "$JQ" -nc --rawfile b64 "$b64file" --arg dir "$dir" \
-        '[$b64, [], {dir:$dir, "seed-time":"0", "allow-overwrite":"true", "check-integrity":"true"}]'
+      "$JQ" -nc --rawfile b64 "$b64file" --arg dir "$dir" --arg check "$check_integrity" \
+        '[$b64, [], {dir:$dir, "seed-time":"0", "allow-overwrite":"true", "check-integrity":($check == "true")}]'
     )"
     resp="$(rpc aria2.addTorrent "$params")"
     echo "$resp" | "$JQ" -r '
