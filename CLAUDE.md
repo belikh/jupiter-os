@@ -8,6 +8,30 @@ branch and serves as the design reference; it was never buildable end-to-end
 (see README.md for why). Do not copy code from it wholesale — port pieces
 only when the machine that needs them is brought up.
 
+## Private information — never look at it
+
+`secrets/secrets.yaml` is sops+age-encrypted for a reason: it holds every
+credential the fleet needs — root/`io` password hashes, wifi PSK, WireGuard
+private keys, Tailscale authkey, GitHub tokens, API keys, restic password,
+MQTT/DB passwords, cookies, TLS certs. **Your context is not a secure
+boundary.** Anything read into it can leave the machine and may be used to
+train later models. Treat every plaintext secret that enters context as
+burned and say so immediately so the owner can rotate it.
+
+Hard rules:
+
+- **NEVER** `sops -d secrets/secrets.yaml` and read/print the whole file.
+- If a single value is genuinely required, extract **just that key** and pipe
+  it straight to its destination without echoing it, then scrub any temp copy:
+  `sops --extract '["<key>"]' secrets/secrets.yaml | tr -d '\n' | <consumer>`
+  (to duplicate a key: `… | sops set --value-stdin secrets/secrets.yaml '["<dst>"]'`).
+- **NEVER** echo a token/password/key value into chat, a command line, or any
+  committed file. Prefer referencing a secret by its sops name
+  (`config.sops.secrets.<name>.path`) and reading it at activation/runtime —
+  the way `aria2`/`aeon`/`dsh` modules already do — never inlining a literal.
+- **NEVER** commit a decrypted secret or a value copied out of `secrets.yaml`.
+- If a task needs a credential, ask before pulling the value.
+
 ## Current state
 
 > ⚠️ **Staleness:** *git-committed* config, not live hosts — verify liveness
