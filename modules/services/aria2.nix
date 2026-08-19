@@ -124,6 +124,43 @@ in
         Leave <literal>null</literal> to keep IPv6 DHT disabled.
       '';
     };
+
+    maxConcurrentDownloads = lib.mkOption {
+      type = lib.types.ints.unsigned;
+      default = 2;
+      description = ''
+        Number of simultaneous downloads aria2 runs
+        (<literal>--max-concurrent-downloads</literal>). aria2 holds each
+        queued torrent's metainfo + file list + bitfield in memory regardless
+        of concurrency, but each active download also adds its connection
+        sockets and peer state. Kept low (2) on europa: the bulk No-Intro
+        queue is large enough that a higher value pushes the daemon into the
+        GBs and, on a 7.7GB ZFS host, into the OOM killer (see
+        <option>memoryMax</option>).
+      '';
+    };
+
+    memoryMax = lib.mkOption {
+      type = lib.types.str;
+      default = "3G";
+      description = ''
+        Hard memory ceiling for the daemon (systemd <literal>MemoryMax</literal>).
+        When exceeded the kernel OOM-kills aria2 inside its own cgroup rather
+        than starving the whole host (ZFS ARC is separately capped). europa was
+        OOM-killed at ~5.3GB anon-RSS on 7.7GB total; 3G keeps the daemon clear
+        of that while leaving headroom for ARC + system services.
+      '';
+    };
+
+    memoryHigh = lib.mkOption {
+      type = lib.types.str;
+      default = "2G";
+      description = ''
+        Soft memory ceiling (systemd <literal>MemoryHigh</literal>). Reclaim
+        starts throttling the cgroup above this before the
+        <option>memoryMax</option> hard kill triggers.
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -165,7 +202,7 @@ in
             --save-session=${cfg.downloadDir}/aria2.session \
             --save-session-interval=60 \
             --input-file=${cfg.downloadDir}/aria2.session \
-            --max-concurrent-downloads=5 \
+            --max-concurrent-downloads=${toString cfg.maxConcurrentDownloads} \
             --max-connection-per-server=16 \
             --min-split-size=1M \
             --split=16 \
@@ -181,6 +218,11 @@ in
         '';
         Restart = "on-failure";
         RestartSec = "10s";
+        # Memory ceiling: aria2's RSS grows with the queued-torrent count and is
+        # only released on exit. Cap the cgroup so an OOM kills aria2 alone
+        # instead of taking down the ZFS host (see options.memoryMax/memoryHigh).
+        MemoryMax = cfg.memoryMax;
+        MemoryHigh = cfg.memoryHigh;
         # Hardening
         PrivateTmp = true;
         ProtectSystem = "strict";
