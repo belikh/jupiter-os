@@ -215,7 +215,7 @@ in
             --bt-max-open-files=20 \
             --check-integrity=false \
             --bt-seed-unverified=true \
-            --external-ip=157.85.248.45 \
+            --bt-external-ip=157.85.248.45 \
             --seed-ratio=1.0 \
             --seed-time=60 \
             --dht-listen-port=${toString cfg.btListenPort} \
