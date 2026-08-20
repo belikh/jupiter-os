@@ -437,6 +437,22 @@
         }
       );
 
+      # arcade-webapp — the jupiterOS Arcade pipeline webapp (DAT currency,
+      # aria2 download control, igir verify, Skyscraper metadata, Pegasus
+      # launcher-DB generation, curation; Phase 0 stub for now). Built from
+      # in-tree stdlib-only source, same pattern as suno-backup/nom-web above
+      # — exposed standalone (untuned legacyPackages) so the vendorHash can be
+      # recomputed via `nix build .#arcade-webapp` without pulling europa's
+      # closure. In-tree per ADR-0002 D2 (no new flake input); will be
+      # consumed by modules/services/arcade-webapp.nix (Phase 1) via
+      # pkgs.callPackage.
+      packages.x86_64-linux.arcade-webapp = (
+        import ./pkgs/arcade-webapp {
+          lib = nixpkgs.lib;
+          buildGoModule = nixpkgs.legacyPackages.x86_64-linux.buildGoModule;
+        }
+      );
+
       # suno-web — browser UI over the archive suno-backup mirrors: search,
       # metadata filtering, the clip derivation graph, playlists and playback.
       # Unlike suno-backup/nom-web above this is NOT built from in-tree source
