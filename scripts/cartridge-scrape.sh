@@ -47,6 +47,9 @@
 # (matching cartridge-integrate.sh's resilience).
 set -uo pipefail
 
+log() { printf '[cartridge-scrape] %s\n' "$*" >&2; }
+PENDING_MARKER="# jupiter-pending-section (managed by cartridge-scrape.sh)"
+
 if [ "$#" -lt 4 ]; then
   echo "usage: $0 <romRoot> <cacheDir> <source> <platform> [<platform> ...]" >&2
   exit 64
