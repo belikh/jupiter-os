@@ -25,14 +25,19 @@
 #                         there. Acquisition completes asynchronously; see the
 #                         verify gating below.
 #   jupiter-rom-verify  : scripts/cartridge-verify.sh - igir hashes each staged
-#                         set against its No-Intro DAT, quarantines unmatched/
-#                         corrupt files, and promotes the verified ROMs into
-#                         the cartridge games tree (the romScraper/arcade
-#                         modules read from there). SKIPS any system whose
-#                         staged tree still holds .aria2 control files (in-
-#                         flight), so it is safe to run before a download has
-#                         fully finished — promotion happens only for complete
-#                         sets. Chained after jupiter-rom-dats (wants, not
+#                         set against its No-Intro DAT and COPIES the verified
+#                         ROMs into the cartridge games tree (the
+#                         romScraper/arcade modules read from there). COPY
+#                         (never move/link/quarantine): the staged tree IS the
+#                         aria2 torrent download, so moving ROMs out of it
+#                         breaks the daemon's piece state (re-download loop)
+#                         and quarantining unmatched files filled the scratch
+#                         quota for zero benefit — unmatched files just stay in
+#                         the download dir. SKIPS any system whose staged tree
+#                         still holds .aria2 control files (in-flight), so it
+#                         is safe to run before a download has fully finished —
+#                         promotion happens only for complete sets. Chained
+#                         after jupiter-rom-dats (wants, not
 #                         requires): kicking verify first fetches the DATs, but
 #                         a failed fetch never blocks verify — it still runs
 #                         and degrades per missing DAT.
@@ -119,10 +124,13 @@ in
       JSON-RPC oneshot that submits each declared system's Minerva/Myrient
       torrent to the fleet aria2 daemon (jupiter.services.aria2) into its own
       incoming subdir (fire-and-forget), and an igir-backed verify oneshot that
-      hash-checks each staged set against its No-Intro DAT, quarantines
-      failures, and promotes the verified ROMs into the matching dataset tree
-      (cartridge/optical/modern). Acquisition is manual (no timer) - start the
-      units explicitly
+      hash-checks each staged set against its No-Intro DAT and COPIES the
+      verified ROMs into the matching dataset tree (cartridge/optical/modern).
+      COPY, never move/link/quarantine: the staged tree IS the aria2 torrent
+      download, so moving ROMs out of it breaks the daemon's piece state
+      (re-download loop) and quarantining unmatched files filled the scratch
+      quota for zero benefit — unmatched files just stay in the download
+      dir.
     '';
 
     incomingDir = lib.mkOption {
@@ -219,8 +227,9 @@ in
       type = lib.types.str;
       default = "/tank/archive/retro/scratch";
       description = ''
-        Working area: igir audit CSV reports land in <dir>/reports/, quarantined
-        (unmatched/corrupt) ROMs in <dir>/quarantine/.
+        Working area: igir audit CSV reports land in <dir>/reports/.
+        Unmatched staged ROMs are deliberately LEFT in the aria2 download dir
+        (COPY-based verify; see cartridge-verify.sh) — nothing is quarantined.
       '';
     };
 
