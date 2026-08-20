@@ -20,25 +20,29 @@
 # node_modules around it.
 buildNpmPackage rec {
   pname = "dsh";
-  version = "0.1.0-rc.6";
+  version = "0.1.0-rc.8";
 
   src = fetchurl {
     url = "https://registry.npmjs.org/@deepseek-ai/dsh/-/dsh-${version}.tgz";
-    hash = "sha512-brpZfED7ieRa2PQ5tUxMhHrM1pb2CmKFVM/f6yMULBDMicahk+Z2OsHgTwTDnoiZm23Ftu9rQz0NN4pflaoJcg==";
+    hash = "sha512-VQU5NlomrKLRgcXuOf+sxWFvqxPA8q9vMhrKPlPPXiOJEhGlGlAdiyxZvZxkCVI+v0zbhe21cY3/luLyxpSzzA==";
   };
 
   # The tarball ships no lockfile; graft the generated one in so
   # `npm ci` + fetchNpmDeps have a deterministic tree to work from.
   #
-  # 0.1.0-rc.6 mounts the cordis HMR receiver whose loader hard-requires
+  # 0.1.0-rc.6 mounted the cordis HMR receiver whose loader hard-requires
   # node's --expose-internals ("--expose-internals is required for HMR
   # service") even though both shipped app bundles disable the hmr row
   # (upstream rc bug: the disable doesn't take effect in the composed
-  # tree). NODE_OPTIONS cannot carry the flag (node rejects it there), so
-  # bake it into the shebang — the kernel passes it as the single allowed
-  # shebang argument. Worker threads/fork() inherit process.execArgv, so
-  # spawned profile processes get it too; `dsh plugin`'s pnpm child is
-  # unaffected (it never reads our execArgv).
+  # tree). The requirement lives in the cordis-plugin-hmr dependency, not
+  # the CLI bundle; rc.8's bundled lib no longer mentions it but the dep
+  # still ships, so the flag stays (harmless if unused — fail-loud if the
+  # shebang/shim templates drift). NODE_OPTIONS cannot carry the flag
+  # (node rejects it there), so bake it into the shebang — the kernel
+  # passes it as the single allowed shebang argument. Worker threads/
+  # fork() inherit process.execArgv, so spawned profile processes get it
+  # too; `dsh plugin`'s pnpm child is unaffected (it never reads our
+  # execArgv).
   postPatch = ''
     cp ${./package-lock.json} package-lock.json
     substituteInPlace lib/bin.js \
@@ -63,7 +67,7 @@ buildNpmPackage rec {
 
   inherit nodejs;
 
-  npmDepsHash = "sha256-yvKSLb3oCpmIIhkrdFPVui9Hpxz68wBLqibDAFlBfbU=";
+  npmDepsHash = "sha256-XH1esMCwI3zeF/ApRSScNQ/OfPed+881IiiZ7uVzWU4=";
 
   meta = {
     description = "DeepSeek Harness (dsh) — agent harness with a web UI, everything is a plugin";

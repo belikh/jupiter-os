@@ -334,13 +334,30 @@
   # Models: the settings/credentials UI plane is hard-gated to loopback by
   # upstream rc.6 (PRIVILEGED_METHODS in dsh-client-connection — no auth
   # layer exists yet), so providers are provisioned HOST-SIDE instead:
-  # settingsFile declares two OpenAI-compatible providers using the SAME
-  # keys the crush/zed wrappers already use (z.ai coding plan + groq), with
-  # apiKeyEnv references resolved from the dsh_env sops secret. DeepSeek
+  # settingsFile declares OpenAI-compatible providers using keys already
+  # in sops (z.ai coding plan + groq, shared with the crush/zed wrappers;
+  # opencode Go + Zen free under OPENCODE_API_KEY), with apiKeyEnv
+  # references resolved from the dsh_env sops secret. DeepSeek
   # itself stays available via Settings → Models if ever provisioned
   # loopback-side. Model ids fetched live from each endpoint's /models
-  # 2026-08-17 (catalogs don't refresh themselves — see dsh-llm-pi-ai
-  # §Known Limitations).
+  # (z.ai/groq/Go 2026-08-17; Zen free tier 2026-08-20 — the free rows rotate,
+  # they were the *-free ids + big-pickle that day — catalogs don't refresh
+  # themselves, see dsh-llm-pi-ai §Known Limitations). The free Zen models
+  # answer keyless, but apiKeyEnv stays OPENCODE_API_KEY (same dsh_env key
+  # as the Go catalog) so the provider profile keeps one credential shape.
+  #
+  # contextWindow/maxTokens are stamped per model because dsh's fallback for
+  # a hand-declared, unsized model is 262144/32768 (DEFAULT_CONTEXT_WINDOW /
+  # DEFAULT_MAX_TOKENS in dsh-llm-pi-ai config.d.ts) — wrong in BOTH
+  # directions here (groq/compound truly outputs 8k; kimi-k2.7-code truly
+  # outputs 256k). Values from models.dev (2026-08-20), cross-checked
+  # against each gateway's published specs; an explicitly configured
+  # maxTokens also becomes that model's per-request default output cap,
+  # which is what we want instead of the 32k fallback. reasoningEfforts is
+  # deliberately NOT set anywhere: its wire spelling is per-gateway
+  # (PiAiThinkingFormat) and a wrong guess breaks requests mid-turn — all
+  # these models still reason by default without the knob. hy3-preview is
+  # absent from models.dev's Go catalog; sized from its sibling hy3.
   jupiter.services.dsh = {
     enable = true;
     trustedHosts = [ "dsh.jupiter.au" ];
@@ -364,13 +381,29 @@
               baseURL: https://api.z.ai/api/coding/paas/v4
               models:
                 - id: glm-5.3
+                  contextWindow: 1000000
+                  maxTokens: 131072
                 - id: glm-5.2
+                  contextWindow: 1000000
+                  maxTokens: 131072
                 - id: glm-5.1
+                  contextWindow: 200000
+                  maxTokens: 131072
                 - id: glm-5
+                  contextWindow: 204800
+                  maxTokens: 131072
                 - id: glm-5-turbo
+                  contextWindow: 200000
+                  maxTokens: 131072
                 - id: glm-4.7
+                  contextWindow: 204800
+                  maxTokens: 131072
                 - id: glm-4.6
+                  contextWindow: 204800
+                  maxTokens: 131072
                 - id: glm-4.5-air
+                  contextWindow: 131072
+                  maxTokens: 98304
             groq:
               displayName: Groq
               apiKeyEnv: GROQ_API_KEY
@@ -378,12 +411,26 @@
               baseURL: https://api.groq.com/openai/v1
               models:
                 - id: llama-3.3-70b-versatile
+                  contextWindow: 131072
+                  maxTokens: 32768
                 - id: llama-3.1-8b-instant
+                  contextWindow: 131072
+                  maxTokens: 131072
                 - id: openai/gpt-oss-120b
+                  contextWindow: 131072
+                  maxTokens: 65536
                 - id: openai/gpt-oss-20b
+                  contextWindow: 131072
+                  maxTokens: 65536
                 - id: qwen/qwen3.6-27b
+                  contextWindow: 131072
+                  maxTokens: 16384
                 - id: groq/compound
+                  contextWindow: 131072
+                  maxTokens: 8192
                 - id: groq/compound-mini
+                  contextWindow: 131072
+                  maxTokens: 8192
             opencode-go:
               displayName: OpenCode Go
               apiKeyEnv: OPENCODE_API_KEY
@@ -391,31 +438,110 @@
               baseURL: https://opencode.ai/zen/go/v1
               models:
                 - id: deepseek-v4-pro
+                  contextWindow: 1000000
+                  maxTokens: 384000
                 - id: deepseek-v4-flash
+                  contextWindow: 1000000
+                  maxTokens: 384000
                 - id: glm-5.3
+                  contextWindow: 1000000
+                  maxTokens: 131072
                 - id: glm-5.2
+                  contextWindow: 1000000
+                  maxTokens: 131072
                 - id: glm-5.1
+                  contextWindow: 202752
+                  maxTokens: 32768
                 - id: glm-5
+                  contextWindow: 202752
+                  maxTokens: 32768
                 - id: minimax-m3
+                  contextWindow: 1000000
+                  maxTokens: 131072
                 - id: minimax-m2.7
+                  contextWindow: 204800
+                  maxTokens: 131072
                 - id: minimax-m2.5
+                  contextWindow: 204800
+                  maxTokens: 65536
                 - id: kimi-k3
+                  contextWindow: 1048576
+                  maxTokens: 131072
                 - id: kimi-k2.7-code
+                  contextWindow: 262144
+                  maxTokens: 262144
                 - id: kimi-k2.6
+                  contextWindow: 262144
+                  maxTokens: 65536
                 - id: kimi-k2.5
+                  contextWindow: 262144
+                  maxTokens: 65536
                 - id: qwen3.8-max
+                  contextWindow: 1000000
+                  maxTokens: 131072
                 - id: qwen3.7-max
+                  contextWindow: 1000000
+                  maxTokens: 65536
                 - id: qwen3.7-plus
+                  contextWindow: 1000000
+                  maxTokens: 65536
                 - id: qwen3.6-plus
+                  contextWindow: 1000000
+                  maxTokens: 65536
                 - id: qwen3.5-plus
+                  contextWindow: 262144
+                  maxTokens: 65536
                 - id: mimo-v2-pro
+                  contextWindow: 1048576
+                  maxTokens: 128000
                 - id: mimo-v2-omni
+                  contextWindow: 262144
+                  maxTokens: 128000
                 - id: mimo-v2.5-pro
+                  contextWindow: 1048576
+                  maxTokens: 128000
                 - id: mimo-v2.5
+                  contextWindow: 1000000
+                  maxTokens: 128000
                 - id: hy3
+                  contextWindow: 256000
+                  maxTokens: 64000
                 - id: hy3-preview
+                  contextWindow: 256000
+                  maxTokens: 64000
                 - id: gpt-5.6-luna
+                  contextWindow: 1050000
+                  maxTokens: 128000
                 - id: grok-4.5
+                  contextWindow: 500000
+                  maxTokens: 500000
+            opencode-zen:
+              displayName: OpenCode Zen (free)
+              apiKeyEnv: OPENCODE_API_KEY
+              api: openai-completions
+              baseURL: https://opencode.ai/zen/v1
+              models:
+                - id: big-pickle
+                  contextWindow: 200000
+                  maxTokens: 32000
+                - id: deepseek-v4-flash-free
+                  contextWindow: 200000
+                  maxTokens: 128000
+                - id: hy3-free
+                  contextWindow: 190000
+                  maxTokens: 64000
+                - id: laguna-s-2.1-free
+                  contextWindow: 256000
+                  maxTokens: 32000
+                - id: mimo-v2.5-free
+                  contextWindow: 200000
+                  maxTokens: 32000
+                - id: nemotron-3.5-lightning-free
+                  contextWindow: 262144
+                  maxTokens: 262144
+                - id: nemotron-3-ultra-free
+                  contextWindow: 1000000
+                  maxTokens: 128000
       '').outPath;
   };
 

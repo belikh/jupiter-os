@@ -13,11 +13,14 @@
 # serves the browser UI used to drive the agent.
 #
 # Deliberate deviation from the aeon/nom-web "0.0.0.0 + firewall" pattern,
-# measured against 0.1.0-rc.6: the web app's config schema only accepts
-# host "127.0.0.1" | "0.0.0.0", and the CLI additionally rejects 0.0.0.0
-# with "intentionally not supported yet for safety: it would expose remote
-# code execution to the network". The Web UI is therefore LOOPBACK-ONLY in
-# this version — reach it through an SSH tunnel:
+# measured against 0.1.0-rc.6 (guard re-checked at 0.1.0-rc.8): the web
+# app's config schema only accepts host "127.0.0.1" | "0.0.0.0", and the
+# CLI additionally rejects 0.0.0.0 with "intentionally not supported yet
+# for safety: it would expose remote code execution to the network". The
+# rc.8 bundle no longer ships that literal string but keeps the
+# PRIVILEGED_METHODS loopback gate on the settings/credentials plane (in
+# dsh-client-connection) — the load-bearing guard. The Web UI is therefore
+# LOOPBACK-ONLY — reach it through an SSH tunnel:
 #   ssh -L 3080:127.0.0.1:3080 root@<host>   →   http://localhost:3080
 # If a later dsh relaxes the guard, `host` + `trustedHosts` below are the
 # knobs to widen access (the /api browser-trust fence keys on the Host
