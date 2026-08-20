@@ -109,6 +109,11 @@ in
   };
 
   config = lib.mkIf cfg.enable {
+    # Reduce VM disk size for CI/development testing (kiosks deploy via disko to hardware)
+    # Default nixos-generators auto-sizing can create images too large for GHA runners
+    virtualisation.memorySize = lib.mkDefault 2048;
+    virtualisation.diskSize = lib.mkDefault 8192;
+
     # Stateless kiosk appliance: erase-your-darlings root so the box always
     # boots to a known-pristine state and can't accumulate drift.
     jupiter.storage = {
