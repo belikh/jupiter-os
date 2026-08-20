@@ -134,8 +134,7 @@ process_system() (
         --input "$incoming" \
         --output "$cartridge" \
         --report-output "$report" \
-        --no-calc-crc \
-        --no-calc-md5 \
+        --input-checksum-max CRC32 \
         --dir-game-subdir never; then
     warn "$sys: igir exited non-zero; continuing to quarantine any unmatched staged files"
   fi
