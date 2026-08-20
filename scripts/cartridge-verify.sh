@@ -138,8 +138,7 @@ process_system() (
         --dir-game-subdir never \
         --reader-threads 2 \
         --writer-threads 2 \
-        --dat-threads 1 \
-        --cache-path "$SCRATCH_DIR/igir-cache"; then
+        --dat-threads 1; then
     warn "$sys: igir exited non-zero; continuing to quarantine any unmatched staged files"
   fi
 
