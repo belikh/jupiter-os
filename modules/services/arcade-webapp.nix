@@ -19,7 +19,13 @@
 # (secret read at runtime from the sops path, never inlined, never
 # logged), the downloads page (2s-polled queue + the system-centric join
 # against verify state + per-system torrent acquire into
-# incomingDir/<sys>). Verify/scrape control land in Phases 3+.
+# incomingDir/<sys>). P3 adds verify & organize + DAT currency: an igir
+# runner exec'ing cartridge-verify.sh's flag set (+ the aria2-metadata
+# input exclusion, D-P3e: COPY promotion, .aria2 in-flight skip, per-bucket routing, promote-unchecked when the
+# DAT is missing), a Fresh1G1R McLean DAT manager (on demand + on a
+# schedule), report ingestion into SQLite, and the zero-unmatched
+# indicator — plus torrent staging (upload a .torrent / paste a
+# magnet-URL) closing the P2 critic's acquire dead-end.
 #
 # LAN-only by design (like suno-web): no reverse-proxy exposure, no tunnel
 # wiring — flip <option>openFirewall</option> for trusted-LAN access.
@@ -46,7 +52,8 @@ let
   # torrentDir is covered transitively on europa today (it sits under the
   # same dataset as datDir/skyscraperCacheDir) but the ordering INTENT is
   # per-path: the downloads page stats it at render time, so it belongs
-  # here explicitly (ADV-P2-05).
+  # here explicitly (ADV-P2-05). scratchDir (P3: igir audit reports) joins
+  # the same gate.
   poolPaths = [
     cfg.cartridgeRoot
     cfg.opticalRoot
@@ -55,6 +62,7 @@ let
     cfg.skyscraperCacheDir
     cfg.incomingDir
     cfg.torrentDir
+    cfg.scratchDir
     cfg.stateDir
   ];
 in
@@ -167,8 +175,63 @@ in
         (rom-acquire.nix's torrentDir), one per system named by the
         catalogue's torrent column. The downloads page's per-system
         acquire action submits <literal>&lt;dir&gt;/&lt;torrent&gt;
-        </literal> to the aria2 daemon when present; read-only access is
-        enough (the daemon, not the webapp, writes the download).
+        </literal> to the aria2 daemon when present; P3's stage-torrent
+        upload writes operator-supplied .torrent files here under the
+        catalogue-expected name, so the webapp needs WRITE access (the
+        downloads themselves are still written by the daemon, not the
+        webapp).
+      '';
+    };
+
+    scratchDir = lib.mkOption {
+      type = lib.types.str;
+      default = "/tank/archive/retro/scratch";
+      description = ''
+        Scratch working area (rom-acquire.nix's scratchDir): igir audit
+        CSV reports land under <literal>&lt;dir&gt;/reports/</literal>
+        (one <literal>&lt;system&gt;.csv</literal> per verify, served on
+        the verify page).
+      '';
+    };
+
+    igirPackage = lib.mkOption {
+      type = lib.types.package;
+      default = pkgs.igir;
+      description = ''
+        The igir package the verify runner execs (gauntlet P3). Defaults
+        to <literal>pkgs.igir</literal> — igir 5.3.0 is IN the fleet's
+        pinned nixpkgs (the same binary <command>make
+        fixture-arcade</command> pins via <command>nix run
+        --inputs-from . nixpkgs#igir</command>), so no store-path
+        workaround is needed. Verify runs
+        <literal>igir copy test report</literal> with
+        scripts/cartridge-verify.sh's flag set plus an
+        input-anchored <literal>--input-exclude
+        &lt;input&gt;/**/*.torrent</literal> (aria2's infohash metadata
+        companions in the download tree — see the runner's D-P3e note).
+      '';
+    };
+
+    datFetchBaseUrl = lib.mkOption {
+      type = lib.types.str;
+      default = "https://raw.githubusercontent.com/UnluckyForSome/Fresh1G1R/main/daily-1g1r-dat/McLean";
+      description = ''
+        Base URL of the Fresh1G1R McLean 1G1R DAT tree the DAT manager
+        fetches per-system DATs from (fetch-mclean-1g1r-dats.sh's URL
+        family). Overridable so the VM test stubs the host — tests never
+        touch GitHub.
+      '';
+    };
+
+    datRefreshIntervalHours = lib.mkOption {
+      type = lib.types.nullOr lib.types.int;
+      default = 168;
+      description = ''
+        Hours between scheduled McLean DAT refreshes (plus one at
+        startup). null disables the schedule — the on-demand refresh
+        buttons on the verify page always work. Failures are per-system
+        warnings recorded as dat-fetch runs, never fatal. The default
+        (168 = weekly) matches the DATs' own refresh cadence.
       '';
     };
 
@@ -263,8 +326,12 @@ in
     # (ReadWritePaths) prior to ExecStartPre, and a missing path fails the
     # whole unit at step NAMESPACE (226) — an ExecStartPre mkdir can never
     # run in time. tmpfiles is the blessed declarative creator (runs at
-    # boot, and activation-time on switch).
-    systemd.tmpfiles.rules = [ "d '${cfg.stateDir}' 0750 root root -" ];
+    # boot, and activation-time on switch). scratchDir joins the same
+    # treatment (P3: the igir report writer needs it).
+    systemd.tmpfiles.rules = [
+      "d '${cfg.stateDir}' 0750 root root -"
+      "d '${cfg.scratchDir}/reports' 0750 root root -"
+    ];
 
     systemd.services.jupiter-arcade-webapp = {
       description = "jupiterOS Arcade pipeline webapp (scanner + dashboard)";
@@ -292,6 +359,9 @@ in
         ARCADE_WEBAPP_INCOMING_DIR = cfg.incomingDir;
         ARCADE_WEBAPP_TORRENT_DIR = cfg.torrentDir;
         ARCADE_WEBAPP_ARIA2_RPC_URL = cfg.aria2RpcUrl;
+        ARCADE_WEBAPP_IGIR_BIN = lib.getExe cfg.igirPackage;
+        ARCADE_WEBAPP_DAT_FETCH_BASE_URL = cfg.datFetchBaseUrl;
+        ARCADE_WEBAPP_SCRATCH_DIR = cfg.scratchDir;
         ARCADE_WEBAPP_DB = "${cfg.stateDir}/arcade-webapp.db";
       }
       # Optional inputs append via optionalAttrs (absent options never
@@ -309,13 +379,17 @@ in
       }
       // lib.optionalAttrs (cfg.tgdbApikeyFile != null) {
         ARCADE_WEBAPP_TGDB_APIKEY_FILE = toString cfg.tgdbApikeyFile;
+      }
+      // lib.optionalAttrs (cfg.datRefreshIntervalHours != null) {
+        ARCADE_WEBAPP_DAT_REFRESH_HOURS = toString cfg.datRefreshIntervalHours;
       };
 
       preStart = ''
         # Belt-and-braces after tmpfiles: covers a state dir on a pool
         # dataset whose mount just appeared (RequiresMountsFor orders this
-        # unit after it; tmpfiles ran before the mount existed).
-        mkdir -p '${cfg.stateDir}'
+        # unit after it; tmpfiles ran before the mount existed). The
+        # scratch report dir shares the same rationale (P3).
+        mkdir -p '${cfg.stateDir}' '${cfg.scratchDir}/reports'
       '';
 
       serviceConfig = {
@@ -328,15 +402,30 @@ in
         # state lives in a StateDirectory; this service writes its SQLite
         # state ON-POOL per ADR-0002 D3, and a dynamic uid can't own
         # /tank/archive/retro/state). Root like suno-backup, with the same
-        # strict sandbox: write ONLY the state dir, read-only everything
-        # else. Common stanza shared with nom-web/suno-web/suno-backup
-        # (modules/lib.nix: commonServiceHardening).
-        ReadWritePaths = [ cfg.stateDir ];
-        ReadOnlyPaths = [
+        # strict sandbox. Write surface as of P3 (the webapp owns verify +
+        # organize + DAT currency + torrent staging, per the plan):
+        #   - stateDir      the SQLite database
+        #   - scratchDir    igir audit reports
+        #   - datDir        fetched McLean DATs (temp+rename)
+        #   - torrentDir    stage-torrent uploads (catalogue-named)
+        #   - the three bucket roots — igir COPY-promotes verified ROMs
+        #     into them (the pipeline's whole point; on europa they are
+        #     on-pool datasets, writable by design)
+        # Everything else stays read-only: the Skyscraper cache and the
+        # incoming staging tree are the DAEMON's/scanner's to write, not
+        # the verify runner's. Common stanza shared with
+        # nom-web/suno-web/suno-backup (modules/lib.nix:
+        # commonServiceHardening).
+        ReadWritePaths = [
+          cfg.stateDir
+          cfg.scratchDir
+          cfg.datDir
+          cfg.torrentDir
           cfg.cartridgeRoot
           cfg.opticalRoot
           cfg.modernRoot
-          cfg.datDir
+        ];
+        ReadOnlyPaths = [
           cfg.skyscraperCacheDir
           cfg.incomingDir
         ];
