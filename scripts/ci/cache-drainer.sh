@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
 # Async cache drainer for CI — two-threaded version.
-#   fast drainer:  short timeout (300s), handles small/normal NARs
+#   fast drainer:  short timeout (15s) — a quick classifier: small NARs land
+#   almost instantly; anything slower graduates to the slow queue
 #   slow drainer:  long timeout (1200s), handles paths that timed out in fast
 # Both read from the post-build-hook FIFO; fast drainer is the primary consumer.
 # Slow drainer reads from a second FIFO that fast drainer writes timeouts to.
@@ -24,7 +25,7 @@ store="${EUROPA_STORE:-ssh-ng://europa-ci}"
 log_path="/var/log/jupiter-ci/cache-drainer.log"
 nix_bin="${NIX_BIN:-nix}"
 
-FAST_TIMEOUT=300
+FAST_TIMEOUT=15
 SLOW_TIMEOUT=1200
 
 log_to_europa() {
