@@ -26,6 +26,8 @@
   imports = [
     ../../modules/common.nix
     ../../modules/services/mqtt.nix
+    # PostgreSQL server (fleet SQL database; see modules/services/postgres.nix)
+    ../../modules/services/postgres.nix
     # Tailscale client for Jupiter tailnet
     ../../modules/services/tailscale.nix
     # Aeon autonomous agent framework dashboard
@@ -548,6 +550,52 @@
   # Keys for the providers above (same values as the crush/zed secrets,
   # packed as one env file — restic_env pattern).
   sops.secrets.dsh_env = { };
+
+  # ---- PostgreSQL -----------------------------------------------------------
+  # First fleet SQL database (modules/services/postgres.nix). Deliberately
+  # minimal bring-up — assumptions recorded here so the next consumer knows:
+  #
+  #   - Auth scope: loopback + local only (upstream enableTCPIP=false
+  #     defaults): postgres binds loopback TCP :5432 with md5 rules that are
+  #     unusable until a role is given a password, plus the /run/postgresql
+  #     unix socket with peer auth. No LAN exposure, no firewall change, and
+  #     no password credential exists yet — nothing new in sops. When a LAN
+  #     consumer appears, extend the wrapper with ensureUsers + a
+  #     sops-sourced passwordFile instead of inlining config here.
+  #   - dataDir: /var/lib/postgresql/18 on this host's iSCSI root (europa's
+  #     tank/services/callisto-root zvol) — same durability/backup envelope
+  #     as everything else on this box; no separate backup story until real
+  #     data exists.
+  #
+  #   - Package: deliberately the NEWEST major (postgresql_18.x) — note the
+  #     upstream/stateVersion-driven default on this fleet would be
+  #     postgresql_17 (system.stateVersion = 26.05) — WITH europa's doCheck /
+  #     doInstallCheck override ported here. Measured before writing this
+  #     (2026-08-22): stock postgresql-18.4.drv
+  #     lsjbscjwnssxa39c9n4xbcwlvspak1l7 (and postgresql_17.10 equally) is
+  #     absent from BOTH places this host could get it — cache.nixos.org
+  #     never has skylake-tagged paths anyway (this host's closure is
+  #     jupiter.build.microarch = "skylake"), and Harmonia holds no postgres
+  #     build because no fleet closure ever contained one (`curl …/<hash>.
+  #     narinfo` → 404 both; `nix build --dry-run` of the callisto toplevel
+  #     lists the drv under "will be built"). So enabling the service forces
+  #     ONE local build regardless of version. That local build would run
+  #     postgresql's installCheckPhase initdb self-test, which is confirmed
+  #     to fail in callisto's build sandbox (hosts/europa/configuration.nix,
+  #     live finding 2026-08-07). Same class as bmake: the package compiles
+  #     fine, only its flaky sandbox-sensitive self-test breaks; silence
+  #     exactly those two phases here (host-local, like europa's) rather
+  #     than touching any stdenv. Runtime correctness is verified by
+  #     observation after switch (systemctl + psql roundtrip), not by the
+  #     package's own harness. The override can be dropped if Harmonia ever
+  #     carries this host's postgres build (the only plausible carrier —
+  #     cache.nixos.org can't serve skylake-tagged paths); until then the
+  #     local build is unconditional.
+  jupiter.services.postgres.package = pkgs.postgresql_18.overrideAttrs {
+    doCheck = false;
+    doInstallCheck = false;
+  };
+  jupiter.services.postgres.enable = true;
 
   # ---- Cloudflare Tunnel (dedicated per-host tunnel) ------------------------
   # europa's tunnel can't serve dsh: its cloudflared can't reach THIS host's
