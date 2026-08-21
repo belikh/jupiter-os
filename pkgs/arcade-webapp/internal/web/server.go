@@ -47,6 +47,9 @@ type Server struct {
 	// Verify + DAT manager (P3): nil = not configured. See verify.go.
 	ig *igir.Runner
 	df *dats.Fetcher
+	// Game art root (P4): Skyscraper-cache media dir, "" = SVG posters
+	// only. See art.go.
+	artDir string
 }
 
 // New builds the webapp's HTTP handler over an opened store and scanner,
@@ -60,6 +63,7 @@ func New(st *store.Store, scan *scanner.Scanner, opts ...Option) (*Server, error
 		"runDetail":       runDetail,
 		"verifyPill":      verifyPill,
 		"verifyStateChip": verifyStateChip,
+		"gamePill":        gamePill,
 		"dlStatusPill":    dlStatusPill,
 		"dlStateClass":    dlStateClass,
 		"speed":           speedHuman,
@@ -94,6 +98,11 @@ func New(st *store.Store, scan *scanner.Scanner, opts ...Option) (*Server, error
 	mux.HandleFunc("POST /dats/refresh", s.handleDATRefresh)
 	mux.HandleFunc("POST /systems/{system}/dat-refresh", s.handleDATRefreshSystem)
 	mux.HandleFunc("GET /verify/reports/{system}", s.handleVerifyReport)
+	// P4: library browsing — gallery, its htmx fragment and detail page.
+	mux.HandleFunc("GET /library", s.handleLibraryPage)
+	mux.HandleFunc("GET /partials/library", s.handlePartialLibrary)
+	mux.HandleFunc("GET /systems/{systemKey}/games/{id}", s.handleGameDetail)
+	mux.HandleFunc("GET /art/{systemKey}/{gameID}", s.handleArt)
 	mux.HandleFunc("POST /systems/{system}/stage-torrent", s.handleStageTorrent)
 	mux.HandleFunc("POST /systems/{system}/stage-uri", s.handleStageURI)
 	mux.HandleFunc("POST /rescan", s.handleRescan)
@@ -141,13 +150,14 @@ type totalsVM struct {
 // pageMeta is what the shared topbar partial needs from any page's view
 // model (title, the contextual health chip, which nav item is active).
 type pageMeta struct {
-	Title        string
-	Sub          string
-	HealthLabel  string
-	HealthClass  string
-	ActiveDash   bool
-	ActiveDloads bool
-	ActiveVerify bool
+	Title          string
+	Sub            string
+	HealthLabel    string
+	HealthClass    string
+	ActiveDash     bool
+	ActiveLibrary  bool
+	ActiveDloads   bool
+	ActiveVerify   bool
 }
 
 type incomingVM struct {

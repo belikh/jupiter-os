@@ -151,6 +151,16 @@ func main() {
 	}
 	opts = append(opts, web.WithPipeline(runner, fetcher))
 
+	// Game art (P4): the Skyscraper-cache media root — scraped
+	// cover.png/jpg per game directory, served read-only. Unset = the
+	// deterministic SVG posters only.
+	if artDir := envOr("ARCADE_WEBAPP_ART_DIR", ""); artDir != "" {
+		opts = append(opts, web.WithArt(artDir))
+		log.Printf("arcade-webapp: game art wired (%s; SVG poster fallback)", artDir)
+	} else {
+		log.Printf("arcade-webapp: game art not configured (ARCADE_WEBAPP_ART_DIR empty) — SVG posters only")
+	}
+
 	// DAT currency schedule: refresh at startup + every interval hours
 	// (fetch-mclean-1g1r-dats.sh ran as a kicked oneshot; the webapp
 	// owns the cadence now). Failures are per-system warnings in a

@@ -1,0 +1,51 @@
+{{/* Game detail page (P4): large poster art, identity chips, file facts
+      and the verify trail (per-game state + link to the system's last
+      igir report CSV). The back-link preserves the library query via the
+      sanitized ?back= param the cards attach. Hide/show renders disabled:
+      curation lands in P7 — the affordance says so instead of vanishing.
+*/ -}}
+{{define "layout-game"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>jupiterOS Arcade — {{.Meta.Title}}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js"></script>
+</head>
+<body>
+  {{template "topbar" .Meta}}
+  <main class="wrap">
+    <p><a class="back-link" href="{{.BackHref}}">‹ back to library</a></p>
+    <div class="game-hero">
+      <img class="art" src="{{.ArtURL}}" alt="generated cover art for {{.Title}}" width="480" height="640">
+      <div class="game-meta">
+        <h2>{{.Title}}</h2>
+        <p class="chips-row">
+          <span class="chip">{{.SystemKey}}</span>
+          <span class="chip">{{.Bucket}}</span>
+          {{gamePill .VerifyState}}
+          {{if .Hidden}}<span class="chip hidden-chip">hidden</span>{{end}}
+        </p>
+        <div class="game-facts">
+          <span class="k">file</span><span class="v"><code>{{.RelPath}}</code></span>
+          <span class="k">size</span><span class="v">{{.SizeHuman}}</span>
+          <span class="k">core</span><span class="v">{{if .Core}}{{.Core}}{{else}}—{{end}}{{if .Emulator}} · {{.Emulator}}{{end}}</span>
+          <span class="k">first seen</span><span class="v">{{.FirstSeenDay}}</span>
+          <span class="k">last seen</span><span class="v">{{.LastSeenDay}} ({{.LastSeenAgo}})</span>
+          <span class="k">verify</span><span class="v">
+            {{if .HasReport}}<a href="/verify/reports/{{.SystemKey}}.csv">last igir report (csv)</a>
+            {{else}}<span class="sub">no report yet — run Verify</span>{{end}}
+          </span>
+        </div>
+        <div class="actions">
+          <button type="button" disabled title="curation lands in P7">{{if .Hidden}}Show{{else}}Hide{{end}}</button>
+        </div>
+      </div>
+    </div>
+    {{template "foot"}}
+  </main>
+</body>
+</html>
+{{end}}
