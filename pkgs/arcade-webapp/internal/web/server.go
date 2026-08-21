@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/aria2"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/scanner"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/store"
 )
@@ -38,29 +39,47 @@ type Server struct {
 	st      *store.Store
 	scan    *scanner.Scanner
 	tmpl    *template.Template
+	// Download control (P2): nil client = not configured. See downloads.go.
+	a2 *aria2.Client
+	dl dlPaths
 }
 
-// New builds the webapp's HTTP handler over an opened store and scanner.
-func New(st *store.Store, scan *scanner.Scanner) (*Server, error) {
+// New builds the webapp's HTTP handler over an opened store and scanner,
+// plus optional features (WithAria2 for download control).
+func New(st *store.Store, scan *scanner.Scanner, opts ...Option) (*Server, error) {
 	tmpl, err := template.New("").Funcs(template.FuncMap{
-		"humanBytes":  HumanBytes,
-		"age":         ageFrom,
-		"runPill":     runPill,
-		"runDuration": runDuration,
-		"runDetail":   runDetail,
-		"verifyPill":  verifyPill,
+		"humanBytes":   HumanBytes,
+		"age":          ageFrom,
+		"runPill":      runPill,
+		"runDuration":  runDuration,
+		"runDetail":    runDetail,
+		"verifyPill":   verifyPill,
+		"verifyChip":   verifyChip,
+		"dlStatusPill": dlStatusPill,
+		"dlStateClass": dlStateClass,
+		"speed":        speedHuman,
 	}).ParseFS(content, "templates/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("web: parse templates: %w", err)
 	}
 
 	s := &Server{handler: nil, st: st, scan: scan, tmpl: tmpl}
+	for _, opt := range opts {
+		opt(s)
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
 	mux.HandleFunc("GET /static/", s.handleStatic)
 	mux.HandleFunc("GET /partials/status", s.handlePartialStatus)
 	mux.HandleFunc("GET /partials/systems", s.handlePartialSystems)
+	mux.HandleFunc("GET /partials/downloads-summary", s.handlePartialDownloadsSummary)
+	mux.HandleFunc("GET /downloads", s.handleDownloads)
+	mux.HandleFunc("GET /partials/downloads", s.handlePartialDownloads)
+	mux.HandleFunc("POST /systems/{system}/acquire", s.handleAcquire)
+	mux.HandleFunc("POST /downloads/{gid}/pause", s.dlControl("pause"))
+	mux.HandleFunc("POST /downloads/{gid}/resume", s.dlControl("resume"))
+	mux.HandleFunc("POST /downloads/{gid}/remove", s.dlControl("remove"))
 	mux.HandleFunc("POST /rescan", s.handleRescan)
 	mux.HandleFunc("GET /", s.handleIndex)
 	s.handler = mux
@@ -99,6 +118,17 @@ type totalsVM struct {
 	HealthClass   string
 }
 
+// pageMeta is what the shared topbar partial needs from any page's view
+// model (title, the contextual health chip, which nav item is active).
+type pageMeta struct {
+	Title        string
+	Sub          string
+	HealthLabel  string
+	HealthClass  string
+	ActiveDash   bool
+	ActiveDloads bool
+}
+
 type incomingVM struct {
 	Files      string
 	BytesHuman string
@@ -112,12 +142,18 @@ type dashboardVM struct {
 	EmptyCount int
 	Totals     totalsVM
 	Incoming   incomingVM
+	Meta       pageMeta
 	Now        time.Time
 }
 
 // viewModel assembles the dashboard data from the store + scanner state.
 func (s *Server) viewModel() (dashboardVM, error) {
 	vm := dashboardVM{Now: time.Now(), Scan: s.scan.State()}
+	vm.Meta = pageMeta{
+		Title:      "pipeline",
+		Sub:        "pipeline dashboard",
+		ActiveDash: true,
+	}
 
 	summary, err := s.st.SystemSummary()
 	if err != nil {
@@ -201,6 +237,7 @@ func (s *Server) viewModel() (dashboardVM, error) {
 		}
 	}
 	vm.Totals.BytesHuman = HumanBytes(totalBytes(summary))
+	vm.Meta.HealthLabel, vm.Meta.HealthClass = vm.Totals.HealthLabel, vm.Totals.HealthClass
 
 	if f := s.st.GetMeta("incoming_files"); f != "" {
 		vm.Incoming.Files = f
@@ -266,8 +303,12 @@ func (s *Server) handlePartialSystems(w http.ResponseWriter, _ *http.Request) {
 // status fragment (the button targets #status-panel, so the panel swap is
 // the whole round-trip — no client JS). A second click while running is
 // rejected by the scanner's ErrBusy guard and swallowed here: the panel
-// already shows "running".
-func (s *Server) handleRescan(w http.ResponseWriter, _ *http.Request) {
+// already shows "running". Mutating endpoint: htmx-only (see hxRequestOK).
+func (s *Server) handleRescan(w http.ResponseWriter, r *http.Request) {
+	if !hxRequestOK(r) {
+		http.Error(w, "htmx requests only", http.StatusForbidden)
+		return
+	}
 	go func() {
 		res, err := s.scan.Scan()
 		if err != nil && err != scanner.ErrBusy {
@@ -300,7 +341,7 @@ func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte("ok\n"))
 }
 
-func (s *Server) render(w http.ResponseWriter, status int, name string, vm dashboardVM) {
+func (s *Server) render(w http.ResponseWriter, status int, name string, vm any) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
 	if err := s.tmpl.ExecuteTemplate(w, name, vm); err != nil {
@@ -430,14 +471,47 @@ func runDuration(r store.Run) string {
 
 // verifyPill renders the verify-state chip from what the DB knows: fully
 // verified → green, any unmatched → red, otherwise unknown (gray) — P1
-// data is all-'unknown' until P3's igir ingestion flips states.
+// data is all-'unknown' until P3's igir ingestion flips states. The
+// downloads system table shares the logic via verifyChip.
 func verifyPill(c cardVM) template.HTML {
+	return verifyChip(c.GameCount, c.Verified, c.Unmatched)
+}
+
+// dlStatusPill renders a system's live download-state chip for the
+// downloads systems table (error wins over downloading over queued).
+func dlStatusPill(s systemDL) template.HTML {
 	switch {
-	case c.GameCount > 0 && c.Verified == c.GameCount:
-		return template.HTML(`<span class="pill ok">verified</span>`)
-	case c.Unmatched > 0:
-		return template.HTML(`<span class="pill stale">` + strconv.FormatInt(c.Unmatched, 10) + ` unmatched</span>`)
+	case s.Errored:
+		return `<span class="pill error">errored</span>`
+	case s.Downloading:
+		return `<span class="pill running">downloading</span>`
+	case s.Queued:
+		return `<span class="pill warn">queued</span>`
 	default:
-		return template.HTML(`<span class="pill unknown">unknown</span>`)
+		return `<span class="pill unknown">—</span>`
+	}
+}
+
+// speedHuman renders an int64 bytes/s value as "<x>/s" ("" for 0).
+func speedHuman(b int64) string {
+	if b <= 0 {
+		return ""
+	}
+	return HumanBytes(b) + "/s"
+}
+
+// dlStateClass maps an aria2 download status to the pill CSS class.
+func dlStateClass(status string) string {
+	switch status {
+	case "active":
+		return "running"
+	case "paused", "waiting":
+		return "warn"
+	case "complete":
+		return "ok"
+	case "error":
+		return "error"
+	default:
+		return "unknown" // removed
 	}
 }

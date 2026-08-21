@@ -1,30 +1,46 @@
-{{/* Layout: the html skeleton every full page renders into. Fragments
-     (partial-status/partial-systems) render standalone for htmx. */ -}}
+{{/* Layout: the html skeleton + shared chrome (topbar/footer partials).
+      Fragments (partial-*) render standalone for htmx. Two full pages
+      exist: the dashboard ("layout", templates "content" from
+      dashboard.html) and downloads ("layout-downloads" in
+      downloads.html) — each page keeps uniquely-named defines so the
+      single template set never silently replaces a block. */ -}}
+{{define "topbar"}}
+<div class="topbar">
+  <div class="wrap">
+    <h1>jupiterOS <span class="accent">Arcade</span></h1>
+    <span class="sub">{{.Sub}}</span>
+    <span class="spacer"></span>
+    <nav class="nav" aria-label="pages">
+      <a href="/" {{if .ActiveDash}}class="active" aria-current="page"{{end}}>Dashboard</a>
+      <a href="/downloads" {{if .ActiveDloads}}class="active" aria-current="page"{{end}}>Downloads</a>
+    </nav>
+    <span class="pill {{.HealthClass}}">{{.HealthLabel}}</span>
+  </div>
+</div>
+{{end}}
+
+{{define "foot"}}
+<footer>
+  jupiterOS Arcade webapp — <a href="https://github.com/belikh/jupiter-os/blob/main/docs/plans/arcade-webapp-gauntlet.md">gauntlet plan</a>
+  · fragments auto-refresh via htmx (dashboard 10s, download queue 2s)
+</footer>
+{{end}}
+
 {{define "layout"}}
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>jupiterOS Arcade — pipeline</title>
+  <title>jupiterOS Arcade — {{.Meta.Title}}</title>
   <link rel="stylesheet" href="/static/app.css">
   <script src="/static/htmx.min.js"></script>
 </head>
 <body>
-  <div class="topbar">
-    <div class="wrap">
-      <h1>jupiterOS <span class="accent">Arcade</span></h1>
-      <span class="sub">pipeline dashboard</span>
-      <span class="spacer"></span>
-      <span class="pill {{.Totals.HealthClass}}">{{.Totals.HealthLabel}}</span>
-    </div>
-  </div>
+  {{template "topbar" .Meta}}
   <main class="wrap">
     {{template "content" .}}
-    <footer>
-      jupiterOS Arcade webapp — <a href="https://github.com/belikh/jupiter-os/blob/main/docs/plans/arcade-webapp-gauntlet.md">gauntlet plan</a>
-      · fragments auto-refresh every 10s via htmx
-    </footer>
+    {{template "foot"}}
   </main>
 </body>
 </html>

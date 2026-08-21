@@ -1,0 +1,38 @@
+{{/* Downloads summary fragment (dashboard): aria2 reachability, queue
+      depth (active/waiting), errored count, aggregate throughput — the
+      download-stage surface the P1 critic named as the dashboard's gap.
+      Polled every 5s; when download control is not configured the
+      fragment is static (no further polls). aria-live so queue changes
+      are announced. */ -}}
+{{define "partial-downloads-summary"}}
+{{if .Configured}}
+<div id="downloads-summary" hx-get="/partials/downloads-summary" hx-trigger="every 5s" hx-swap="outerHTML"
+     role="region" aria-label="download queue summary" aria-live="polite"
+     data-aria2="{{if .Reachable}}ok{{else}}unreachable{{end}}">
+  <div class="status-strip">
+    {{if .Reachable}}
+    <div class="stat"><span class="k">downloads</span>
+      <span class="v">{{.Active}} active · {{.Waiting}} waiting</span></div>
+    <div class="stat"><span class="k">throughput</span><span class="v">{{if .Throughput}}{{humanBytes .Throughput}}/s{{else}}—{{end}}</span></div>
+    {{if .Errored}}<div class="stat"><span class="k">errored</span><span class="v"><span class="pill error">{{.Errored}}</span></span></div>{{end}}
+    <span class="spacer"></span>
+    <a class="button" href="/downloads">Queue&nbsp;→</a>
+    {{else}}
+    <div class="stat"><span class="k">downloads</span>
+      <span class="v"><span class="pill stale">aria2 unreachable</span></span></div>
+    <span class="spacer"></span>
+    <a class="button" href="/downloads">Queue&nbsp;→</a>
+    {{end}}
+  </div>
+</div>
+{{else}}
+<div id="downloads-summary" role="region" aria-label="download queue summary">
+  <div class="status-strip">
+    <div class="stat"><span class="k">downloads</span>
+      <span class="v"><span class="pill unknown">not configured</span></span></div>
+    <span class="spacer"></span>
+    <span class="sub">set <code>aria2SecretFile</code> + <code>aria2RpcUrl</code> on the service to enable</span>
+  </div>
+</div>
+{{end}}
+{{end}}

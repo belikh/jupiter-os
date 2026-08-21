@@ -1,0 +1,127 @@
+{{/* Downloads queue fragment (P2): global stat strip, the live queue
+      (progress bars w/ role=progressbar + aria-valuenow, per-download
+      pause/resume/remove), and the system-centric join AriaNg lacks —
+      every catalogue system's download state (via dir attribution)
+      against its verify state (DB, 'unknown' until P3) with the acquire
+      action (submit this system's staged torrent into
+      incomingDir/<sys>). Polled every 2s while rendered; aria-live so
+      progress and completions are announced. Unreachable daemon = state
+      chip, never a 500. */ -}}
+{{define "partial-downloads"}}
+<div id="downloads-panel" hx-get="/partials/downloads" hx-trigger="every 2s" hx-swap="outerHTML"
+     role="region" aria-label="download queue" aria-live="polite"
+     {{if .Configured}}data-aria2="{{if .Reachable}}ok{{else}}unreachable{{end}}"{{end}}>
+
+  {{if .Error}}<div class="action-error" role="alert">{{.Error}}</div>{{end}}
+
+  {{if not .Configured}}
+  <section>
+    <h2>Downloads</h2>
+    <p class="sub">download control is not configured —
+      set <code>aria2SecretFile</code> and <code>aria2RpcUrl</code> on the
+      <code>jupiter.services.arcadeWebapp</code> module to enable queue
+      management.</p>
+  </section>
+  {{else}}
+  <section>
+    <h2>Queue
+      {{if .Reachable}}
+        <span class="chip">{{.Stat.NumActive}} active</span>
+        <span class="chip">{{.Stat.NumWaiting}} waiting</span>
+        <span class="chip">{{.Stat.NumStopped}} stopped</span>
+        {{if .Throughput}}<span class="chip">{{humanBytes .Throughput}}/s</span>{{end}}
+        {{if .Version}}<span class="chip" title="aria2 daemon">aria2 {{.Version}}</span>{{end}}
+      {{else}}
+        <span class="pill stale">aria2 unreachable</span>
+      {{end}}
+    </h2>
+
+    {{if .Reachable}}
+    {{if .Queue}}
+    <table class="dl">
+      <thead><tr>
+        <th scope="col">download</th><th scope="col">system</th><th scope="col">status</th>
+        <th scope="col">progress</th><th scope="col">size</th><th scope="col">speed</th>
+        <th scope="col"><span class="visually-hidden">actions</span></th>
+      </tr></thead>
+      <tbody>
+        {{range .Queue}}
+        <tr data-gid="{{.GID}}" data-status="{{.Status}}"{{if .System}} data-system="{{.System}}"{{end}}>
+          <td class="name" title="{{.Dir}}">{{.Name}}
+            {{if .ErrorMessage}}<div class="err" title="{{.ErrorMessage}}">{{.ErrorMessage}}</div>{{end}}
+          </td>
+          <td>{{if .System}}<span class="chip">{{.System}}</span>{{else}}<span class="sub">—</span>{{end}}</td>
+          <td><span class="pill {{dlStateClass .Status}}">{{.Status}}</span></td>
+          <td class="prog">
+            <div class="meter dl" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+                 aria-valuenow="{{.Pct}}" aria-label="download progress {{.Name}}"
+                 {{if eq .TotalHuman "0 B"}}aria-valuetext="size unknown"{{end}}>
+              <span style="width: {{.Pct}}%"></span>
+            </div>
+          </td>
+          <td class="num">{{.CompletedHuman}} / {{if eq .TotalHuman "0 B"}}?{{else}}{{.TotalHuman}}{{end}}</td>
+          <td class="num">{{.SpeedHuman}}</td>
+          <td class="acts">
+            {{if .CanPause}}<button class="mini" hx-post="/downloads/{{.GID}}/pause"
+              hx-target="#downloads-panel" hx-swap="outerHTML">pause</button>{{end}}
+            {{if .CanResume}}<button class="mini" hx-post="/downloads/{{.GID}}/resume"
+              hx-target="#downloads-panel" hx-swap="outerHTML">resume</button>{{end}}
+            {{if .CanRemove}}<button class="mini danger" hx-post="/downloads/{{.GID}}/remove"
+              hx-target="#downloads-panel" hx-swap="outerHTML"
+              hx-confirm="Remove {{.Name}} from the queue? (partial files stay for resume)">remove</button>{{end}}
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <p class="sub">queue is empty — acquire a system below or check AriaNg for non-arcade downloads.</p>
+    {{end}}
+    {{else}}
+    <p class="sub">the aria2 daemon did not answer (timeout or down). The rest of the dashboard
+      stays live; retry happens automatically on the next poll.</p>
+    {{end}}
+  </section>
+
+  <section>
+    <h2>Systems
+      {{if .IdleCount}}<span class="chip">{{.IdleCount}} idle</span>{{end}}
+    </h2>
+    <p class="sub">per catalogue system: live download state (from the queue, attributed by its
+      <code>incoming/&lt;sys&gt;</code> dir) joined with verify state (unknown until the verify
+      piece lands) — the view AriaNg cannot express.</p>
+    {{if .Systems}}
+    <table class="dl systems">
+      <thead><tr>
+        <th scope="col">system</th><th scope="col">download</th><th scope="col">verify</th>
+        <th scope="col">roms</th><th scope="col">acquire</th>
+      </tr></thead>
+      <tbody>
+        {{range .Systems}}
+        <tr data-system="{{.Key}}">
+          <td>{{.Collection}} <span class="chip">{{.Key}}</span></td>
+          <td>{{dlStatusPill .}}
+            {{if .Downloading}}<span class="chip">{{.ActivePct}}%</span>{{end}}
+            {{if .GIDs}}<span class="chip">{{.GIDs}} in queue</span>{{end}}
+          </td>
+          <td>{{verifyChip .GameCount .Verified .Unmatched}}</td>
+          <td class="num">{{.GameCount}}</td>
+          <td>
+            {{if .TorrentOK}}
+            <button class="mini primary" hx-post="/systems/{{.Key}}/acquire"
+              hx-target="#downloads-panel" hx-swap="outerHTML"
+              title="submit {{.TorrentName}} into incoming/{{.Key}} with aria2-rpc.sh resume semantics">acquire</button>
+            {{else if .TorrentName}}<span class="sub" title="{{.TorrentName}} not staged in torrentDir">torrent missing</span>
+            {{else}}<span class="sub">—</span>{{end}}
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <p class="sub">no systems with download, torrent or library signal.</p>
+    {{end}}
+  </section>
+  {{end}}
+</div>
+{{end}}
