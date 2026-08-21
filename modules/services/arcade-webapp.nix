@@ -15,7 +15,11 @@
 # cache coverage, imports the legacy arcade-inventory JSON (transition aid)
 # and summarizes the aria2 incoming tree into SQLite (on-pool state file
 # per ADR-0002 D3), plus an htmx-polling dashboard with an on-demand
-# rescan. Downloads/verify/scrape control land in Phases 2+.
+# rescan. P2 adds the download-control surface: an aria2 JSON-RPC client
+# (secret read at runtime from the sops path, never inlined, never
+# logged), the downloads page (2s-polled queue + the system-centric join
+# against verify state + per-system torrent acquire into
+# incomingDir/<sys>). Verify/scrape control land in Phases 3+.
 #
 # LAN-only by design (like suno-web): no reverse-proxy exposure, no tunnel
 # wiring — flip <option>openFirewall</option> for trusted-LAN access.
@@ -23,8 +27,8 @@
 # Secrets discipline (house rule): the *File options below take PATHS.
 # sops-nix decrypts the values at activation; the app reads files at
 # runtime and never sees inline values, and nothing secret ever enters the
-# nix store. Phase 1 only checks presence; P2 (aria2 RPC) and P5
-# (ScreenScraper/TGDB) consume them.
+# nix store. P2 consumes the aria2 secret; P5 (ScreenScraper/TGDB)
+# consumes the rest.
 let
   cfg = config.jupiter.services.arcadeWebapp;
 
@@ -144,7 +148,33 @@ in
       description = ''
         The aria2 download root the acquire oneshot stages torrents into
         (rom-acquire.nix's incomingDir). Phase 1 summarizes files+bytes for
-        the status strip; the live download queue view lands with P2.
+        the status strip; P2 attributes queue entries to systems by this
+        root (<literal>&lt;dir&gt;/&lt;sys&gt;/</literal>) and routes
+        acquire submissions into it.
+      '';
+    };
+
+    torrentDir = lib.mkOption {
+      type = lib.types.str;
+      default = "/tank/archive/retro/metadata/minerva-torrents";
+      description = ''
+        Directory holding the Minerva/Myrient No-Intro .torrent files
+        (rom-acquire.nix's torrentDir), one per system named by the
+        catalogue's torrent column. The downloads page's per-system
+        acquire action submits <literal>&lt;dir&gt;/&lt;torrent&gt;
+        </literal> to the aria2 daemon when present; read-only access is
+        enough (the daemon, not the webapp, writes the download).
+      '';
+    };
+
+    aria2RpcUrl = lib.mkOption {
+      type = lib.types.str;
+      default = "http://127.0.0.1:6800/jsonrpc";
+      description = ''
+        URL of the fleet aria2 daemon's JSON-RPC endpoint
+        (<option>jupiter.services.aria2</option>; europa-local default).
+        Download control (P2) is enabled when this and
+        <option>aria2SecretFile</option> are both set.
       '';
     };
 
@@ -178,10 +208,24 @@ in
       default = null;
       example = lib.literalExpression "config.sops.secrets.jupiter_aria2_rpc_secret.path";
       description = ''
-        File PATH holding the aria2 JSON-RPC secret (a sops secret — set
-        this to <literal>config.sops.secrets.&lt;name&gt;.path</literal>;
-        never the value itself). Consumed by the download-control piece
-        (P2); Phase 1 only checks the file is present at startup.
+        File PATH holding the aria2 JSON-RPC secret. Set this to
+        <literal>config.sops.secrets.jupiter_aria2_rpc_secret.path</literal>
+        — the SAME existing sops secret the aria2 daemon and the acquire
+        oneshot read (declared by
+        <option>jupiter.services.aria2</option>/<option>jupiter.services.romAcquire</option>
+        when enabled on the host); never the value itself, never a new
+        secret. The webapp reads the file at RUNTIME, once per RPC call,
+        and sends it as the JSON-RPC <literal>token:</literal> parameter
+        per the aria2 spec — the value never enters the nix store, the
+        unit environment, or any log (grep-proven by unit tests).
+
+        No new privileges are needed for this: the service already runs
+        as root with <literal>ProtectSystem=strict</literal>, and sops
+        secrets are root-readable at their default 0400 (the
+        <literal>io:users</literal> ownership aria2.nix sets on europa
+        is also root-readable). The webapp does NOT write the download
+        tree — the aria2 daemon does — so <option>incomingDir</option>
+        stays read-only to it.
       '';
     };
 
@@ -241,6 +285,8 @@ in
         ARCADE_WEBAPP_DAT_DIR = cfg.datDir;
         ARCADE_WEBAPP_SKYSCRAPER_CACHE_DIR = cfg.skyscraperCacheDir;
         ARCADE_WEBAPP_INCOMING_DIR = cfg.incomingDir;
+        ARCADE_WEBAPP_TORRENT_DIR = cfg.torrentDir;
+        ARCADE_WEBAPP_ARIA2_RPC_URL = cfg.aria2RpcUrl;
         ARCADE_WEBAPP_DB = "${cfg.stateDir}/arcade-webapp.db";
       }
       # Optional inputs append via optionalAttrs (absent options never

@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/aria2"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/scanner"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/store"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/web"
@@ -85,7 +86,22 @@ func main() {
 
 	scan := scanner.New(cfg, st)
 
-	srv, err := web.New(st, scan)
+	// Download control (P2): the aria2 JSON-RPC client is wired only when
+	// BOTH the RPC URL and the secret file are configured — otherwise the
+	// downloads UI renders its static "not configured" state. The secret
+	// is read from the file at CALL time by the client (never here, never
+	// logged); the URL defaults to the fleet daemon on europa.
+	var opts []web.Option
+	rpcURL := envOr("ARCADE_WEBAPP_ARIA2_RPC_URL", "")
+	if rpcURL != "" && secrets.Aria2RPC != "" {
+		cl := aria2.New(rpcURL, secrets.Aria2RPC, log.Default())
+		opts = append(opts, web.WithAria2(cl, cfg.IncomingDir, envOr("ARCADE_WEBAPP_TORRENT_DIR", "")))
+		log.Printf("arcade-webapp: download control wired to %s (secret file at runtime)", rpcURL)
+	} else {
+		log.Printf("arcade-webapp: download control not configured (need ARCADE_WEBAPP_ARIA2_RPC_URL + ARCADE_WEBAPP_ARIA2_SECRET_FILE)")
+	}
+
+	srv, err := web.New(st, scan, opts...)
 	if err != nil {
 		log.Fatalf("arcade-webapp: %v", err)
 	}
