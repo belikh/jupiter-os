@@ -69,6 +69,21 @@ func (e *RPCError) Error() string {
 	return fmt.Sprintf("aria2: %s: code %d: %s", e.Method, e.Code, e.Message)
 }
 
+// ErrCodeAlreadyRegistered is aria2's code-12 "is already registered":
+// re-adding a torrent the daemon already knows fails with it and never
+// creates a duplicate download. A submit that lands here AFTER a retry
+// (e.g. an ambiguous addTorrent timeout) therefore means the download
+// IS registered — callers treat it as success-with-existing-download,
+// the same semantics jupiter-rom-acquire's rerun path relies on.
+const ErrCodeAlreadyRegistered = 12
+
+// IsAlreadyRegistered reports whether err is the daemon's
+// duplicate-infohash code-12 answer.
+func IsAlreadyRegistered(err error) bool {
+	var re *RPCError
+	return errors.As(err, &re) && re.Code == ErrCodeAlreadyRegistered
+}
+
 // Options is a per-download aria2 options struct (dir, seed-time,
 // allow-overwrite, check-integrity, ...). Values marshal as given — the
 // fleet's proven shapes are string options ("seed-time":"0") and the

@@ -92,6 +92,15 @@ type downloadsVM struct {
 	Stat       aria2.GlobalStat
 	Queue      []queueRow
 	Throughput int64 // sum of active downloadSpeed
+	// Partial marks a reachable daemon whose tell* batch failed in part
+	// (mid-batch timeout, one 5xx): the queue below is incomplete, and
+	// the fragment says so instead of rendering a silently short list.
+	Partial bool
+	// Hidden counts downloads the daemon knows (GlobalStat) but the
+	// capped tell* fetches didn't return — rendered as a truncation
+	// hint so entries never just vanish.
+	HiddenWaiting int
+	HiddenStopped int
 	// System-centric join — the view AriaNg cannot express.
 	Systems   []systemDL
 	IdleCount int // catalogue systems with no download/torrent/verify signal
@@ -107,6 +116,15 @@ type downloadsSummaryVM struct {
 	Errored    int
 	Throughput int64
 }
+
+// Queue fetch caps: how many waiting/stopped entries one poll renders.
+// Beyond them the fragment carries a truncation hint (the daemon's
+// GlobalStat knows the true counts) — the queue view stays cheap on
+// europa's 2-core budget while never hiding that it truncated.
+const (
+	maxWaitingShown = 100
+	maxStoppedShown = 50
+)
 
 // fetchDownloads assembles the downloads view model: one bounded context
 // for the whole RPC batch (a wedged daemon degrades the fragment after
@@ -137,19 +155,36 @@ func (s *Server) fetchDownloads(ctx context.Context) downloadsVM {
 		vm.Error = friendlyAria2Error(err)
 	}
 	if vm.Reachable {
+		// The tell* batch: each call is best-effort. A failure marks the
+		// queue PARTIAL (hint on the fragment) rather than unreachable —
+		// the stat/version answers prove the daemon is up; a partial
+		// render must not masquerade as the whole truth (ADV-P2-03a).
 		if act, err := s.a2.TellActive(ctx); err == nil {
 			queue = append(queue, act...)
 			for _, d := range act {
 				vm.Throughput += d.DownloadSpeed
 			}
 		} else {
-			vm.Error = friendlyAria2Error(err)
+			vm.Partial = true
 		}
-		if w, err := s.a2.TellWaiting(ctx, 0, 100); err == nil {
+		if w, err := s.a2.TellWaiting(ctx, 0, maxWaitingShown); err == nil {
 			queue = append(queue, w...)
+			// Truncation hint vs GlobalStat's authoritative count
+			// (ADV-P2-02) — only on a successful fetch, else the hint
+			// would count failures as hidden entries.
+			if extra := int(vm.Stat.NumWaiting) - len(w); extra > 0 {
+				vm.HiddenWaiting = extra
+			}
+		} else {
+			vm.Partial = true
 		}
-		if st, err := s.a2.TellStopped(ctx, 0, 50); err == nil {
+		if st, err := s.a2.TellStopped(ctx, 0, maxStoppedShown); err == nil {
 			queue = append(queue, st...)
+			if extra := int(vm.Stat.NumStopped) - len(st); extra > 0 {
+				vm.HiddenStopped = extra
+			}
+		} else {
+			vm.Partial = true
 		}
 	}
 
@@ -369,14 +404,15 @@ func (s *Server) handleAcquire(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "htmx requests only", http.StatusForbidden)
 		return
 	}
+	if !s.downloadsConfigured() {
+		// 503, consistent with dlControl's not-configured answer
+		// (ADV-P2-03b): the endpoint cannot do its job in this state.
+		http.Error(w, "download control not configured", http.StatusServiceUnavailable)
+		return
+	}
 	sys := r.PathValue("system")
 
-	vmErr := ""
-	if !s.downloadsConfigured() {
-		vmErr = "download control not configured"
-	} else {
-		vmErr = s.acquire(r.Context(), sys)
-	}
+	vmErr := s.acquire(r.Context(), sys)
 
 	vm := s.fetchDownloads(r.Context())
 	if vmErr != "" {
@@ -416,6 +452,20 @@ func (s *Server) acquire(ctx context.Context, sys string) string {
 	runID, _ := s.st.StartRun("acquire")
 	gid, err := s.a2.AddTorrent(ctx, torrentPath, aria2.AcquireTorrentOptions(s.dl.IncomingDir, sys))
 	if err != nil {
+		// Code 12 "is already registered" after (say) an ambiguous
+		// addTorrent timeout+retry means the submission DID land — the
+		// download exists under this exact dir. Success-with-note, not
+		// an error (ADV-P2-04); same semantics the acquire oneshot's
+		// rerun path relies on.
+		if aria2.IsAlreadyRegistered(err) {
+			detail, _ := json.Marshal(struct {
+				System string `json:"system"`
+				Note   string `json:"note"`
+			}{System: sys, Note: "already registered"})
+			_ = s.st.FinishRun(runID, "ok", string(detail))
+			log.Printf("web: acquire %s: already registered (idempotent rerun)", sys)
+			return ""
+		}
 		log.Printf("web: acquire %s: %v", sys, err)
 		_ = s.st.FinishRun(runID, "error", sys+": "+err.Error())
 		return "submit failed: " + friendlyAria2Error(err)
