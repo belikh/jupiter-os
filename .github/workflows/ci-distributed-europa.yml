@@ -794,7 +794,7 @@ jobs:
 
           : > /tmp/machines
           for ip in "${ready[@]}"; do
-            echo "ssh-ng://runner@${ip} x86_64-linux $HOME/.ssh/ci_builder_key 1 4 kvm,benchmark,big-parallel,gccarch-bdver4,gccarch-skylake -" \
+            echo "ssh-ng://runner@${ip} x86_64-linux,i686-linux $HOME/.ssh/ci_builder_key 1 4 kvm,benchmark,big-parallel,gccarch-bdver4,gccarch-skylake -" \
               >> /tmp/machines
           done
 
