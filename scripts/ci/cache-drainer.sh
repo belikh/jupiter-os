@@ -93,6 +93,17 @@ flush() {
     # store-protocol rejection (e.g. require-sigs) in one log line.
     ssh -o ControlPath="$cm/%r@%h:%p" -o ConnectTimeout=10 "$ssh" true 2>/dev/null
     log "  probe: ssh $ssh -> rc=$?"
+    # Diagnostic re-attempt with ssh -vv: shows exactly WHERE the transfer
+    # dies (master-socket reuse, channel open, auth, protocol). Capped so
+    # the log doesn't explode.
+    local diag_file; diag_file="$(mktemp)"
+    timeout 60 env \
+      NIX_SSHOPTS="-i $key -o ControlPath=$cm/%r@%h:%p -o StrictHostKeyChecking=accept-new -vv" \
+      "$nix_bin" copy --to "$store" "$path" >"$diag_file" 2>&1
+    local drc=$?
+    log "  diag: rc=$drc path_exists=$([ -e "$path" ] && echo yes || echo NO)"
+    log "  diag-tail: $(tail -c 1500 "$diag_file" | tr '\n' ' ')"
+    rm -f "$err_file" "$diag_file"
     return "$rc"
   fi
 }
