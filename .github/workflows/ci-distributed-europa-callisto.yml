@@ -911,9 +911,6 @@ jobs:
           for host in $HOSTS; do
             INSTALLABLES+=(".#nixosConfigurations.$host.config.system.build.toplevel")
           done
-          # europa's netboot assets belong with callisto's kernel build; the
-          # final push lands them on europa for its PXE server to substitute.
-          INSTALLABLES+=(".#pxe-netboot-assets")
           # europa's netboot assets (boot.ipxe + callisto's bzImage/initrd) are
           # deliberately NOT part of any host's closure — that split is what
           # keeps building europa from also building callisto (see

@@ -1,8 +1,8 @@
 name: CI (distributed builders) — kiosks
 
 # DESIGN DRAFT — not wired to any trigger yet, not enabled. See PR/commit
-# discussion before flipping `on:` to something live. Costs ~6 concurrent
-# GH-hosted runner-minutes per invocation (5 builders + 1 coordinator) vs.
+# discussion before flipping `on:` to something live. Costs ~20 concurrent
+# GH-hosted runner-minutes per invocation (19 builders + 1 coordinator) vs.
 # ci.yml's current ~6, and needs one new repo secret (CI_BUILDER_SSH_KEY,
 # see below) that does not exist yet.
 #
@@ -11,9 +11,9 @@ name: CI (distributed builders) — kiosks
 # ---------------------------------------------------------------------------
 # ci.yml parallelizes at HOST granularity (matrix, one job per host/group) —
 # capped at ~6 real hosts. This workflow instead parallelizes at DERIVATION
-# granularity: 5 disposable machines register as Nix remote builders, and
+# granularity: 19 disposable machines register as Nix remote builders, and
 # ONE coordinator job builds each host closure in turn, letting Nix's own
-# scheduler fan that host's independent derivations out across all 5
+# scheduler fan that host's independent derivations out across all 19
 # builders concurrently — regardless of host count.
 #
 # The coordinator builds hosts SEQUENTIALLY (one nix build per host, looped),
@@ -32,7 +32,7 @@ name: CI (distributed builders) — kiosks
 # (modules/services/headscale.nix). Each builder registers as
 # `ci-b<idx>-<run_id>.ts.jupiter.au` — `idx` (matrix value) and `run_id`
 # (github.run_id) are both known to EVERY job in the run before it starts,
-# so the coordinator can address all 5 builders directly with no artifact
+# so the coordinator can address all 19 builders directly with no artifact
 # upload / polling / external KV store to discover them. run_id is included
 # specifically to avoid hostname collisions between two CI runs that overlap
 # on different refs (main push + an open PR, say) — idx alone would collide.
@@ -62,7 +62,7 @@ name: CI (distributed builders) — kiosks
 # ---------------------------------------------------------------------------
 # KNOWN GAPS / THINGS TO VALIDATE BEFORE ENABLING
 # ---------------------------------------------------------------------------
-# - Not yet load-tested: 5 concurrent ephemeral tailnet joins/leaves per
+# - Not yet load-tested: 19 concurrent ephemeral tailnet joins/leaves per
 #   run against headscale — confirm it doesn't choke or leak stale nodes
 #   (ephemeral nodes should self-prune on disconnect, but verify empirically
 #   rather than trusting that here).
@@ -110,7 +110,7 @@ concurrency:
   # false, not true: a full-fleet distributed build can take more than one
   # run to land (retry after a flaky builder, iterate on a fix), and a
   # second workflow_dispatch shouldn't kill a build already in flight on the
-  # 5 shared builders. false makes the new run QUEUE behind the running one
+  # 19 shared builders. false makes the new run QUEUE behind the running one
   # instead of cancelling it. Caveat: GitHub's queue only holds one pending
   # run per group — if you dispatch a third run while one is running and one
   # is already queued, the previously-queued run is cancelled in favor of the
@@ -134,7 +134,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        idx: [1, 2, 3, 4, 5]
+        idx: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
     steps:
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0 (node24)
 
@@ -214,6 +214,7 @@ jobs:
             max-substitution-jobs = 1
             http-connections = 1
             system-features = kvm benchmark big-parallel gccarch-bdver4 gccarch-skylake
+            # i686 REQUIRED: 32-bit closures build here via qemu-user binfmt.
             extra-platforms = i686-linux x86_64-linux
             cores = 4
             max-jobs = 1
@@ -366,8 +367,8 @@ jobs:
     # deadline ever falls below this cap they exit mid-build and strand the
     # coordinator with no builders and max-jobs=0.
     #
-    # Cost note: because 5 builders idle alongside this job, a hung
-    # coordinator now burns up to 6 x 6h of runner time rather than 6 x
+    # Cost note: because 19 builders idle alongside this job, a hung
+    # coordinator now burns up to 20 x 6h of runner time rather than 20 x
     # 75min. The cap is a cost circuit-breaker, and it has been widened
     # deliberately in exchange for not truncating a real full-fleet build.
     timeout-minutes: 360
@@ -534,14 +535,17 @@ jobs:
           echo "nix-daemon restarted with post-build-hook"
           nix show-config post-build-hook
 
-          # Signing preflight (see ci-distributed.yml for full rationale):
-          # proves hook-path signing works before a 40min build; hard-fails
-          # otherwise instead of every push being rejected by require-sigs.
+          # Signing preflight: prove the hook's exact signing path works
+          # BEFORE burning 40 minutes of distributed build. Mimics the daemon
+          # environment: no PATH lookup for nix, full binary path only.
+          # 2026-08-22: every push was landing unsigned ("lacks a signature by
+          # a trusted key") because the hook couldn't resolve nix under the
+          # daemon's secure_path — this check makes that failure instant.
           NIX_ABS="$(command -v nix)"
           echo ci-signcheck | sudo tee /tmp/ci-signcheck >/dev/null
           SIGNCHECK_P="$(sudo "$NIX_ABS" store add-file /tmp/ci-signcheck)"
           sudo "$NIX_ABS" store sign --key-file /etc/nix/harmonia-signing-key "$SIGNCHECK_P" \
-            || { echo "::error::Signing preflight FAILED — europa require-sigs will reject all pushes. check HARMONIA_SECRET_KEY (raw '<name>:<base64>' form) and daemon env."; exit 1; }
+            || { echo "::error::Signing preflight FAILED — europa require-sigs will reject all pushes. Check HARMONIA_SECRET_KEY format (key must be '<name>:<base64>' raw form) or daemon env."; exit 1; }
           echo "::notice::Signing preflight OK ($SIGNCHECK_P signed)"
 
           # Launch the drainer (runner user). It holds the FIFO open on fd 3 and
@@ -712,7 +716,7 @@ jobs:
           deadline=$(( $(date +%s) + 5*60 ))
           declare -A ip_of
           declare -A why
-          for idx in $(seq 1 5); do why[$idx]="absent from netmap"; done
+          for idx in $(seq 1 19); do why[$idx]="absent from netmap"; done
           saw_any_peer=0
 
           # Poll: builders register ~45s after the coordinator, and late
@@ -722,7 +726,7 @@ jobs:
             npeer=$(printf '%s' "$status_json" | jq '.Peer // {} | length' 2>/dev/null || echo 0)
             [ "$npeer" -gt 0 ] && saw_any_peer=1
 
-            for idx in $(seq 1 5); do
+            for idx in $(seq 1 19); do
               [ -n "${ip_of[$idx]:-}" ] && continue
               want="ci-b${idx}-${RUN_ID}"
 
@@ -762,15 +766,15 @@ jobs:
             done
 
             verified=0
-            for idx in $(seq 1 5); do [ -n "${ip_of[$idx]:-}" ] && verified=$((verified+1)); done
-            echo "$(date +%T) netmap peers=$npeer, verified=$verified/5"
-            [ "$verified" -eq 5 ] && break
+            for idx in $(seq 1 19); do [ -n "${ip_of[$idx]:-}" ] && verified=$((verified+1)); done
+            echo "$(date +%T) netmap peers=$npeer, verified=$verified/19"
+            [ "$verified" -eq 19 ] && break
             sleep 5
           done
 
           echo "--- per-builder outcome ---"
           ready=()
-          for idx in $(seq 1 5); do
+          for idx in $(seq 1 19); do
             if [ -n "${ip_of[$idx]:-}" ]; then
               echo "  builder $idx: verified ${ip_of[$idx]}"
               ready+=("${ip_of[$idx]}")
@@ -779,7 +783,7 @@ jobs:
               [ -s "/tmp/probe-$idx.log" ] && sed 's/^/      /' "/tmp/probe-$idx.log" | tail -n 5
             fi
           done
-          echo "${#ready[@]}/5 builders verified"
+          echo "${#ready[@]}/19 builders verified"
 
           if [ "$saw_any_peer" -eq 0 ]; then
             echo "::error::W1 CONFIRMED: coordinator's netmap contained ZERO peers for the whole deadline."
@@ -816,9 +820,29 @@ jobs:
       # Build all hosts in a SINGLE nix build invocation — lets nix's scheduler
       # interleave derivations across all six closures at once. Shared store paths
       # (kernel, systemd, etc.) build once and every host's independent work
-      # competes for the 5 builders together. `--keep-going` means one host
+      # competes for the 19 builders together. `--keep-going` means one host
       # failing doesn't stop the others from finishing, giving a full pass/fail
       # picture instead of stopping at the first broken host.
+      #
+      # TWO PASSES, europa as LAST RESORT ONLY: pass 1 always dispatches to
+      # the 19 disposable GH builders. GitHub's ubuntu-latest pool is a
+      # heterogeneous grab-bag of Azure CPU generations, so anything that
+      # compiles a binary and immediately *executes* it as a normal part of
+      # its own build (autotools configure probes, perl's miniperl bootstrap,
+      # cargo build.rs, ...) can hit "Illegal instruction" when that binary
+      # was built gccarch-bdver4/skylake-tuned but the runner it landed on
+      # doesn't actually support the tuned instruction set. See
+      # docs/ci-harmonia-push-runbook.md-adjacent history: the zlib/gmp/perl
+      # incidents that motivated this.
+      #
+      # Only if pass 1 leaves failures behind do we retry on europa — real,
+      # always-on bdver4 hardware, not a disposable runner, but also the
+      # fleet's NAS/PXE/Harmonia box, so it's deliberately excluded from the
+      # main pool and only touched when the free ephemeral builders couldn't
+      # finish everything. `nix build` is idempotent: everything pass 1 built
+      # is already valid in the coordinator's local store (remote builds copy
+      # their outputs back here as they complete), so pass 2's `nix build`
+      # only actually attempts whatever's still missing.
       #
       # nom-tailable build log: `--log-format internal-json` is the wire format
       # nix-output-monitor consumes. The log is written to europa so it can be
@@ -833,7 +857,7 @@ jobs:
       # progress results, dropping the build-output result lines so nom renders
       # the full activity tree without per-builder stdout noise; the human-readable
       # CI transcript (NOM_TO_HUMAN) is reconstructed from the same stream.
-      - name: Build all hosts (parallel across 5 builders, nom log on europa)
+      - name: Build all hosts (parallel across 19 builders, europa as last-resort fallback)
         env:
           RUN_ID: ${{ github.run_id }}
           EUROPA_SSH_KEY: ${{ secrets.EUROPA_SSH_KEY }}
@@ -887,6 +911,16 @@ jobs:
           for host in $HOSTS; do
             INSTALLABLES+=(".#nixosConfigurations.$host.config.system.build.toplevel")
           done
+          # europa's netboot assets (boot.ipxe + callisto's bzImage/initrd) are
+          # deliberately NOT part of any host's closure — that split is what
+          # keeps building europa from also building callisto (see
+          # modules/network/pxe-server.nix). Build them explicitly so the final
+          # push lands them on europa: europa's `systemctl start
+          # jupiter-pxe-assets` then substitutes from its own store instead of
+          # compiling a skylake-tagged kernel on a 2-core Opteron. Also the only
+          # place this package is ever built — `nix flake check` is eval-only,
+          # so a broken linkFarm here would first surface at publish time.
+          INSTALLABLES+=(".#pxe-netboot-assets")
 
           OUT_PATHS="/tmp/outpaths-${RUN_ID}"
           set +e  # Don't exit on build failure, we need to report it
@@ -929,8 +963,8 @@ jobs:
 
           # Dispatch-concurrency diagnostic. We can't SSH into a GHA runner, so
           # sample the coordinator for the whole build and surface it here. The
-          # question this settles: under the intended maxJobs=1 x 5 builders,
-          # ssh-to-builders should sit near 5; if it's in the hundreds, nix's
+          # question this settles: under the intended maxJobs=1 x 19 builders,
+          # ssh-to-builders should sit near 19; if it's in the hundreds, nix's
           # flock slot-locks in /nix/var/nix/current-load aren't contending on
           # this runner's filesystem (hence the over-dispatch). nix-fs reports
           # what FS /nix lives on (overlayfs would explain non-contending flock).
@@ -951,7 +985,7 @@ jobs:
           # --builders "@/etc/nix/machines" tells nix to read that file.
           # 2>&1 1>"$OUT_PATHS": stderr (the json log) piped to europa via ssh tee,
           # then stdout (--print-out-paths) aside to a file. Order matters.
-          # --max-jobs 0: force EVERY derivation onto the 5 remote builders in
+          # --max-jobs 0: force EVERY derivation onto the 19 remote builders in
           # /etc/nix/machines. The coordinator is dispatch-only — it orchestrates
           # the build, streams the nom log, and runs the sole cache-drainer +
           # final push to europa, so its CPU stays free for that rather than
@@ -979,7 +1013,7 @@ jobs:
 
           # Stop the dispatch-concurrency sampler and surface its samples +
           # peak into the run log and the job summary. ssh-to-builders peaks
-          # near 5 = the cap holds; in the hundreds = the flock slot-locks in
+          # near 19 = the cap holds; in the hundreds = the flock slot-locks in
           # current-load/ aren't contending (see the sampler comment above).
           kill $CONC_PID 2>/dev/null || true
           sleep 1
@@ -988,10 +1022,10 @@ jobs:
           peak=$(awk -F'ssh-to-builders=' '{print $2}' /tmp/coordinator-concurrency.log \
             | awk '{print $1}' | sort -n | tail -1)
           nixfs=$(awk -F'nix-fs=' '{print $2}' /tmp/coordinator-concurrency.log | tail -1)
-          echo "peak ssh-to-builders: ${peak:-?} (intended ~5)   nix-fs: ${nixfs:-?}"
+          echo "peak ssh-to-builders: ${peak:-?} (intended ~19)   nix-fs: ${nixfs:-?}"
           {
             echo "### Coordinator dispatch concurrency"
-            echo "Peak concurrent ssh-to-builder connections: **${peak:-?}** (intended ~5)."
+            echo "Peak concurrent ssh-to-builder connections: **${peak:-?}** (intended ~19)."
             echo "nix state dir filesystem: \`${nixfs:-?}\` (overlayfs would explain non-contending flock slot-locks)."
             echo "Full 15s sample series is in the build step log."
           } >> "$GITHUB_STEP_SUMMARY"
@@ -1000,6 +1034,44 @@ jobs:
           cat "$OUT_PATHS"
           ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-log \
             "echo \"nom log: $NOM_LOG (\$(du -h '$NOM_LOG' | cut -f1), \$(wc -l < '$NOM_LOG') events)\""
+
+          # Pass 2, LAST RESORT ONLY: pass 1 left something unbuilt. Retry on
+          # europa instead of the GH pool.
+          #
+          # supportedFeatures is deliberately gccarch-bdver4 ONLY, not
+          # -skylake too: europa's own CPU is bdver4-tuned, so a
+          # skylake-tagged derivation (callisto/kiosks) would hit the exact
+          # same build/target CPU mismatch here that sent it to pass 2 in the
+          # first place. Leaving -skylake off means Nix won't even try to
+          # dispatch those to europa — they stay correctly FAILed rather than
+          # silently mis-built on the wrong CPU. (callisto is the real
+          # skylake box; wiring it up as a second last-resort fallback is
+          # follow-up work, not done here.) maxJobs=1 so this doesn't hammer
+          # a box with other fleet duties (NAS, PXE, Harmonia).
+          if [ $BUILD_EXIT -ne 0 ]; then
+            echo "========================================"
+            echo "Pass 1 (19 GH builders) left failures behind -- retrying on europa (last resort)"
+            echo "========================================"
+            echo "ssh-ng://root@europa x86_64-linux $HOME/.ssh/europa_ci 1 1 kvm,benchmark,big-parallel,gccarch-bdver4 -" \
+              > /tmp/machines-europa
+
+            printf '@nix {"action":"msg","level":2,"msg":"=== jupiter-ci %s: pass 2, retrying failures on europa (last resort) ==="}\n' \
+              "$RUN_ID" | ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-log "cat >> '$NOM_LOG'"
+
+            nix build "${INSTALLABLES[@]}" \
+              --builders "@/tmp/machines-europa" \
+              --builders-use-substitutes \
+              --max-jobs 0 \
+              --keep-going \
+              --print-out-paths --no-link --fallback \
+              --log-format internal-json 2>&1 1>>"$OUT_PATHS" \
+              | stdbuf -o0 tee >(stdbuf -o0 jq -rR --unbuffered "$NOM_FILTER" | ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-log "cat >> '$NOM_LOG'") \
+              | { stdbuf -o0 jq -rR --unbuffered "$NOM_TO_HUMAN" || cat; }
+            BUILD_EXIT=${PIPESTATUS[0]}
+
+            echo "Out paths after europa retry:"
+            cat "$OUT_PATHS"
+          fi
 
           # --keep-going means a host that failed doesn't take its siblings
           # down with it, but the single combined exit code can't say which
