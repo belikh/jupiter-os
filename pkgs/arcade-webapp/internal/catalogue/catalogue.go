@@ -11,6 +11,10 @@
 //	system collection core emulator extensions sky bucket torrent
 //
 // Add or remove a system by editing the TSV row; every consumer follows.
+// Note: this parser is deliberately slightly more lenient than the Nix
+// side's anchored regex (arcade-catalogue.nix) — it trims surrounding
+// whitespace per column and only rejects wrong column counts — but both
+// agree on the committed TSV; format drift fails the Nix eval first.
 package catalogue
 
 import (

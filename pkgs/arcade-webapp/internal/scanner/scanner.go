@@ -176,37 +176,10 @@ func (s *Scanner) scanAll() Result {
 
 	seen := time.Now().UTC()
 	for _, sys := range systems {
-		// 2. ROM walk: <bucketRoot>/<sys>/, recursively (Wii U Loadiine
-		// layouts nest), files matching the system's extensions
-		// case-insensitively. Dotfiles are skipped (cartridge-scrape.sh's
-		// .gitkeep lesson).
-		var games []store.GameRow
-		walkErr := filepath.WalkDir(filepath.Join(s.cfg.bucketRoot(sys.Bucket), sys.Key),
-			func(path string, d fs.DirEntry, err error) error {
-				if err != nil {
-					return err // unreadable subtree → warning for this system
-				}
-				if d.IsDir() {
-					return nil
-				}
-				name := d.Name()
-				if strings.HasPrefix(name, ".") {
-					return nil
-				}
-				if !sys.HasROMExtension(name) {
-					return nil
-				}
-				info, err := d.Info()
-				if err != nil {
-					return err
-				}
-				rel, err := filepath.Rel(filepath.Join(s.cfg.bucketRoot(sys.Bucket), sys.Key), path)
-				if err != nil {
-					return err
-				}
-				games = append(games, store.GameRow{RelPath: rel, SizeBytes: info.Size()})
-				return nil
-			})
+		// 2. ROM walk: <bucketRoot>/<sys>/ recursively. One row per GAME
+		// (extension match or zip), companion bytes attributed — see
+		// scanSystemDir.
+		games, walkErr := scanSystemDir(filepath.Join(s.cfg.bucketRoot(sys.Bucket), sys.Key), sys)
 		if walkErr != nil && !errors.Is(walkErr, fs.ErrNotExist) {
 			res.Warnings = append(res.Warnings, fmt.Sprintf("%s: ROM walk: %v", sys.Key, walkErr))
 		}
@@ -259,6 +232,100 @@ func (s *Scanner) scanAll() Result {
 	_ = s.st.SetMeta("incoming_bytes", strconv.FormatInt(res.IncomingBytes, 10))
 
 	return res
+}
+
+// scanSystemDir walks one system's directory tree and returns one GameRow
+// per GAME (not per file), mirroring the pipeline's file semantics
+// (cartridge-scrape.sh): a game is a file matching the system's ROM
+// extensions OR a .zip archive — No-Intro cartridge sets ship as zips (the
+// verify COPY has no extract, so archives land in the tree as-is) and
+// cartridge-scrape.sh's global regex adds zip for exactly that reason.
+// Companion files — .bin tracks beside a .cue/.gdi, or any other non-dot
+// file — do not create games; their bytes are attributed to the game they
+// travel with so per-system sizes match what a du -sb of the tree reports:
+//   - companions in a directory holding exactly ONE game → that game;
+//   - otherwise a companion goes to the game whose base name (extension
+//     stripped) is a prefix of the companion's ("Game (USA) (Track 1).bin"
+//     → "Game (USA).cue"; longest such prefix wins);
+//   - unattributed companions are skipped (still on disk, just counted in
+//     no game — e.g. a stray notes.txt among many games).
+//
+// Dotfiles never count in either role. Rows come back sorted by path.
+// A missing dir is (nil, nil): "system not populated", not an error —
+// any other walk error returns (nil, err) and the caller must NOT prune
+// the system's existing rows with a replace (see scanAll).
+func scanSystemDir(dir string, sys catalogue.System) ([]store.GameRow, error) {
+	type found struct {
+		rel  string
+		size int64
+	}
+	var games, companions []found
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		name := d.Name()
+		if strings.HasPrefix(name, ".") {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+		f := found{rel: rel, size: info.Size()}
+		if sys.HasROMExtension(name) || strings.EqualFold(filepath.Ext(name), ".zip") {
+			games = append(games, f)
+		} else {
+			companions = append(companions, f)
+		}
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil // system dir absent: not populated, not an error
+		}
+		return nil, err
+	}
+
+	// Attribute companion bytes to games, per directory.
+	gamesInDir := map[string][]int{} // dir rel path → indexes into games
+	for i, g := range games {
+		d := filepath.Dir(g.rel)
+		gamesInDir[d] = append(gamesInDir[d], i)
+	}
+	stripExt := func(p string) string { return strings.TrimSuffix(p, filepath.Ext(p)) }
+	for _, c := range companions {
+		idx := gamesInDir[filepath.Dir(c.rel)]
+		best, bestLen := -1, -1
+		if len(idx) == 1 {
+			best = idx[0]
+		} else {
+			// Multiple games share the dir: longest-prefix basename wins.
+			base := stripExt(c.rel)
+			for _, i := range idx {
+				if gb := stripExt(games[i].rel); strings.HasPrefix(base, gb) && len(gb) > bestLen {
+					best, bestLen = i, len(gb)
+				}
+			}
+		}
+		if best >= 0 {
+			games[best].size += c.size
+		}
+	}
+
+	rows := make([]store.GameRow, len(games))
+	for i, g := range games {
+		rows[i] = store.GameRow{RelPath: g.rel, SizeBytes: g.size}
+	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].RelPath < rows[j].RelPath })
+	return rows, nil
 }
 
 // logiqxHeader captures the Logiqx <datafile><header> fields the DAT
