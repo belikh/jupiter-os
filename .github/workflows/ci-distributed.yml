@@ -195,7 +195,7 @@ jobs:
             # start-of-build herd.
             substituters = https://cache.nixos.org https://cache.jupiter.au
             trusted-public-keys = ${{ secrets.HARMONIA_PUBLIC_KEY }} cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
-            connect-timeout = 30
+            connect-timeout = 60
             trusted-users = root runner
             http2 = false
             max-substitution-jobs = 1
@@ -391,7 +391,7 @@ jobs:
             # land on cache.nixos.org, not Harmonia.
             substituters = https://cache.nixos.org https://cache.jupiter.au
             trusted-public-keys = ${{ secrets.HARMONIA_PUBLIC_KEY }} cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
-            connect-timeout = 30
+            connect-timeout = 60
             builders-use-substitutes = true
             http2 = false
             fallback = true

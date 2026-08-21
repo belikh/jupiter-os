@@ -99,7 +99,7 @@ in
       # Fail fast if Harmonia is unreachable (e.g. a PR-side CI run that
       # hasn't brought up the WireGuard tunnel) instead of stalling every
       # substitution on a connect timeout.
-      connect-timeout = lib.mkDefault 5;
+      connect-timeout = lib.mkDefault 60;
     };
   };
 }

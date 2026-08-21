@@ -81,7 +81,7 @@ jobs:
           extra_nix_config: |
             substituters = https://cache.jupiter.au https://cache.nixos.org
             trusted-public-keys = ${{ secrets.HARMONIA_PUBLIC_KEY }} cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
-            connect-timeout = 5
+            connect-timeout = 60
             post-build-hook = /opt/ci/post-build-hook.sh
             system-features = gccarch-bdver4 gccarch-skylake big-parallel
             cores = 1
@@ -149,7 +149,7 @@ jobs:
           # Tunnel endpoint, not the tailnet — cache.jupiter.au is a plain
           # HTTPS GET path (no protocol upgrade involved), so it's unaffected
           # by the TS2021/DERP POST-upgrade limitation Cloudflare Tunnel has.
-          curl -fsS --max-time 15 https://cache.jupiter.au/nix-cache-info \
+          curl -fsS --max-time 60 https://cache.jupiter.au/nix-cache-info \
             || { echo "::error::Harmonia unreachable via cache.jupiter.au"; exit 1; }
           
           # SSH config for europa-ci (jupiter-ci user on europa via tailnet)
