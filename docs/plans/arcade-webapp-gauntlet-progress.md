@@ -5,19 +5,18 @@ The live heartbeat of the builder/critic loop driving
 every critic verdict. Screenshots (when they exist) land under
 `arcade-webapp-gauntlet/` next to this file.
 
-- **Phase:** 0 **complete** (exit gate met: D1–D4 decided with evidence,
-  ADR committed, fixture igir-green, stub building, fmt/check green) —
-  Phase 1 (P1 dashboard) is next
+- **Phase:** 1 **P1 built — in review** (module + scanner + dashboard +
+  VM test landed; next: adversarial review, then the blind critic)
 - **Branch:** `arcade/webapp-gauntlet`
 - **ADR:** [ADR-0002 — custom, not RomM](../adr/0002-arcade-webapp-custom-vs-romm.md)
   (D1 research-confirmed 2026-08-21; D2–D4 accepted)
-- **Last update:** 2026-08-21 11:20 AEST
+- **Last update:** 2026-08-21 12:45 AEST
 
 ## Piece table
 
 | Piece | State | Builder loops | Last critic verdict | Critic's named gap | Evidence |
 |---|---|---|---|---|---|
-| P1 — Pipeline dashboard | pending | 0 | — | — | — |
+| P1 — Pipeline dashboard | review | 1 | — | — | see Phase 1 log below |
 | P2 — Download control | pending | 0 | — | — | — |
 | P3 — Verify & organize | pending | 0 | — | — | — |
 | P4 — Library browsing | pending | 0 | — | — | — |
@@ -46,6 +45,17 @@ every boundary, pass/fail/blocked — never asserted without a run.
 | `make check` | **pass** (2026-08-21) | `nix flake check --no-build` — every host still evals |
 | D1 RomM research | **pass** (2026-08-21) | adversarial source-level research confirmed CUSTOM with corrections F1–F3 (ADR-0002 §D1); runtime VM experiment optional, not blocking |
 
+### Phase 1 (P1 — pipeline dashboard)
+
+| Command | Result | Notes |
+|---|---|---|
+| `go test -count=1 ./...` (in `pkgs/arcade-webapp`) | **pass** (2026-08-21) | new suites: `internal/catalogue` (TSV semantics incl. the committed 61-row fleet TSV; skipped in the nix sandbox where the repo root is unreachable — covered by the VM test), `internal/store` (WAL, idempotent migrate, rescan never clobbers hidden/verify_state, summary joins), `internal/scanner` (fixture-tree scan: 5/4/4 games, DAT 2026-08-21 v1.0, coverage 60/100/0%, inventory import + absence, ErrBusy serialization, DAT header stream-parse), `internal/web` (render smoke over the real templates: card markers, fragment-shaped partials, rescan records a 2nd run, htmx banner + LICENSE + css served, 404s) |
+| `nix build .#arcade-webapp` | **pass** (2026-08-21, after correction) | first `got:` hash was **hollow** — captured while the new Go files were still untracked, so the flake source carried no sqlite import and `go mod vendor` vendored nothing while the old stub still compiled. Caught by forcing a rebuild of the go-modules FOD (`nix-store --realise --check`); corrected hash `sha256-BAvf…`, full rebuild + binary smoke (healthz, 3 fixture cards) re-verified |
+| `make fixture-arcade` | **pass** (2026-08-21) | igir gate still green post-P1: nes 5/5, snes 4/4, gb 4/4 FOUND, **0 unmatched** |
+| `make fmt` then `make fmt-check` | **pass** (2026-08-21) | clean |
+| `make check` | **pass** (2026-08-21) | all hosts eval incl. the new `arcade-webapp-vm` — needed the classic grub `nodev` + by-label root placeholder because flake check asserts toplevel bootability (test host boots direct-kernel) |
+| `make test-arcade-webapp` | **pass** (2026-08-21, 3 runs incl. final config) | real module + real fleet TSV (61 systems) against the deterministic fixture tree; in-VM smoke asserts: `/healthz` 200, dashboard cards `nes data-games="5" data-coverage="60"`, `snes 4/100%`, `gb 4/0%`, fixture DAT date rendered, 58-empty-systems footer, partials fragment-shaped, `POST /rescan` → 202 + second run recorded. Two real module bugs found and fixed en route (see D-P1e/D-P1f) |
+
 ## Decision log
 
 | Decision | Verdict | Status | Evidence |
@@ -54,6 +64,12 @@ every boundary, pass/fail/blocked — never asserted without a run.
 | D2 — app placement | in-tree `pkgs/arcade-webapp/`, flake package `arcade-webapp`, module consumes via `pkgs.callPackage`; **no new flake input** | decided | ADR-0002 §D2 (suno-backup/nom-web precedent) |
 | D3 — database | SQLite, single file under `/tank/archive/retro/state/`, WAL, `modernc.org/sqlite` (pure Go, no cgo) | decided | ADR-0002 §D3 |
 | D4 — stack | Go stdlib `net/http` + `html/template` + htmx (one vendored file) + hand-rolled CSS; no node/SPA. Escalation: two critic rejections of P4/P7 polish attributable to server-rendering → vite/preact islands via `buildNpmPackage` | decided | ADR-0002 §D4 |
+| D-P1a — htmx license fact correction | htmx as of 2.x is **0BSD**, not BSD-2-Clause as plan §1.3 stated (verified: upstream `package.json` `"license": "0BSD"` + the LICENSE file at v2.0.10). Vendored per AR-006 anyway: upstream LICENSE next to `htmx.min.js`, version + source + sha384 integrity (matches htmx.org's published hash) in a banner comment. 0BSD is strictly more permissive — vendoring posture unchanged | decided (fact correction) | `pkgs/arcade-webapp/internal/web/static/htmx.min.js` banner + `htmx-LICENSE` |
+| D-P1b — secret-path options: declared now, consumed by P2/P5 | the module takes the three secret-PATH options (`aria2SecretFile`, `screenscraperCredsFile`, `tgdbApikeyFile`, `nullOr path`, default null) and the app records **presence only** (stat, never content); the sops *declarations* + env wiring land with the phases that actually read the values (P2 aria2, P5 scrape). Rationale: no dead secrets in units that don't use them, and the VM host stays sops-free (its options point at `/dev/null`) | decided | `modules/services/arcade-webapp.nix` option docs; `cmd/arcade-webapp/main.go` presence-only logging |
+| D-P1c — card wall renders active systems only | a system gets a card iff it has ROMs, a DAT, or cache coverage; empty catalogue systems (58 of 61 on the fixture VM) collapse into one footer line. Rationale: P1's bar is "is the pipeline healthy in 5 s" — 58 zero-cards bury the signal | decided | `internal/web` Active() + partial template |
+| D-P1d — service runs as root, not DynamicUser | the SQLite state is on-pool per ADR-0002 D3 (`/tank/archive/retro/state`); a dynamic uid cannot own that path. suno-backup precedent: root + `commonServiceHardening` + `ProtectSystem=strict`, write ONLY stateDir, trees read-only | decided | `modules/services/arcade-webapp.nix` serviceConfig comment |
+| D-P1e — vendorHash must be captured from a clean flake source | the Phase-1 hash flip initially recorded a hollow hash: `go mod vendor` saw a source whose new Go files were still untracked (flake source = git-tracked files), so it vendored nothing and the stale stub still compiled. Rule adopted: flip hashes only with everything staged/committed, and sanity-check `ls vendor/modernc.org` in the FOD output before trusting a green build | decided (process) | verification log correction above; commits `657f2f3` (fix), `79ab9fb` (original flip) |
+| D-P1f — state dir: tmpfiles BEFORE namespace, never under /tmp | with `ProtectSystem=strict`, systemd builds the mount namespace (ReadWritePaths) before ExecStartPre — a missing dir fails the unit at step NAMESPACE 226 and a preStart mkdir can never save it → the module ships a tmpfiles rule + `after = systemd-tmpfiles-setup.service`. Separately, `PrivateTmp=true` means a `/tmp` state dir exists only in the unit's private namespace — the VM host therefore uses `/var/lib/…` (europa's on-pool path is unaffected) | decided | `modules/services/arcade-webapp.nix` tmpfiles rule; `tests/hosts/arcade-webapp-vm.nix` stateDir comment |
 
 ## Gauntlet scoreboard
 
