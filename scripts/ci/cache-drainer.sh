@@ -57,29 +57,31 @@ status_line() {
 }
 
 flush() {
-  local paths="$1"
+  local path="$1"
   local timeout_sec="$2"
   local tag="$3"
-  [ -z "$paths" ] && return 0
-  paths="$(printf '%s\n' "$paths" | sort -u | grep -v '^$')" || true
-  [ -z "$paths" ] && return 0
-  local n; n=$(printf '%s\n' "$paths" | wc -l)
-  status_line "$tag: pushing $n path(s) (timeout ${timeout_sec}s)"
+  [ -z "$path" ] && return 0
+  status_line "$tag: pushing $path (timeout ${timeout_sec}s)"
 
   local err_file; err_file="$(mktemp)"
-  if printf '%s\n' "$paths" | xargs -r -d '\n' timeout "$timeout_sec" env \
+  # Direct exec, NO xargs: we push exactly one path per call, and xargs
+  # rewrites every child exit code in 1-125 to 123 — which is how the old
+  # logs showed an undiagnosable wall of rc=123. Here rc is honest:
+  # 124 = our timeout fired (candidate for the slow queue), anything else
+  # is nix's/ssh's own failure code with the stderr below.
+  if timeout "$timeout_sec" env \
       NIX_SSHOPTS="-i $key -o ControlPath=$cm/%r@%h:%p -o StrictHostKeyChecking=accept-new" \
-      "$nix_bin" copy --to "$store" 2>"$err_file"; then
-    total_pushed=$((total_pushed + n))
-    status_line "$tag: pushed $n path(s)"
+      "$nix_bin" copy --to "$store" "$path" 2>"$err_file"; then
+    total_pushed=$((total_pushed + 1))
+    status_line "$tag: pushed $path"
     rm -f "$err_file"
     return 0
   else
     local rc=$?
-    status_line "$tag: push failed (rc=$rc); re-queuing"
+    status_line "$tag: push failed (rc=$rc)"
     while IFS= read -r line; do log "  stderr: $line"; done < "$err_file"
     rm -f "$err_file"
-    return $rc
+    return "$rc"
   fi
 }
 
@@ -93,10 +95,15 @@ slow_drainer() {
   while true; do
     if IFS= read -r -t 5 STORE_PATH <&4; then
       [ -z "${STORE_PATH:-}" ] && continue
-      flush "$STORE_PATH" "$SLOW_TIMEOUT" "slow" || {
-        log "slow drainer: $STORE_PATH failed even with long timeout, re-queuing to slow"
+      if flush "$STORE_PATH" "$SLOW_TIMEOUT" "slow"; then
+        :
+      else
+        # Backoff before re-queuing: an instantly-failing path must not
+        # hot-spin this loop against europa.
+        log "slow: $STORE_PATH failed even at ${SLOW_TIMEOUT}s; re-queuing after 60s"
+        sleep 60
         printf '%s\n' "$STORE_PATH" >&4
-      }
+      fi
     fi
   done
 }
@@ -105,28 +112,26 @@ slow_drainer &
 SLOW_PID=$!
 log "slow drainer PID: $SLOW_PID"
 
+# Classify a failed fast push: genuine timeout (rc=124) graduates to the slow
+# FIFO; any other failure stays in the fast requeue list. Top-level loop, so
+# NO `local` here — bash only allows it inside functions, and referencing the
+# unset var under set -u would kill the drainer on the first failure.
+handle_fast_failure() {
+  local path="$1" rc="$2"
+  if [ "$rc" -eq 124 ]; then
+    log "fast: $path timed out after ${FAST_TIMEOUT}s -> slow FIFO"
+    printf '%s\n' "$path" >&4
+  else
+    requeue+=("$path")
+  fi
+}
+
 while true; do
   if IFS=$'\t' read -r -t 3 STATUS STORE_PATH DERIVATION TIMESTAMP <&3; then
     [ -z "${STORE_PATH:-}" ] && continue
-    flush "$STORE_PATH" "$FAST_TIMEOUT" "fast" || {
-      local rc=$?
-      if [ "$rc" -eq 124 ]; then
-        log "fast drainer: $STORE_PATH timed out after ${FAST_TIMEOUT}s -> moving to slow FIFO"
-        printf '%s\n' "$STORE_PATH" >&4
-      else
-        requeue+=("$STORE_PATH")
-      fi
-    }
+    flush "$STORE_PATH" "$FAST_TIMEOUT" "fast" || handle_fast_failure "$STORE_PATH" "$?"
   elif [ "${#requeue[@]}" -gt 0 ]; then
     retry="${requeue[0]}"; requeue=("${requeue[@]:1}")
-    flush "$retry" "$FAST_TIMEOUT" "fast-retry" || {
-      local rc=$?
-      if [ "$rc" -eq 124 ]; then
-        log "fast drainer retry: $retry timed out -> moving to slow FIFO"
-        printf '%s\n' "$retry" >&4
-      else
-        requeue+=("$retry")
-      fi
-    }
+    flush "$retry" "$FAST_TIMEOUT" "fast-retry" || handle_fast_failure "$retry" "$?"
   fi
 done
