@@ -10,13 +10,14 @@
 #
 # It runs the REAL module (modules/services/arcade-webapp.nix) against a
 # deterministic fixture tree built at eval time from the same sources the
-# Phase 0 corpus uses: fixturegen's dummy ROMs, the committed Logiqx DATs
-# (pkgs/arcade-webapp/testdata/dats), the REAL fleet catalogue TSV (the
-# module's own store copy — 61 systems, so the scan also proves empty
-# systems collapse out of the card wall), plus synthetic Skyscraper
-# db.xml caches to exercise the coverage heuristic. The state dir is VM
-# tmpfs; secret-path options point at /dev/null (Phase 1 only checks
-# presence — no secret values exist in this host by construction).
+# Phase 0 corpus uses: fixturegen's dummy ROMs plus zipped cartridge ROMs
+# and a cue/bin optical rip (ADV-P1-01's real-tree shapes), the committed
+# Logiqx DATs (pkgs/arcade-webapp/testdata/dats), the REAL fleet catalogue
+# TSV (the module's own store copy — 61 systems, so the scan also proves
+# empty systems collapse out of the card wall), and synthetic Skyscraper
+# db.xml caches to exercise the coverage heuristic. Secret-path options
+# point at /dev/null (Phase 1 only checks presence — no secret values
+# exist in this host by construction).
 #
 # The in-VM assertions live in jupiter-arcade-webapp-smoke.service: wait
 # for /healthz, wait for the startup scan to land, assert the dashboard
@@ -56,6 +57,17 @@ let
       # committed DATs' hashes match these bytes (internal/fixture).
       fixturegen --roms $out/games/cartridge
 
+      # ADV-P1-01 shape coverage — real promoted trees the plain corpus
+      # lacks: No-Intro .zip archives beside loose cartridge ROMs (igir
+      # COPY has no extract), and a cue/bin optical rip whose track files
+      # are companions, not games. Zero bytes = deterministic store path.
+      head -c 1024 /dev/zero > "$out/games/cartridge/nes/Bonza Box (USA).zip"
+      head -c 2048 /dev/zero > "$out/games/cartridge/nes/Zip Zapper (Europe).zip"
+      mkdir -p "$out/games/optical/segacd"
+      head -c  128 /dev/zero > "$out/games/optical/segacd/Turbo Disc (USA).cue"
+      head -c 4096 /dev/zero > "$out/games/optical/segacd/Turbo Disc (USA) (Track 1).bin"
+      head -c 2048 /dev/zero > "$out/games/optical/segacd/Turbo Disc (USA) (Track 2).bin"
+
       cp ${dats}/nes.dat ${dats}/snes.dat ${dats}/gb.dat \
         $out/metadata/no-intro-dats/
 
@@ -91,18 +103,26 @@ let
   # forced onto /dev/ttyS0 — NOT /dev/console: the QEMU runner appends its
   # own "console=ttyS0 … console=tty0", so /dev/console lands on the
   # headless VGA device and journal/console plumbing never reaches the
-  # serial line the driver greps.
+  # serial line the driver greps. The verdict is flushed (sync + settle
+  # sleep) BEFORE poweroff so the marker is on the wire before the machine
+  # dies — a FAIL that races its own shutdown burns the driver's whole
+  # timeout undiagnosed (ADV-P1-04).
   smoke = pkgs.writeShellScript "arcade-webapp-vm-smoke" ''
     exec > /dev/ttyS0 2>&1
     set -uo pipefail
+    poweroff_drained() {
+      sync
+      sleep 1
+      systemctl poweroff || true
+    }
     fail() {
       echo "ARCADE-WEBAPP-VM: FAIL: $*" >&2
-      systemctl poweroff || true
+      poweroff_drained
       exit 1
     }
     pass() {
       echo "ARCADE-WEBAPP-VM: PASS"
-      systemctl poweroff || true
+      poweroff_drained
     }
 
     echo "smoke: waiting for the webapp on :${toString port}"
@@ -116,23 +136,29 @@ let
 
     # Startup scan lands in the DB; the card wall then carries the fixture
     # counts. data-system/data-games/data-coverage come straight from the
-    # scan (nes 5 roms 60% covered, snes 4/100%, gb 4/0).
+    # scan: nes 5 loose + 2 zips = 7 games at 3/7 = 42% cache coverage,
+    # snes 4/100%, gb 4/0%, segacd 1 game (the .cue; its track .bins are
+    # companion bytes — 128+4096+2048 = 6272 B = 6.1 KiB on the card).
     echo "smoke: waiting for the startup scan to render fixture cards"
     page=""
     for _ in $(seq 1 60); do
       page=$(curl -sf "http://127.0.0.1:${toString port}/" || true)
-      if grep -q 'data-system="nes" data-games="5" data-coverage="60"' <<<"$page"; then break; fi
+      if grep -q 'data-system="nes" data-games="7" data-coverage="42"' <<<"$page"; then break; fi
       sleep 1
     done
-    grep -q 'data-system="nes" data-games="5" data-coverage="60"' <<<"$page" \
-      || fail "dashboard never rendered nes 5/60%"
+    grep -q 'data-system="nes" data-games="7" data-coverage="42"' <<<"$page" \
+      || fail "dashboard never rendered nes 7/42% (zips must count as games)"
     grep -q 'data-system="snes" data-games="4" data-coverage="100"' <<<"$page" \
       || fail "snes card missing/wrong (want 4 games, 100%)"
     grep -q 'data-system="gb" data-games="4" data-coverage="0"' <<<"$page" \
       || fail "gb card missing/wrong (want 4 games, 0%)"
+    grep -q 'data-system="segacd" data-games="1"' <<<"$page" \
+      || fail "segacd card missing/wrong (want 1 game — the cue, not the bins)"
+    grep -q '6.1 KiB' <<<"$page" \
+      || fail "segacd card size wrong (want 6.1 KiB = cue + track companions)"
     grep -q '2026-08-21' <<<"$page" || fail "fixture DAT date not rendered"
-    grep -q '58 catalogue systems empty' <<<"$page" \
-      || fail "empty-systems footer missing (61 catalogue rows - 3 active = 58)"
+    grep -q '57 catalogue systems empty' <<<"$page" \
+      || fail "empty-systems footer missing (61 catalogue rows - 4 active = 57)"
     echo "smoke: dashboard renders fixture counts + DAT currency + coverage"
 
     # Partials are fragment-shaped (htmx targets).
@@ -227,14 +253,17 @@ in
     ];
   };
 
-  # Minimal VM shape for `nixos-rebuild build-vm` / the driver script: a
-  # serial getty for debugging (the QEMU runner already wires
-  # console=ttyS0) and DNS via QEMU's user-mode network.
+  # Minimal VM shape for `nixos-rebuild build-vm` / the driver script.
+  # Deliberately NO autologin getty (ADV-P1-04): an autologin root shell
+  # races the smoke service for /dev/ttyS0 — its prompt/escape output can
+  # swallow the FAIL verdict, and failures then burn the driver's whole
+  # timeout undiagnosed. The smoke runs as a systemd service and needs no
+  # logged-in shell; a plain serial-getty login prompt (spawned by the
+  # runner's console=ttyS0) stays out of the way. DNS via QEMU user-net.
   virtualisation.vmVariant = {
     networking.nameservers = [
       "10.0.2.3"
       "1.1.1.1"
     ];
-    services.getty.autologinUser = "root";
   };
 }
