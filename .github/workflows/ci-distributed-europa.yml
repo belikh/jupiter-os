@@ -467,7 +467,16 @@ jobs:
           # rejected). systemctl set-environment is how the restarted daemon
           # (and thus the hook) receives HARMONIA_SIGNING_KEY_FILE.
           if [ -n "$HARMONIA_SECRET_KEY" ]; then
-            printf '%s\n' "$HARMONIA_SECRET_KEY" | sudo install -m 600 /dev/stdin /etc/nix/harmonia-signing-key
+            # Normalize key format: nix store sign requires the literal
+            # 'secret-key:' prefix; secrets minted via
+            # `nix-store --generate-binary-cache-key` (harmonia's native
+            # form) lack it — feeding that verbatim yields "decoding key
+            # named '' / invalid character in Base64". Accept both.
+            case "$HARMONIA_SECRET_KEY" in
+              secret-key:*) KEY_MATERIAL="$HARMONIA_SECRET_KEY" ;;
+              *)            KEY_MATERIAL="secret-key:$HARMONIA_SECRET_KEY" ;;
+            esac
+            printf '%s\n' "$KEY_MATERIAL" | sudo install -m 600 /dev/stdin /etc/nix/harmonia-signing-key
             sudo systemctl set-environment HARMONIA_SIGNING_KEY_FILE=/etc/nix/harmonia-signing-key
           else
             echo "WARNING: HARMONIA_SECRET_KEY not set — paths will be unsigned and europa (require-sigs=true) will reject the push" >&2
