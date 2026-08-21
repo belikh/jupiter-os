@@ -5,11 +5,12 @@ The live heartbeat of the builder/critic loop driving
 every critic verdict. Screenshots (when they exist) land under
 `arcade-webapp-gauntlet/` next to this file.
 
-- **Phase:** 0 — evaluation, ADR, fixture corpus, stub (in flight; P1–P8 pending)
+- **Phase:** 0 — evaluation, ADR, fixture corpus, stub (fixture corpus in
+  flight; P1–P8 pending)
 - **Branch:** `arcade/webapp-gauntlet`
 - **ADR:** [ADR-0002 — custom, not RomM](../adr/0002-arcade-webapp-custom-vs-romm.md)
-  (D2–D4 accepted; D1 pending research confirmation)
-- **Last update:** 2026-08-21 09:33 AEST
+  (D1 research-confirmed 2026-08-21; D2–D4 accepted)
+- **Last update:** 2026-08-21 11:05 AEST
 
 ## Piece table
 
@@ -37,18 +38,18 @@ every boundary, pass/fail/blocked — never asserted without a run.
 
 | Command | Result | Notes |
 |---|---|---|
-| `nix build .#arcade-webapp` | pending | lands with the stub + flake wiring commit |
-| `go test ./...` (in `pkgs/arcade-webapp`) | pending | stub handler tests + fixture corpus tests (determinism, DAT well-formed) |
+| `nix build .#arcade-webapp` | **pass** (2026-08-21) | stub + flake wiring verified post-commit; `result/bin/arcade-webapp` |
+| `go test ./...` (in `pkgs/arcade-webapp`) | **pass** (2026-08-21) | stub handler tests green; fixture corpus tests (determinism, DAT well-formed) land with the fixture commit |
 | `make fixture-arcade` | pending | gate: `igir copy test report` per system with zero unmatched |
 | `make fmt` then `make fmt-check` | pending | run at the Phase 0 boundary |
 | `make check` | pending | `nix flake check --no-build` — every host still evals |
-| D1 RomM VM experiment | blocked (parallel research in flight) | runs in a throwaway VM, never europa; D1 verdict pending-research until it lands |
+| D1 RomM research | **pass** (2026-08-21) | adversarial source-level research confirmed CUSTOM with corrections F1–F3 (ADR-0002 §D1); runtime VM experiment optional, not blocking |
 
 ## Decision log
 
 | Decision | Verdict | Status | Evidence |
 |---|---|---|---|
-| D1 — custom vs RomM | **CUSTOM** — wins on structural forfeits: no download mgmt, no DAT verify, first container runtime on europa, AGPL | pending-research (parallel Phase 0 VM experiment confirming the ☐ cells: multi-root layout, Pegasus-export shape, bend cost) | plan §1.1 fact table (docs.romm.app 5.1.0/5.0.0, romm.app, rommapp/romm, search.nixos.org, fetched 2026-08-21); ADR-0002 §D1 |
+| D1 — custom vs RomM | **CUSTOM** — confirmed by adversarial source-level research (romm master `42e80433`, nixpkgs, live docs). Criteria 1–3/11 are structural forfeits (no acquisition, no local DAT verify/organize, two-system sprawl). Three fact corrections folded into ADR-0002: **F1** native `services.romm` shipped in nixpkgs PR #547607 (2026-08-11) — container argument void, decision unchanged (ScreenScraper dev-creds gap undermines RomM's scraper story on nixpkgs); **F2** RomM's Hasheous cloud-hash "verified" filter exists but is not local DAT verification; **F3** Pegasus export emits no `launch:`/no collections/hidden not excluded (code-verified) — cannot drive our kiosks | **decided** (runtime VM experiment demoted to optional confirmation; not blocking Phase 1) | ADR-0002 §D1 + criterion-table corrections; research evidence: romm master `42e80433` `backend/utils/pegasus_exporter.py`, [nixpkgs#547607](https://github.com/NixOS/nixpkgs/pull/547607), docs.romm.app exports page (its example shows lines the code never emits — ADR cites code) |
 | D2 — app placement | in-tree `pkgs/arcade-webapp/`, flake package `arcade-webapp`, module consumes via `pkgs.callPackage`; **no new flake input** | decided | ADR-0002 §D2 (suno-backup/nom-web precedent) |
 | D3 — database | SQLite, single file under `/tank/archive/retro/state/`, WAL, `modernc.org/sqlite` (pure Go, no cgo) | decided | ADR-0002 §D3 |
 | D4 — stack | Go stdlib `net/http` + `html/template` + htmx (one vendored file) + hand-rolled CSS; no node/SPA. Escalation: two critic rejections of P4/P7 polish attributable to server-rendering → vite/preact islands via `buildNpmPackage` | decided | ADR-0002 §D4 |
