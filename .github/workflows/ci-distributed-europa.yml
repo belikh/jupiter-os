@@ -191,11 +191,11 @@ jobs:
             # the run, so the tuned closures then build from source (seen in run
             # 31373157599). http/1.1 (one connection per fetch) is reliable; the
             # connection count is bounded by max-substitution-jobs=1 +
-            # http-connections=2 per builder, and connect-timeout=30 absorbs the
+            # http-connections=2 per builder, and connect-timeout=60 absorbs the
             # start-of-build herd.
             substituters = https://cache.nixos.org https://cache.jupiter.au
             trusted-public-keys = ${{ secrets.HARMONIA_PUBLIC_KEY }} cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
-            connect-timeout = 30
+            connect-timeout = 60
             trusted-users = root runner
             http2 = false
             max-substitution-jobs = 1
