@@ -165,6 +165,16 @@ in
 
   system.stateVersion = "26.05";
 
+  # Bootability assertions only (`nix flake check` evaluates every host's
+  # toplevel, which demands a root fileSystem + a bootloader choice). The
+  # VM itself boots direct-kernel via the QEMU runner and never touches
+  # either — grub "nodev" is the classic inert placeholder for that.
+  fileSystems."/" = {
+    device = "/dev/disk/by-label/nixos";
+    fsType = "ext4";
+  };
+  boot.loader.grub.devices = [ "nodev" ];
+
   jupiter.services.arcadeWebapp = {
     enable = true;
     inherit port;
