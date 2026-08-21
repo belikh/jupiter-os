@@ -5,19 +5,19 @@ The live heartbeat of the builder/critic loop driving
 every critic verdict. Screenshots (when they exist) land under
 `arcade-webapp-gauntlet/` next to this file.
 
-- **Phase:** 1 in progress — **P1 won** (blind critic, 1 loop, 0 rebuilds) ·
-  P2 next
+- **Phase:** 2 in progress — **P1 won** (blind critic, 1 loop, 0 rebuilds) ·
+  P2 built, in review · P3 next
 - **Branch:** `arcade/webapp-gauntlet`
 - **ADR:** [ADR-0002 — custom, not RomM](../adr/0002-arcade-webapp-custom-vs-romm.md)
   (D1 research-confirmed 2026-08-21; D2–D4 accepted)
-- **Last update:** 2026-08-21 14:05 AEST
+- **Last update:** 2026-08-21 15:35 AEST
 
 ## Piece table
 
 | Piece | State | Builder loops | Last critic verdict | Critic's named gap | Evidence |
 |---|---|---|---|---|---|
 | P1 — Pipeline dashboard | **won** | 1 (0 rebuilds) | **ours** (blind, labels stripped; DOM A/B, data-scale asymmetry disclosed+discounted) | download stage has no surface (queue depth/active/errored/throughput) — folds into P2; meters lack `role="progressbar"`/`aria-valuenow`, polling regions lack `aria-live` (carry to P2) | `p1-ours-desktop.png`, `p1-ours-mobile.png`, `p1-bar-desktop.png`; critic: "B answers the 5-second question in one strip… A contains zero pipeline vocabulary — verify 0, torrent 0, scan 0, coverage 0" |
-| P2 — Download control | pending | 0 | — | — | — |
+| P2 — Download control | review | 1 (0 rebuilds) | — | — | aria2 JSON-RPC client (`internal/aria2`, aria2-rpc.sh semantics ported, secret-never-logged grep-proof), downloads page + 2s queue poll + system-centric join + per-system acquire, module wiring (`aria2RpcUrl`, `torrentDir`), VM test driving a REAL aria2 daemon (webseed torrent, pause/resume, journal secret grep); commits `f883582`/`ad361c2`/`b8f8315`/`f0b29b2` |
 | P3 — Verify & organize | pending | 0 | — | — | — |
 | P4 — Library browsing | pending | 0 | — | — | — |
 | P5 — Metadata engine control | pending | 0 | — | — | — |
@@ -83,6 +83,39 @@ with rationale**, none rejected. Piece stays in `review` until the blind critic.
 | `make check` | **pass** (2026-08-21) | every host evals |
 | `make test-arcade-webapp` | **pass** (2026-08-21) | upgraded fixture assertions (nes 7 games/42% with zips, segacd cue+bin 1 game/6.1 KiB, 57 empty); mutation FAIL proof 48 s + exit 1, then clean PASS |
 
+### Phase 2 (P2 — download control)
+
+Builder loop 1. All fresh on the committed tree (`f883582` client →
+`ad361c2` UI → `b8f8315` module+VM → `f0b29b2` VM debuggability).
+
+| Command | Result | Notes |
+|---|---|---|
+| `go test -count=1 ./...` (in `pkgs/arcade-webapp`) | **pass** (2026-08-21) | new suite `internal/aria2` (12 tests vs a mock JSON-RPC endpoint): token-first auth on every method, aria2's string-encoded numbers, the load-bearing EMPTY uris array on addTorrent (#2075), check-integrity driven by `.aria2` control-file presence, JSON-RPC error = hard result never retried, transport-only submit retries with backoff, typed unreachable + timeout + malformed-body errors, and **TestSecretNeverLogged** — every log line of a full client run (all methods + every failure mode) grepped for the secret while the mock proves the token WAS sent (non-vacuous). `internal/web` grows the downloads suite: page/fragment shape, 2s-poll + `aria-live` + `role="progressbar"`/`aria-valuenow` markers, summary fragment incl. unreachable → 200-state-not-500, nil-client "not configured", acquire wire shape (dir routing + seed-time=0 + allow-overwrite + check-integrity) + audit-run recording + all failure modes, pause/resume/remove daemon calls, X-HX-Request CSRF on every mutating endpoint (incl. `/rescan`), the join state machine over fixture store data (active/waiting/errored aggregation, aggregate %, torrent availability, non-arcade downloads never attribute, idle collapse), button-visibility matrix, dir-attribution boundaries |
+| `nix build .#arcade-webapp` | **pass** (2026-08-21) | no vendorHash change (the aria2 package is stdlib-only; everything committed before the FOD ran — the D-P1e rule). Binary smoke: starts, logs secret-presence paths, fatal-exits on missing catalogue env as designed |
+| `make test-arcade-webapp` | **pass** (2026-08-21, 5 runs: 3 consecutive + mutation + final) | the VM now runs a REAL aria2 daemon (minimal local-secret config — `jupiter.services.aria2` itself would drag nginx/AriaNg/sops into the sops-free test host). The smoke drives the whole P2 cycle through the webapp: aria2 reachable chip → `POST /systems/nes/acquire` 202 → download appears in the queue fragment **attributed to nes** → pause → `data-status="paused"` → resume → **complete**, payload verified at `incoming/nes/vm-fixture-payload.bin` = 2097152 B → `acquire` run in the runs table → **journal grep: secret value never logged**. Determinism: the download is a self-authored torrent (mktorrent, private, single webseed) fed by an in-VM darkhttpd, throttled to 256 KiB/s so the 2 MiB payload stays in flight long enough to pause; ~41–44 s wall per run (well under the ~90 s budget). Mutation proof: payload-size assertion broken on purpose → explicit `ARCADE-WEBAPP-VM: FAIL` marker + make exit 1 (fail-fast verdict channel intact) |
+| `make fixture-arcade` | **pass** (2026-08-21) | igir gate still green post-P2: nes 5/5, snes 4/4, gb 4/4 FOUND, **0 unmatched** |
+| `make fmt` then `make fmt-check` | **pass** (2026-08-21) | clean, no diff |
+| `make check` | **pass** (2026-08-21) | every host evals incl. the VM host with the new options/services |
+
+**P1-critic carries landed with P2:** every meter (P1 coverage meters
+included) now carries `role="progressbar"` + `aria-valuenow` (+
+`aria-valuemin/max`, label); every polled region is `aria-live="polite"`
+with `role="region"` + label; the two pages get a nav with
+`aria-current`. RED proof: `git show HEAD:pkgs/.../partial_systems.html
+| grep -c role="progressbar"` → 0 at the P1 boundary; assertions now
+pin all three coverage meters + `aria-live` in the dashboard render test.
+
+**Deviation from the letter of the plan, logged as D-P2a:** the VM test
+was specified as "download a small local file via http URL"; it instead
+submits a self-authored **torrent with an HTTP webseed** pointing at the
+in-VM static server — strictly stronger coverage (it exercises the REAL
+acquire path: catalogue torrent basename → `addTorrent` with
+aria2-rpc.sh's option shape → dir routing → BT resume semantics) while
+using no real torrents and no trackers/DHT (private flag). Pause/resume
+specifically requires the webseed server to answer HTTP Range —
+darkhttpd does, python's `http.server` does not (resumed download stalls
+forever; verified locally before wiring).
+
 ## Decision log
 
 | Decision | Verdict | Status | Evidence |
@@ -97,6 +130,10 @@ with rationale**, none rejected. Piece stays in `review` until the blind critic.
 | D-P1d — service runs as root, not DynamicUser | the SQLite state is on-pool per ADR-0002 D3 (`/tank/archive/retro/state`); a dynamic uid cannot own that path. suno-backup precedent: root + `commonServiceHardening` + `ProtectSystem=strict`, write ONLY stateDir, trees read-only | decided | `modules/services/arcade-webapp.nix` serviceConfig comment |
 | D-P1e — vendorHash must be captured from a clean flake source | the Phase-1 hash flip initially recorded a hollow hash: `go mod vendor` saw a source whose new Go files were still untracked (flake source = git-tracked files), so it vendored nothing and the stale stub still compiled. Rule adopted: flip hashes only with everything staged/committed, and sanity-check `ls vendor/modernc.org` in the FOD output before trusting a green build | decided (process) | verification log correction above; commits `657f2f3` (fix), `79ab9fb` (original flip) |
 | D-P1f — state dir: tmpfiles BEFORE namespace, never under /tmp | with `ProtectSystem=strict`, systemd builds the mount namespace (ReadWritePaths) before ExecStartPre — a missing dir fails the unit at step NAMESPACE 226 and a preStart mkdir can never save it → the module ships a tmpfiles rule + `after = systemd-tmpfiles-setup.service`. Separately, `PrivateTmp=true` means a `/tmp` state dir exists only in the unit's private namespace — the VM host therefore uses `/var/lib/…` (europa's on-pool path is unaffected) | decided | `modules/services/arcade-webapp.nix` tmpfiles rule; `tests/hosts/arcade-webapp-vm.nix` stateDir comment |
+| D-P2a — VM download fixture: webseed torrent, not a bare addUri | the plan's "download a small local file via http URL" is implemented as a self-authored mktorrent torrent (private, no trackers/DHT) whose single webseed IS the in-VM static server (darkhttpd) — the REAL acquire action is exercised end-to-end instead of a test-only URL-submit path. Range support is load-bearing: pause/resume stalls forever against python's `http.server` (ignores Range); darkhttpd answers it (verified locally, PoC: pause→paused, unpause→complete in 8 s, sha256 match). The daemon is throttled to 256 KiB/s over a 2 MiB payload so the pause window is deterministic | decided | `tests/hosts/arcade-webapp-vm.nix` P2 fixture block; local PoC transcript in the P2 work log |
+| D-P2b — aria2 secret wiring: same existing sops key, no module-level declaration | `aria2SecretFile` keeps its null default + `config.sops.secrets.jupiter_aria2_rpc_secret.path` example (the SAME key `modules/services/aria2.nix` declares when the daemon is enabled — no new secret is created). The webapp module deliberately does NOT declare `sops.secrets.*` itself: a declaration under `mkIf enable` would force sops-nix into every consumer, breaking the deliberately sops-free VM test host (which passes an invented local test value instead — never a fleet secret). On europa the daemon's own declaration covers the key; a host enabling the webapp without the daemon gets a loud eval error pointing at the missing declaration. The webapp needs no new privileges: root + `ProtectSystem=strict` already reads `/run/secrets`, and the daemon — not the webapp — writes the download tree (aria2 creates `incoming/<sys>` itself, owned by the daemon user, which is exactly the ownership rom-acquire's `install -d` engineered) | decided | `modules/services/arcade-webapp.nix` option docs; CLAUDE.md secrets discipline |
+| D-P2c — CSRF posture for mutating endpoints (closes ADV-P1-07) | every POST (incl. P1's `/rescan`) requires htmx's `X-HX-Request` header, else 403. Rationale: the service is LAN-only and cookie-less (no session to ride), so the htmx-documented custom-header check is the proportionate defense against cross-site form posts; plain curl callers just add the header (smoke does). Unit-tested for all five mutating routes; VM smoke asserts both the 202 (with header) and the 403 (without) | decided | `internal/web/downloads.go` `hxRequestOK`; `TestMutatingEndpointsRequireHTMXHeader`; VM smoke rescan section |
+| D-P2d — VM serial-getty masked | the first P2 VM run died silently after "pause works" — no FAIL marker, machine powered off: the serial-getty's terminal-reset escape sequences on `/dev/ttyS0` interleaved with the smoke's output window (ADV-P1-04's race in a new costume). The vmVariant now disables `serial-getty@ttyS0` outright (the smoke is a systemd service; no shell needed), the resume step prints its POST status + periodic queue-state markers, and the driver honors `LOGFILE=` so failed runs keep their serial log | decided | `f0b29b2`; captured log of the silent death |
 
 ## Gauntlet scoreboard
 
