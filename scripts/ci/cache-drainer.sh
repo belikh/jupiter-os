@@ -31,7 +31,7 @@ cm="${EUROPA_CONTROLMASTERS:-$HOME/.ssh/controlmasters}"
 # receiver); the ci-distributed coordinator overrides to root@europa via
 # EUROPA_STORE — the jupiter-ci key isn't reliably offered there, but
 # root->europa is (the nom log already streams over it).
-store="${EUROPA_STORE:-ssh-ng://jupiter-ci@europa}"
+store="${EUROPA_STORE:-ssh-ng://europa-ci}"
 log_path="/var/log/jupiter-ci/cache-drainer.log"
 # `sudo` (this script's invoker) resets PATH to its own secure_path, which
 # doesn't include wherever install-nix-action put `nix`. The caller resolves
@@ -95,7 +95,7 @@ flush() {
   status_line "pushing $n path(s)"
 
   local err_file; err_file="$(mktemp)"
-  if printf '%s\n' "$paths" | xargs -r -d '\n' timeout 600 env \
+  if printf '%s\n' "$paths" | xargs -r -d '\n' timeout 1200 env \
       NIX_SSHOPTS="-i $key -o ControlPath=$cm/%r@%h:%p -o StrictHostKeyChecking=accept-new" \
       "$nix_bin" copy --to "$store" 2>"$err_file"; then
     total_pushed=$((total_pushed + n))
