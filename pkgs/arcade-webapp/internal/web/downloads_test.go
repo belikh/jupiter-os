@@ -27,13 +27,18 @@ type mockAria2 struct {
 	paused  map[string]bool
 	removed map[string]bool
 
-	stat      aria2.GlobalStat
-	version   string
-	active    []aria2.Download
-	waiting   []aria2.Download
-	stopped   []aria2.Download
-	submitErr string // addTorrent fails with this JSON-RPC message
-	submitGID string
+	stat          aria2.GlobalStat
+	version       string
+	active        []aria2.Download
+	waiting       []aria2.Download
+	stopped       []aria2.Download
+	submitErr     string // addTorrent fails with this JSON-RPC message
+	submitErrCode int    // ... under this code (0 = use 12)
+	submitGID     string
+
+	// httpFail marks methods the endpoint answers with HTTP 500 — the
+	// client types those as transport failures (partial-batch path).
+	httpFail map[string]bool
 
 	// submitHook, when set, observes the addTorrent params (minus the
 	// token — params[1:]) before the canned answer.
@@ -43,9 +48,10 @@ type mockAria2 struct {
 func newMockAria2(t *testing.T) *mockAria2 {
 	t.Helper()
 	m := &mockAria2{
-		calls:   map[string]int{},
-		paused:  map[string]bool{},
-		removed: map[string]bool{},
+		calls:    map[string]int{},
+		paused:   map[string]bool{},
+		removed:  map[string]bool{},
+		httpFail: map[string]bool{},
 		stat: aria2.GlobalStat{
 			NumActive: 1, NumWaiting: 2, NumStopped: 3, NumStoppedTotal: 9,
 		},
@@ -69,6 +75,10 @@ func newMockAria2(t *testing.T) *mockAria2 {
 		m.mu.Lock()
 		defer m.mu.Unlock()
 		m.calls[req.Method]++
+		if m.httpFail[req.Method] {
+			w.WriteHeader(500)
+			return
+		}
 		reply := func(result any, code int, msg string) {
 			resp := map[string]any{"jsonrpc": "2.0", "id": 1}
 			if code != 0 {
@@ -107,7 +117,11 @@ func newMockAria2(t *testing.T) *mockAria2 {
 				m.submitHook(req.Method, req.Params[1:]) // token stripped
 			}
 			if m.submitErr != "" {
-				reply(nil, 12, m.submitErr)
+				code := m.submitErrCode
+				if code == 0 {
+					code = 12
+				}
+				reply(nil, code, m.submitErr)
 				return
 			}
 			reply(m.submitGID, 0, "")
@@ -410,12 +424,15 @@ func TestAcquireFailureModes(t *testing.T) {
 		}
 	}
 
-	// Daemon hard-rejects the submission (aria2 code 12 shape).
+	// Daemon hard-rejects the submission with a NON-idempotent error
+	// (code 1): surfaced on the fragment + error run. (Code 12 — the
+	// duplicate-infohash idempotent case — is TestAcquireDuplicateIsSuccess.)
 	m.mu.Lock()
-	m.submitErr = "is already registered"
+	m.submitErr = "unrecognized URI or torrent"
+	m.submitErrCode = 1
 	m.mu.Unlock()
 	rec := postHX(t, h, "/systems/nes/acquire")
-	if rec.Code != 202 || !strings.Contains(rec.Body.String(), "already registered") {
+	if rec.Code != 202 || !strings.Contains(rec.Body.String(), "submit failed") {
 		t.Errorf("daemon rejection should surface: %d %s", rec.Code, rec.Body.String())
 	}
 
@@ -427,6 +444,139 @@ func TestAcquireFailureModes(t *testing.T) {
 	if len(runs) == 0 || runs[0].Kind != "acquire" || runs[0].Status != "error" {
 		t.Errorf("failed acquire not recorded as error run: %+v", runs)
 	}
+}
+
+// TestAcquireDuplicateIsSuccess (ADV-P2-04): an ambiguous addTorrent
+// timeout can be retried into the daemon's duplicate-infohash error
+// (code 12 "is already registered") — the download IS registered, so the
+// acquire must record ok-with-note and surface no error.
+func TestAcquireDuplicateIsSuccess(t *testing.T) {
+	root := t.TempDir()
+	srv, m := newDownloadsServer(t, root) // stages T.torrent for nes
+
+	m.mu.Lock()
+	m.submitErr = "is already registered" // code defaults to 12
+	m.mu.Unlock()
+
+	rec := postHX(t, srv.Handler(), "/systems/nes/acquire")
+	if rec.Code != 202 {
+		t.Fatalf("POST acquire (duplicate): status = %d, want 202", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `id="downloads-panel"`) {
+		t.Error("acquire must answer with the queue fragment")
+	}
+	if strings.Contains(body, `action-error`) {
+		t.Errorf("duplicate-infohash must surface no error:\n%s", body)
+	}
+
+	runs, err := srv.st.RecentRuns(2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runs) == 0 || runs[0].Kind != "acquire" || runs[0].Status != "ok" {
+		t.Fatalf("duplicate acquire must record an ok run: %+v", runs)
+	}
+	if !strings.Contains(runs[0].Detail, "already registered") {
+		t.Errorf("ok run should carry the note, got detail %q", runs[0].Detail)
+	}
+}
+
+// TestQueueTruncationHint (ADV-P2-02): when the daemon's global counts
+// exceed what the capped tellWaiting/tellStopped fetched, the fragment
+// says how much is hidden — downloads must not vanish silently.
+func TestQueueTruncationHint(t *testing.T) {
+	root := t.TempDir()
+	srv, m := newDownloadsServer(t, root)
+
+	incoming := filepath.Join(root, "cache", "incoming")
+	m.mu.Lock()
+	m.stat = aria2.GlobalStat{NumActive: 0, NumWaiting: 150, NumStopped: 60, NumStoppedTotal: 60}
+	m.active = nil
+	m.waiting = []aria2.Download{
+		{GID: "w1", Status: "waiting", Dir: filepath.Join(incoming, "nes")},
+		{GID: "w2", Status: "waiting", Dir: filepath.Join(incoming, "snes")},
+	}
+	m.stopped = nil // stopped fetch cap is 50 < NumStopped 60
+	m.mu.Unlock()
+
+	body := get(t, srv.Handler(), "/partials/downloads").Body.String()
+	// waiting: 150 known, 2 fetched -> +148 hidden
+	if !strings.Contains(body, "+148 more") {
+		t.Errorf("fragment missing waiting truncation hint (+148 more):\n%s", firstDiff(body))
+	}
+	// stopped: 60 known, 0 fetched -> +60 hidden
+	if !strings.Contains(body, "+60 more") {
+		t.Errorf("fragment missing stopped truncation hint (+60 more):\n%s", firstDiff(body))
+	}
+
+	// Within the caps: no hint.
+	m.mu.Lock()
+	m.stat = aria2.GlobalStat{NumActive: 0, NumWaiting: 2, NumStopped: 0, NumStoppedTotal: 0}
+	m.mu.Unlock()
+	body = get(t, srv.Handler(), "/partials/downloads").Body.String()
+	if strings.Contains(body, "more download") {
+		t.Errorf("no truncation hint expected within caps:\n%s", body)
+	}
+}
+
+// TestPartialQueueHint (ADV-P2-03a): a reachable daemon whose tell*
+// calls fail mid-batch renders a partial-data hint, not a silent
+// short queue and not "unreachable".
+func TestPartialQueueHint(t *testing.T) {
+	root := t.TempDir()
+	srv, m := newDownloadsServer(t, root)
+
+	m.mu.Lock()
+	m.httpFail["aria2.tellWaiting"] = true
+	m.httpFail["aria2.tellStopped"] = true
+	m.mu.Unlock()
+
+	rec := get(t, srv.Handler(), "/partials/downloads")
+	if rec.Code != 200 {
+		t.Fatalf("partial batch: status = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `data-aria2="ok"`) {
+		t.Errorf("daemon answered stat/version — must render reachable:\n%s", firstDiff(body))
+	}
+	if !strings.Contains(body, `data-partial="true"`) {
+		t.Errorf("missing partial-data marker:\n%s", firstDiff(body))
+	}
+	if !strings.Contains(body, "partial queue") {
+		t.Errorf("missing partial-queue hint text:\n%s", firstDiff(body))
+	}
+}
+
+// TestAcquireNotConfiguredIs503 (ADV-P2-03b): the not-configured state
+// answers 503 on acquire, consistent with dlControl's 503.
+func TestAcquireNotConfiguredIs503(t *testing.T) {
+	srv := newTestServer(t) // no WithAria2
+	rec := postHX(t, srv.Handler(), "/systems/nes/acquire")
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Errorf("POST acquire not configured: status = %d, want 503", rec.Code)
+	}
+}
+
+// firstDiff is a tiny helper keeping failure output readable: the first
+// 400 chars around the queue section.
+func firstDiff(body string) string {
+	i := strings.Index(body, `id="downloads-panel"`)
+	if i < 0 {
+		return body[:min(len(body), 400)]
+	}
+	end := i + 1200
+	if end > len(body) {
+		end = len(body)
+	}
+	return body[i:end]
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func TestDownloadControlsCallDaemon(t *testing.T) {

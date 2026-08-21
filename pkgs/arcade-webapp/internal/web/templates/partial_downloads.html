@@ -10,7 +10,8 @@
 {{define "partial-downloads"}}
 <div id="downloads-panel" hx-get="/partials/downloads" hx-trigger="every 2s" hx-swap="outerHTML"
      role="region" aria-label="download queue" aria-live="polite"
-     {{if .Configured}}data-aria2="{{if .Reachable}}ok{{else}}unreachable{{end}}"{{end}}>
+     {{if .Configured}}data-aria2="{{if .Reachable}}ok{{else}}unreachable{{end}}"{{end}}
+     {{if .Partial}}data-partial="true"{{end}}>
 
   {{if .Error}}<div class="action-error" role="alert">{{.Error}}</div>{{end}}
 
@@ -37,6 +38,13 @@
     </h2>
 
     {{if .Reachable}}
+    {{if .Partial}}<p class="sub" role="status">partial queue — one or more daemon queries failed; this list may be incomplete.</p>{{end}}
+    {{if or .HiddenWaiting .HiddenStopped}}
+    <p class="sub">
+      {{if .HiddenWaiting}}+{{.HiddenWaiting}} more waiting download{{if gt .HiddenWaiting 1}}s{{end}} not shown. {{end}}
+      {{if .HiddenStopped}}+{{.HiddenStopped}} more stopped download{{if gt .HiddenStopped 1}}s{{end}} not shown.{{end}}
+    </p>
+    {{end}}
     {{if .Queue}}
     <table class="dl">
       <thead><tr>
