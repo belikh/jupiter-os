@@ -65,7 +65,7 @@ Hard rules:
 | `thebe` | kiosk — robbie-room | ✅ live | — |
 | `adrastea` | kiosk — office | registered/CI-green; placeholder disk (`REPLACE-ME`) + age key, awaiting install | — |
 | `europa` | `10.1.1.2` — ZFS NAS + data hub + PXE | ✅ live; **microarch tuning disabled 2026-08-13** (commented out, substitutes from cache.nixos.org) | — |
-| `callisto` | `10.1.1.3` — serving host: unified platform target, Postgres (in flight), MQTT broker, shared builder | ✅ live; iSCSI root on europa zvol; **microarch tuning disabled 2026-08-13** (still advertises `gccarch-*` to BUILD for others) | 2026-07-24 |
+| `callisto` | `10.1.1.3` — serving host: unified platform target, Postgres (live, verified 2026-08-22), MQTT broker, shared builder | ✅ live; iSCSI root on europa zvol; **microarch tuning disabled 2026-08-13** (still advertises `gccarch-*` to BUILD for others) | 2026-07-24 |
 | `pallene` | Kamatera VPS build server (not fleet) | persistent, disk-booted via `.#pallene-raw` | — |
 
 `.sops.yaml` also holds `ganymede`/`himalia` age keys (roadmap, not in
@@ -102,7 +102,8 @@ refs (MQTT, builds) dial it by IP.
 
 Per `docs/stack-guide.md`: **callisto is the serving host** — the unified
 platform (modular core absorbing arcade/suno/Home-Assistant views API-first)
-targets callisto, backed by the fleet Postgres being stood up there now.
+targets callisto, backed by the fleet Postgres (live there since 2026-08-22,
+verified listening on :5432).
 **europa is NAS-only** (storage, NFS, PXE binaries, Harmonia). **Kiosks are
 thin web clients** — fullscreen browsers pointed at the platform; Pegasus/QML
 is gaming mode only. Do not stand up user-facing services anywhere else

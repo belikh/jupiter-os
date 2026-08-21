@@ -54,7 +54,7 @@ Banned outright:
   twice. Server-rendered HTML is the product.
 - **SQLite** — avoided everywhere, including "just embedded" use. New state goes to
   Postgres. (Rationale: one database to back up, tune, and reason about; fleet-wide
-  Postgres on callisto is being stood up now.)
+  Postgres on callisto, live since 2026-08-22.)
 - **Node/npm as a build dependency.** No `node_modules` anywhere in the flake.
 - **New languages** (Python, Rust, Lua-as-logic, …) require this document changing
   first — same rule as the style guide's change process.
