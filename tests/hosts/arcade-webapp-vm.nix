@@ -15,14 +15,16 @@
 # Logiqx DATs (pkgs/arcade-webapp/testdata/dats), the REAL fleet catalogue
 # TSV (the module's own store copy — 61 systems, so the scan also proves
 # empty systems collapse out of the card wall), and synthetic Skyscraper
-# db.xml caches to exercise the coverage heuristic. Secret-path options
-# point at /dev/null (Phase 1 only checks presence — no secret values
-# exist in this host by construction).
+# db.xml caches to exercise the coverage heuristic. P2 adds a REAL aria2
+# daemon (local invented secret) + a webseed static server so the
+# downloads UI is driven end-to-end: acquire -> queue -> pause -> resume
+# -> complete (see the P2 fixture block below).
 #
 # The in-VM assertions live in jupiter-arcade-webapp-smoke.service: wait
 # for /healthz, wait for the startup scan to land, assert the dashboard
 # renders the expected per-system counts/coverage, exercise /rescan and
-# the partials, then print the PASS marker and power off. The driver
+# the partials, then run the P2 download cycle and the journal secret
+# grep, print the PASS marker and power off. The driver
 # (scripts/test-arcade-webapp.sh) greps the serial log for the marker.
 #
 # Deliberately NOT importing modules/common.nix — this is a test fixture,
@@ -50,8 +52,7 @@ let
         $out/games/modern \
         $out/metadata/no-intro-dats \
         $out/metadata/skyscraper-cache/nes \
-        $out/metadata/skyscraper-cache/snes \
-        $out/cache/incoming
+        $out/metadata/skyscraper-cache/snes
 
       # Deterministic dummy ROM tree: nes (5), snes (4), gb (4) — the
       # committed DATs' hashes match these bytes (internal/fixture).
@@ -97,6 +98,49 @@ let
   };
 
   port = 8094;
+
+  # ---- P2: download-control fixture --------------------------------
+  #
+  # A REAL aria2 daemon driven through the webapp's acquire action, with
+  # a self-authored torrent (zero copyrighted material — same posture as
+  # the fixture corpus) whose payload arrives over HTTP from an in-VM
+  # static server: mktorrent's webseed (-w) makes the "torrent" download
+  # from darkhttpd. No trackers, no DHT (private flag) — deterministic.
+  #
+  # The payload is 2 MiB and the daemon throttles at 256 KiB/s, so the
+  # download takes ~8s: long enough to observe it active and PAUSE it
+  # mid-flight, short enough to keep the VM run under ~90s.
+  #
+  # NOTE darkhttpd (not python http.server): pause/resume needs HTTP
+  # Range support on the webseed — verified locally; python's simple
+  # server ignores Range and the resumed download stalls forever.
+  #
+  # aria2Secret is an INVENTED test value (not from secrets.yaml — house
+  # rule: no real secret ever enters this repo). It lives in the store
+  # like every other fixture datum; what is under test is the WIRING:
+  # the webapp reads the path at runtime and sends it as the RPC token
+  # without ever logging it (asserted via the journal grep below).
+  aria2Secret = pkgs.writeText "arcade-aria2-rpc-secret" "vm-test-invented-secret-not-from-sops";
+
+  # 2 MiB deterministic payload + its torrent in one derivation so the
+  # hashed bytes can never drift. The torrent basename must equal the
+  # fleet catalogue TSV's nes row (scripts/cartridge-catalogue.tsv,
+  # torrent column) — the smoke fails loudly if it drifts.
+  torrentFixture = pkgs.stdenv.mkDerivation {
+    name = "arcade-webapp-vm-torrent-fixture";
+    nativeBuildInputs = [ pkgs.mktorrent ];
+    buildCommand = ''
+      set -euo pipefail
+      mkdir -p $out/payload $out/minerva-torrents
+      head -c 2097152 /dev/zero | tr '\0' 'P' > $out/payload/vm-fixture-payload.bin
+      mktorrent -l 18 -p \
+        -w 'http://127.0.0.1:8099/vm-fixture-payload.bin' \
+        -o "$out/minerva-torrents/Minerva_Myrient - No-Intro - Nintendo - Nintendo Entertainment System (Headerless).torrent" \
+        $out/payload/vm-fixture-payload.bin
+    '';
+  };
+
+  incoming = "/var/lib/arcade-incoming";
 
   # In-VM assertions. Failures print FAIL lines (the driver shows the log
   # tail); success prints the marker and powers the VM off. All output is
@@ -168,10 +212,13 @@ let
     grep -q 'id="status-panel"' <<<"$frag2" || fail "status partial missing its panel id"
 
     # Rescan endpoint: 202 + the status fragment, then a second scan run
-    # must appear in the runs table.
-    code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1:${toString port}/rescan")
+    # must appear in the runs table. Mutating endpoints are htmx-only
+    # (CSRF posture) — the header is mandatory since P2.
+    code=$(curl -s -o /dev/null -w '%{http_code}' -H 'X-HX-Request: true' -X POST "http://127.0.0.1:${toString port}/rescan")
     [ "$code" = 202 ] || [ "$code" = 200 ] || fail "POST /rescan -> $code, want 202/200"
-    echo "smoke: rescan accepted (HTTP $code)"
+    code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "http://127.0.0.1:${toString port}/rescan")
+    [ "$code" = 403 ] || fail "POST /rescan without X-HX-Request -> $code, want 403 (CSRF posture)"
+    echo "smoke: rescan accepted (HTTP 202, htmx-only)"
     for _ in $(seq 1 60); do
       status=$(curl -sf "http://127.0.0.1:${toString port}/partials/status" || true)
       n=$(grep -o '<td>scan</td>' <<<"$status" | wc -l)
@@ -180,6 +227,77 @@ let
     done
     [ "''${n:-0}" -ge 2 ] || fail "rescan did not record a second run"
     echo "smoke: rescan recorded in runs table"
+
+    # ---- P2: download control against the REAL in-VM aria2 daemon ----
+    HX='X-HX-Request: true'
+    base="http://127.0.0.1:${toString port}"
+
+    echo "smoke: waiting for the webapp to reach the aria2 daemon"
+    ok=0
+    for _ in $(seq 1 60); do
+      frag=$(curl -sf "$base/partials/downloads-summary" || true)
+      if grep -q 'data-aria2="ok"' <<<"$frag"; then ok=1; break; fi
+      sleep 1
+    done
+    [ "$ok" = 1 ] || fail "aria2 never became reachable through the webapp"
+    echo "smoke: aria2 reachable (version chip rendered)"
+
+    # Acquire nes: submits the staged fixture torrent (webseed -> the
+    # in-VM static server) into incoming/nes with aria2-rpc.sh semantics.
+    code=$(curl -s -o /tmp/acq.out -w '%{http_code}' -H "$HX" -X POST "$base/systems/nes/acquire")
+    [ "$code" = 202 ] || fail "POST /systems/nes/acquire -> $code, want 202"
+    grep -q 'id="downloads-panel"' /tmp/acq.out || fail "acquire did not answer the queue fragment"
+    echo "smoke: acquire accepted (HTTP 202)"
+
+    # The download appears in the queue fragment, attributed to nes.
+    gid=""
+    for _ in $(seq 1 30); do
+      frag=$(curl -sf "$base/partials/downloads" || true)
+      gid=$(sed -n 's/.*data-gid="\([0-9a-f]*\)" data-status="active" data-system="nes".*/\1/p' <<<"$frag" | head -1)
+      [ -n "$gid" ] && break
+      sleep 1
+    done
+    [ -n "$gid" ] || fail "acquired download never appeared active+attributed in the queue"
+    echo "smoke: nes download live in queue (gid=$gid)"
+
+    # Pause -> paused (throttled to 256 KiB/s, still mid-flight).
+    curl -s -o /dev/null -H "$HX" -X POST "$base/downloads/$gid/pause"
+    paused=0
+    for _ in $(seq 1 15); do
+      frag=$(curl -sf "$base/partials/downloads" || true)
+      if grep -q "data-gid=\"$gid\" data-status=\"paused\"" <<<"$frag"; then paused=1; break; fi
+      sleep 1
+    done
+    [ "$paused" = 1 ] || fail "pause never took effect for gid=$gid"
+    echo "smoke: pause works"
+
+    # Resume -> completes; payload lands in incoming/nes at full size.
+    curl -s -o /dev/null -H "$HX" -X POST "$base/downloads/$gid/resume"
+    done=0
+    for _ in $(seq 1 45); do
+      frag=$(curl -sf "$base/partials/downloads" || true)
+      if grep -q "data-gid=\"$gid\" data-status=\"complete\"" <<<"$frag"; then done=1; break; fi
+      sleep 1
+    done
+    [ "$done" = 1 ] || fail "download never completed after resume (gid=$gid)"
+    test -f ${incoming}/nes/vm-fixture-payload.bin || fail "payload file missing after complete"
+    size=$(stat -c %s ${incoming}/nes/vm-fixture-payload.bin)
+    [ "$size" = 2097152 ] || fail "payload size $size, want 2097152"
+    echo "smoke: resume works; download completed (2.0 MiB into incoming/nes)"
+
+    # The acquire submission is recorded in the runs table (audit trail).
+    for _ in $(seq 1 10); do
+      status=$(curl -sf "$base/partials/status" || true)
+      grep -q '<td>acquire</td>' <<<"$status" && break
+      sleep 1
+    done
+    grep -q '<td>acquire</td>' <<<"$status" || fail "acquire run not recorded in runs table"
+
+    # House-critical: the RPC secret VALUE never appears in the webapp's
+    # journal (runtime file read, token only on the wire).
+    n=$(journalctl -u jupiter-arcade-webapp --no-pager | grep -c 'vm-test-invented-secret-not-from-sops' || true)
+    [ "$n" = "0" ] || fail "RPC secret value leaked into the webapp journal"
+    echo "smoke: RPC secret never logged (journal grep clean)"
 
     pass
   '';
@@ -209,7 +327,15 @@ in
     modernRoot = "${fixture}/games/modern";
     datDir = "${fixture}/metadata/no-intro-dats";
     skyscraperCacheDir = "${fixture}/metadata/skyscraper-cache";
-    incomingDir = "${fixture}/cache/incoming";
+    # Writable incoming root (NOT the read-only store fixture): the aria2
+    # daemon writes real downloads here, and the webapp's P2 attribution
+    # reads them. The scanner's "incoming" stat counts live staging bytes.
+    incomingDir = incoming;
+    torrentDir = "${torrentFixture}/minerva-torrents";
+    # Download control against the in-VM daemon (default RPC URL
+    # http://127.0.0.1:6800/jsonrpc). INVENTED test secret — see the
+    # torrentFixture note above.
+    aria2SecretFile = "${aria2Secret}";
     # VM state dir — deliberately NOT /tmp: the service hardening includes
     # PrivateTmp, so a /tmp state dir would exist only in the unit's
     # private tmpfs namespace and fail ReadWritePaths at step NAMESPACE.
@@ -219,11 +345,65 @@ in
     stateDir = "/var/lib/arcade-webapp-state";
     # No legacy inventory in the fixture — absence is tolerated by design.
     inventoryFile = null;
-    # Secret-path options exist but hold no secrets in this host: /dev/null
-    # is present-and-empty (the app logs presence only in Phase 1).
-    aria2SecretFile = "/dev/null";
+    # Screenscraper/TGDB stay unconfigured (P5's consumers).
     screenscraperCredsFile = "/dev/null";
     tgdbApikeyFile = "/dev/null";
+  };
+
+  # The incoming dir must exist before the webapp unit's mount namespace
+  # is built (D-P1f lesson applies to ReadWritePaths on the aria2 side;
+  # pre-creating keeps ReadOnlyPaths on the webapp side exact too).
+  systemd.tmpfiles.rules = [ "d ${incoming} 0755 root root -" ];
+
+  # Minimal aria2 daemon (NOT jupiter.services.aria2: that module pulls
+  # nginx + AriaNg + the sops secret the VM deliberately doesn't have).
+  # Throttled to 256 KiB/s so the 2 MiB fixture download stays in flight
+  # long enough to pause/resume deterministically.
+  systemd.services.arcade-aria2 = {
+    description = "aria2 JSON-RPC daemon (VM test fixture, local secret)";
+    wantedBy = [ "multi-user.target" ];
+    after = [ "network.target" ];
+    preStart = ''
+      mkdir -p ${incoming}
+    '';
+    serviceConfig = {
+      Type = "exec";
+      ExecStart = pkgs.writeShellScript "arcade-aria2-exec" ''
+        exec ${pkgs.aria2}/bin/aria2c \
+          --enable-rpc \
+          --rpc-listen-port=6800 \
+          --rpc-secret="$(cat ${aria2Secret})" \
+          --dir=${incoming} \
+          --max-download-limit=256K \
+          --split=1 \
+          --max-connection-per-server=1 \
+          --file-allocation=none \
+          --allow-overwrite=true \
+          --auto-file-renaming=false \
+          --continue=true \
+          --quiet=true
+      '';
+      Restart = "on-failure";
+      RestartSec = "5s";
+      ReadWritePaths = [ incoming ];
+      PrivateTmp = true;
+      NoNewPrivileges = true;
+      ProtectHome = true;
+    };
+  };
+
+  # Webseed source for the fixture torrent. darkhttpd: tiny, and its
+  # Range support is load-bearing for pause/resume (see the fixture note).
+  systemd.services.arcade-payload-server = {
+    description = "static webseed server for the VM download fixture";
+    wantedBy = [ "multi-user.target" ];
+    after = [ "network.target" ];
+    serviceConfig = {
+      Type = "exec";
+      ExecStart = "${pkgs.darkhttpd}/bin/darkhttpd ${torrentFixture}/payload --port 8099 --addr 127.0.0.1 --no-listing";
+      Restart = "on-failure";
+      RestartSec = "5s";
+    };
   };
 
   # In-VM assertions (see smoke above). Runs after the webapp; prints the
