@@ -552,16 +552,17 @@
   sops.secrets.dsh_env = { };
 
   # ---- PostgreSQL -----------------------------------------------------------
-  # First fleet SQL database (modules/services/postgres.nix). Deliberately
-  # minimal bring-up — assumptions recorded here so the next consumer knows:
+  # First fleet SQL database (modules/services/postgres.nix). Assumptions
+  # recorded here so the next consumer knows:
   #
-  #   - Auth scope: loopback + local only (upstream enableTCPIP=false
-  #     defaults): postgres binds loopback TCP :5432 with md5 rules that are
-  #     unusable until a role is given a password, plus the /run/postgresql
-  #     unix socket with peer auth. No LAN exposure, no firewall change, and
-  #     no password credential exists yet — nothing new in sops. When a LAN
-  #     consumer appears, extend the wrapper with ensureUsers + a
-  #     sops-sourced passwordFile instead of inlining config here.
+  #   - Auth scope (v2, 2026-08-22): FLEET-SERVING, not loopback-only.
+  #     `openFirewall` defaults true → postgres listens on all interfaces,
+  #     the firewall opens :5432 to jupiter.fleet.lanCidr (10.1.1.0/24),
+  #     and pg_hba allows that subnet with scram-sha-256 only. No role has a
+  #     password yet, so every LAN connection fails auth until a consumer is
+  #     provisioned — extend the wrapper with ensureUsers + sops-sourced
+  #     passwordFiles instead of inlining config here. Nothing new in sops
+  #     today.
   #   - dataDir: /var/lib/postgresql/18 on this host's iSCSI root (europa's
   #     tank/services/callisto-root zvol) — same durability/backup envelope
   #     as everything else on this box; no separate backup story until real
