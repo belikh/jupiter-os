@@ -1,6 +1,7 @@
 {
   lib,
   buildGoModule,
+  subPackages ? [ "cmd/arcade-webapp" ],
 }:
 
 # arcade-webapp — the jupiterOS Arcade webapp: one NixOS-native app on europa
@@ -9,25 +10,26 @@
 # See docs/adr/0002-arcade-webapp-custom-vs-romm.md (D2: in-tree placement,
 # no new flake input) and docs/plans/arcade-webapp-gauntlet.md.
 #
-# Currently the Phase 0 STUB: placeholder front page + /healthz. Consumed by
-# modules/services/arcade-webapp.nix (Phase 1) via pkgs.callPackage, and
+# Consumed by modules/services/arcade-webapp.nix via pkgs.callPackage, and
 # exposed as the flake package `.#arcade-webapp` so the vendorHash can be
 # recomputed standalone.
 #
-# Stdlib-only — zero non-stdlib dependencies (D3's modernc.org/sqlite arrives
-# with Phase 1 and will flip vendorHash from null to a real hash via the
-# standard buildGoModule bump procedure: lib.fakeHash, build, paste got:).
+# subPackages is a parameter so the VM test host (tests/hosts/
+# arcade-webapp-vm.nix) can build cmd/fixturegen from this same source to
+# materialize its deterministic fixture tree — the flake package itself
+# ships only the webapp binary.
 buildGoModule {
   pname = "arcade-webapp";
   version = "0.1.0";
 
   src = ./.;
 
-  # Ship only the webapp binary; cmd/fixturegen is the test-corpus bootstrap
-  # (go run / make fixture-arcade), not part of the service.
-  subPackages = [ "cmd/arcade-webapp" ];
+  inherit subPackages;
 
-  vendorHash = null;
+  # modernc.org/sqlite (ADR-0002 D3: pure-Go SQLite driver, no cgo) flipped
+  # vendorHash from null to a real hash in Phase 1 via the standard
+  # buildGoModule bump procedure.
+  vendorHash = "sha256-isqeSOokeSJQrrjhDz3fh77WhQ1tI/KOPBAHCcqL3wM=";
 
   ldflags = [ "-s" ];
 
