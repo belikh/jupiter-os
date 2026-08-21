@@ -17,7 +17,11 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 HOST="arcade-webapp-vm"
 OUT_LINK="result-vm-${HOST}"
-TIMEOUT_SECS="${TIMEOUT_SECS:-300}"
+# 480s (raised from 300 for P3): the smoke now runs the REAL igir (node
+# startup ~1-3s per invocation, ~7 invocations across verify steps) plus
+# its polls — healthy runs finish in ~2-3 min, the slack absorbs a loaded
+# host without flaking the verdict.
+TIMEOUT_SECS="${TIMEOUT_SECS:-480}"
 
 echo ">> Building VM for ${HOST}..."
 nix build ".#nixosConfigurations.${HOST}.config.system.build.vm" \
@@ -33,6 +37,17 @@ fi
 
 logfile="${LOGFILE:-$(mktemp)}"
 echo ">> Booting ${HOST} headless (timeout ${TIMEOUT_SECS}s); serial log: ${logfile}"
+
+# HERMETIC DISK (P3 lesson): the stock build-vm runner defaults
+# NIX_DISK_IMAGE to ./<host>.qcow2 resolved against the INVOKING cwd —
+# every run would boot the SAME disk, and the webapp's SQLite state
+# (verify_results, runs, staging) survives poweroff. A stale row from a
+# previous debugging run made the fresh-tree P3 assertions lie (nes
+# already 'unmatched' before any verify). One fresh disk per run; removed
+# on exit.
+diskdir="$(mktemp -d "${TMPDIR:-/tmp}/arcade-webapp-vm-disk.XXXXXXXXXX")"
+export NIX_DISK_IMAGE="${diskdir}/disk.qcow2"
+trap 'rm -rf "${diskdir}"' EXIT
 
 # -nographic routes the serial console to stdout (captured); -no-reboot so
 # the smoke service's `systemctl poweroff` ends the process cleanly.
