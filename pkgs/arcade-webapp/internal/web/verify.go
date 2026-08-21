@@ -17,6 +17,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -50,13 +51,20 @@ const (
 	VerifyStateUnchecked = "unchecked" // promoted without a DAT (grey)
 	VerifyStateVerified  = "verified"  // found==dat_games, nothing extra (green)
 	VerifyStateMissing   = "missing"   // DAT games missing from the staged set (amber)
-	VerifyStateUnmatched = "unmatched" // unmatched input / duplicates / other (red)
+	VerifyStateExtra     = "extra"     // games-tree files the DAT doesn't claim (amber)
+	VerifyStateUnmatched = "unmatched" // unmatched staged input / other deviations (red)
 )
 
 // classifyVerify derives the per-system zero-unmatched state from the
-// last ingested report. Order is severity: red beats amber beats green —
-// a system with BOTH missing games and unmatched files is red (the
-// worse signal wins, mirroring how the health chip orders states).
+// last ingested report. Order is severity: red beats amber beats green.
+//
+// DUPLICATE is deliberately NOT red: on a re-verify the output tree
+// already holds the first run's promotions (COPY semantics keep the
+// staged input for aria2), and igir re-sees those input files as
+// duplicates of the output — counting them red would flip every green
+// system red on its second verify. Input-side duplicates DO count (they
+// fold into Unmatched at parse time); only the output-side echo is
+// benign. Proven against the real igir 5.3.0 (P3 VM bring-up).
 func classifyVerify(v store.VerifyResult, present bool) string {
 	if !present {
 		return VerifyStateUnknown
@@ -64,16 +72,19 @@ func classifyVerify(v store.VerifyResult, present bool) string {
 	if v.Unchecked != 0 {
 		return VerifyStateUnchecked
 	}
-	if v.Unmatched > 0 || v.Duplicate > 0 || v.Other > 0 {
+	if v.Unmatched > 0 || v.Other > 0 {
 		return VerifyStateUnmatched
 	}
 	if v.DatGames == 0 {
 		return VerifyStateUnknown
 	}
-	if v.Found == v.DatGames {
-		return VerifyStateVerified
+	if v.Missing > 0 || v.Found < v.DatGames {
+		return VerifyStateMissing
 	}
-	return VerifyStateMissing
+	if v.Extra > 0 {
+		return VerifyStateExtra
+	}
+	return VerifyStateVerified
 }
 
 // verifyStateChip renders the pill for a classified state + its counts.
@@ -82,12 +93,18 @@ func classifyVerify(v store.VerifyResult, present bool) string {
 func verifyStateChip(state string, v store.VerifyResult) template.HTML {
 	switch state {
 	case VerifyStateVerified:
-		return template.HTML(fmt.Sprintf(`<span class="pill ok" title="%d of %d DAT games found, 0 unmatched">verified</span>`, v.Found, v.DatGames))
+		title := fmt.Sprintf("%d of %d DAT games found, 0 unmatched", v.Found, v.DatGames)
+		if v.Duplicate > 0 {
+			title += fmt.Sprintf(" (%d already-promoted echo)", v.Duplicate)
+		}
+		return template.HTML(fmt.Sprintf(`<span class="pill ok" title="%s">verified</span>`, title))
 	case VerifyStateUnmatched:
-		n := v.Unmatched + v.Duplicate + v.Other
+		n := v.Unmatched + v.Other
 		return template.HTML(fmt.Sprintf(`<span class="pill stale" title="%d found / %d missing / %d unmatched">%d unmatched</span>`, v.Found, v.Missing, n, n))
 	case VerifyStateMissing:
 		return template.HTML(fmt.Sprintf(`<span class="pill warn" title="%d of %d DAT games found">%d missing</span>`, v.Found, v.DatGames, v.Missing))
+	case VerifyStateExtra:
+		return template.HTML(fmt.Sprintf(`<span class="pill warn" title="all %d DAT games found; %d games-tree file(s) the DAT doesn't claim">%d extra</span>`, v.DatGames, v.Extra, v.Extra))
 	case VerifyStateUnchecked:
 		return template.HTML(fmt.Sprintf(`<span class="pill unknown" title="no DAT — promoted unchecked (%s)">unchecked</span>`, HumanBytes(v.PromotedBytes)))
 	default:
@@ -130,9 +147,9 @@ type verifyVM struct {
 	Rows           []verifyRowVM
 	IdleCount      int
 	// Aggregate: how many systems sit in each state (the header chips).
-	NVerified, NMissing, NUnmatched, NUnchecked, NUnknown int
-	Meta                                                  pageMeta
-	Now                                                   time.Time
+	NVerified, NMissing, NExtra, NUnmatched, NUnchecked, NUnknown int
+	Meta                                                          pageMeta
+	Now                                                           time.Time
 }
 
 // fetchVerify assembles the verify page's view model.
@@ -197,6 +214,8 @@ func (s *Server) fetchVerify() verifyVM {
 			vm.NVerified++
 		case VerifyStateMissing:
 			vm.NMissing++
+		case VerifyStateExtra:
+			vm.NExtra++
 		case VerifyStateUnmatched:
 			vm.NUnmatched++
 		case VerifyStateUnchecked:
@@ -300,7 +319,12 @@ func (s *Server) handleVerifySystem(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleDATRefresh fetches every mapped system's DAT (failures are
-// per-system warnings inside the run, never a 5xx here).
+// per-system warnings inside the run, never a 5xx here). The batch runs
+// in the background OUTLIVING the request: context.Background(), never
+// r.Context() — net/http cancels the request context when this handler
+// returns, which would kill every fetch mid-batch ("context canceled";
+// proven RED→GREEN by TestDATRefreshAllSurvivesHandlerReturn). Each
+// fetch keeps its own 60s cap, like the scheduled refresh in main.go.
 func (s *Server) handleDATRefresh(w http.ResponseWriter, r *http.Request) {
 	if !hxRequestOK(r) {
 		http.Error(w, "htmx requests only", http.StatusForbidden)
@@ -316,7 +340,7 @@ func (s *Server) handleDATRefresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	go func() {
-		res := s.df.Refresh(r.Context(), systems)
+		res := s.df.Refresh(context.Background(), systems)
 		log.Printf("web: dat refresh: %d fetched, %d unmapped, %d warnings", res.Fetched, res.Unmapped, len(res.Warnings))
 	}()
 	vm := s.fetchVerify()
@@ -450,6 +474,12 @@ func runDetailForKind(r store.Run) (template.HTML, bool) {
 				}
 				if oc.Missing > 0 {
 					line += fmt.Sprintf(" · %d missing", oc.Missing)
+				}
+				if oc.Extra > 0 {
+					line += fmt.Sprintf(" · %d extra", oc.Extra)
+				}
+				if oc.Duplicate > 0 {
+					line += fmt.Sprintf(" · %d echo", oc.Duplicate)
 				}
 			}
 			if oc.Err != "" {

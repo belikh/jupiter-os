@@ -24,13 +24,19 @@ import (
 	_ "modernc.org/sqlite" // pure-Go driver, registers as "sqlite"
 )
 
-// SchemaVersion is the current schema version, recorded in meta. Bump and
-// migrate forward in Migrate when a later phase changes the schema.
+// SchemaVersion is the current schema version, recorded in
+// PRAGMA user_version. Bump and add a step in Migrate for every additive
+// change; migrations are stepped and idempotent.
 //
 // v2 (P3): verify_results persists the last igir report's per-system
 // aggregates (the zero-unmatched indicator's source), and staging carries
 // the scan-time per-system incoming staging summary (files/bytes/in-flight).
-const SchemaVersion = 2
+//
+// v3 (P3, real-igir bring-up): verify_results.extra — igir scans the
+// output tree too, and output-side UNUSED rows (games-tree files the DAT
+// doesn't claim) are a different signal from input-side junk; they get
+// their own column + amber indicator instead of joining 'unmatched'.
+const SchemaVersion = 3
 
 // SystemRow is one catalogue system as persisted (Extensions is a JSON
 // array string — enough for P1's rendering needs).
@@ -99,9 +105,10 @@ type VerifyResult struct {
 	DatGames      int
 	Found         int
 	Missing       int
-	Unmatched     int
-	Duplicate     int
-	Other         int
+	Unmatched     int // input-side deviations (red) — see igir.Report
+	Duplicate     int // output-side re-verify echoes (benign)
+	Extra         int // output-side files the DAT doesn't claim (amber)
+	Other         int // unknown statuses/provenance (red)
 	PromotedBytes int64
 	Unchecked     int // 1 = promoted as-is (no DAT)
 	ReportPath    string
@@ -227,6 +234,13 @@ func (s *Store) Migrate() error {
 			}
 		}
 	}
+	if version < 3 {
+		for _, stmt := range schemaV3 {
+			if _, err := tx.Exec(stmt); err != nil {
+				return fmt.Errorf("store: migrate v3: %w", err)
+			}
+		}
+	}
 	if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, SchemaVersion)); err != nil {
 		return err
 	}
@@ -315,6 +329,11 @@ var schemaV2 = []string{
 		in_flight  INTEGER NOT NULL DEFAULT 0,
 		computed_at TEXT NOT NULL
 	)`,
+}
+
+// schemaV3 adds the provenance-split extra count (see SchemaVersion).
+var schemaV3 = []string{
+	`ALTER TABLE verify_results ADD COLUMN extra INTEGER NOT NULL DEFAULT 0`,
 }
 
 // Close closes the database.
@@ -572,6 +591,7 @@ func (s *Store) SystemSummary() ([]SystemSummary, error) {
 		       COALESCE(v.run_id, 0), COALESCE(v.finished_at, ''),
 		       COALESCE(v.dat_games, 0), COALESCE(v.found, 0), COALESCE(v.missing, 0),
 		       COALESCE(v.unmatched, 0), COALESCE(v.duplicate, 0), COALESCE(v.other, 0),
+		       COALESCE(v.extra, 0),
 		       COALESCE(v.promoted_bytes, 0), COALESCE(v.unchecked, 0), COALESCE(v.report_path, ''),
 		       CASE WHEN v.system_key IS NULL THEN 0 ELSE 1 END
 		FROM systems s
@@ -597,6 +617,7 @@ func (s *Store) SystemSummary() ([]SystemSummary, error) {
 			&r.Verify.RunID, &r.Verify.FinishedAt,
 			&r.Verify.DatGames, &r.Verify.Found, &r.Verify.Missing,
 			&r.Verify.Unmatched, &r.Verify.Duplicate, &r.Verify.Other,
+			&r.Verify.Extra,
 			&r.Verify.PromotedBytes, &r.Verify.Unchecked, &r.Verify.ReportPath,
 			&r.VerifyPresent); err != nil {
 			return nil, err
@@ -611,16 +632,16 @@ func (s *Store) SystemSummary() ([]SystemSummary, error) {
 // report).
 func (s *Store) RecordVerifyResult(r VerifyResult) error {
 	_, err := s.db.Exec(`INSERT INTO verify_results
-		(system_key, run_id, finished_at, dat_games, found, missing, unmatched, duplicate, other, promoted_bytes, unchecked, report_path)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+		(system_key, run_id, finished_at, dat_games, found, missing, unmatched, duplicate, other, extra, promoted_bytes, unchecked, report_path)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(system_key) DO UPDATE SET
 		  run_id=excluded.run_id, finished_at=excluded.finished_at,
 		  dat_games=excluded.dat_games, found=excluded.found, missing=excluded.missing,
 		  unmatched=excluded.unmatched, duplicate=excluded.duplicate, other=excluded.other,
-		  promoted_bytes=excluded.promoted_bytes, unchecked=excluded.unchecked,
-		  report_path=excluded.report_path`,
+		  extra=excluded.extra, promoted_bytes=excluded.promoted_bytes,
+		  unchecked=excluded.unchecked, report_path=excluded.report_path`,
 		r.SystemKey, r.RunID, r.FinishedAt, r.DatGames, r.Found, r.Missing,
-		r.Unmatched, r.Duplicate, r.Other, r.PromotedBytes, r.Unchecked, r.ReportPath)
+		r.Unmatched, r.Duplicate, r.Other, r.Extra, r.PromotedBytes, r.Unchecked, r.ReportPath)
 	return err
 }
 

@@ -29,6 +29,7 @@
       {{end}}
       <span class="chip" title="systems whose last verify found every DAT game with nothing unmatched">{{.NVerified}} verified</span>
       <span class="chip" title="systems with DAT games missing from the staged set">{{.NMissing}} missing</span>
+      <span class="chip" title="systems whose games tree holds files the DAT doesn't claim (all DAT games found)">{{.NExtra}} extra</span>
       <span class="chip" title="systems with unmatched staged input / duplicates">{{.NUnmatched}} unmatched</span>
       <span class="chip" title="systems promoted without a DAT (better partial than blocked)">{{.NUnchecked}} unchecked</span>
     </h2>

@@ -16,9 +16,12 @@
 //   - No <datDir>/<sys>.dat -> warn, skip verification, copy everything
 //     staged straight to the bucket tree (better partial than blocked;
 //     recorded as an "unchecked" promote — grey, not red).
-//   - Otherwise: igir `copy test report` with the exact flag set
+//   - Otherwise: igir `copy test report` with the script's flag set
 //     (--input-checksum-max CRC32, --dir-game-subdir never, thread pins)
-//     and a non-zero igir exit is a WARNING, never a batch abort.
+//     plus one deliberate addition — an input-anchored
+//     --input-exclude <input>/**/*.torrent (aria2's infohash metadata
+//     companions; see runIgir) — and a non-zero igir exit is a WARNING,
+//     never a batch abort.
 //   - Bucket routing cartridge/optical/modern comes from the catalogue
 //     row (the systems table).
 package igir
@@ -100,14 +103,16 @@ const (
 // SystemOutcome is one system's result — the run detail's JSON shape and
 // the verify page's per-system summary.
 type SystemOutcome struct {
-	Sys           string `json:"Sys"`
-	Outcome       string `json:"Outcome"`
-	Err           string `json:"Err,omitempty"`
+	Sys     string `json:"Sys"`
+	Outcome string `json:"Outcome"`
+	Err     string `json:"Err,omitempty"`
+	// Report counts (provenance-split — see Report).
 	DatGames      int    `json:"DatGames"`
 	Found         int    `json:"Found"`
 	Missing       int    `json:"Missing"`
-	Unmatched     int    `json:"Unmatched"`
-	Duplicate     int    `json:"Duplicate"`
+	Unmatched     int    `json:"Unmatched"` // input-side deviations (red)
+	Duplicate     int    `json:"Duplicate"` // output-side re-verify echoes (benign)
+	Extra         int    `json:"Extra"`     // output-side files the DAT doesn't claim (amber)
 	Other         int    `json:"Other"`
 	PromotedBytes int64  `json:"PromotedBytes"`
 	CopiedFiles   int    `json:"CopiedFiles"` // unchecked-promote path
@@ -291,7 +296,8 @@ func (r *Runner) processSystem(sys store.SystemRow, runID int64) SystemOutcome {
 		return oc
 	}
 
-	// igir copy test report — the exact flag set of cartridge-verify.sh.
+	// igir copy test report — cartridge-verify.sh's flag set plus the
+	// aria2-metadata exclusion (see runIgir's --input-exclude comment).
 	if err := os.MkdirAll(output, 0o755); err != nil {
 		oc.Outcome, oc.Err = OutcomeFailed, err.Error()
 		return oc
@@ -307,7 +313,7 @@ func (r *Runner) processSystem(sys store.SystemRow, runID int64) SystemOutcome {
 		oc.Err = err.Error()
 	}
 
-	rep, perr := parseReportFile(report, output)
+	rep, perr := parseReportFile(report, incoming, output)
 	if perr != nil {
 		if oc.Err == "" {
 			oc.Err = perr.Error()
@@ -315,6 +321,15 @@ func (r *Runner) processSystem(sys store.SystemRow, runID int64) SystemOutcome {
 			oc.Err += "; " + perr.Error()
 		}
 		oc.Outcome = OutcomeFailed
+		// Log here: this early return otherwise skips every logf below,
+		// and a failed igir (no report) would leave NO journal trace
+		// (bitten during P3 VM bring-up — the smoke's journal-tail
+		// debug was blind exactly when it was needed).
+		errStr := oc.Err
+		if len(errStr) > 400 {
+			errStr = "…" + errStr[len(errStr)-400:]
+		}
+		r.logf("%s: failed — %s", sys.Key, errStr)
 		return oc
 	}
 	if oc.Err != "" {
@@ -326,7 +341,7 @@ func (r *Runner) processSystem(sys store.SystemRow, runID int64) SystemOutcome {
 	}
 	oc.DatGames, oc.Found = rep.DatGames, rep.Found
 	oc.Missing, oc.Unmatched = rep.Missing, rep.Unmatched
-	oc.Duplicate, oc.Other = rep.Duplicate, rep.Other
+	oc.Duplicate, oc.Other, oc.Extra = rep.Duplicate, rep.Other, rep.Extra
 	oc.ReportPath = report
 	oc.PromotedBytes = promotedBytes(rep.FoundPaths)
 
@@ -338,6 +353,7 @@ func (r *Runner) processSystem(sys store.SystemRow, runID int64) SystemOutcome {
 		FinishedAt: time.Now().UTC().Format(time.RFC3339),
 		DatGames:   rep.DatGames, Found: rep.Found, Missing: rep.Missing,
 		Unmatched: rep.Unmatched, Duplicate: rep.Duplicate, Other: rep.Other,
+		Extra:         rep.Extra,
 		PromotedBytes: oc.PromotedBytes, ReportPath: report,
 	})
 	if err := r.st.SetSystemVerifyStates(sys.Key, rep.FoundRels); err != nil {
@@ -348,7 +364,8 @@ func (r *Runner) processSystem(sys store.SystemRow, runID int64) SystemOutcome {
 	return oc
 }
 
-// runIgir execs the binary with cartridge-verify.sh's exact flag set.
+// runIgir execs the binary with cartridge-verify.sh's flag set plus one
+// deliberate addition (see the --input-exclude comment below).
 // A fresh-ish environment is handed over (HOME/XDG dirs under the
 // report dir) so a node-based igir never tries to write into a
 // read-only home.
@@ -359,6 +376,14 @@ func (r *Runner) runIgir(dat, input, output, report string) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 6*time.Hour)
 	defer cancel()
+	// The exclude value MUST be anchored to the absolute input dir:
+	// igir expands exclude globs against the FILESYSTEM rooted at the
+	// process cwd (proven: a bare **/*.torrent from cwd=/ dies with
+	// "EACCES: permission denied, scandir '/root'" as a normal user,
+	// and as root it crawls the whole nix store for minutes — exactly
+	// the P3 VM hang). The anchored form walks only the staged subtree
+	// and still excludes every depth under it.
+	inputExclude := filepath.Join(input, "**", "*.torrent")
 	cmd := exec.CommandContext(ctx, r.cfg.Binary,
 		"copy", "test", "report",
 		"--dat", dat,
@@ -366,6 +391,17 @@ func (r *Runner) runIgir(dat, input, output, report string) error {
 		"--output", output,
 		"--report-output", report,
 		"--input-checksum-max", "CRC32",
+		// The ONE deliberate deviation from cartridge-verify.sh's flag
+		// set (D-P3e): aria2 writes an infohash-named .torrent metadata
+		// file into every download dir — addTorrent included, proven
+		// empirically against the pinned aria2 1.37.0 (its docs claim
+		// magnet-only; the code disagrees). Those companions are the
+		// daemon's bookkeeping, not staged ROM content, and no DAT can
+		// ever claim a .torrent ROM — so excluding them cannot hide a
+		// real deviation, while the served report then literally
+		// carries zero unmatched rows for them (the pill never lies
+		// against its own CSV).
+		"--input-exclude", inputExclude,
 		"--dir-game-subdir", "never",
 		"--reader-threads", "2",
 		"--writer-threads", "2",
@@ -386,39 +422,64 @@ func (r *Runner) runIgir(dat, input, output, report string) error {
 // ---- report ingestion -----------------------------------------------------
 
 // Report is the ingested shape of one igir report CSV: per-status counts
-// plus the FOUND rows' output-relative paths (the games-table rel_paths
-// the verify-state flips key on).
+// split by PROVENANCE (which side of the copy a row's file lives on —
+// proven by running the real igir 5.3.0 over the fixture corpus with a
+// pre-populated output tree, P3 VM bring-up), plus the FOUND rows'
+// output-relative paths (the games-table rel_paths the verify-state flips
+// key on).
+//
+// igir scans BOTH the --input dir and the --output dir, so a bare status
+// count cannot tell "junk arrived in staging" from "the games tree
+// already holds this/extra files":
+//
+//   - UNUSED row under input  -> Unmatched: staged file no DAT claims
+//     (the red signal — the pipeline is receiving junk);
+//   - UNUSED row under output -> Extra: a games-tree file the DAT does
+//     not claim (operator drops, scanner fixtures; amber, not red — the
+//     DAT games may all be present);
+//   - DUPLICATE row under input -> Unmatched: two staged files claim one
+//     DAT game (the staged set deviates from 1G1R);
+//   - DUPLICATE row under output -> Duplicate: the idempotent re-verify
+//     echo — input ROMs already promoted in a previous run are re-seen
+//     in the output. COPY semantics keep the staged input (aria2's piece
+//     state), so EVERY re-verify after the first promotion emits these;
+//     counting them red would flip every green system red on its second
+//     run. Informational only;
+//   - FOUND rows are game-attributed and point into the output dir;
+//   - anything else (or a row on neither side) -> Other, red, counted —
+//     never silently dropped.
 type Report struct {
 	DatGames   int // Found + Missing (games the DAT claims)
 	Found      int // matched + written + checksum-retested
 	Missing    int // DAT games no staged input matched
-	Unmatched  int // UNUSED: staged input files no DAT claims
-	Duplicate  int
-	Other      int // unknown statuses (counted, never silently dropped)
+	Unmatched  int // INPUT-side deviations: UNUSED + DUPLICATE (red)
+	Duplicate  int // OUTPUT-side re-verify echoes (benign, informational)
+	Extra      int // OUTPUT-side files no DAT claims (amber)
+	Other      int // unknown statuses / unknown provenance (red)
 	FoundPaths []string
 	FoundRels  []string // FoundPaths relative to the igir --output dir
 }
 
 // parseReportFile reads + parses the CSV at path.
-func parseReportFile(path, outputDir string) (*Report, error) {
+func parseReportFile(path, inputDir, outputDir string) (*Report, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("igir: report: %w", err)
 	}
 	defer f.Close() //nolint:errcheck // read-only
-	return ParseReport(f, outputDir)
+	return ParseReport(f, inputDir, outputDir)
 }
 
 // ParseReport ingests an igir report CSV. Field semantics proven by
-// scripts/fixture-arcade.sh: the Status column carries
+// scripts/fixture-arcade.sh and real 5.3.0 runs: the Status column carries
 // FOUND/UNUSED/MISSING/DUPLICATE, and ROM Files (the FOUND rows' output
 // paths) is how matched games map back to games-tree rows. The header's
 // column INDEX drives parsing (igir has grown columns across versions);
-// rows with an empty Status are skipped (the gate's `$3!=""` guard); any
-// unknown status counts as Other so nothing silently vanishes. RFC 4180
+// rows with an empty Status are skipped (the gate's `$3!=""` guard);
+// unknown statuses count as Other so nothing silently vanishes. RFC 4180
 // parsing keeps comma-free fixture reports identical while surviving
 // quoted commas in real DAT names.
-func ParseReport(rd io.Reader, outputDir string) (*Report, error) {
+func ParseReport(rd io.Reader, inputDir, outputDir string) (*Report, error) {
 	cr := csv.NewReader(rd)
 	cr.FieldsPerRecord = -1 // tolerate ragged rows; we index defensively
 	cr.ReuseRecord = false
@@ -440,6 +501,14 @@ func ParseReport(rd io.Reader, outputDir string) (*Report, error) {
 	}
 	gameIdx := col("Game Name")
 	romIdx := col("ROM Files")
+
+	underDir := func(dir, path string) bool {
+		if dir == "" || path == "" {
+			return false
+		}
+		rel, err := filepath.Rel(dir, path)
+		return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+	}
 
 	rep := &Report{}
 	for {
@@ -478,9 +547,23 @@ func ParseReport(rd io.Reader, outputDir string) (*Report, error) {
 		case "MISSING":
 			rep.Missing++
 		case "UNUSED":
-			rep.Unmatched++
+			switch {
+			case underDir(inputDir, romPath):
+				rep.Unmatched++
+			case underDir(outputDir, romPath):
+				rep.Extra++
+			default:
+				rep.Other++
+			}
 		case "DUPLICATE":
-			rep.Duplicate++
+			switch {
+			case underDir(inputDir, romPath):
+				rep.Unmatched++ // staged duplicate: the set deviates from 1G1R
+			case underDir(outputDir, romPath):
+				rep.Duplicate++ // already-promoted echo: idempotent re-verify
+			default:
+				rep.Other++
+			}
 		default:
 			rep.Other++
 		}
