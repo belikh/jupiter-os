@@ -100,6 +100,11 @@ in
       # hasn't brought up the WireGuard tunnel) instead of stalling every
       # substitution on a connect timeout.
       connect-timeout = lib.mkDefault 60;
+      # Never-disable posture: nix disables a substituter for 60s per failed
+      # download (window hardcoded upstream), so keep failures rare instead —
+      # ride out zero-data stalls (Tailscale DERP relays trickle) rather than
+      # erroring into a disable.
+      stalled-download-timeout = lib.mkDefault 900;
     };
   };
 }

@@ -82,6 +82,12 @@ jobs:
             substituters = https://cache.jupiter.au https://cache.nixos.org
             trusted-public-keys = ${{ secrets.HARMONIA_PUBLIC_KEY }} cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
             connect-timeout = 60
+            # Never-disable policy: nix disables a binary cache for 60s per failed
+            # download and that window is hardcoded upstream — the only lever is
+            # making failures rare. stalled-download-timeout governs zero-data
+            # gaps mid-transfer (DERP relays trickle); default 300s aborts
+            # transfers that would otherwise complete.
+            stalled-download-timeout = 900
             post-build-hook = /opt/ci/post-build-hook.sh
             system-features = gccarch-bdver4 gccarch-skylake big-parallel
             extra-platforms = i686-linux x86_64-linux
