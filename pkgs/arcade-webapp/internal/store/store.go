@@ -91,6 +91,8 @@ type SystemSummary struct {
 	SortOrder    int
 	GameCount    int64
 	TotalBytes   int64
+	Verified     int64  // games with verify_state='verified' (P3 flips these)
+	Unmatched    int64  // games with verify_state='unmatched'
 	DATDate      string // "" when no DAT
 	DATVersion   string
 	DATRomCount  int64
@@ -485,10 +487,13 @@ func (s *Store) SystemSummary() ([]SystemSummary, error) {
 	rows, err := s.db.Query(`
 		SELECT s.key, s.collection, s.bucket, s.sort_order,
 		       COALESCE(g.cnt, 0), COALESCE(g.bytes, 0),
+		       COALESCE(g.verified, 0), COALESCE(g.unmatched, 0),
 		       COALESCE(d.date, ''), COALESCE(d.version, ''), COALESCE(d.rom_count, 0),
 		       COALESCE(c.cache_entries, 0)
 		FROM systems s
-		LEFT JOIN (SELECT system_key, COUNT(*) cnt, SUM(size_bytes) bytes
+		LEFT JOIN (SELECT system_key, COUNT(*) cnt, SUM(size_bytes) bytes,
+		                  SUM(CASE WHEN verify_state='verified' THEN 1 ELSE 0 END) verified,
+		                  SUM(CASE WHEN verify_state='unmatched' THEN 1 ELSE 0 END) unmatched
 		           FROM games GROUP BY system_key) g ON g.system_key = s.key
 		LEFT JOIN dat_info d ON d.system_key = s.key
 		LEFT JOIN scrape_coverage c ON c.system_key = s.key
@@ -501,7 +506,7 @@ func (s *Store) SystemSummary() ([]SystemSummary, error) {
 	for rows.Next() {
 		var r SystemSummary
 		if err := rows.Scan(&r.Key, &r.Collection, &r.Bucket, &r.SortOrder,
-			&r.GameCount, &r.TotalBytes,
+			&r.GameCount, &r.TotalBytes, &r.Verified, &r.Unmatched,
 			&r.DATDate, &r.DATVersion, &r.DATRomCount,
 			&r.CacheEntries); err != nil {
 			return nil, err
@@ -509,4 +514,18 @@ func (s *Store) SystemSummary() ([]SystemSummary, error) {
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+// SetMeta upserts a meta key (scan telemetry the status strip reads back).
+func (s *Store) SetMeta(key, value string) error {
+	_, err := s.db.Exec(`INSERT INTO meta (key, value) VALUES (?,?)
+		ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, value)
+	return err
+}
+
+// GetMeta returns a meta value, or "" when unset.
+func (s *Store) GetMeta(key string) string {
+	var v string
+	_ = s.db.QueryRow(`SELECT value FROM meta WHERE key=?`, key).Scan(&v)
+	return v
 }

@@ -288,8 +288,8 @@ func TestAgeDays(t *testing.T) {
 		"garbage":    -1,
 	}
 	for date, want := range cases {
-		if got := ageDays(date, now); got != want {
-			t.Errorf("ageDays(%q) = %d, want %d", date, got, want)
+		if got := AgeDays(date, now); got != want {
+			t.Errorf("AgeDays(%q) = %d, want %d", date, got, want)
 		}
 	}
 }

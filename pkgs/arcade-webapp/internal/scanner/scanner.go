@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -251,8 +252,11 @@ func (s *Scanner) scanAll() Result {
 		}
 	}
 
-	// 6. Incoming staging summary (whole tree, all buckets).
+	// 6. Incoming staging summary (whole tree, all buckets) — persisted in
+	// meta for the status strip (runs.detail holds the full JSON).
 	res.IncomingFiles, res.IncomingBytes = countTree(s.cfg.IncomingDir)
+	_ = s.st.SetMeta("incoming_files", strconv.FormatInt(res.IncomingFiles, 10))
+	_ = s.st.SetMeta("incoming_bytes", strconv.FormatInt(res.IncomingBytes, 10))
 
 	return res
 }
@@ -420,9 +424,10 @@ func countTree(root string) (files, bytes int64) {
 	return files, bytes
 }
 
-// ageDays returns whole days between date ("2006-01-02", some DATs carry
-// other shapes) and now; -1 when unparseable (rendered as unknown).
-func ageDays(date string, now time.Time) int {
+// AgeDays returns whole days between date (Logiqx <date> shapes) and now;
+// -1 when unparseable (rendered as unknown). Shared with the web layer so
+// the DAT-currency chip and the scanner agree on one parser.
+func AgeDays(date string, now time.Time) int {
 	for _, layout := range []string{"2006-01-02", "2006-01-02T15:04:05", "02/01/2006", time.RFC3339} {
 		if t, err := time.Parse(layout, date); err == nil {
 			return int(now.Sub(t).Hours() / 24)
