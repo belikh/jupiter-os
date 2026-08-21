@@ -28,6 +28,18 @@ nix_bin="${NIX_BIN:-nix}"
 FAST_TIMEOUT=15
 SLOW_TIMEOUT=1200
 
+# Lines logged before tailnet join (startup, config) cannot ship — ssh to
+# europa is unroutable then. Buffer them and flush on first successful ship,
+# otherwise the europa-side log permanently lacks the startup/self-description
+# block and looks like the drainer misconfigured itself.
+_buffer="${TMPDIR:-/tmp}/cache-drainer-unshipped"
+
+_ship_b64() {
+  local b64="$1"
+  echo "$b64" | ssh -o ControlPath="$cm/%r@%h:%p" -o ConnectTimeout=10 "$ssh" \
+    "mkdir -p /var/log/jupiter-ci && base64 -d >> $log_path" 2>/dev/null
+}
+
 log_to_europa() {
   local msg="$1"
   # base64 round-trip: the old `echo \"$msg\"` broke on any line containing
@@ -36,8 +48,13 @@ log_to_europa() {
   # "copying N paths..." and never the actual failure reason.
   local b64
   b64=$(printf '%s\n' "$msg" | base64 -w0) || return 0
-  ssh -o ControlPath="$cm/%r@%h:%p" "$ssh" \
-    "mkdir -p /var/log/jupiter-ci && echo $b64 | base64 -d >> $log_path" 2>/dev/null || true
+  # Flush anything buffered from the pre-connectivity window first.
+  if [ -s "$_buffer" ]; then
+    ssh -o ControlPath="$cm/%r@%h:%p" -o ConnectTimeout=10 "$ssh" \
+      "mkdir -p /var/log/jupiter-ci && cat >> $log_path" <"$_buffer" 2>/dev/null \
+      && : > "$_buffer"
+  fi
+  _ship_b64 "$b64" || printf '%s\n' "$msg" >> "$_buffer"
 }
 
 log() {
@@ -116,8 +133,10 @@ requeue=()
 
 slow_drainer() {
   log "slow drainer started (reading from $SLOW_FIFO)"
+  local idle=0
   while true; do
     if IFS= read -r -t 5 STORE_PATH <&4; then
+      idle=0
       [ -z "${STORE_PATH:-}" ] && continue
       if flush "$STORE_PATH" "$SLOW_TIMEOUT" "slow"; then
         :
@@ -128,6 +147,14 @@ slow_drainer() {
         sleep 60
         printf '%s\n' "$STORE_PATH" >&4
       fi
+    else
+      # Heartbeat every ~2min of idleness: proves the subshell is alive and
+      # the queue is genuinely empty (vs. this process being wedged).
+      idle=$((idle + 1))
+      if [ "$idle" -ge 24 ]; then
+        status_line "slow: idle, queue empty"
+        idle=0
+      fi
     fi
   done
 }
@@ -135,6 +162,14 @@ slow_drainer() {
 slow_drainer &
 SLOW_PID=$!
 log "slow drainer PID: $SLOW_PID"
+# A dead slow-drainer is silent by construction (empty queue = no logs), and
+# its first log call once hung forever on pre-tailnet ssh. Verify it actually
+# came up; if it dies later the heartbeat below stops and the fast loop's
+# status lines make the stall visible in pending counts.
+sleep 1
+if ! kill -0 "$SLOW_PID" 2>/dev/null; then
+  log "ERROR: slow drainer (PID $SLOW_PID) died at startup — timeouts will pile up unread"
+fi
 
 # Classify a failed fast push: genuine timeout (rc=124) graduates to the slow
 # FIFO; any other failure stays in the fast requeue list. Top-level loop, so
