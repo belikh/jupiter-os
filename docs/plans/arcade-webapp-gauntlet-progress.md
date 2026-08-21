@@ -5,8 +5,8 @@ The live heartbeat of the builder/critic loop driving
 every critic verdict. Screenshots (when they exist) land under
 `arcade-webapp-gauntlet/` next to this file.
 
-- **Phase:** 1 **P1 in review — adversarial findings reconciled** (5 fixed,
-  3 accepted; blind critic is next)
+- **Phase:** 1 in progress — **P1 won** (blind critic, 1 loop, 0 rebuilds) ·
+  P2 next
 - **Branch:** `arcade/webapp-gauntlet`
 - **ADR:** [ADR-0002 — custom, not RomM](../adr/0002-arcade-webapp-custom-vs-romm.md)
   (D1 research-confirmed 2026-08-21; D2–D4 accepted)
@@ -16,7 +16,7 @@ every critic verdict. Screenshots (when they exist) land under
 
 | Piece | State | Builder loops | Last critic verdict | Critic's named gap | Evidence |
 |---|---|---|---|---|---|
-| P1 — Pipeline dashboard | review | 1 (review round: 5 findings fixed, 3 accepted) | — | — | reconciliation table below |
+| P1 — Pipeline dashboard | **won** | 1 (0 rebuilds) | **ours** (blind, labels stripped; DOM A/B, data-scale asymmetry disclosed+discounted) | download stage has no surface (queue depth/active/errored/throughput) — folds into P2; meters lack `role="progressbar"`/`aria-valuenow`, polling regions lack `aria-live` (carry to P2) | `p1-ours-desktop.png`, `p1-ours-mobile.png`, `p1-bar-desktop.png`; critic: "B answers the 5-second question in one strip… A contains zero pipeline vocabulary — verify 0, torrent 0, scan 0, coverage 0" |
 | P2 — Download control | pending | 0 | — | — | — |
 | P3 — Verify & organize | pending | 0 | — | — | — |
 | P4 — Library browsing | pending | 0 | — | — | — |
@@ -100,5 +100,5 @@ with rationale**, none rejected. Piece stays in `review` until the blind critic.
 
 ## Gauntlet scoreboard
 
-**0 won / 8 remaining.** Exit (AC-10) = every piece P1–P8 won with the final
+**1 won / 7 remaining** (P1). Exit (AC-10) = every piece P1–P8 won with the final
 named-gap=null or an accepted-residual note recorded in the piece table.
