@@ -201,7 +201,7 @@ jobs:
             max-substitution-jobs = 1
             http-connections = 2
             system-features = kvm benchmark big-parallel gccarch-bdver4 gccarch-skylake
-            extra-platforms = i686-linux x86_64-linux
+            extra-platforms = x86_64-linux
             cores = 4
             max-jobs = 1
             # No post-build-hook: builders don't push. The coordinator is the
@@ -379,6 +379,12 @@ jobs:
           swap-storage: true
           tool-cache: true
 
+      - name: Enable i686 binfmt emulation (coordinator)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static binfmt-support
+          sudo update-binfmts --enable qemu-i386 || true
+
       - uses: cachix/install-nix-action@b4b293eae0b79aac8a161bb32925a5508c9cca93 # v31
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
@@ -395,11 +401,11 @@ jobs:
             builders-use-substitutes = true
             http2 = false
             fallback = true
-            # Coordinator must advertise features so it doesn't reject
-            # derivations requiring them, even with max-jobs=0 (dispatch only)
+            # Coordinator builds i686 locally via qemu-user, dispatches x86_64 to builders
             system-features = kvm benchmark big-parallel gccarch-bdver4 gccarch-skylake
             extra-platforms = i686-linux x86_64-linux
-            max-jobs = 0
+            max-jobs = 2
+            cores = 4
 
       - name: Install async push system (post-build-hook + cache-drainer)
         env:

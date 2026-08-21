@@ -84,6 +84,7 @@ jobs:
             connect-timeout = 60
             post-build-hook = /opt/ci/post-build-hook.sh
             system-features = gccarch-bdver4 gccarch-skylake big-parallel
+            extra-platforms = i686-linux x86_64-linux
             cores = 1
             max-jobs = 4
             builders-use-substitutes = true
@@ -97,6 +98,13 @@ jobs:
             # Once callisto/kiosks are deployed and registered on the
             # tailnet, this can come back targeting their tailscale
             # addresses instead of the now-unreachable LAN IPs.
+
+      - name: Enable i686 binfmt emulation
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static binfmt-support
+          sudo update-binfmts --enable qemu-i386 || true
+
       # ---- Tailscale + cache drainer + build ----
       - name: Tailscale up + build + drainer
         env:
