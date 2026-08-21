@@ -43,6 +43,10 @@ let
   );
 
   # Pool paths the unit must not start before (rom-acquire.nix pattern).
+  # torrentDir is covered transitively on europa today (it sits under the
+  # same dataset as datDir/skyscraperCacheDir) but the ordering INTENT is
+  # per-path: the downloads page stats it at render time, so it belongs
+  # here explicitly (ADV-P2-05).
   poolPaths = [
     cfg.cartridgeRoot
     cfg.opticalRoot
@@ -50,6 +54,7 @@ let
     cfg.datDir
     cfg.skyscraperCacheDir
     cfg.incomingDir
+    cfg.torrentDir
     cfg.stateDir
   ];
 in

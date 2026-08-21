@@ -303,10 +303,19 @@ let
     grep -q '<td>acquire</td>' <<<"$status" || fail "acquire run not recorded in runs table"
 
     # House-critical: the RPC secret VALUE never appears in the webapp's
-    # journal (runtime file read, token only on the wire).
-    n=$(journalctl -u jupiter-arcade-webapp --no-pager | grep -c 'vm-test-invented-secret-not-from-sops' || true)
+    # journal (runtime file read, token only on the wire). The check has
+    # TWO guards against a vacuous pass (ADV-P2-01): journalctl must
+    # succeed, and the journal must contain the unit's stable startup
+    # line ("listening on", emitted right before ListenAndServe in
+    # cmd/arcade-webapp/main.go) — a dead/redirected journal fails
+    # loudly instead of grepping nothing and reporting 0 matches.
+    journal=$(journalctl -u jupiter-arcade-webapp --no-pager) \
+      || fail "journalctl could not read the webapp journal (secret grep would be vacuous)"
+    grep -q 'arcade-webapp: listening on' <<<"$journal" \
+      || fail "webapp journal lacks its startup line — journal capture broken (secret grep would be vacuous)"
+    n=$(grep -c 'vm-test-invented-secret-not-from-sops' <<<"$journal" || true)
     [ "$n" = "0" ] || fail "RPC secret value leaked into the webapp journal"
-    echo "smoke: RPC secret never logged (journal grep clean)"
+    echo "smoke: RPC secret never logged (journal alive: startup line present, grep clean)"
 
     pass
   '';
