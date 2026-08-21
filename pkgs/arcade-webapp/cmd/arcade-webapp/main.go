@@ -8,13 +8,17 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/aria2"
+	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/dats"
+	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/igir"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/scanner"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/store"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/web"
@@ -99,6 +103,74 @@ func main() {
 		log.Printf("arcade-webapp: download control wired to %s (secret file at runtime)", rpcURL)
 	} else {
 		log.Printf("arcade-webapp: download control not configured (need ARCADE_WEBAPP_ARIA2_RPC_URL + ARCADE_WEBAPP_ARIA2_SECRET_FILE)")
+	}
+
+	// Verify + DAT manager (P3): the igir runner execs the binary the
+	// module hands us (ARCADE_WEBAPP_IGIR_BIN — pkgs.igir from the
+	// pinned nixpkgs), writing promoted ROMs into the bucket roots and
+	// audit CSVs under <scratch>/reports. The DAT fetcher pulls the
+	// Fresh1G1R McLean set on demand AND on a schedule (hours; 0/empty
+	// disables — the VM test keeps it off for determinism).
+	igirBin := envOr("ARCADE_WEBAPP_IGIR_BIN", "")
+	scratchDir := envOr("ARCADE_WEBAPP_SCRATCH_DIR", "")
+	var runner *igir.Runner
+	if igirBin != "" {
+		runner = igir.New(igir.Config{
+			Binary:        igirBin,
+			IncomingDir:   cfg.IncomingDir,
+			DATDir:        cfg.DATDir,
+			CartridgeRoot: cfg.CartridgeRoot,
+			OpticalRoot:   cfg.OpticalRoot,
+			ModernRoot:    cfg.ModernRoot,
+			ReportDir:     filepath.Join(scratchDir, "reports"),
+		}, st, func() error {
+			_, err := scan.Scan()
+			return err
+		}, log.Default())
+		log.Printf("arcade-webapp: verify runner wired (igir %s, reports %s)", igirBin, filepath.Join(scratchDir, "reports"))
+	} else {
+		log.Printf("arcade-webapp: verify not configured (ARCADE_WEBAPP_IGIR_BIN empty)")
+	}
+	var fetcher *dats.Fetcher
+	if cfg.DATDir != "" {
+		fetcher = &dats.Fetcher{
+			BaseURL: envOr("ARCADE_WEBAPP_DAT_FETCH_BASE_URL", dats.DefaultBaseURL),
+			Dir:     cfg.DATDir,
+			St:      st,
+			Log:     log.Default(),
+		}
+		log.Printf("arcade-webapp: DAT manager wired (%s -> %s)", fetcher.BaseURL, cfg.DATDir)
+	}
+	opts = append(opts, web.WithPipeline(runner, fetcher))
+
+	// DAT currency schedule: refresh at startup + every interval hours
+	// (fetch-mclean-1g1r-dats.sh ran as a kicked oneshot; the webapp
+	// owns the cadence now). Failures are per-system warnings in a
+	// dat-fetch run — never fatal here.
+	if fetcher != nil {
+		if hours, err := strconv.Atoi(envOr("ARCADE_WEBAPP_DAT_REFRESH_HOURS", "")); err == nil && hours > 0 {
+			f := fetcher
+			go func() {
+				ctx := context.Background()
+				refresh := func() {
+					systems, err := st.Systems()
+					if err != nil {
+						log.Printf("arcade-webapp: dat refresh: %v", err)
+						return
+					}
+					res := f.Refresh(ctx, systems)
+					log.Printf("arcade-webapp: dat refresh: %d fetched, %d unmapped, %d warnings",
+						res.Fetched, res.Unmapped, len(res.Warnings))
+				}
+				refresh()
+				t := time.NewTicker(time.Duration(hours) * time.Hour)
+				defer t.Stop()
+				for range t.C {
+					refresh()
+				}
+			}()
+			log.Printf("arcade-webapp: DAT refresh scheduled every %dh (+ at startup)", hours)
+		}
 	}
 
 	srv, err := web.New(st, scan, opts...)

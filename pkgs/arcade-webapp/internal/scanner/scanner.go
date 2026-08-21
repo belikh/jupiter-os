@@ -205,7 +205,7 @@ func (s *Scanner) scanAll() Result {
 
 		// 3. DAT currency: <datDir>/<sys>.dat header.
 		datPath := filepath.Join(s.cfg.DATDir, sys.Key+".dat")
-		if info, err := readDAT(datPath); err == nil {
+		if info, err := ReadDAT(datPath); err == nil {
 			info.SystemKey = sys.Key
 			if err := s.st.SetDATInfo(*info); err != nil {
 				res.Warnings = append(res.Warnings, fmt.Sprintf("%s: persist dat: %v", sys.Key, err))
@@ -236,13 +236,45 @@ func (s *Scanner) scanAll() Result {
 		}
 	}
 
-	// 6. Incoming staging summary (whole tree, all buckets) — persisted in
-	// meta for the status strip (runs.detail holds the full JSON).
+	// 6. Incoming staging summary — per system (files/bytes/aria2-control
+	// presence, the verify page's "staged" column) plus the whole-tree
+	// totals for the status strip. Persisted at scan time only: a live
+	// walk of a multi-TB staged tree on every 2s poll would hammer
+	// europa's HDD (R5); the verify runner itself re-checks .aria2
+	// presence authoritatively at run time.
+	var staging []store.StagingRow
+	for _, sys := range systems {
+		files, bytes := countTree(filepath.Join(s.cfg.IncomingDir, sys.Key))
+		staging = append(staging, store.StagingRow{
+			SystemKey: sys.Key, Files: files, Bytes: bytes,
+			InFlight: hasAria2Control(filepath.Join(s.cfg.IncomingDir, sys.Key)),
+		})
+	}
+	if err := s.st.ReplaceStaging(staging); err != nil {
+		res.Warnings = append(res.Warnings, "staging persist: "+err.Error())
+	}
 	res.IncomingFiles, res.IncomingBytes = countTree(s.cfg.IncomingDir)
 	_ = s.st.SetMeta("incoming_files", strconv.FormatInt(res.IncomingFiles, 10))
 	_ = s.st.SetMeta("incoming_bytes", strconv.FormatInt(res.IncomingBytes, 10))
 
 	return res
+}
+
+// hasAria2Control reports whether any *.aria2 control file exists under
+// dir (a download is mid-flight for that tree). Absent dir = false.
+func hasAria2Control(dir string) bool {
+	found := false
+	_ = filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil // unreadable entries skipped, like find 2>/dev/null
+		}
+		if !d.IsDir() && strings.HasSuffix(d.Name(), ".aria2") {
+			found = true
+			return filepath.SkipAll
+		}
+		return nil
+	})
+	return found
 }
 
 // scanSystemDir walks one system's directory tree and returns one GameRow
@@ -350,9 +382,11 @@ type logiqxHeader struct {
 	Build   string `xml:"build"`
 }
 
-// readDAT streams a Logiqx datafile: header fields + <game> count, without
+// ReadDAT streams a Logiqx datafile: header fields + <game> count, without
 // holding the whole DAT in memory (No-Intro sets reach tens of MB).
-func readDAT(path string) (*store.DATInfo, error) {
+// Exported for the DAT manager (P3), which re-parses a freshly fetched
+// DAT so the currency card updates without waiting for a full rescan.
+func ReadDAT(path string) (*store.DATInfo, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err // wrapped fs.ErrNotExist propagates

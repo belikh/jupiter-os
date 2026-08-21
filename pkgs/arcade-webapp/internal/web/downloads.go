@@ -18,10 +18,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"html/template"
+	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -77,8 +77,11 @@ type systemDL struct {
 	Errored     bool // any errored download
 	ActivePct   int  // aggregate progress while downloading
 	GIDs        int
-	// Verify side (what the DB knows — all 'unknown' until P3).
-	GameCount, Verified, Unmatched int64
+	// Verify side (last ingested igir report — P3's zero-unmatched
+	// indicator, shared with the card wall via verifyStateChip).
+	GameCount    int64
+	VerifyState  string
+	VerifyCounts store.VerifyResult
 	// Acquire side.
 	TorrentName string // catalogue basename
 	TorrentOK   bool   // staged file present under torrentDir
@@ -306,12 +309,12 @@ func (s *Server) joinSystems(queue []aria2.Download) ([]systemDL, int) {
 	idle := 0
 	for _, sys := range summary {
 		row := systemDL{
-			Key:        sys.Key,
-			Collection: sys.Collection,
-			Bucket:     sys.Bucket,
-			GameCount:  sys.GameCount,
-			Verified:   sys.Verified,
-			Unmatched:  sys.Unmatched,
+			Key:          sys.Key,
+			Collection:   sys.Collection,
+			Bucket:       sys.Bucket,
+			GameCount:    sys.GameCount,
+			VerifyState:  classifyVerify(sys.Verify, sys.VerifyPresent),
+			VerifyCounts: sys.Verify,
 		}
 		if st := bySys[sys.Key]; st != nil {
 			row.GIDs = st.active + st.queued + st.errored
@@ -341,19 +344,6 @@ func (s *Server) joinSystems(queue []aria2.Download) ([]systemDL, int) {
 		out = append(out, row)
 	}
 	return out, idle
-}
-
-// verifyChip renders the verify-state pill shared by the card wall and
-// the downloads system table (P1 semantics: unknown until P3 flips it).
-func verifyChip(games, verified, unmatched int64) template.HTML {
-	switch {
-	case games > 0 && verified == games:
-		return `<span class="pill ok">verified</span>`
-	case unmatched > 0:
-		return template.HTML(`<span class="pill stale">` + fmt.Sprint(unmatched) + ` unmatched</span>`)
-	default:
-		return `<span class="pill unknown">unknown</span>`
-	}
 }
 
 // ---- handlers ---------------------------------------------------------------
@@ -511,4 +501,174 @@ func (s *Server) dlControl(action string) http.HandlerFunc {
 		}
 		s.render(w, http.StatusOK, "partial-downloads", vm)
 	}
+}
+
+// ---- torrent staging (P2 critic's named gap, landed with P3) ---------------
+//
+// The acquire column used to dead-end when a system's torrent was
+// missing from torrentDir. Two affordances close it, both minimal and
+// real:
+//
+//   - POST /systems/{sys}/stage-torrent (multipart file upload): the
+//     operator drops in the .torrent they have; it is stored under
+//     torrentDir with the CATALOGUE-expected basename so the regular
+//     acquire action (and rom-acquire) finds it where the catalogue says
+//     it lives;
+//   - POST /systems/{sys}/stage-uri (magnet:/http(s): URI): submitted
+//     straight to the daemon with the acquire option shape (dir routing
+//     into incomingDir/<sys>, seed-time 0, overwrite, integrity-aware
+//     resume) — the "queue it now" path.
+//
+// Both are htmx-only (CSRF), validate the system against the catalogue,
+// and cap input size.
+
+// maxTorrentUpload caps the uploaded .torrent at 64 MiB — generous
+// against the largest Minerva optical sets (PS2-era torrents reach tens
+// of MB) while keeping a stray upload from filling scratch.
+const maxTorrentUpload = 64 << 20
+
+// maxStageURIBytes caps the pasted URI field length.
+const maxStageURIBytes = 8192
+
+// handleStageTorrent stores an uploaded .torrent under torrentDir with
+// the catalogue-expected name.
+func (s *Server) handleStageTorrent(w http.ResponseWriter, r *http.Request) {
+	if !hxRequestOK(r) {
+		http.Error(w, "htmx requests only", http.StatusForbidden)
+		return
+	}
+	sys := r.PathValue("system")
+	torrentName, code, msg := s.stageTarget(sys)
+	if code != 0 {
+		http.Error(w, msg, code)
+		return
+	}
+
+	// Size cap BEFORE parsing: MaxBytesReader guards the whole body.
+	r.Body = http.MaxBytesReader(w, r.Body, maxTorrentUpload+(1<<20))
+	if err := r.ParseMultipartForm(1 << 20); err != nil {
+		http.Error(w, "upload too large or malformed (64 MiB cap)", http.StatusRequestEntityTooLarge)
+		return
+	}
+	file, hdr, err := r.FormFile("torrent")
+	if err != nil {
+		http.Error(w, "missing 'torrent' file field", http.StatusBadRequest)
+		return
+	}
+	defer file.Close() //nolint:errcheck // read-only
+	if !strings.EqualFold(filepath.Ext(hdr.Filename), ".torrent") {
+		http.Error(w, "not a .torrent file: "+filepath.Base(hdr.Filename), http.StatusBadRequest)
+		return
+	}
+
+	dst := filepath.Join(s.dl.TorrentDir, torrentName)
+	if err := os.MkdirAll(s.dl.TorrentDir, 0o755); err != nil {
+		http.Error(w, "torrentDir unavailable", http.StatusInternalServerError)
+		return
+	}
+	b, err := io.ReadAll(file)
+	if err != nil {
+		http.Error(w, "reading upload failed", http.StatusBadRequest)
+		return
+	}
+	if len(b) == 0 {
+		http.Error(w, "empty torrent file", http.StatusBadRequest)
+		return
+	}
+	if err := os.WriteFile(dst, b, 0o644); err != nil {
+		http.Error(w, "storing torrent failed", http.StatusInternalServerError)
+		return
+	}
+
+	runID, _ := s.st.StartRun("stage-torrent")
+	detail, _ := json.Marshal(struct {
+		System string `json:"system"`
+		Bytes  int    `json:"bytes"`
+		Stored string `json:"stored"`
+	}{System: sys, Bytes: len(b), Stored: torrentName})
+	_ = s.st.FinishRun(runID, "ok", string(detail))
+	log.Printf("web: staged torrent for %s: %d bytes as %s", sys, len(b), torrentName)
+
+	vm := s.fetchDownloads(r.Context())
+	s.render(w, http.StatusOK, "partial-downloads", vm)
+}
+
+// handleStageURI submits a magnet:/http(s): URI for the system straight
+// to the daemon (addUri with the acquire option shape).
+func (s *Server) handleStageURI(w http.ResponseWriter, r *http.Request) {
+	if !hxRequestOK(r) {
+		http.Error(w, "htmx requests only", http.StatusForbidden)
+		return
+	}
+	if !s.downloadsConfigured() {
+		http.Error(w, "download control not configured", http.StatusServiceUnavailable)
+		return
+	}
+	sys := r.PathValue("system")
+	if _, code, msg := s.stageTarget(sys); code != 0 {
+		http.Error(w, msg, code)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "malformed form", http.StatusBadRequest)
+		return
+	}
+	uri := strings.TrimSpace(r.PostFormValue("uri"))
+	if len(uri) > maxStageURIBytes {
+		http.Error(w, "URI too long", http.StatusRequestEntityTooLarge)
+		return
+	}
+	u, err := url.Parse(uri)
+	if err != nil || (u.Scheme != "magnet" && u.Scheme != "http" && u.Scheme != "https") || (u.Scheme != "magnet" && u.Host == "") {
+		http.Error(w, "URI must be a magnet: link or an http(s) URL", http.StatusBadRequest)
+		return
+	}
+
+	runID, _ := s.st.StartRun("acquire")
+	gid, err := s.a2.AddURI(r.Context(), []string{uri}, aria2.AcquireTorrentOptions(s.dl.IncomingDir, sys))
+	if err != nil {
+		if aria2.IsAlreadyRegistered(err) {
+			detail, _ := json.Marshal(struct {
+				System string `json:"system"`
+				Note   string `json:"note"`
+			}{System: sys, Note: "uri already registered"})
+			_ = s.st.FinishRun(runID, "ok", string(detail))
+		} else {
+			log.Printf("web: stage-uri %s: %v", sys, err)
+			_ = s.st.FinishRun(runID, "error", sys+": "+err.Error())
+			vm := s.fetchDownloads(r.Context())
+			vm.Error = "submit failed: " + friendlyAria2Error(err)
+			s.render(w, http.StatusOK, "partial-downloads", vm)
+			return
+		}
+	} else {
+		detail, _ := json.Marshal(struct {
+			System string `json:"system"`
+			GID    string `json:"gid"`
+			Via    string `json:"via"`
+		}{System: sys, GID: gid, Via: "uri"})
+		_ = s.st.FinishRun(runID, "ok", string(detail))
+		log.Printf("web: staged URI for %s: gid=%s", sys, gid)
+	}
+
+	vm := s.fetchDownloads(r.Context())
+	s.render(w, http.StatusOK, "partial-downloads", vm)
+}
+
+// stageTarget validates a staging target system and returns the
+// catalogue-expected torrent basename (0 status = valid).
+func (s *Server) stageTarget(sys string) (name string, code int, msg string) {
+	systems, err := s.st.Systems()
+	if err != nil {
+		return "", http.StatusInternalServerError, "system lookup failed"
+	}
+	for _, row := range systems {
+		if row.Key == sys {
+			if row.Torrent == "" {
+				return "", http.StatusBadRequest, sys + " has no torrent in the catalogue"
+			}
+			return row.Torrent, 0, ""
+		}
+	}
+	return "", http.StatusNotFound, "unknown system " + sys
 }

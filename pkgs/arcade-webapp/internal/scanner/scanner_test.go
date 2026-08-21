@@ -244,7 +244,7 @@ func TestScanSerializedWhileRunning(t *testing.T) {
 
 func TestDATHeaderParse(t *testing.T) {
 	// Committed fixture DAT: header date/version + game count.
-	info, err := readDAT(filepath.Join("..", "..", "testdata", "dats", "gb.dat"))
+	info, err := ReadDAT(filepath.Join("..", "..", "testdata", "dats", "gb.dat"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -262,7 +262,7 @@ func TestDATHeaderParse(t *testing.T) {
 // live card shows a "?" age chip and the staleness aggregate can never
 // fire.
 func TestDATHeaderParseMcLeanShape(t *testing.T) {
-	info, err := readDAT(filepath.Join("..", "..", "testdata", "dats", "mclean-shape.dat"))
+	info, err := ReadDAT(filepath.Join("..", "..", "testdata", "dats", "mclean-shape.dat"))
 	if err != nil {
 		t.Fatal(err)
 	}

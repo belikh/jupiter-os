@@ -9,7 +9,7 @@
   <div class="cards">
     {{range .Cards}}
     <div class="card{{if not .Active}} empty{{end}}"
-         data-system="{{.Key}}" data-games="{{.GameCount}}" data-coverage="{{.CoveragePct}}">
+         data-system="{{.Key}}" data-games="{{.GameCount}}" data-coverage="{{.CoveragePct}}" data-verify="{{.VerifyState}}">
       <header>
         <h3 title="{{.Collection}}">{{.Collection}}</h3>
         <span class="chip">{{.Key}}</span>
