@@ -10,6 +10,11 @@
 // generic job table ('scan' today, 'verify'/'scrape'/'generate' from P2+);
 // dat_info and scrape_coverage back DAT currency (P3) and the coverage
 // tracker (P5).
+//
+// P4 adds the read side: ListGames paginated/filterable browsing queries
+// and GetGame detail joins. Title search routes through an FTS5 index when
+// this driver build provides one (probed at Open — see initSearch for the
+// decision) and degrades to LIKE otherwise.
 package store
 
 import (
@@ -168,9 +173,12 @@ func (s SystemSummary) CoveragePct() int {
 	return pct
 }
 
-// Store wraps the SQLite handle.
+// Store wraps the SQLite handle. fts records whether this driver build
+// answered the FTS5 probe at Open (search backend choice for ListGames —
+// see initSearch); it selects the index plan, never the feature set.
 type Store struct {
-	db *sql.DB
+	db  *sql.DB
+	fts bool
 }
 
 // Open opens (creating if needed) the database at path and applies pragmas
@@ -194,6 +202,10 @@ func Open(path string) (*Store, error) {
 	db.SetMaxOpenConns(1)
 	s := &Store{db: db}
 	if err := s.Migrate(); err != nil {
+		db.Close() //nolint:errcheck // best effort during error path
+		return nil, err
+	}
+	if err := s.initSearch(); err != nil {
 		db.Close() //nolint:errcheck // best effort during error path
 		return nil, err
 	}
@@ -742,4 +754,286 @@ func (s *Store) GetMeta(key string) string {
 	var v string
 	_ = s.db.QueryRow(`SELECT value FROM meta WHERE key=?`, key).Scan(&v)
 	return v
+}
+
+// ---- P4: library browsing (ListGames / GetGame) ---------------------------
+
+// Search backend decision (gauntlet plan §2 P4): driver builds vary in
+// which SQLite extensions they compile in, so Open probes once by creating
+// a throwaway FTS5 table in the connection's scratch in-memory temp schema.
+// When the probe answers, q searches run through an external-content
+// games_fts index kept current by triggers on games (rebuild-once
+// bookkeeping via meta 'fts_ready'); when it does not, the same filter
+// degrades to LIKE '%q%' + ORDER BY over the base table — identical
+// feature surface, no extra schema, just a slower scan. The index is
+// derived state: deliberately not versioned in user_version, droppable and
+// rebuildable at will, and self-healing if a database written by an
+// FTS5-capable binary is later opened by one without it.
+//
+// Semantics note: FTS5 matches case-folded TOKEN prefixes ("zel" hits
+// "Zelda", mid-word "elda" does not); LIKE matches case-folded SUBSTRINGS
+// anywhere. Callers get word-prefix search either way; only the fallback
+// honors arbitrary mid-word substrings.
+const (
+	// SortTitle orders by rel_path case-insensitively — the filename is
+	// the title source until Skyscraper metadata lands (P5).
+	SortTitle = "title"
+	// SortSize orders biggest first.
+	SortSize = "size"
+	// SortRecent orders by last_seen_at, newest first.
+	SortRecent = "recent"
+)
+
+// GameSummary is one row of ListGames output. RelPath doubles as the
+// display/search title until per-game metadata arrives (P5).
+type GameSummary struct {
+	ID          int64
+	SystemKey   string
+	RelPath     string
+	SizeBytes   int64
+	FirstSeenAt string
+	LastSeenAt  string
+	Hidden      bool
+	VerifyState string
+}
+
+// GameDetail is GetGame's shape: one game joined with its owning system.
+type GameDetail struct {
+	GameSummary
+	System SystemRow
+}
+
+// GameListOpts filters/sorts/paginates ListGames. Empty strings mean "no
+// filter"; Hidden=nil means "both". Sort is "" | SortTitle | SortSize |
+// SortRecent (anything else is an error). Limit<=0 returns everything;
+// Offset only applies together with a positive Limit.
+type GameListOpts struct {
+	SystemKey   string
+	Q           string
+	VerifyState string
+	Hidden      *bool
+	Sort        string
+	Limit       int
+	Offset      int
+}
+
+// GamePage is one page of results plus the unpaginated total matching the
+// same filters (the pager renders from Total).
+type GamePage struct {
+	Games []GameSummary
+	Total int64
+}
+
+// ftsDDL keeps the external-content FTS5 mirror of games.rel_path in step.
+// The UPDATE trigger only fires for rel_path changes — rescan size
+// updates, verify_state flips and hidden toggles skip reindexing entirely.
+var ftsDDL = []string{
+	`CREATE VIRTUAL TABLE IF NOT EXISTS games_fts USING fts5(
+		rel_path,
+		content='games',
+		content_rowid='id'
+	)`,
+	`CREATE TRIGGER IF NOT EXISTS games_fts_ai AFTER INSERT ON games BEGIN
+		INSERT INTO games_fts(rowid, rel_path) VALUES (new.id, new.rel_path);
+	END`,
+	`CREATE TRIGGER IF NOT EXISTS games_fts_au AFTER UPDATE OF rel_path ON games BEGIN
+		INSERT INTO games_fts(games_fts, rowid, rel_path) VALUES('delete', old.id, old.rel_path);
+		INSERT INTO games_fts(rowid, rel_path) VALUES (new.id, new.rel_path);
+	END`,
+	`CREATE TRIGGER IF NOT EXISTS games_fts_ad AFTER DELETE ON games BEGIN
+		INSERT INTO games_fts(games_fts, rowid, rel_path) VALUES('delete', old.id, old.rel_path);
+	END`,
+}
+
+// fts5Supported answers whether THIS build of the linked driver registers
+// FTS5, via the cheapest possible virtual DDL against the temp schema
+// (private to the connection, so probing leaves no trace).
+func fts5Supported(db *sql.DB) bool {
+	if _, err := db.Exec(`CREATE VIRTUAL TABLE temp.store_fts5_probe USING fts5(x)`); err != nil {
+		return false
+	}
+	_, _ = db.Exec(`DROP TABLE IF EXISTS temp.store_fts5_probe`)
+	return true
+}
+
+// initSearch picks the ListGames search backend (see the section comment)
+// and on the FTS5 path creates the shadow index + sync triggers and
+// backfills once. A database previously written by an FTS5-capable binary
+// but opened by one without it self-heals here: leftover triggers would
+// otherwise fail every rescan write.
+func (s *Store) initSearch() error {
+	s.fts = fts5Supported(s.db)
+	if !s.fts {
+		for _, stmt := range []string{
+			`DROP TRIGGER IF EXISTS games_fts_ai`,
+			`DROP TRIGGER IF EXISTS games_fts_au`,
+			`DROP TRIGGER IF EXISTS games_fts_ad`,
+			`DROP TABLE IF EXISTS games_fts`,
+		} {
+			if _, err := s.db.Exec(stmt); err != nil {
+				return fmt.Errorf("store: drop stale fts objects: %w", err)
+			}
+		}
+		return nil
+	}
+	for _, stmt := range ftsDDL {
+		if _, err := s.db.Exec(stmt); err != nil {
+			return fmt.Errorf("store: fts ddl: %w", err)
+		}
+	}
+	var ready string
+	_ = s.db.QueryRow(`SELECT value FROM meta WHERE key='fts_ready'`).Scan(&ready)
+	if ready != "1" {
+		// The external-content rebuild re-derives the whole index from
+		// games — idempotent, so also correct after a crash between DDL
+		// and flag.
+		if _, err := s.db.Exec(`INSERT INTO games_fts(games_fts) VALUES('rebuild')`); err != nil {
+			return fmt.Errorf("store: fts rebuild: %w", err)
+		}
+		if err := s.SetMeta("fts_ready", "1"); err != nil {
+			return fmt.Errorf("store: mark fts ready: %w", err)
+		}
+	}
+	return nil
+}
+
+// FTSSearchEnabled reports which search backend ListGames routes q through
+// (true = FTS5 index, false = LIKE fallback) — for diagnostics and tests.
+func (s *Store) FTSSearchEnabled() bool { return s.fts }
+
+// ListGames runs one paginated library-browsing query (P4): optional title
+// substring q (case-insensitive), system, verify state and hidden flag;
+// sorted and paged, with the unpaginated match total for the pager.
+func (s *Store) ListGames(opts GameListOpts) (GamePage, error) {
+	order, err := gameOrderBy(opts.Sort)
+	if err != nil {
+		return GamePage{}, err
+	}
+	where := []string{"1=1"}
+	args := []any{}
+	if opts.SystemKey != "" {
+		where = append(where, `g.system_key = ?`)
+		args = append(args, opts.SystemKey)
+	}
+	if opts.VerifyState != "" {
+		where = append(where, `g.verify_state = ?`)
+		args = append(args, opts.VerifyState)
+	}
+	if opts.Hidden != nil {
+		where = append(where, `g.hidden = ?`)
+		args = append(args, boolInt(*opts.Hidden))
+	}
+	switch q := strings.TrimSpace(opts.Q); {
+	case q == "":
+	case s.fts && ftsMatchQuery(q) == "":
+		// Only quotes/punctuation: nothing tokenizable to match (the LIKE
+		// branch would scan for the raw bytes and find none either).
+		where = append(where, `1=0`)
+	case s.fts:
+		where = append(where, `g.id IN (SELECT rowid FROM games_fts WHERE games_fts MATCH ?)`)
+		args = append(args, ftsMatchQuery(q))
+	default:
+		where = append(where, `lower(g.rel_path) LIKE ? ESCAPE '\'`)
+		args = append(args, "%"+likeEscape(strings.ToLower(q))+"%")
+	}
+	cond := strings.Join(where, " AND ")
+
+	page := GamePage{}
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM games g WHERE `+cond, args...).Scan(&page.Total); err != nil {
+		return GamePage{}, fmt.Errorf("store: list games count: %w", err)
+	}
+
+	query := `SELECT g.id, g.system_key, g.rel_path, g.size_bytes,
+			g.first_seen_at, g.last_seen_at, g.hidden, g.verify_state
+		FROM games g WHERE ` + cond + ` ORDER BY ` + order
+	qargs := args
+	if opts.Limit > 0 {
+		query += ` LIMIT ?`
+		qargs = append(qargs, opts.Limit)
+		if opts.Offset > 0 {
+			query += ` OFFSET ?`
+			qargs = append(qargs, opts.Offset)
+		}
+	}
+	rows, err := s.db.Query(query, qargs...)
+	if err != nil {
+		return GamePage{}, fmt.Errorf("store: list games: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	for rows.Next() {
+		var g GameSummary
+		var hidden int
+		if err := rows.Scan(&g.ID, &g.SystemKey, &g.RelPath, &g.SizeBytes,
+			&g.FirstSeenAt, &g.LastSeenAt, &hidden, &g.VerifyState); err != nil {
+			return GamePage{}, err
+		}
+		g.Hidden = hidden != 0
+		page.Games = append(page.Games, g)
+	}
+	return page, rows.Err()
+}
+
+// gameOrderBy maps a GameListOpts.Sort to a deterministic ORDER BY (stable
+// id tie-break in matching direction, so pagination never repeats or
+// drops boundary rows).
+func gameOrderBy(sort string) (string, error) {
+	switch sort {
+	case "", SortTitle:
+		return `g.rel_path COLLATE NOCASE ASC, g.id ASC`, nil
+	case SortSize:
+		return `g.size_bytes DESC, g.id ASC`, nil
+	case SortRecent:
+		return `g.last_seen_at DESC, g.id DESC`, nil
+	default:
+		return "", fmt.Errorf("store: unknown game sort %q (want title|size|recent)", sort)
+	}
+}
+
+// GetGame returns one game joined with its system (the detail-page query),
+// or nil when the (system, id) pair has no row — the system key is part of
+// the identity, so a valid id under the wrong system reads as absent.
+func (s *Store) GetGame(systemKey string, id int64) (*GameDetail, error) {
+	var d GameDetail
+	var hidden int
+	err := s.db.QueryRow(`
+		SELECT g.id, g.system_key, g.rel_path, g.size_bytes, g.first_seen_at, g.last_seen_at,
+		       g.hidden, g.verify_state,
+		       s.key, s.collection, s.bucket, s.core, s.emulator, s.sky_handle, s.torrent, s.extensions, s.sort_order
+		FROM games g JOIN systems s ON s.key = g.system_key
+		WHERE g.system_key = ? AND g.id = ?`, systemKey, id).
+		Scan(&d.ID, &d.SystemKey, &d.RelPath, &d.SizeBytes, &d.FirstSeenAt, &d.LastSeenAt,
+			&hidden, &d.VerifyState,
+			&d.System.Key, &d.System.Collection, &d.System.Bucket, &d.System.Core,
+			&d.System.Emulator, &d.System.SkyHandle, &d.System.Torrent,
+			&d.System.Extensions, &d.System.SortOrder)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("store: get game %s/%d: %w", systemKey, id, err)
+	}
+	d.Hidden = hidden != 0
+	return &d, nil
+}
+
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
+// likeEscape neutralizes LIKE metacharacters in user input (paired with
+// ESCAPE '\' in the fallback predicate).
+func likeEscape(q string) string { return likeEscaper.Replace(q) }
+
+// ftsMatchQuery turns free text into a safe FTS5 MATCH expression: each
+// whitespace-separated term becomes a quoted prefix term ("term"*), so user
+// input can neither break MATCH syntax nor inject operators. Terms made
+// entirely of quotes/punctuation yield "" (caller decides zero-match).
+func ftsMatchQuery(q string) string {
+	parts := make([]string, 0, 8)
+	for _, tok := range strings.Fields(q) {
+		tok = strings.ReplaceAll(tok, `"`, "")
+		if tok == "" {
+			continue
+		}
+		parts = append(parts, `"`+tok+`"*`)
+	}
+	return strings.Join(parts, " ")
 }

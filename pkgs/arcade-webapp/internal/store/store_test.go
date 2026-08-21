@@ -2,7 +2,9 @@ package store
 
 import (
 	"database/sql"
+	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -483,5 +485,182 @@ func TestMigrateV2DatabaseStepsToV3(t *testing.T) {
 	}
 	if len(rows) != 1 || !rows[0].VerifyPresent || rows[0].Verify.Found != 5 || rows[0].Verify.Extra != 0 {
 		t.Errorf("pre-v3 row lost or mangled by migration: %+v", rows)
+	}
+}
+
+// ---- P4: library browsing (ListGames / GetGame) ---------------------------
+
+func TestGameQueries(t *testing.T) {
+	s := openTemp(t)
+	systems := []SystemRow{
+		{Key: "nes", Collection: "NES", Bucket: "cartridge", SortOrder: 1, Extensions: `["nes"]`},
+		{Key: "snes", Collection: "Super Nintendo", Bucket: "cartridge", SortOrder: 2, Extensions: `["smc"]`},
+		{Key: "gb", Collection: "Game Boy", Bucket: "cartridge", SortOrder: 3, Extensions: `["gb"]`},
+	}
+	if err := s.UpsertSystems(systems); err != nil {
+		t.Fatalf("UpsertSystems: %v", err)
+	}
+	now := time.Now().UTC()
+	perSystem := make([][]GameRow, len(systems))
+	for i := 0; i < 2500; i++ {
+		perSystem[i%len(systems)] = append(perSystem[i%len(systems)],
+			GameRow{RelPath: fmt.Sprintf("Game %04d", i), SizeBytes: int64(i) * 100})
+	}
+	for si, rows := range perSystem {
+		if err := s.ReplaceSystemGames(systems[si].Key, rows, now); err != nil {
+			t.Fatalf("ReplaceSystemGames(%s): %v", systems[si].Key, err)
+		}
+	}
+
+	// Pagination: 2500 rows at limit 100 → 25 pages, every id exactly once,
+	// last page holding the Total%limit remainder.
+	seen := map[int64]bool{}
+	pages, lastLen := 0, 0
+	for offset := 0; pages <= 100; offset += 100 {
+		page, err := s.ListGames(GameListOpts{Limit: 100, Offset: offset})
+		if err != nil {
+			t.Fatalf("ListGames offset %d: %v", offset, err)
+		}
+		if page.Total != 2500 {
+			t.Fatalf("page.Total at offset %d = %d, want 2500", offset, page.Total)
+		}
+		if len(page.Games) == 0 {
+			break
+		}
+		pages++
+		lastLen = len(page.Games)
+		for _, g := range page.Games {
+			if seen[g.ID] {
+				t.Fatalf("duplicate game id %d across pages", g.ID)
+			}
+			seen[g.ID] = true
+		}
+	}
+	if pages > 100 {
+		t.Fatal("pagination never terminated")
+	}
+	wantLast := 2500 % 100
+	if wantLast == 0 {
+		wantLast = 100
+	}
+	if pages != 25 || len(seen) != 2500 {
+		t.Errorf("paged through %d pages / %d unique ids, want 25 / 2500", pages, len(seen))
+	}
+	if lastLen != wantLast {
+		t.Errorf("last page has %d rows, want %d", lastLen, wantLast)
+	}
+
+	// q filters case-insensitively. FTS5 matches case-folded TOKEN
+	// prefixes and LIKE whole substrings (see store.go's semantics note);
+	// "GaMe 00" yields the same 100 rows under either backend.
+	page, err := s.ListGames(GameListOpts{Q: "GaMe 00"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("search backend fts=%v; q=%q hits=%d", s.FTSSearchEnabled(), "GaMe 00", page.Total)
+	if page.Total != 100 || len(page.Games) != 100 {
+		t.Errorf(`Q="GaMe 00" total = %d (%d rows), want 100 (Game 0000..0099)`, page.Total, len(page.Games))
+	}
+
+	// systemKey filter returns only that system's rows.
+	page, err = s.ListGames(GameListOpts{SystemKey: "snes"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 833 || len(page.Games) != 833 {
+		t.Errorf("systemKey=snes total = %d (%d rows), want 833", page.Total, len(page.Games))
+	}
+	for _, g := range page.Games {
+		if g.SystemKey != "snes" {
+			t.Fatalf("systemKey filter leaked a %q row (%q)", g.SystemKey, g.RelPath)
+		}
+	}
+
+	// verifyState filter.
+	if err := s.SetSystemVerifyStates("nes", []string{"Game 0000", "Game 0003"}); err != nil {
+		t.Fatalf("SetSystemVerifyStates: %v", err)
+	}
+	page, err = s.ListGames(GameListOpts{VerifyState: "verified"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 2 {
+		t.Errorf("verifyState=verified total = %d, want 2", page.Total)
+	}
+	for _, g := range page.Games {
+		if g.VerifyState != "verified" {
+			t.Errorf("verifyState filter leaked %q as %q", g.RelPath, g.VerifyState)
+		}
+	}
+
+	// hidden filter.
+	if _, err := s.db.Exec(`UPDATE games SET hidden=1 WHERE rel_path='Game 0001'`); err != nil {
+		t.Fatal(err)
+	}
+	notHidden := false
+	page, err = s.ListGames(GameListOpts{Hidden: &notHidden})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 2499 {
+		t.Errorf("hidden=false total = %d, want 2499", page.Total)
+	}
+	isHidden := true
+	page, err = s.ListGames(GameListOpts{Hidden: &isHidden})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 1 || len(page.Games) != 1 || page.Games[0].RelPath != "Game 0001" {
+		t.Errorf("hidden=true = %d rows %+v, want just Game 0001", page.Total, page.Games)
+	}
+
+	// sort=title orders case-insensitively ascending.
+	page, err = s.ListGames(GameListOpts{Sort: SortTitle})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Games) != 2500 || page.Games[0].RelPath != "Game 0000" {
+		t.Errorf("title sort first = %q of %d rows", page.Games[0].RelPath, len(page.Games))
+	}
+	for i := 1; i < len(page.Games); i++ {
+		prev, cur := page.Games[i-1].RelPath, page.Games[i].RelPath
+		if strings.ToLower(prev) > strings.ToLower(cur) {
+			t.Fatalf("title order broken at %d: %q > %q", i, prev, cur)
+		}
+	}
+
+	// sort=size orders biggest first.
+	page, err = s.ListGames(GameListOpts{Sort: SortSize})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Games) != 2500 || page.Games[0].SizeBytes != 249900 {
+		t.Errorf("size sort first = %d of %d rows, want 249900", page.Games[0].SizeBytes, len(page.Games))
+	}
+	for i := 1; i < len(page.Games); i++ {
+		if page.Games[i-1].SizeBytes < page.Games[i].SizeBytes {
+			t.Fatalf("size order broken at %d: %d < %d", i, page.Games[i-1].SizeBytes, page.Games[i].SizeBytes)
+		}
+	}
+
+	// GetGame returns the row joined with its system; identity is
+	// (system, id) — absent pairs read as nil, not an error.
+	hit, err := s.ListGames(GameListOpts{Q: "Game 0010"})
+	if err != nil || hit.Total != 1 {
+		t.Fatalf("lookup Game 0010: total=%d, %v", hit.Total, err)
+	}
+	row := hit.Games[0]
+	got, err := s.GetGame(row.SystemKey, row.ID)
+	if err != nil || got == nil {
+		t.Fatalf("GetGame(%s,%d) = %+v, %v", row.SystemKey, row.ID, got, err)
+	}
+	if got.RelPath != "Game 0010" || got.System.Key != row.SystemKey || got.System.Collection != "Super Nintendo" {
+		t.Errorf("GetGame detail = %q / system %+v, want Game 0010 / Super Nintendo", got.RelPath, got.System)
+	}
+	if missing, err := s.GetGame(row.SystemKey, 99999999); err != nil || missing != nil {
+		t.Errorf("GetGame bogus id = %+v, %v; want nil, nil (absent)", missing, err)
+	}
+	if wrongSys, err := s.GetGame("gb", row.ID); err != nil || wrongSys != nil {
+		t.Errorf("GetGame valid id under wrong system = %+v, %v; want nil, nil", wrongSys, err)
 	}
 }
