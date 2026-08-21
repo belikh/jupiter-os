@@ -467,15 +467,23 @@ jobs:
           # rejected). systemctl set-environment is how the restarted daemon
           # (and thus the hook) receives HARMONIA_SIGNING_KEY_FILE.
           if [ -n "$HARMONIA_SECRET_KEY" ]; then
-            # Normalize key format: nix store sign requires the literal
-            # 'secret-key:' prefix; secrets minted via
-            # `nix-store --generate-binary-cache-key` (harmonia's native
-            # form) lack it — feeding that verbatim yields "decoding key
-            # named '' / invalid character in Base64". Accept both.
-            case "$HARMONIA_SECRET_KEY" in
-              secret-key:*) KEY_MATERIAL="$HARMONIA_SECRET_KEY" ;;
-              *)            KEY_MATERIAL="secret-key:$HARMONIA_SECRET_KEY" ;;
+            # Sanitize + normalize. Ground truth from europa:
+            #   jupiter-cache-1:<88-char-base64>   (2 fields, harmonia native)
+            # nix store sign needs:               secret-key:<name>:<base64>
+            # A stray leading newline/CR in the GitHub secret yields a blank
+            # first line -> nix reads name='' b64='' -> the exact preflight
+            # error we hit ("decoding key named ''"). Strip CRs, drop blank
+            # lines, take the last non-empty line, add the prefix if missing.
+            KEY_MATERIAL="$(printf '%s' "$HARMONIA_SECRET_KEY" | tr -d '\r' | sed '/^[[:space:]]*$/d' | tail -n1)"
+            case "$KEY_MATERIAL" in
+              secret-key:*) : ;;
+              *)            KEY_MATERIAL="secret-key:$KEY_MATERIAL" ;;
             esac
+            if ! [[ "$KEY_MATERIAL" =~ ^secret-key:[^:[:space:]]+:[A-Za-z0-9+/]+=*$ ]]; then
+              echo "::error::HARMONIA_SECRET_KEY malformed after sanitize (raw_len=${#HARMONIA_SECRET_KEY}, sanitized_len=${#KEY_MATERIAL}). Expected 'name:<base64>' or 'secret-key:<name>:<base64>'."
+              exit 1
+            fi
+            echo "signing key staged OK: fields=$(awk -F: '{print NF}' <<<"$KEY_MATERIAL") name_len=$(awk -F: '{print length($2)}' <<<"$KEY_MATERIAL") b64_len=$(awk -F: '{print length($3)}' <<<"$KEY_MATERIAL")"
             printf '%s\n' "$KEY_MATERIAL" | sudo install -m 600 /dev/stdin /etc/nix/harmonia-signing-key
             sudo systemctl set-environment HARMONIA_SIGNING_KEY_FILE=/etc/nix/harmonia-signing-key
           else
