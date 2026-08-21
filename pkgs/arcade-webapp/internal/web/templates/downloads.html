@@ -1,0 +1,23 @@
+{{/* Downloads page (P2): full-page shell around the queue fragment.
+      The fragment polls every 2s (plan AC-2: queue state < 2s poll),
+      carries aria-live so queue changes are announced, and renders
+      graceful states for an unreachable / unconfigured daemon. */ -}}
+{{define "layout-downloads"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>jupiterOS Arcade — {{.Meta.Title}}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js"></script>
+</head>
+<body>
+  {{template "topbar" .Meta}}
+  <main class="wrap">
+    {{template "partial-downloads" .}}
+    {{template "foot"}}
+  </main>
+</body>
+</html>
+{{end}}

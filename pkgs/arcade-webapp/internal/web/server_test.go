@@ -15,12 +15,11 @@ import (
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/store"
 )
 
-// newTestServer builds the full template+handler stack over a scanned
-// fixture tree — the render smoke test runs the real templates, not a
-// reimplementation.
-func newTestServer(t *testing.T) *Server {
+// fixtureScan writes the fixture corpus (ROMs, DATs, cache, catalogue
+// TSV) under root and returns a scanned store + scanner. Both the plain
+// dashboard server and the downloads server build on it.
+func fixtureScan(t *testing.T, root string) (*store.Store, *scanner.Scanner) {
 	t.Helper()
-	root := t.TempDir()
 	dbPath := filepath.Join(t.TempDir(), "arcade.db")
 
 	if err := fixture.WriteROMs(filepath.Join(root, "games", "cartridge")); err != nil {
@@ -70,7 +69,16 @@ func newTestServer(t *testing.T) *Server {
 	if _, err := scan.Scan(); err != nil {
 		t.Fatalf("fixture scan: %v", err)
 	}
+	return st, scan
+}
 
+// newTestServer builds the full template+handler stack over a scanned
+// fixture tree — the render smoke test runs the real templates, not a
+// reimplementation.
+func newTestServer(t *testing.T) *Server {
+	t.Helper()
+	root := t.TempDir()
+	st, scan := fixtureScan(t, root)
 	srv, err := New(st, scan)
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -106,6 +114,18 @@ func TestDashboardRendersFixtureCards(t *testing.T) {
 		`id="system-cards"`,
 		`hx-trigger="every 10s"`, // htmx polling on both fragments
 		`hx-post="/rescan"`,      // rescan button
+		// P1-critic a11y carry (landed with P2): meters are real
+		// progressbars, polled regions are announced. (Unit fixture
+		// coverages: nes 60%, snes/gb 0% — snes's 100% is the VM
+		// fixture's assertion.)
+		`role="progressbar"`,
+		`aria-valuenow="60"`, // nes coverage meter
+		`aria-valuenow="0"`,  // gb — 0% still carries a value
+		`aria-live="polite"`,
+		// The download stage now has a dashboard surface (P1 critic's
+		// named gap): its summary fragment hook.
+		`id="downloads-summary"`,
+		`hx-get="/partials/downloads-summary"`,
 	} {
 		if !strings.Contains(body, marker) {
 			t.Errorf("GET /: body missing marker %q", marker)
@@ -166,7 +186,9 @@ func TestRescanKicksScan(t *testing.T) {
 	h := srv.Handler()
 
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest("POST", "/rescan", nil))
+	req := httptest.NewRequest("POST", "/rescan", nil)
+	req.Header.Set("X-HX-Request", "true") // mutating endpoints are htmx-only (CSRF posture)
+	h.ServeHTTP(rec, req)
 	if rec.Code != 202 {
 		t.Fatalf("POST /rescan: status = %d, want 202", rec.Code)
 	}

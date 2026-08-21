@@ -4,7 +4,8 @@
      cards would bury the signal). Polled every 10s; id="system-cards"
      is the hx target. */ -}}
 {{define "partial-systems"}}
-<div id="system-cards" hx-get="/partials/systems" hx-trigger="every 10s" hx-swap="outerHTML">
+<div id="system-cards" hx-get="/partials/systems" hx-trigger="every 10s" hx-swap="outerHTML"
+     role="region" aria-label="system cards" aria-live="polite">
   <div class="cards">
     {{range .Cards}}
     <div class="card{{if not .Active}} empty{{end}}"
@@ -24,9 +25,15 @@
         <span class="k">art</span><span class="v">
           {{if ge .CoveragePct 0}}{{.CoveragePct}}%{{else}}—{{end}}
         </span>
-        <div class="meter" title="cache coverage {{.CoveragePct}}%">
-          {{if ge .CoveragePct 0}}<span style="width: {{.CoveragePct}}%"></span>{{end}}
+        {{if ge .CoveragePct 0}}
+        <div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+             aria-valuenow="{{.CoveragePct}}" aria-label="cache coverage {{.Collection}}"
+             title="cache coverage {{.CoveragePct}}%">
+          <span style="width: {{.CoveragePct}}%"></span>
         </div>
+        {{else}}
+        <div class="meter" aria-hidden="true" title="cache coverage unknown"></div>
+        {{end}}
       </div>
     </div>
     {{end}}

@@ -89,6 +89,7 @@ type SystemSummary struct {
 	Collection   string
 	Bucket       string
 	SortOrder    int
+	Torrent      string // catalogue torrent basename ("" = no staged torrent)
 	GameCount    int64
 	TotalBytes   int64
 	Verified     int64  // games with verify_state='verified' (P3 flips these)
@@ -485,7 +486,7 @@ func (s *Store) RecentRuns(n int) ([]Run, error) {
 // catalogue order — the dashboard card wall query.
 func (s *Store) SystemSummary() ([]SystemSummary, error) {
 	rows, err := s.db.Query(`
-		SELECT s.key, s.collection, s.bucket, s.sort_order,
+		SELECT s.key, s.collection, s.bucket, s.sort_order, s.torrent,
 		       COALESCE(g.cnt, 0), COALESCE(g.bytes, 0),
 		       COALESCE(g.verified, 0), COALESCE(g.unmatched, 0),
 		       COALESCE(d.date, ''), COALESCE(d.version, ''), COALESCE(d.rom_count, 0),
@@ -505,7 +506,7 @@ func (s *Store) SystemSummary() ([]SystemSummary, error) {
 	var out []SystemSummary
 	for rows.Next() {
 		var r SystemSummary
-		if err := rows.Scan(&r.Key, &r.Collection, &r.Bucket, &r.SortOrder,
+		if err := rows.Scan(&r.Key, &r.Collection, &r.Bucket, &r.SortOrder, &r.Torrent,
 			&r.GameCount, &r.TotalBytes, &r.Verified, &r.Unmatched,
 			&r.DATDate, &r.DATVersion, &r.DATRomCount,
 			&r.CacheEntries); err != nil {

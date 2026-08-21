@@ -2,7 +2,8 @@
      recent runs. Polled every 10s; the rescan POST returns this same
      fragment refreshed. id="status-panel" is the hx target. */ -}}
 {{define "partial-status"}}
-<div id="status-panel" hx-get="/partials/status" hx-trigger="every 10s" hx-swap="outerHTML">
+<div id="status-panel" hx-get="/partials/status" hx-trigger="every 10s" hx-swap="outerHTML"
+     role="region" aria-label="pipeline status" aria-live="polite">
   <div class="status-strip">
     <div class="stat">
       <span class="k">scan</span>
