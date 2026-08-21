@@ -61,12 +61,20 @@ DRV_PATH="${DRV_PATH:-}"
 # (secret-key:<name>:<base32>) readable by root — the workflows stage it from
 # the HARMONIA_SECRET_KEY secret next to the hook install.
 SIGN_KEY_FILE="${HARMONIA_SIGNING_KEY_FILE:-}"
-if command -v nix >/dev/null 2>&1 && [ -n "$SIGN_KEY_FILE" ] && [ -r "$SIGN_KEY_FILE" ]; then
+# Resolve nix the way cache-drainer.sh does: the hook inherits the DAEMON's
+# environment (systemd secure_path on Ubuntu runners), where `nix` is NOT on
+# PATH — `command -v nix` silently failed here on every run, so nothing was
+# ever signed and europa (require-sigs=true) rejected every push.
+NIX_HOOK="${NIX_BIN:-}"
+[ -z "$NIX_HOOK" ] && NIX_HOOK="$(command -v nix 2>/dev/null || true)"
+[ -z "$NIX_HOOK" ] && [ -x /nix/var/nix/profiles/default/bin/nix ] && NIX_HOOK=/nix/var/nix/profiles/default/bin/nix
+if [ -n "$NIX_HOOK" ] && [ -x "$NIX_HOOK" ] && [ -n "$SIGN_KEY_FILE" ] && [ -r "$SIGN_KEY_FILE" ]; then
     # shellcheck disable=SC2086  # OUT_PATHS is deliberately space-split (set -f above)
-    nix store sign --key-file "$SIGN_KEY_FILE" $OUT_PATHS 2>>"$LOG" \
+    "$NIX_HOOK" store sign --key-file "$SIGN_KEY_FILE" $OUT_PATHS 2>>"$LOG" \
         || printf '[%s] WARNING: nix store sign failed — europa (require-sigs=true) will reject these paths at push time\n' "$(date -u +%s)" >> "$LOG"
 else
-    printf '[%s] WARNING: no readable signing key (HARMONIA_SIGNING_KEY_FILE) — europa (require-sigs=true) will reject these paths at push time\n' "$(date -u +%s)" >> "$LOG"
+    printf '[%s] WARNING: no usable nix (%s) or no readable signing key (%s) — europa (require-sigs=true) will reject these paths at push time\n' \
+        "$(date -u +%s)" "${NIX_HOOK:-unset}" "${SIGN_KEY_FILE:-unset}" >> "$LOG"
 fi
 
 # Format per output: STATUS<TAB>STORE_PATH<TAB>DERIVATION<TAB>TIMESTAMP.

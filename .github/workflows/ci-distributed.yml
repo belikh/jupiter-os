@@ -481,6 +481,19 @@ jobs:
           echo "nix-daemon restarted with post-build-hook"
           nix show-config post-build-hook
 
+          # Signing preflight: prove the hook's exact signing path works
+          # BEFORE burning 40 minutes of distributed build. Mimics the daemon
+          # environment: no PATH lookup for nix, full binary path only.
+          # 2026-08-22: every push was landing unsigned ("lacks a signature by
+          # a trusted key") because the hook couldn't resolve nix under the
+          # daemon's secure_path — this check makes that failure instant.
+          NIX_ABS="$(command -v nix)"
+          echo ci-signcheck | sudo tee /tmp/ci-signcheck >/dev/null
+          SIGNCHECK_P="$(sudo "$NIX_ABS" store add-file /tmp/ci-signcheck)"
+          sudo "$NIX_ABS" store sign --key-file /etc/nix/harmonia-signing-key "$SIGNCHECK_P" \
+            || { echo "::error::Signing preflight FAILED — europa require-sigs will reject all pushes. Check HARMONIA_SECRET_KEY format (must be 'secret-key:<name>:<base32>') and daemon env."; exit 1; }
+          echo "::notice::Signing preflight OK ($SIGNCHECK_P signed)"
+
           # Launch the drainer (runner user). It holds the FIFO open on fd 3 and
           # loops for the whole build, so it must outlive this step (nohup + &).
           # EUROPA_STORE/EUROPA_SSH/EUROPA_KEY point cache-drainer.sh at root@europa
