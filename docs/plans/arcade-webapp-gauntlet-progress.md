@@ -6,11 +6,11 @@ every critic verdict. Screenshots (when they exist) land under
 `arcade-webapp-gauntlet/` next to this file.
 
 - **Phase:** 2 in progress — **P1 won** (blind critic, 1 loop, 0 rebuilds) ·
-  **P2 won** (blind critic, 1 loop, 0 rebuilds) · P3 next
+  **P2 won** (blind critic, 1 loop, 0 rebuilds) · **P3 built — in review**
 - **Branch:** `arcade/webapp-gauntlet`
 - **ADR:** [ADR-0002 — custom, not RomM](../adr/0002-arcade-webapp-custom-vs-romm.md)
   (D1 research-confirmed 2026-08-21; D2–D4 accepted)
-- **Last update:** 2026-08-21 16:20 AEST
+- **Last update:** 2026-08-22 04:35 AEST
 
 ## Piece table
 
@@ -18,7 +18,7 @@ every critic verdict. Screenshots (when they exist) land under
 |---|---|---|---|---|---|
 | P1 — Pipeline dashboard | **won** | 1 (0 rebuilds) | **ours** (blind, labels stripped; DOM A/B, data-scale asymmetry disclosed+discounted) | download stage has no surface (queue depth/active/errored/throughput) — folds into P2; meters lack `role="progressbar"`/`aria-valuenow`, polling regions lack `aria-live` (carry to P2) | `p1-ours-desktop.png`, `p1-ours-mobile.png`, `p1-bar-desktop.png`; critic: "B answers the 5-second question in one strip… A contains zero pipeline vocabulary — verify 0, torrent 0, scan 0, coverage 0" |
 | P2 — Download control | **won** | 1 (0 rebuilds) + adversarial reconciliation | **ours** (blind, labels stripped; A=AriaNg's literal list-view template extracted from its shipped JS bundle, B=ours rendering a live aria2d queue: 2 active 64 MiB, 1 paused, 3 completed) | acquire column is a dead end when the torrent is missing — no stage/paste/trigger control on-page (carried to P3) | `p2-ours-downloads.html`, `p2-bar-ariang-list-template.html`, `p2-ours-{desktop,mobile}.png`; critic: "B understands the job is a collection pipeline, not a file list… A manages the daemon, not the collection"; implementation commits `f883582`/`ad361c2`/`b8f8315`/`f0b29b2`, review fixes `4be90e9`/`dfa680b` |
-| P3 — Verify & organize | pending | 0 | — | — | — |
+| P3 — Verify & organize | **review** | 1 (real-igir bring-up: 3 root-caused VM failures, 0 masked) + adversarial review pending | — (critic run pending) | — | commits `ca09507` (Go half) + `b1809bc`/`ce84fde` (real-igir refinements + wiring); VM smoke 27 steps green ×2 consecutive incl. REAL igir amber-extra → green zero-unmatched on a fresh promotion (log excerpt in the Phase 3 verification section) |
 | P4 — Library browsing | pending | 0 | — | — | — |
 | P5 — Metadata engine control | pending | 0 | — | — | — |
 | P6 — Launcher DB generator | pending | 0 | — | — | — |
@@ -146,6 +146,56 @@ rejected. Piece stays in `review` until the blind critic.
 | `make fmt` then `make fmt-check` | **pass** (2026-08-21) | clean, no diff |
 | `make check` | **pass** (2026-08-21) | every host evals incl. the VM host with torrentDir in RequiresMountsFor |
 
+### Phase 3 (P3 — verify & organize + DAT currency)
+
+Builder loop 1 on `ca09507` (committed Go half) + the working-tree
+refinements, now committed as `b1809bc` (real-igir semantics) +
+`ce84fde` (module/VM wiring). Bring-up ran the VM **8 times**: 5
+failures, each chased to root cause (never masked), then 2 consecutive
+clean PASSes on the final config + 1 earlier flake class hardened
+against. Full detail:
+
+| Command | Result | Notes |
+|---|---|---|
+| `go build ./... && go vet ./...` (in `pkgs/arcade-webapp`) | **pass** (2026-08-22) | gofmt also clean (4 files the uncommitted session left unaligned were `gofmt -w`'d — whitespace only) |
+| `go test -count=1 ./...` (in `pkgs/arcade-webapp`) | **pass** (2026-08-22, after fixes) | new since ca09507: `TestParseReportProvenance` (input/output × UNUSED/DUPLICATE + neither-side→Other), `TestMigrateV2DatabaseStepsToV3`, `TestDATRefreshAllSurvivesHandlerReturn` (real `httptest.NewServer` — recorder contexts are never cancelled, so they cannot see the handler-return cancellation bug), re-verify-echo-stays-green + amber-extra pills through the real templates, argv pin updated to the input-anchored exclude |
+| `nix build .#arcade-webapp` | **pass** (2026-08-22) | no vendorHash change (stdlib-only edits since ca09507 — the D-P1e rule held); binary smoke: starts, logs secret-presence paths |
+| `make test-arcade-webapp` | **pass** (2026-08-22, runs 7+8: 2 consecutive on the final config) | all 27 smoke steps: P1 dashboard → P2 download cycle (pause/resume/complete, secret grep) → P3: worklist + CSRF matrix (5 new endpoints), stubbed DAT refresh (currency date 2026-08-21→22 rendered, dat-fetch run recorded), unmapped wiiu surfaces its mapping error, `.aria2` whole-system skip (no report written), **REAL igir** nes verify amber `2 extra` (zips in the tree — provenance split live) → tree aligned + output emptied → **green zero-unmatched with the promotion files physically written by igir**, dashboard card flips verified, a2600 promote-unchecked, verify-all green (nes idempotent under re-verify echoes), stage-torrent under the catalogue name (acquire goes live; `.sh`→400, unknown system→404), stage-uri magnet queued / ftp→400 |
+| `make fixture-arcade` | **pass** (2026-08-22) | igir gate still zero-unmatched (nes 5/5, snes 4/4, gb 4/4 FOUND) — the corpus DATs/ROMs untouched by the VM changes |
+| `make fmt` then `make fmt-check` | **pass** (2026-08-22) | clean, no diff |
+| `make check` | **pass** (2026-08-22) | every host evals incl. the VM host with the new P3 options/services |
+
+**Bring-up failure log (each root-caused, none masked):**
+
+1. **Run 1 — `1 unmatched`, never amber:** the REAL aria2 writes an
+   infohash-named `.torrent` into every download dir even via
+   `addTorrent` (disproven docs claim magnet-only; proven with a local
+   daemon + `aria2.addTorrent` reproduction). The companion surfaced as
+   input-side UNUSED → red. Fix: `--input-exclude` (D-P3e) — the
+   served CSV now literally carries zero unmatched rows for them.
+2. **Run 2 — no report at all:** the first exclude attempt used a bare
+   `**/*.torrent`, which igir expands against the filesystem from the
+   **process cwd** — as root under cwd=/ it crawled the entire nix
+   store for minutes (hang). Diagnosed by the added `ps` hang-check in
+   the smoke's DEBUG block; proven locally (`EACCES: scandir '/root'`
+   as a normal user from cwd=/). Fix: anchor the glob to the absolute
+   input dir (`<input>/**/*.torrent`) — bounded walk, exclusion still
+   proven effective. Also fixed the runner's silent parse-failure
+   early return (no journal trace — cost the blind debug round).
+3. **Run 3 — silent 300 s burn at the aria2-wait step (flake class):**
+   the daemon stalled mid-startup once; the smoke's unbounded curls
+   turned it into a silent full-budget timeout with no FAIL marker
+   (ADV-P1-04's lesson in a new costume). Fix: `--max-time 10` on every
+   smoke curl + stall diagnostics every 20 misses + driver timeout
+   300→480 s (real igir is node). Did not recur in runs 4–8.
+4. **Run 5 — igir hang confirmed** (the `ps` DEBUG caught the crawling
+   node process with the bare glob in argv) — same root cause as 2.
+5. **Run 6 — `dat-fetch` audit grep failed:** the status partial
+   renders only the newest 8 runs; P3's verify runs + post-verify
+   rescans pushed the early dat-fetch row out of the window before the
+   grep. Fix: assert each run kind at the step that records it (the
+    assertion moved into the DAT-refresh block; documented in the smoke).
+
 ## Decision log
 
 | Decision | Verdict | Status | Evidence |
@@ -164,6 +214,11 @@ rejected. Piece stays in `review` until the blind critic.
 | D-P2b — aria2 secret wiring: same existing sops key, no module-level declaration | `aria2SecretFile` keeps its null default + `config.sops.secrets.jupiter_aria2_rpc_secret.path` example (the SAME key `modules/services/aria2.nix` declares when the daemon is enabled — no new secret is created). The webapp module deliberately does NOT declare `sops.secrets.*` itself: a declaration under `mkIf enable` would force sops-nix into every consumer, breaking the deliberately sops-free VM test host (which passes an invented local test value instead — never a fleet secret). On europa the daemon's own declaration covers the key; a host enabling the webapp without the daemon gets a loud eval error pointing at the missing declaration. The webapp needs no new privileges: root + `ProtectSystem=strict` already reads `/run/secrets`, and the daemon — not the webapp — writes the download tree (aria2 creates `incoming/<sys>` itself, owned by the daemon user, which is exactly the ownership rom-acquire's `install -d` engineered) | decided | `modules/services/arcade-webapp.nix` option docs; CLAUDE.md secrets discipline |
 | D-P2c — CSRF posture for mutating endpoints (closes ADV-P1-07) | every POST (incl. P1's `/rescan`) requires htmx's `X-HX-Request` header, else 403. Rationale: the service is LAN-only and cookie-less (no session to ride), so the htmx-documented custom-header check is the proportionate defense against cross-site form posts; plain curl callers just add the header (smoke does). Unit-tested for all five mutating routes; VM smoke asserts both the 202 (with header) and the 403 (without) | decided | `internal/web/downloads.go` `hxRequestOK`; `TestMutatingEndpointsRequireHTMXHeader`; VM smoke rescan section |
 | D-P2d — VM serial-getty masked | the first P2 VM run died silently after "pause works" — no FAIL marker, machine powered off: the serial-getty's terminal-reset escape sequences on `/dev/ttyS0` interleaved with the smoke's output window (ADV-P1-04's race in a new costume). The vmVariant now disables `serial-getty@ttyS0` outright (the smoke is a systemd service; no shell needed), the resume step prints its POST status + periodic queue-state markers, and the driver honors `LOGFILE=` so failed runs keep their serial log | decided | `f0b29b2`; captured log of the silent death |
+| D-P3a — igir sourcing: `pkgs.igir` from the fleet-pinned nixpkgs | igir 5.3.0 is IN the pinned nixpkgs (`nix eval nixpkgs#igir.version` = 5.3.0; same store path `37x4dna…-igir-5.3.0` inside the VM), i.e. the exact binary `make fixture-arcade` pins via `nix run --inputs-from . nixpkgs#igir` — so the module defaults `igirPackage = pkgs.igir` (overridable package option) and the VM runs the REAL igir, no store-path workaround, no new flake input (AC-9) | decided | `modules/services/arcade-webapp.nix` `igirPackage`; VM journal `verify runner wired (igir …-igir-5.3.0/…)`; fixture gate |
+| D-P3b — DAT fetch host stubbed in the VM, darkhttpd doubled | the same in-VM darkhttpd that serves the P2 webseed also serves a stubbed Fresh1G1R tree at `http://127.0.0.1:8099/dats` (`datFetchBaseUrl` override) — tests never touch GitHub (house/A7 discipline). The stub serves a **re-dated copy** (2026-08-21→2026-08-22, sed) of the same committed nes DAT, so the refresh is *observable* in the UI (currency date moves) and darkhttpd's percent-decoding is load-bearing for the encoded McLean filenames (verified locally before wiring) | decided | `tests/hosts/arcade-webapp-vm.nix` stubRoot; smoke `DAT refresh via stub host worked (date 2026-08-22 rendered)` |
+| D-P3c — igir CSV provenance semantics (input-side vs output-side) | igir scans BOTH `--input` and `--output`, so the same Status means different things per side — proven by running the real 5.3.0 over the fixture corpus with a pre-populated output tree. Adopted mapping: input-side UNUSED/DUPLICATE → **unmatched** (red — staged set deviates from 1G1R); output-side UNUSED → **extra** (amber — games-tree files the DAT doesn't claim; new schema v3 column); output-side DUPLICATE → **echo** (benign/informational — COPY keeps the staged input, so every re-verify after the first promotion emits these; counting them red would flip every green system red on its second verify); neither side → other (red, conservative). Alternative rejected: discounting the rows at parse time only — the served CSV would then literally show UNUSED rows against a green pill (a lying indicator) | decided | `internal/igir/runner.go` Report docs; `TestParseReportProvenance`; VM amber→green sequence |
+| D-P3d — VM writable trees + hermetic disk | the games trees/DAT dir are materialized as WRITABLE copies by a oneshot ordered before the webapp unit (ReadWritePaths must exist at namespace-build time, D-P1f — and igir COPY-promotes into them; read-only store paths fail both), with the ROM corpus staged under `incoming/<sys>` (the .zip scanner shapes stay games-tree-only: staged zips would model junk-arrived-in-staging). The driver also takes a **fresh qcow2 per run** under a mktemp dir: the stock build-vm runner reuses `./<host>.qcow2` resolved against the invoking cwd, and surviving SQLite state once made fresh-tree assertions lie (nes already 'unmatched' before any verify) | decided | `tests/hosts/arcade-webapp-vm.nix` materialize service; `scripts/test-arcade-webapp.sh` hermetic-disk block |
+| D-P3e — aria2 `.torrent` metadata companions excluded at the igir argv | the pinned aria2 1.37.0 writes an infohash-named `.torrent` into every download dir **even via `aria2.addTorrent`** (its docs claim magnet-only; disproven with a local daemon+RPC reproduction — so europa's real incoming tree will hold these after every acquire). They are daemon bookkeeping, not staged ROM content, and no DAT can ever claim a `.torrent` ROM — so `runIgir` adds the ONE deliberate deviation from cartridge-verify.sh's flag set: `--input-exclude <input>/**/*.torrent`. The report then literally carries zero unmatched rows for them (pill and CSV agree). Two load-bearing details, both proven against real igir 5.3.0: the glob must be `**` (a bare `*.torrent` does not cross separators) and must be **anchored to the absolute input dir** (igir expands exclude globs against the filesystem from the process cwd — a bare `**/*.torrent` under cwd=/ crawled the whole nix store for minutes as root, exactly the run-2/5 VM hang) | decided | `internal/igir/runner.go` runIgir; `TestArgvMatchesCartridgeVerifyScript`; local repro transcripts; VM run 6+ green with the companion deliberately left in staging |
 
 ## Gauntlet scoreboard
 
