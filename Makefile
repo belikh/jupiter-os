@@ -1,4 +1,4 @@
-.PHONY: build-all check update fmt fmt-check verify-arcade status-arcade fixture-arcade docs docs-serve
+.PHONY: build-all check update fmt fmt-check verify-arcade status-arcade fixture-arcade test-arcade-webapp docs docs-serve
 
 # Build every registered host closure (the 4 dashboard kiosks).
 build-all:
@@ -59,6 +59,14 @@ status-arcade:
 # (override with IGIR=/path/to/igir to use a local binary).
 fixture-arcade:
 	./scripts/fixture-arcade.sh
+
+# Arcade webapp pipeline VM test (gauntlet plan §4 Phase 1): boots the
+# minimal test host tests/hosts/arcade-webapp-vm.nix — the real
+# modules/services/arcade-webapp.nix against the fixture corpus — and
+# asserts service up, /healthz, dashboard fixture counts, rescan. Needs
+# /dev/kvm for a sane boot time.
+test-arcade-webapp:
+	./scripts/test-arcade-webapp.sh
 
 # Update flake locks
 update:
