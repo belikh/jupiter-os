@@ -272,8 +272,8 @@ func TestDATHeaderParseMcLeanShape(t *testing.T) {
 		t.Errorf("mclean-shape.dat version/roms = %q/%d", info.Version, info.RomCount)
 	}
 	now := time.Date(2026, 8, 21, 0, 0, 0, 0, time.UTC)
-	if got := AgeDays(info.Date, now); got != 60 {
-		t.Errorf("AgeDays(%q) = %d, want 60 (2026-06-22 → 2026-08-21)", info.Date, got)
+	if got := AgeDays(info.Date, now); got != 59 {
+		t.Errorf("AgeDays(%q) = %d, want 59 (2026-06-22 07:44:23 → 2026-08-21 00:00 = 59.67d, truncated)", info.Date, got)
 	}
 }
 
@@ -309,9 +309,11 @@ func TestAgeDays(t *testing.T) {
 		"":           -1,
 		"garbage":    -1,
 		// ADV-P1-02: the Fresh1G1R McLean family — space separator,
-		// dash time — plus the colon variant, defensively.
-		"2026-06-22 07-44-23": 60,
-		"2026-06-22 07:44:23": 60,
+		// dash time — plus the colon variant, defensively. 59, not 60:
+		// the 07:44:23 build time makes the elapsed 59.67d at midnight,
+		// and AgeDays truncates (same semantics as the plain-date cases).
+		"2026-06-22 07-44-23": 59,
+		"2026-06-22 07:44:23": 59,
 	}
 	for date, want := range cases {
 		if got := AgeDays(date, now); got != want {
