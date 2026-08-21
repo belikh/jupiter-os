@@ -5,18 +5,18 @@ The live heartbeat of the builder/critic loop driving
 every critic verdict. Screenshots (when they exist) land under
 `arcade-webapp-gauntlet/` next to this file.
 
-- **Phase:** 1 **P1 built — in review** (module + scanner + dashboard +
-  VM test landed; next: adversarial review, then the blind critic)
+- **Phase:** 1 **P1 in review — adversarial findings reconciled** (5 fixed,
+  3 accepted; blind critic is next)
 - **Branch:** `arcade/webapp-gauntlet`
 - **ADR:** [ADR-0002 — custom, not RomM](../adr/0002-arcade-webapp-custom-vs-romm.md)
   (D1 research-confirmed 2026-08-21; D2–D4 accepted)
-- **Last update:** 2026-08-21 12:45 AEST
+- **Last update:** 2026-08-21 14:05 AEST
 
 ## Piece table
 
 | Piece | State | Builder loops | Last critic verdict | Critic's named gap | Evidence |
 |---|---|---|---|---|---|
-| P1 — Pipeline dashboard | review | 1 | — | — | see Phase 1 log below |
+| P1 — Pipeline dashboard | review | 1 (review round: 5 findings fixed, 3 accepted) | — | — | reconciliation table below |
 | P2 — Download control | pending | 0 | — | — | — |
 | P3 — Verify & organize | pending | 0 | — | — | — |
 | P4 — Library browsing | pending | 0 | — | — | — |
@@ -55,6 +55,33 @@ every boundary, pass/fail/blocked — never asserted without a run.
 | `make fmt` then `make fmt-check` | **pass** (2026-08-21) | clean |
 | `make check` | **pass** (2026-08-21) | all hosts eval incl. the new `arcade-webapp-vm` — needed the classic grub `nodev` + by-label root placeholder because flake check asserts toplevel bootability (test host boots direct-kernel) |
 | `make test-arcade-webapp` | **pass** (2026-08-21, 3 runs incl. final config) | real module + real fleet TSV (61 systems) against the deterministic fixture tree; in-VM smoke asserts: `/healthz` 200, dashboard cards `nes data-games="5" data-coverage="60"`, `snes 4/100%`, `gb 4/0%`, fixture DAT date rendered, 58-empty-systems footer, partials fragment-shaped, `POST /rescan` → 202 + second run recorded. Two real module bugs found and fixed en route (see D-P1e/D-P1f) |
+
+### Phase 1 adversarial review — reconciliation (2026-08-21)
+
+Verdict **FIX**; 8 findings: **5 fixed** (`e423d5a`…`429ada1`), **3 accepted
+with rationale**, none rejected. Piece stays in `review` until the blind critic.
+
+| Finding | Disposition | What changed |
+|---|---|---|
+| ADV-P1-01 HIGH — walk missed zips + cue/bin companions | **fixed** (`e423d5a` + VM fixture in `429ada1`) | `scanSystemDir` extracted with real-tree semantics: game = extension match ∪ zip; companion bytes attributed (sole game in dir absorbs, else longest basename prefix); bare .bin not a game unless listed (a2600); dotfiles never count. RED→GREEN `walk_test.go` (7 tests). VM fixture now carries 2 nes zips + a segacd cue/bin rip, asserted end-to-end (nes 7/42%, segacd 1 game · 6.1 KiB, 57 empty) |
+| ADV-P1-02 MED — McLean DAT dates unparsed | **fixed** (`4cf6a98`, expectation fix `4ccca7c`) | AgeDays layouts += `"2006-01-02 15-04-05"` + colon variant; committed header-shape `testdata/dats/mclean-shape.dat` (shape only). RED: AgeDays = −1 on `"2026-06-22 07-44-23"`; GREEN: 59 (truncation — see below) |
+| ADV-P1-03 MED — walk error pruned games rows | **fixed** (`7503dd3`) | scanAll replaces only after a clean walk (absent dir = deliberate zero); any walk error keeps previous rows + a "kept previous rows" warning. RED needed a 1.1s sleep: the prune compares RFC3339-second `last_seen_at` strings, so a same-second rescan masked the wipe (`nes rows = 0, want 5` across the boundary) |
+| ADV-P1-04 MED — VM FAIL verdict raced autologin/timeout | **fixed** (`429ada1`) | autologin getty dropped (smoke is a service, needs no shell); fail()/pass() sync + settle 1s before poweroff. Mutation re-proof: impossible grep → `ARCADE-WEBAPP-VM: FAIL` in the serial log, make exit 1, **48 s wall** (was a silent 300 s burn); restored → clean PASS |
+| ADV-P1-05 LOW — warnings invisible + raw JSON detail | **fixed** (`9b83e84`) | health chip order scanning > error > N warnings > stale DATs > healthy; `runDetail` renders "N systems · G games · size" + up to 3 ⚠ lines (escaped, capped), non-scan payloads escaped+truncated, never raw JSON. RED→GREEN web tests |
+| ADV-P1-06 — Go TSV parser more lenient than Nix regex | **accepted** (doc sentence added in `e423d5a`) | benign: both agree on the committed TSV; Nix eval fails first on drift. Documented in the catalogue package comment |
+| ADV-P1-07 — /rescan has no CSRF check | **accepted, revisit in P2+** | bounded (LAN-only service, rescan is idempotent read-refresh) and sibling-consistent (suno-web/nom-web have no CSRF either); P2 adds state-mutating endpoints (pause/remove downloads) — CSRF review lands with them |
+| ADV-P1-08 — openFirewall is all-interfaces | **accepted, no change** | sibling-consistent with suno-web/aria2 modules on the same trusted LAN; interface-scoped binding is a fleet-wide pattern change, not a P1 fix |
+
+### Phase 1 post-review verification (fresh, on the reconciled tree)
+
+| Command | Result | Notes |
+|---|---|---|
+| `go test -count=1 ./...` (in `pkgs/arcade-webapp`) | **pass** (2026-08-21) | now incl. `walk_test.go` (zip/cue-bin/bin-listed/dotfile shapes), McLean date parsing, unreadable-dir row preservation, warning chip + humanized detail |
+| `make fixture-arcade` | **pass** (2026-08-21) | still zero-unmatched; the corpus DATs/ROMs were untouched (VM fixture shapes live only in the test host derivation) |
+| `nix build .#arcade-webapp` | **pass** (2026-08-21) | no vendorHash change (stdlib-only edits since the flip) |
+| `make fmt` then `make fmt-check` | **pass** (2026-08-21) | clean, no diff |
+| `make check` | **pass** (2026-08-21) | every host evals |
+| `make test-arcade-webapp` | **pass** (2026-08-21) | upgraded fixture assertions (nes 7 games/42% with zips, segacd cue+bin 1 game/6.1 KiB, 57 empty); mutation FAIL proof 48 s + exit 1, then clean PASS |
 
 ## Decision log
 
