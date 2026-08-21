@@ -29,8 +29,14 @@ SLOW_TIMEOUT=1200
 
 log_to_europa() {
   local msg="$1"
+  # base64 round-trip: the old `echo \"$msg\"` broke on any line containing
+  # quotes/$/backticks (remote shell syntax error, swallowed by ||true) —
+  # which is exactly what nix error lines contain. That is why logs showed
+  # "copying N paths..." and never the actual failure reason.
+  local b64
+  b64=$(printf '%s\n' "$msg" | base64 -w0) || return 0
   ssh -o ControlPath="$cm/%r@%h:%p" "$ssh" \
-    "mkdir -p /var/log/jupiter-ci && echo \"$msg\" >> $log_path" 2>/dev/null || true
+    "mkdir -p /var/log/jupiter-ci && echo $b64 | base64 -d >> $log_path" 2>/dev/null || true
 }
 
 log() {
@@ -43,6 +49,7 @@ log() {
 [[ -p "$SLOW_FIFO" ]] || mkfifo -m 666 "$SLOW_FIFO"
 
 log "drainer started (fast: ${FAST_TIMEOUT}s, slow: ${SLOW_TIMEOUT}s)"
+log "config: store=$store ssh=$ssh key=$key cm=$cm nix=$nix_bin fifo=$FAST_FIFO slow_fifo=$SLOW_FIFO"
 
 total_pushed=0
 enqueue_cnt="${ENQUEUE_CNT:-/var/run/nix-push-enqueued}"
@@ -68,10 +75,11 @@ flush() {
   # rewrites every child exit code in 1-125 to 123 — which is how the old
   # logs showed an undiagnosable wall of rc=123. Here rc is honest:
   # 124 = our timeout fired (candidate for the slow queue), anything else
-  # is nix's/ssh's own failure code with the stderr below.
+  # is nix's/ssh's own failure code with the stderr below. stdout is
+  # captured too: nothing the push prints may escape diagnosis.
   if timeout "$timeout_sec" env \
       NIX_SSHOPTS="-i $key -o ControlPath=$cm/%r@%h:%p -o StrictHostKeyChecking=accept-new" \
-      "$nix_bin" copy --to "$store" "$path" 2>"$err_file"; then
+      "$nix_bin" copy --to "$store" "$path" >"$err_file" 2>&1; then
     total_pushed=$((total_pushed + 1))
     status_line "$tag: pushed $path"
     rm -f "$err_file"
@@ -79,8 +87,12 @@ flush() {
   else
     local rc=$?
     status_line "$tag: push failed (rc=$rc)"
-    while IFS= read -r line; do log "  stderr: $line"; done < "$err_file"
+    while IFS= read -r line; do log "  out: $line"; done < "$err_file"
     rm -f "$err_file"
+    # One-shot probe on failure: separates auth/network breakage from
+    # store-protocol rejection (e.g. require-sigs) in one log line.
+    ssh -o ControlPath="$cm/%r@%h:%p" -o ConnectTimeout=10 "$ssh" true 2>/dev/null
+    log "  probe: ssh $ssh -> rc=$?"
     return "$rc"
   fi
 }
