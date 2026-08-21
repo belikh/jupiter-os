@@ -23,6 +23,10 @@ buildGoModule {
 
   src = ./.;
 
+  # Ship only the webapp binary; cmd/fixturegen is the test-corpus bootstrap
+  # (go run / make fixture-arcade), not part of the service.
+  subPackages = [ "cmd/arcade-webapp" ];
+
   vendorHash = null;
 
   ldflags = [ "-s" ];
