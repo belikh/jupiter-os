@@ -112,14 +112,34 @@
             {{if .Downloading}}<span class="chip">{{.ActivePct}}%</span>{{end}}
             {{if .GIDs}}<span class="chip">{{.GIDs}} in queue</span>{{end}}
           </td>
-          <td>{{verifyChip .GameCount .Verified .Unmatched}}</td>
+          <td>{{verifyStateChip .VerifyState .VerifyCounts}}</td>
           <td class="num">{{.GameCount}}</td>
           <td>
             {{if .TorrentOK}}
             <button class="mini primary" hx-post="/systems/{{.Key}}/acquire"
               hx-target="#downloads-panel" hx-swap="outerHTML"
               title="submit {{.TorrentName}} into incoming/{{.Key}} with aria2-rpc.sh resume semantics">acquire</button>
-            {{else if .TorrentName}}<span class="sub" title="{{.TorrentName}} not staged in torrentDir">torrent missing</span>
+            {{else if .TorrentName}}
+            {{/* P2 critic's named gap: the acquire dead-end when the
+                   torrent is not staged. Stage it here — upload the
+                   .torrent (stored under the catalogue-expected name) or
+                   paste a magnet/URL (submitted straight to the daemon
+                   with the acquire option shape). */}}
+            <details class="stage">
+              <summary class="mini" title="{{.TorrentName}} not staged in torrentDir">stage torrent…</summary>
+              <form hx-post="/systems/{{.Key}}/stage-torrent" hx-target="#downloads-panel" hx-swap="outerHTML"
+                    hx-encoding="multipart/form-data" class="stage-form">
+                <input type="file" name="torrent" accept=".torrent" required
+                       aria-label="torrent file for {{.Key}}">
+                <button class="mini" type="submit">upload .torrent</button>
+              </form>
+              <form hx-post="/systems/{{.Key}}/stage-uri" hx-target="#downloads-panel" hx-swap="outerHTML"
+                    class="stage-form">
+                <input type="text" name="uri" placeholder="magnet:?xt=… or https://…/set.torrent"
+                       maxlength="8192" required aria-label="magnet or URL for {{.Key}}">
+                <button class="mini" type="submit">queue URI</button>
+              </form>
+            </details>
             {{else}}<span class="sub">—</span>{{end}}
           </td>
         </tr>

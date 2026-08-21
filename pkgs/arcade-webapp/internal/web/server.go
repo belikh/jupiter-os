@@ -25,6 +25,8 @@ import (
 	"time"
 
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/aria2"
+	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/dats"
+	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/igir"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/scanner"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/store"
 )
@@ -42,22 +44,26 @@ type Server struct {
 	// Download control (P2): nil client = not configured. See downloads.go.
 	a2 *aria2.Client
 	dl dlPaths
+	// Verify + DAT manager (P3): nil = not configured. See verify.go.
+	ig *igir.Runner
+	df *dats.Fetcher
 }
 
 // New builds the webapp's HTTP handler over an opened store and scanner,
 // plus optional features (WithAria2 for download control).
 func New(st *store.Store, scan *scanner.Scanner, opts ...Option) (*Server, error) {
 	tmpl, err := template.New("").Funcs(template.FuncMap{
-		"humanBytes":   HumanBytes,
-		"age":          ageFrom,
-		"runPill":      runPill,
-		"runDuration":  runDuration,
-		"runDetail":    runDetail,
-		"verifyPill":   verifyPill,
-		"verifyChip":   verifyChip,
-		"dlStatusPill": dlStatusPill,
-		"dlStateClass": dlStateClass,
-		"speed":        speedHuman,
+		"humanBytes":      HumanBytes,
+		"age":             ageFrom,
+		"runPill":         runPill,
+		"runDuration":     runDuration,
+		"runDetail":       runDetail,
+		"verifyPill":      verifyPill,
+		"verifyStateChip": verifyStateChip,
+		"dlStatusPill":    dlStatusPill,
+		"dlStateClass":    dlStateClass,
+		"speed":           speedHuman,
+		"mul100":          mul100,
 	}).ParseFS(content, "templates/*.html")
 	if err != nil {
 		return nil, fmt.Errorf("web: parse templates: %w", err)
@@ -80,6 +86,16 @@ func New(st *store.Store, scan *scanner.Scanner, opts ...Option) (*Server, error
 	mux.HandleFunc("POST /downloads/{gid}/pause", s.dlControl("pause"))
 	mux.HandleFunc("POST /downloads/{gid}/resume", s.dlControl("resume"))
 	mux.HandleFunc("POST /downloads/{gid}/remove", s.dlControl("remove"))
+	// P3: verify & organize + DAT currency + torrent staging.
+	mux.HandleFunc("GET /verify", s.handleVerifyPage)
+	mux.HandleFunc("GET /partials/verify", s.handlePartialVerify)
+	mux.HandleFunc("POST /verify", s.handleVerifyAll)
+	mux.HandleFunc("POST /systems/{system}/verify", s.handleVerifySystem)
+	mux.HandleFunc("POST /dats/refresh", s.handleDATRefresh)
+	mux.HandleFunc("POST /systems/{system}/dat-refresh", s.handleDATRefreshSystem)
+	mux.HandleFunc("GET /verify/reports/{system}", s.handleVerifyReport)
+	mux.HandleFunc("POST /systems/{system}/stage-torrent", s.handleStageTorrent)
+	mux.HandleFunc("POST /systems/{system}/stage-uri", s.handleStageURI)
 	mux.HandleFunc("POST /rescan", s.handleRescan)
 	mux.HandleFunc("GET /", s.handleIndex)
 	s.handler = mux
@@ -107,6 +123,10 @@ type cardVM struct {
 	CacheEntries int64
 	Verified     int64
 	Unmatched    int64
+	// Verify pill (P3): the last report's classification + counts — the
+	// system-level zero-unmatched indicator, live since P3.
+	VerifyState  string
+	VerifyCounts store.VerifyResult
 }
 
 type totalsVM struct {
@@ -127,6 +147,7 @@ type pageMeta struct {
 	HealthClass  string
 	ActiveDash   bool
 	ActiveDloads bool
+	ActiveVerify bool
 }
 
 type incomingVM struct {
@@ -174,6 +195,8 @@ func (s *Server) viewModel() (dashboardVM, error) {
 			CacheEntries: sys.CacheEntries,
 			Verified:     sys.Verified,
 			Unmatched:    sys.Unmatched,
+			VerifyState:  classifyVerify(sys.Verify, sys.VerifyPresent),
+			VerifyCounts: sys.Verify,
 		}
 		if sys.DATDate != "" {
 			c.DATAgeDays = scanner.AgeDays(sys.DATDate, vm.Now)
@@ -405,12 +428,15 @@ func runWarnings(r store.Run) int {
 	return len(d.Warnings)
 }
 
-// runDetail renders a run's detail cell: scanner-shaped payloads
-// summarize ("N systems · G games · size") with up to three warning lines
-// beneath; anything else (error text, future phases' payloads) renders
-// escaped and length-capped. Never raw JSON (ADV-P1-05: an operator
-// reading the dashboard should not parse a JSON blob by eye).
+// runDetail renders a run's detail cell: kind-aware summaries (scan in
+// this function; verify/dat-fetch via runDetailForKind in verify.go),
+// anything else (error text, later phases' payloads) renders escaped and
+// length-capped. Never raw JSON (ADV-P1-05: an operator reading the
+// dashboard should not parse a JSON blob by eye).
 func runDetail(r store.Run) template.HTML {
+	if html, ok := runDetailForKind(r); ok {
+		return html
+	}
 	var d runDetailJSON
 	if err := json.Unmarshal([]byte(r.Detail), &d); err == nil && r.Kind == "scan" {
 		parts := []string{
@@ -469,12 +495,13 @@ func runDuration(r store.Run) string {
 	return end.Sub(start).Round(time.Millisecond).String()
 }
 
-// verifyPill renders the verify-state chip from what the DB knows: fully
-// verified → green, any unmatched → red, otherwise unknown (gray) — P1
-// data is all-'unknown' until P3's igir ingestion flips states. The
-// downloads system table shares the logic via verifyChip.
+// verifyPill renders the card wall's verify chip. Live since P3: the
+// classification comes from the last ingested igir report
+// (verify_results), not the per-game aggregates — the report is the
+// authoritative statement about the staged set. Unknown until the first
+// verify run lands.
 func verifyPill(c cardVM) template.HTML {
-	return verifyChip(c.GameCount, c.Verified, c.Unmatched)
+	return verifyStateChip(c.VerifyState, c.VerifyCounts)
 }
 
 // dlStatusPill renders a system's live download-state chip for the
@@ -498,6 +525,19 @@ func speedHuman(b int64) string {
 		return ""
 	}
 	return HumanBytes(b) + "/s"
+}
+
+// mul100 renders done*100/total (0 for total<=1 edge shapes) — the
+// verify batch progressbar's width.
+func mul100(done, total int) int {
+	if total <= 0 {
+		return 0
+	}
+	p := done * 100 / total
+	if p > 100 {
+		p = 100
+	}
+	return p
 }
 
 // dlStateClass maps an aria2 download status to the pill CSS class.

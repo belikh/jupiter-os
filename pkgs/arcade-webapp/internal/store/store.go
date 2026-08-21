@@ -26,7 +26,11 @@ import (
 
 // SchemaVersion is the current schema version, recorded in meta. Bump and
 // migrate forward in Migrate when a later phase changes the schema.
-const SchemaVersion = 1
+//
+// v2 (P3): verify_results persists the last igir report's per-system
+// aggregates (the zero-unmatched indicator's source), and staging carries
+// the scan-time per-system incoming staging summary (files/bytes/in-flight).
+const SchemaVersion = 2
 
 // SystemRow is one catalogue system as persisted (Extensions is a JSON
 // array string — enough for P1's rendering needs).
@@ -71,8 +75,8 @@ type InventoryRow struct {
 	GeneratedAt string
 }
 
-// Run is one pipeline job record (kind: scan today; verify/scrape/
-// generate later). Status: running | ok | error.
+// Run is one pipeline job record (kind: scan/acquire today; verify and
+// dat-fetch from P3; scrape/generate later). Status: running | ok | error.
 type Run struct {
 	ID         int64
 	Kind       string
@@ -80,6 +84,37 @@ type Run struct {
 	FinishedAt string
 	Status     string
 	Detail     string
+}
+
+// VerifyResult is the last igir verify outcome for one system — the
+// ingested shape of the report CSV (found/missing/unmatched/…) that the
+// zero-unmatched indicator renders from. One row per system, replaced by
+// each verify run; Unchecked marks the promote-without-DAT degradation
+// (cartridge-verify.sh's "better partial than blocked" path — grey, not
+// red).
+type VerifyResult struct {
+	SystemKey     string
+	RunID         int64
+	FinishedAt    string
+	DatGames      int
+	Found         int
+	Missing       int
+	Unmatched     int
+	Duplicate     int
+	Other         int
+	PromotedBytes int64
+	Unchecked     int // 1 = promoted as-is (no DAT)
+	ReportPath    string
+}
+
+// StagingRow is the scan-time summary of one system's incoming staging
+// tree (<incomingDir>/<sys>): file/byte counts plus whether aria2 control
+// files were present at scan time (download in flight).
+type StagingRow struct {
+	SystemKey string
+	Files     int64
+	Bytes     int64
+	InFlight  bool
 }
 
 // SystemSummary is the dashboard's card-wall row: one system joined with
@@ -98,6 +133,12 @@ type SystemSummary struct {
 	DATVersion   string
 	DATRomCount  int64
 	CacheEntries int64 // distinct game ids in the Skyscraper cache (heuristic)
+	// Last verify run's ingested report (zero-value when none recorded) —
+	// the system-level verify pill renders from this (P3), NOT from the
+	// per-game aggregates: the report is the authoritative statement about
+	// the staged set ("every DAT game found, nothing extra staged").
+	Verify        VerifyResult
+	VerifyPresent bool // a verify_results row exists
 }
 
 // Active reports whether the system has any signal to show (games, DAT, or
@@ -152,7 +193,10 @@ func Open(path string) (*Store, error) {
 	return s, nil
 }
 
-// Migrate creates the schema when needed. Idempotent.
+// Migrate creates/extends the schema. Idempotent; steps forward through
+// every version (a v1 database from an earlier phase migrates to v2 in
+// place — the webapp has never shipped to a host, but the VM test host's
+// state dir can survive across dev iterations).
 func (s *Store) Migrate() error {
 	var version int
 	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
@@ -161,7 +205,7 @@ func (s *Store) Migrate() error {
 	if version == SchemaVersion {
 		return nil
 	}
-	if version != 0 {
+	if version > SchemaVersion {
 		return fmt.Errorf("store: schema version %d is newer/unknown than supported %d — upgrade the webapp", version, SchemaVersion)
 	}
 	tx, err := s.db.Begin()
@@ -169,9 +213,18 @@ func (s *Store) Migrate() error {
 		return err
 	}
 	defer tx.Rollback() //nolint:errcheck // no-op after commit
-	for _, stmt := range schemaStatements {
-		if _, err := tx.Exec(stmt); err != nil {
-			return fmt.Errorf("store: migrate: %w", err)
+	if version < 1 {
+		for _, stmt := range schemaV1 {
+			if _, err := tx.Exec(stmt); err != nil {
+				return fmt.Errorf("store: migrate v1: %w", err)
+			}
+		}
+	}
+	if version < 2 {
+		for _, stmt := range schemaV2 {
+			if _, err := tx.Exec(stmt); err != nil {
+				return fmt.Errorf("store: migrate v2: %w", err)
+			}
 		}
 	}
 	if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, SchemaVersion)); err != nil {
@@ -180,7 +233,7 @@ func (s *Store) Migrate() error {
 	return tx.Commit()
 }
 
-var schemaStatements = []string{
+var schemaV1 = []string{
 	`CREATE TABLE meta (
 		key   TEXT PRIMARY KEY,
 		value TEXT NOT NULL
@@ -237,6 +290,30 @@ var schemaStatements = []string{
 		finished_at TEXT NOT NULL DEFAULT '',
 		status      TEXT NOT NULL,
 		detail      TEXT NOT NULL DEFAULT ''
+	)`,
+}
+
+var schemaV2 = []string{
+	`CREATE TABLE verify_results (
+		system_key     TEXT PRIMARY KEY REFERENCES systems(key) ON DELETE CASCADE,
+		run_id         INTEGER NOT NULL,
+		finished_at    TEXT NOT NULL,
+		dat_games      INTEGER NOT NULL DEFAULT 0,
+		found          INTEGER NOT NULL DEFAULT 0,
+		missing        INTEGER NOT NULL DEFAULT 0,
+		unmatched      INTEGER NOT NULL DEFAULT 0,
+		duplicate      INTEGER NOT NULL DEFAULT 0,
+		other          INTEGER NOT NULL DEFAULT 0,
+		promoted_bytes INTEGER NOT NULL DEFAULT 0,
+		unchecked      INTEGER NOT NULL DEFAULT 0,
+		report_path    TEXT NOT NULL DEFAULT ''
+	)`,
+	`CREATE TABLE staging (
+		system_key TEXT PRIMARY KEY REFERENCES systems(key) ON DELETE CASCADE,
+		files      INTEGER NOT NULL DEFAULT 0,
+		bytes      INTEGER NOT NULL DEFAULT 0,
+		in_flight  INTEGER NOT NULL DEFAULT 0,
+		computed_at TEXT NOT NULL
 	)`,
 }
 
@@ -483,14 +560,20 @@ func (s *Store) RecentRuns(n int) ([]Run, error) {
 }
 
 // SystemSummary returns every system with its scan aggregates, in
-// catalogue order — the dashboard card wall query.
+// catalogue order — the dashboard card wall query. The verify_results
+// join carries the last igir report's aggregates per system (P3).
 func (s *Store) SystemSummary() ([]SystemSummary, error) {
 	rows, err := s.db.Query(`
 		SELECT s.key, s.collection, s.bucket, s.sort_order, s.torrent,
 		       COALESCE(g.cnt, 0), COALESCE(g.bytes, 0),
 		       COALESCE(g.verified, 0), COALESCE(g.unmatched, 0),
 		       COALESCE(d.date, ''), COALESCE(d.version, ''), COALESCE(d.rom_count, 0),
-		       COALESCE(c.cache_entries, 0)
+		       COALESCE(c.cache_entries, 0),
+		       COALESCE(v.run_id, 0), COALESCE(v.finished_at, ''),
+		       COALESCE(v.dat_games, 0), COALESCE(v.found, 0), COALESCE(v.missing, 0),
+		       COALESCE(v.unmatched, 0), COALESCE(v.duplicate, 0), COALESCE(v.other, 0),
+		       COALESCE(v.promoted_bytes, 0), COALESCE(v.unchecked, 0), COALESCE(v.report_path, ''),
+		       CASE WHEN v.system_key IS NULL THEN 0 ELSE 1 END
 		FROM systems s
 		LEFT JOIN (SELECT system_key, COUNT(*) cnt, SUM(size_bytes) bytes,
 		                  SUM(CASE WHEN verify_state='verified' THEN 1 ELSE 0 END) verified,
@@ -498,6 +581,7 @@ func (s *Store) SystemSummary() ([]SystemSummary, error) {
 		           FROM games GROUP BY system_key) g ON g.system_key = s.key
 		LEFT JOIN dat_info d ON d.system_key = s.key
 		LEFT JOIN scrape_coverage c ON c.system_key = s.key
+		LEFT JOIN verify_results v ON v.system_key = s.key
 		ORDER BY s.sort_order, s.key`)
 	if err != nil {
 		return nil, err
@@ -509,12 +593,120 @@ func (s *Store) SystemSummary() ([]SystemSummary, error) {
 		if err := rows.Scan(&r.Key, &r.Collection, &r.Bucket, &r.SortOrder, &r.Torrent,
 			&r.GameCount, &r.TotalBytes, &r.Verified, &r.Unmatched,
 			&r.DATDate, &r.DATVersion, &r.DATRomCount,
-			&r.CacheEntries); err != nil {
+			&r.CacheEntries,
+			&r.Verify.RunID, &r.Verify.FinishedAt,
+			&r.Verify.DatGames, &r.Verify.Found, &r.Verify.Missing,
+			&r.Verify.Unmatched, &r.Verify.Duplicate, &r.Verify.Other,
+			&r.Verify.PromotedBytes, &r.Verify.Unchecked, &r.Verify.ReportPath,
+			&r.VerifyPresent); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+// RecordVerifyResult upserts one system's last-verify aggregates (each
+// verify run replaces the previous row — the pill always shows the latest
+// report).
+func (s *Store) RecordVerifyResult(r VerifyResult) error {
+	_, err := s.db.Exec(`INSERT INTO verify_results
+		(system_key, run_id, finished_at, dat_games, found, missing, unmatched, duplicate, other, promoted_bytes, unchecked, report_path)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+		ON CONFLICT(system_key) DO UPDATE SET
+		  run_id=excluded.run_id, finished_at=excluded.finished_at,
+		  dat_games=excluded.dat_games, found=excluded.found, missing=excluded.missing,
+		  unmatched=excluded.unmatched, duplicate=excluded.duplicate, other=excluded.other,
+		  promoted_bytes=excluded.promoted_bytes, unchecked=excluded.unchecked,
+		  report_path=excluded.report_path`,
+		r.SystemKey, r.RunID, r.FinishedAt, r.DatGames, r.Found, r.Missing,
+		r.Unmatched, r.Duplicate, r.Other, r.PromotedBytes, r.Unchecked, r.ReportPath)
+	return err
+}
+
+// SetSystemVerifyStates applies one verify run's per-game state flips for
+// a system in a single transaction: rel paths claimed by the report's
+// FOUND rows become 'verified', every OTHER row of the system becomes
+// 'unmatched' — the DAT is authoritative, so a games-tree file the DAT
+// does not cover is by definition not verified (cartridge-verify.sh's
+// design note: unmatched files are deliberately excluded from a 1G1R
+// collection; here they stay visible instead of vanishing).
+func (s *Store) SetSystemVerifyStates(systemKey string, verifiedRels []string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after commit
+	if _, err := tx.Exec(`UPDATE games SET verify_state='unmatched' WHERE system_key=?`, systemKey); err != nil {
+		return err
+	}
+	for _, rel := range verifiedRels {
+		if _, err := tx.Exec(`UPDATE games SET verify_state='verified' WHERE system_key=? AND rel_path=?`,
+			systemKey, rel); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// ReplaceStaging upserts the scan-time incoming staging summary rows.
+// Rows for systems absent from the batch are cleared (a scan that found
+// no incoming dir reports zeros, keeping the table in step with disk).
+func (s *Store) ReplaceStaging(rows []StagingRow) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after commit
+	if _, err := tx.Exec(`DELETE FROM staging`); err != nil {
+		return err
+	}
+	for _, r := range rows {
+		if _, err := tx.Exec(`INSERT INTO staging (system_key, files, bytes, in_flight, computed_at)
+			VALUES (?,?,?,?,?)`,
+			r.SystemKey, r.Files, r.Bytes, boolInt(r.InFlight), nowUTC()); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// StagingRows returns the per-system staging summaries in catalogue order.
+func (s *Store) StagingRows() ([]StagingRow, error) {
+	rows, err := s.db.Query(`SELECT t.system_key, t.files, t.bytes, t.in_flight
+		FROM staging t JOIN systems s ON s.key = t.system_key
+		ORDER BY s.sort_order`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	var out []StagingRow
+	for rows.Next() {
+		var r StagingRow
+		var inflight int
+		if err := rows.Scan(&r.SystemKey, &r.Files, &r.Bytes, &inflight); err != nil {
+			return nil, err
+		}
+		r.InFlight = inflight != 0
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+// GameVerifyState returns one game row's verify_state ("unknown" when
+// the row does not exist).
+func (s *Store) GameVerifyState(systemKey, relPath string) string {
+	var v string
+	_ = s.db.QueryRow(`SELECT verify_state FROM games WHERE system_key=? AND rel_path=?`,
+		systemKey, relPath).Scan(&v)
+	return v
 }
 
 // SetMeta upserts a meta key (scan telemetry the status strip reads back).
