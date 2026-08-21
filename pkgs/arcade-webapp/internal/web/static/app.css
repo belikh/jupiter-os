@@ -357,3 +357,162 @@ details.stage[open] > summary { border-style: solid; }
 
 /* verify actions row */
 .actions { display: flex; gap: 0.5rem; margin: 0.6rem 0 1rem; flex-wrap: wrap; }
+
+/* ---- library gallery (P4) --------------------------------------------- */
+
+.filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.9rem 0 0.25rem;
+  align-items: center;
+}
+.filter-bar input[type="search"],
+.filter-bar select {
+  font: inherit;
+  font-size: 0.88rem;
+  color: var(--text);
+  background: var(--surface0);
+  border: 1px solid var(--surface1);
+  border-radius: 8px;
+  padding: 0.35rem 0.6rem;
+}
+.filter-bar input[type="search"] { flex: 1 1 14rem; min-width: 9rem; }
+.filter-bar select:hover { border-color: var(--surface2); }
+.filter-bar :is(input, select):focus-visible {
+  outline: 2px solid var(--mauve);
+  outline-offset: 1px;
+}
+
+.gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0.9rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.gcard {
+  display: flex;
+  flex-direction: column;
+  background: var(--mantle);
+  border: 1px solid var(--surface0);
+  border-radius: 12px;
+  overflow: hidden;
+  color: inherit;
+  text-decoration: none;
+  transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+}
+.gcard:hover,
+.gcard:focus-visible {
+  text-decoration: none;
+  transform: translateY(-3px);
+  box-shadow: 0 12px 28px -14px rgb(0 0 0 / 75%);
+  border-color: color-mix(in srgb, var(--mauve) 45%, var(--surface0));
+}
+.gcard:focus-visible {
+  outline: 2px solid var(--mauve);
+  outline-offset: 2px;
+}
+
+.gcard-art {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  background: var(--surface0);
+}
+
+.gcard-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.55rem 0.65rem 0.65rem;
+}
+.gcard-title {
+  font-weight: 600;
+  font-size: 0.88rem;
+  line-height: 1.25;
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.gcard-meta { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; }
+.gcard-meta .pill { font-size: 0.7rem; padding: 0 0.5rem; }
+
+.hidden-chip {
+  color: var(--yellow);
+  border-color: color-mix(in srgb, var(--yellow) 40%, transparent);
+}
+
+.pager {
+  display: flex;
+  gap: 0.9rem;
+  align-items: center;
+  margin: 0.9rem 0;
+}
+.pager a {
+  color: var(--subtext1);
+  font-weight: 600;
+  font-size: 0.85rem;
+  background: var(--surface0);
+  border: 1px solid var(--surface1);
+  border-radius: 8px;
+  padding: 0.25rem 0.7rem;
+}
+.pager a:hover {
+  background: var(--surface2);
+  color: var(--text);
+  text-decoration: none;
+}
+.pager a:focus-visible { outline: 2px solid var(--mauve); outline-offset: 2px; }
+
+/* game detail (P4) */
+.back-link {
+  color: var(--overlay1);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.back-link:hover { color: var(--text); text-decoration: none; }
+
+.game-hero {
+  display: grid;
+  grid-template-columns: minmax(160px, 240px) 1fr;
+  gap: 1.25rem;
+  margin-top: 0.9rem;
+  align-items: start;
+}
+.game-hero .art {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  border-radius: 12px;
+  border: 1px solid var(--surface0);
+  box-shadow: 0 14px 32px -18px rgb(0 0 0 / 80%);
+}
+.game-meta { display: flex; flex-direction: column; gap: 0.55rem; min-width: 0; }
+.game-meta h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text);
+}
+.chips-row { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; margin: 0; }
+.game-facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.2rem 0.8rem;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+  margin: 0.4rem 0 0;
+}
+.game-facts .k { color: var(--overlay1); text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.06em; padding-top: 0.15rem; }
+.game-facts .v { color: var(--subtext1); overflow-wrap: anywhere; }
+@media (max-width: 540px) {
+  .game-hero { grid-template-columns: 1fr; }
+  .game-hero .art { max-width: 240px; }
+}

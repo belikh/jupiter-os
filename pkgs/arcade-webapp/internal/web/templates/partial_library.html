@@ -1,0 +1,36 @@
+{{/* Library gallery fragment (P4): the card grid + pager that the filter
+      bar swaps (#library-grid). Each card is ONE anchor — cover art,
+      title, system chip, per-game verify pill, hidden marker — so the
+      whole tile is clickable and keyboard-reachable. Pager links are
+      real /library URLs preserving every active filter param. */ -}}
+{{define "partial-library"}}
+<div id="library-grid" role="region" aria-label="game gallery">
+  <p class="sub">{{.CountShown}} of {{.Total}} games{{if .Q}} matching “{{.Q}}”{{end}}</p>
+  {{if .Games}}
+  <div class="gallery">
+    {{range .Games}}
+    <a class="gcard" href="{{.Href}}" data-system="{{.SystemKey}}" data-verify="{{.VerifyState}}">
+      <img class="gcard-art" src="{{.ArtURL}}" alt="" width="240" height="320" loading="lazy" decoding="async">
+      <span class="gcard-body">
+        <span class="gcard-title" title="{{.Title}}">{{.Title}}</span>
+        <span class="gcard-meta">
+          <span class="chip">{{.SystemKey}}</span>
+          {{gamePill .VerifyState}}
+          {{if .Hidden}}<span class="chip hidden-chip" title="hidden from the launcher output">hidden</span>{{end}}
+        </span>
+      </span>
+    </a>
+    {{end}}
+  </div>
+  {{else}}
+  <p class="sub">no games match.</p>
+  {{end}}
+  {{if or .PrevURL .NextURL}}
+  <nav class="pager" aria-label="gallery pages">
+    {{if .PrevURL}}<a href="{{.PrevURL}}" rel="prev">‹ prev</a>{{else}}<span class="sub">‹ prev</span>{{end}}
+    <span class="sub">page {{.Page}} of {{.TotalPages}} · {{.Total}} games</span>
+    {{if .NextURL}}<a href="{{.NextURL}}" rel="next">next ›</a>{{else}}<span class="sub">next ›</span>{{end}}
+  </nav>
+  {{end}}
+</div>
+{{end}}

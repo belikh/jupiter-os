@@ -1,0 +1,51 @@
+{{/* Library page (P4): full-page shell around the gallery fragment.
+      The filter bar hx-gets /partials/library (300 ms debounce on input
+      and change) swapping #library-grid in place; it degrades to a plain
+      GET form without JS, and every control state is a deep-linkable
+      /library?… URL. */ -}}
+{{define "layout-library"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>jupiterOS Arcade — {{.Meta.Title}}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js"></script>
+</head>
+<body>
+  {{template "topbar" .Meta}}
+  <main class="wrap">
+    <section>
+      <h2>Library</h2>
+      <form class="filter-bar" method="get" action="/library" aria-label="library filters"
+            hx-get="/partials/library" hx-target="#library-grid" hx-swap="outerHTML"
+            hx-trigger="input changed delay:300ms, change delay:300ms">
+        <input type="search" name="q" value="{{.Q}}" placeholder="search titles…" aria-label="search titles">
+        <select name="system" aria-label="system">
+          <option value="">all systems</option>
+          {{$sel := .System}}
+          {{range .Systems}}<option value="{{.Key}}"{{if eq .Key $sel}} selected{{end}}>{{.Collection}}</option>{{end}}
+        </select>
+        <select name="state" aria-label="verify state">
+          {{$st := .State}}
+          <option value="">any verify state</option>
+          <option value="verified"{{if eq $st "verified"}} selected{{end}}>verified</option>
+          <option value="unmatched"{{if eq $st "unmatched"}} selected{{end}}>unmatched</option>
+          <option value="unknown"{{if eq $st "unknown"}} selected{{end}}>unknown</option>
+        </select>
+        <select name="sort" aria-label="sort by">
+          {{$so := .Sort}}
+          <option value="title"{{if or (eq $so "") (eq $so "title")}} selected{{end}}>sort: title</option>
+          <option value="size"{{if eq $so "size"}} selected{{end}}>sort: size</option>
+          <option value="recent"{{if eq $so "recent"}} selected{{end}}>sort: recent</option>
+        </select>
+        <noscript><button type="submit">apply</button></noscript>
+      </form>
+      {{template "partial-library" .}}
+    </section>
+    {{template "foot"}}
+  </main>
+</body>
+</html>
+{{end}}
