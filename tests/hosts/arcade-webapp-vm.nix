@@ -272,11 +272,20 @@ let
     echo "smoke: pause works"
 
     # Resume -> completes; payload lands in incoming/nes at full size.
-    curl -s -o /dev/null -H "$HX" -X POST "$base/downloads/$gid/resume"
+    echo "smoke: sending resume for $gid"
+    code=$(curl -s -o /tmp/resume.out -w '%{http_code}' -H "$HX" -X POST "$base/downloads/$gid/resume")
+    echo "smoke: resume POST -> $code"
+    [ "$code" = 200 ] || fail "resume POST -> $code, want 200"
     done=0
+    i=0
     for _ in $(seq 1 45); do
+      i=$((i + 1))
       frag=$(curl -sf "$base/partials/downloads" || true)
       if grep -q "data-gid=\"$gid\" data-status=\"complete\"" <<<"$frag"; then done=1; break; fi
+      if [ $((i % 10)) = 0 ]; then
+        st=$(grep -o "data-gid=\"$gid\" data-status=\"[a-z]*\"" <<<"$frag" | head -1)
+        echo "smoke: waiting for complete... ($i: $st)"
+      fi
       sleep 1
     done
     [ "$done" = 1 ] || fail "download never completed after resume (gid=$gid)"
@@ -437,10 +446,12 @@ in
   # Deliberately NO autologin getty (ADV-P1-04): an autologin root shell
   # races the smoke service for /dev/ttyS0 — its prompt/escape output can
   # swallow the FAIL verdict, and failures then burn the driver's whole
-  # timeout undiagnosed. The smoke runs as a systemd service and needs no
-  # logged-in shell; a plain serial-getty login prompt (spawned by the
-  # runner's console=ttyS0) stays out of the way. DNS via QEMU user-net.
+  # timeout undiagnosed. P2 goes further and masks the serial getty
+  # entirely: the smoke is a systemd service needing no shell, and the
+  # getty's terminal-reset escape sequences on ttyS0 interleaved with
+  # smoke output during P2 bring-up. DNS via QEMU user-net.
   virtualisation.vmVariant = {
+    systemd.services."serial-getty@ttyS0".enable = false;
     networking.nameservers = [
       "10.0.2.3"
       "1.1.1.1"
