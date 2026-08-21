@@ -152,6 +152,12 @@ jobs:
           tool-cache: true
 
       - name: Enable KVM
+
+      - name: Enable i686 binfmt emulation
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-user-static binfmt-support
+          sudo update-binfmts --enable qemu-i386 || true
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
             | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -195,6 +201,7 @@ jobs:
             max-substitution-jobs = 1
             http-connections = 2
             system-features = kvm benchmark big-parallel gccarch-bdver4 gccarch-skylake
+            extra-platforms = i686-linux x86_64-linux
             cores = 4
             max-jobs = 1
             # No post-build-hook: builders don't push. The coordinator is the
@@ -391,6 +398,7 @@ jobs:
             # Coordinator must advertise features so it doesn't reject
             # derivations requiring them, even with max-jobs=0 (dispatch only)
             system-features = kvm benchmark big-parallel gccarch-bdver4 gccarch-skylake
+            extra-platforms = i686-linux x86_64-linux
             max-jobs = 0
 
       - name: Install async push system (post-build-hook + cache-drainer)
