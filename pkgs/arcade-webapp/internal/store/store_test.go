@@ -664,3 +664,148 @@ func TestGameQueries(t *testing.T) {
 		t.Errorf("GetGame valid id under wrong system = %+v, %v; want nil, nil", wrongSys, err)
 	}
 }
+
+// ---- P4: unmatched-file persistence + verify history ----------------------
+
+// TestVerifyUnmatched covers the v4 migration (a pre-v4 database's seeded
+// verify_results row survives reopen and the new table is usable), the
+// record/readback/replace roundtrip, FK cascade cleanup, and the
+// newest-first capped verify history.
+func TestVerifyUnmatched(t *testing.T) {
+	// Seed a v3 database with one system + its last-verify aggregate.
+	p := filepath.Join(t.TempDir(), "v3.db")
+	db, err := sql.Open("sqlite", "file:"+p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v3Schema := append(append(append([]string{}, schemaV1...), schemaV2...), schemaV3...)
+	for _, stmt := range v3Schema {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("seed v3 schema: %v", err)
+		}
+	}
+	if _, err := db.Exec(`INSERT INTO systems (key, collection, bucket, sort_order) VALUES ('nes', 'NES', 'cartridge', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO verify_results
+		(system_key, run_id, finished_at, dat_games, found, missing, unmatched, duplicate, other, promoted_bytes, unchecked, report_path)
+		VALUES ('nes', 7, '2026-08-21T00:00:00Z', 5, 5, 0, 2, 0, 0, 0, 0, '/r/nes.csv')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`PRAGMA user_version = 3`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := Open(p)
+	if err != nil {
+		t.Fatalf("Open v3 database: %v", err)
+	}
+	defer s.Close() //nolint:errcheck // test
+	if got := s.SchemaVersion(); got != SchemaVersion {
+		t.Fatalf("migrated user_version = %d, want %d", got, SchemaVersion)
+	}
+	rows, err := s.SystemSummary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || !rows[0].VerifyPresent || rows[0].Verify.RunID != 7 || rows[0].Verify.Unmatched != 2 {
+		t.Fatalf("pre-v4 verify_results lost or mangled by migration: %+v", rows)
+	}
+
+	// Roundtrip: filenames read back sorted regardless of insert order.
+	files := []string{"b.zip", "a.bin"}
+	if err := s.RecordVerifyUnmatched("nes", 7, files); err != nil {
+		t.Fatalf("RecordVerifyUnmatched: %v", err)
+	}
+	got, err := s.VerifyUnmatched(7, "nes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 || got[0] != "a.bin" || got[1] != "b.zip" {
+		t.Errorf("VerifyUnmatched = %v, want [a.bin b.zip]", got)
+	}
+
+	// Replace: a newer run wipes the previous list for the system.
+	if err := s.RecordVerifyUnmatched("nes", 8, []string{"c.iso"}); err != nil {
+		t.Fatalf("RecordVerifyUnmatched replace: %v", err)
+	}
+	if old, err := s.VerifyUnmatched(7, "nes"); err != nil || len(old) != 0 {
+		t.Errorf("old run after replace = %v, %v; want empty", old, err)
+	}
+	if cur, err := s.VerifyUnmatched(8, "nes"); err != nil || len(cur) != 1 || cur[0] != "c.iso" {
+		t.Errorf("current run = %v, %v; want [c.iso]", cur, err)
+	}
+
+	// FK cascade: dropping the system clears its unmatched rows.
+	if err := s.UpsertSystems([]SystemRow{{Key: "snes", Collection: "SNES", Bucket: "cartridge", SortOrder: 2, Extensions: `["sfc"]`}}); err != nil {
+		t.Fatal(err)
+	}
+	if left, err := s.VerifyUnmatched(8, "nes"); err != nil || len(left) != 0 {
+		t.Errorf("rows survived system delete: %v, %v", left, err)
+	}
+	if err := s.UpsertSystems([]SystemRow{
+		{Key: "nes", Collection: "NES", Bucket: "cartridge", SortOrder: 1, Extensions: `["nes"]`},
+		{Key: "snes", Collection: "SNES", Bucket: "cartridge", SortOrder: 2, Extensions: `["sfc"]`},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// History: three verify runs for nes (plus a decoy scan run and a
+	// snes-only verify run that must both be skipped), newest first,
+	// capped at n.
+	verifyDetail := func(found, unmatched, extra int) string {
+		return fmt.Sprintf(`{"Systems":[{"Sys":"snes","Outcome":"verified","Found":9,"Unmatched":0,"Extra":0},`+
+			`{"Sys":"nes","Outcome":"verified","Found":%d,"Unmatched":%d,"Extra":%d}],"Promoted":false}`, found, unmatched, extra)
+	}
+	var ids []int64
+	for i, counts := range [][3]int{{5, 2, 1}, {6, 1, 1}, {7, 0, 0}} { // oldest → newest
+		id, err := s.StartRun("verify")
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+		if err := s.FinishRun(id, "ok", verifyDetail(counts[0], counts[1], counts[2])); err != nil {
+			t.Fatal(err)
+		}
+		if i == 1 { // interleave decoys mid-sequence
+			scanID, err := s.StartRun("scan")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := s.FinishRun(scanID, "ok", verifyDetail(99, 99, 99)); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+
+	hist, err := s.SystemVerifyHistory("nes", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hist) != 2 {
+		t.Fatalf("history cap n=2 gave %d points, want 2", len(hist))
+	}
+	wantNewest := VerifyRunPoint{FinishedAt: hist[0].FinishedAt, Found: 7, Unmatched: 0, Extra: 0}
+	if hist[0] != wantNewest {
+		t.Errorf("newest point = %+v, want %+v", hist[0], wantNewest)
+	}
+	if hist[1].Found != 6 || hist[1].Unmatched != 1 || hist[1].Extra != 1 {
+		t.Errorf("second-newest point = %+v, want run %d's outcome (6/1/1)", hist[1], ids[1])
+	}
+	all, err := s.SystemVerifyHistory("nes", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 3 || all[2].Found != 5 || all[2].Unmatched != 2 || all[2].Extra != 1 {
+		t.Errorf("full history = %+v, want 3 points oldest-first ending at run %d (5/2/1)", all, ids[0])
+	}
+	if none, err := s.SystemVerifyHistory("gb", 10); err != nil || len(none) != 0 {
+		t.Errorf("history for unknown system = %v, %v; want empty", none, err)
+	}
+	if zero, _ := s.SystemVerifyHistory("nes", 0); len(zero) != 0 {
+		t.Errorf("n=0 gave %v, want empty", zero)
+	}
+}
