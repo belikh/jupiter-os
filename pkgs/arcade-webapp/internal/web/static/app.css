@@ -1,0 +1,245 @@
+/* jupiterOS Arcade dashboard — hand-rolled CSS (ADR-0002 D4: no framework,
+   no build step). Palette: Catppuccin Mocha, matching the kiosk Pegasus
+   theme (modules/desktop/jupiteros-arcade-theme / arcade.nix). */
+
+:root {
+  --rosewater: #f5e0dc;
+  --flamingo:  #f2cdcd;
+  --pink:      #f5c2e7;
+  --mauve:     #cba6f7;
+  --red:       #f38ba8;
+  --maroon:    #eba0ac;
+  --peach:     #fab387;
+  --yellow:    #f9e2af;
+  --green:     #a6e3a1;
+  --teal:      #94e2d5;
+  --sky:       #89dceb;
+  --sapphire:  #74c7ec;
+  --blue:      #89b4fa;
+  --lavender:  #b4befe;
+
+  --text:      #cdd6f4;
+  --subtext1:  #bac2de;
+  --subtext0:  #a6adc8;
+  --overlay2:  #9399b2;
+  --overlay1:  #7f849c;
+  --overlay0:  #6c7086;
+
+  --surface2:  #585b70;
+  --surface1:  #45475a;
+  --surface0:  #313244;
+  --base:      #1e1e2e;
+  --mantle:    #181825;
+  --crust:     #11111b;
+}
+
+* { box-sizing: border-box; }
+
+html { color-scheme: dark; }
+
+body {
+  margin: 0;
+  background: var(--base);
+  color: var(--text);
+  font: 15px/1.45 system-ui, "Segoe UI", sans-serif;
+}
+
+a { color: var(--sapphire); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+code, .mono {
+  font-family: ui-monospace, "JetBrains Mono", "Fira Code", monospace;
+  font-size: 0.92em;
+}
+
+.wrap { max-width: 74rem; margin: 0 auto; padding: 0 1.25rem 3rem; }
+
+/* ---- top bar --------------------------------------------------------- */
+
+.topbar {
+  background: var(--mantle);
+  border-bottom: 1px solid var(--surface0);
+  padding: 0.9rem 0;
+}
+.topbar .wrap {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding-bottom: 0;
+}
+.topbar h1 {
+  margin: 0;
+  font-size: 1.25rem;
+  letter-spacing: 0.02em;
+}
+.topbar h1 .accent { color: var(--mauve); }
+.topbar .sub { color: var(--subtext0); font-size: 0.9rem; }
+.topbar .spacer { flex: 1; }
+
+/* ---- pills / chips --------------------------------------------------- */
+
+.pill {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 0.1rem 0.65rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border: 1px solid var(--surface1);
+  background: var(--surface0);
+  color: var(--subtext1);
+  white-space: nowrap;
+}
+.pill.ok      { color: var(--green);  border-color: color-mix(in srgb, var(--green) 40%, transparent); }
+.pill.warn    { color: var(--yellow); border-color: color-mix(in srgb, var(--yellow) 40%, transparent); }
+.pill.stale   { color: var(--red);    border-color: color-mix(in srgb, var(--red) 40%, transparent); }
+.pill.unknown { color: var(--overlay0); }
+.pill.running { color: var(--sapphire); }
+.pill.error   { color: var(--red); background: color-mix(in srgb, var(--red) 12%, var(--surface0)); }
+
+.chip {
+  display: inline-block;
+  border-radius: 6px;
+  padding: 0 0.4rem;
+  font-size: 0.75rem;
+  color: var(--overlay2);
+  background: var(--surface0);
+  border: 1px solid var(--surface1);
+}
+
+/* ---- buttons (htmx rescan) -------------------------------------------- */
+
+button, .button {
+  font: inherit;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface1);
+  border: 1px solid var(--surface2);
+  border-radius: 8px;
+  padding: 0.35rem 0.9rem;
+  cursor: pointer;
+}
+button:hover { background: var(--surface2); }
+button:disabled { opacity: 0.5; cursor: default; }
+button.primary {
+  background: color-mix(in srgb, var(--mauve) 22%, var(--surface0));
+  border-color: color-mix(in srgb, var(--mauve) 45%, transparent);
+  color: var(--text);
+}
+button.primary:hover { background: color-mix(in srgb, var(--mauve) 32%, var(--surface0)); }
+.htmx-request button, button.htmx-request { opacity: 0.6; }
+
+/* ---- status strip ----------------------------------------------------- */
+
+.status-strip {
+  display: flex;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+  align-items: center;
+  background: var(--mantle);
+  border: 1px solid var(--surface0);
+  border-radius: 12px;
+  padding: 0.7rem 1rem;
+  margin: 1.25rem 0 0.5rem;
+}
+.status-strip .stat { display: flex; gap: 0.45rem; align-items: baseline; }
+.status-strip .stat .k { color: var(--overlay1); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.06em; }
+.status-strip .stat .v { color: var(--subtext1); font-variant-numeric: tabular-nums; }
+
+/* ---- card wall --------------------------------------------------------- */
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16.5rem, 1fr));
+  gap: 0.9rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.card {
+  background: var(--mantle);
+  border: 1px solid var(--surface0);
+  border-radius: 12px;
+  padding: 0.8rem 0.95rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+.card.empty { opacity: 0.45; }
+
+.card header { display: flex; align-items: baseline; gap: 0.5rem; }
+.card h3 { margin: 0; font-size: 0.98rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card .syskey { color: var(--mauve); }
+
+.card .metrics {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.15rem 0.7rem;
+  font-variant-numeric: tabular-nums;
+}
+.card .metrics .k { color: var(--overlay1); font-size: 0.8rem; }
+.card .metrics .v { color: var(--subtext1); font-size: 0.88rem; text-align: right; }
+.card .metrics .v.strong { color: var(--text); font-weight: 600; }
+
+/* coverage meter */
+.meter {
+  grid-column: 1 / -1;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--surface0);
+  overflow: hidden;
+  margin-top: 0.2rem;
+}
+.meter > span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--teal), var(--green));
+}
+
+/* ---- sections ---------------------------------------------------------- */
+
+section h2 {
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--overlay1);
+  margin: 1.5rem 0 0.25rem;
+}
+
+/* ---- runs table --------------------------------------------------------- */
+
+table.runs {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.88rem;
+}
+table.runs th {
+  text-align: left;
+  color: var(--overlay1);
+  font-weight: 500;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--surface0);
+  padding: 0.3rem 0.6rem 0.35rem 0;
+}
+table.runs td {
+  padding: 0.3rem 0.6rem 0.3rem 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--surface0) 55%, transparent);
+  color: var(--subtext1);
+  font-variant-numeric: tabular-nums;
+}
+table.runs td.detail { color: var(--overlay0); font-size: 0.8rem; max-width: 30rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+footer {
+  color: var(--overlay0);
+  font-size: 0.8rem;
+  margin-top: 2rem;
+  border-top: 1px solid var(--surface0);
+  padding-top: 0.6rem;
+}
+
+/* htmx swap polish: fade settled fragments in slightly */
+.htmx-settling { opacity: 0.55; transition: opacity 120ms ease-in; }
+.htmx-settling.htmx-added { opacity: 0; }
+.htmx-settled { opacity: 1; transition: opacity 120ms ease-out; }
