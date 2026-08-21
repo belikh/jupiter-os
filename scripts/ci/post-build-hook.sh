@@ -58,7 +58,8 @@ DRV_PATH="${DRV_PATH:-}"
 # after 40 minutes of building instead of 4 seconds here. Non-fatal (exit 0
 # always) but LOUD: the log line names the exact failure coming.
 # HARMONIA_SIGNING_KEY_FILE must point at a `nix store sign` key file
-# (secret-key:<name>:<base32>) readable by root — the workflows stage it from
+# (<name>:<base64>, exactly as emitted by nix-store --generate-binary-cache-key)
+# readable by root — the workflows stage it from
 # the HARMONIA_SECRET_KEY secret next to the hook install.
 SIGN_KEY_FILE="${HARMONIA_SIGNING_KEY_FILE:-}"
 # Resolve nix the way cache-drainer.sh does: the hook inherits the DAEMON's

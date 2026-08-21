@@ -467,23 +467,19 @@ jobs:
           # rejected). systemctl set-environment is how the restarted daemon
           # (and thus the hook) receives HARMONIA_SIGNING_KEY_FILE.
           if [ -n "$HARMONIA_SECRET_KEY" ]; then
-            # Sanitize + normalize. Ground truth from europa:
-            #   jupiter-cache-1:<88-char-base64>   (2 fields, harmonia native)
-            # nix store sign needs:               secret-key:<name>:<base64>
+            # Sanitize ONLY — never reformat. Proven on europa (Nix 2.34):
+            #   nix store sign -k expects the RAW generate-binary-cache-key
+            #   line  <name>:<base64>          -> "added 1 signatures"
+            # Prefixing with 'secret-key:' makes it fail decoding key ''.
             # A stray leading newline/CR in the GitHub secret yields a blank
-            # first line -> nix reads name='' b64='' -> the exact preflight
-            # error we hit ("decoding key named ''"). Strip CRs, drop blank
-            # lines, take the last non-empty line, add the prefix if missing.
+            # first line -> same "key named ''" error. Strip CRs, drop blank
+            # lines, take the last non-empty line, keep everything else as-is.
             KEY_MATERIAL="$(printf '%s' "$HARMONIA_SECRET_KEY" | tr -d '\r' | sed '/^[[:space:]]*$/d' | tail -n1)"
-            case "$KEY_MATERIAL" in
-              secret-key:*) : ;;
-              *)            KEY_MATERIAL="secret-key:$KEY_MATERIAL" ;;
-            esac
-            if ! [[ "$KEY_MATERIAL" =~ ^secret-key:[^:[:space:]]+:[A-Za-z0-9+/]+=*$ ]]; then
-              echo "::error::HARMONIA_SECRET_KEY malformed after sanitize (raw_len=${#HARMONIA_SECRET_KEY}, sanitized_len=${#KEY_MATERIAL}). Expected 'name:<base64>' or 'secret-key:<name>:<base64>'."
+            if ! [[ "$KEY_MATERIAL" =~ ^[^:[:space:]]+:[A-Za-z0-9+/]+=*$ ]]; then
+              echo "::error::HARMONIA_SECRET_KEY malformed after sanitize (raw_len=${#HARMONIA_SECRET_KEY}, sanitized_len=${#KEY_MATERIAL}). Expected '<name>:<base64>' exactly as emitted by nix-store --generate-binary-cache-key."
               exit 1
             fi
-            echo "signing key staged OK: fields=$(awk -F: '{print NF}' <<<"$KEY_MATERIAL") name_len=$(awk -F: '{print length($2)}' <<<"$KEY_MATERIAL") b64_len=$(awk -F: '{print length($3)}' <<<"$KEY_MATERIAL")"
+            echo "signing key staged OK: fields=$(awk -F: '{print NF}' <<<"$KEY_MATERIAL") name_len=$(awk -F: '{print length($1)}' <<<"$KEY_MATERIAL") b64_len=$(awk -F: '{print length($2)}' <<<"$KEY_MATERIAL") (valid b64 len for a 64-byte Ed25519 cache key is 88)"
             printf '%s\n' "$KEY_MATERIAL" | sudo install -m 600 /dev/stdin /etc/nix/harmonia-signing-key
             sudo systemctl set-environment HARMONIA_SIGNING_KEY_FILE=/etc/nix/harmonia-signing-key
           else
@@ -505,7 +501,7 @@ jobs:
           echo ci-signcheck | sudo tee /tmp/ci-signcheck >/dev/null
           SIGNCHECK_P="$(sudo "$NIX_ABS" store add-file /tmp/ci-signcheck)"
           sudo "$NIX_ABS" store sign --key-file /etc/nix/harmonia-signing-key "$SIGNCHECK_P" \
-            || { echo "::error::Signing preflight FAILED — europa require-sigs will reject all pushes. Check HARMONIA_SECRET_KEY format and daemon env."; exit 1; }
+            || { echo "::error::Signing preflight FAILED — europa require-sigs will reject all pushes. check HARMONIA_SECRET_KEY (raw '<name>:<base64>' form) and daemon env."; exit 1; }
           echo "::notice::Signing preflight OK ($SIGNCHECK_P signed)"
 
           # Launch the drainer (runner user). It holds the FIFO open on fd 3 and
