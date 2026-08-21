@@ -14,12 +14,14 @@ package web
 
 import (
 	"embed"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io/fs"
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/scanner"
@@ -45,6 +47,7 @@ func New(st *store.Store, scan *scanner.Scanner) (*Server, error) {
 		"age":         ageFrom,
 		"runPill":     runPill,
 		"runDuration": runDuration,
+		"runDetail":   runDetail,
 		"verifyPill":  verifyPill,
 	}).ParseFS(content, "templates/*.html")
 	if err != nil {
@@ -168,13 +171,24 @@ func (s *Server) viewModel() (dashboardVM, error) {
 		return vm, err
 	}
 
-	// Overall health: last-run errors dominate, then DAT staleness.
+	// Overall health, most urgent first: scan in flight, failed run,
+	// warned run (part of the library state is unknown right now — e.g. an
+	// unreadable bucket kept its previous rows per ADV-P1-03), stale DATs.
 	vm.Totals.HealthLabel, vm.Totals.HealthClass = "healthy", "ok"
-	if vm.Scan.Running {
+	warned := vm.LastRun != nil && runWarnings(*vm.LastRun) > 0
+	switch {
+	case vm.Scan.Running:
 		vm.Totals.HealthLabel, vm.Totals.HealthClass = "scanning", "running"
-	} else if vm.LastRun != nil && vm.LastRun.Status == "error" {
+	case vm.LastRun != nil && vm.LastRun.Status == "error":
 		vm.Totals.HealthLabel, vm.Totals.HealthClass = "scan error", "error"
-	} else {
+	case warned:
+		if n := runWarnings(*vm.LastRun); n == 1 {
+			vm.Totals.HealthLabel = "1 warning"
+		} else {
+			vm.Totals.HealthLabel = fmt.Sprintf("%d warnings", n)
+		}
+		vm.Totals.HealthClass = "warn"
+	default:
 		stale := 0
 		for _, c := range vm.Cards {
 			if c.DATAgeDays > 90 {
@@ -329,6 +343,61 @@ func ageFrom(now time.Time, ts string) string {
 	default:
 		return fmt.Sprintf("%dd ago", int(d.Hours()/24))
 	}
+}
+
+// runDetailJSON mirrors scanner.Result's JSON — the runs.detail payload.
+type runDetailJSON struct {
+	Systems  int      `json:"Systems"`
+	Games    int64    `json:"Games"`
+	Bytes    int64    `json:"Bytes"`
+	Errors   int      `json:"Errors"`
+	Warnings []string `json:"Warnings"`
+}
+
+// runWarnings counts the warnings recorded in a run's detail payload
+// (0 when the detail is missing or not scanner-shaped).
+func runWarnings(r store.Run) int {
+	var d runDetailJSON
+	if err := json.Unmarshal([]byte(r.Detail), &d); err != nil {
+		return 0
+	}
+	return len(d.Warnings)
+}
+
+// runDetail renders a run's detail cell: scanner-shaped payloads
+// summarize ("N systems · G games · size") with up to three warning lines
+// beneath; anything else (error text, future phases' payloads) renders
+// escaped and length-capped. Never raw JSON (ADV-P1-05: an operator
+// reading the dashboard should not parse a JSON blob by eye).
+func runDetail(r store.Run) template.HTML {
+	var d runDetailJSON
+	if err := json.Unmarshal([]byte(r.Detail), &d); err == nil && r.Kind == "scan" {
+		parts := []string{
+			fmt.Sprintf("%d systems", d.Systems),
+			fmt.Sprintf("%d games", d.Games),
+			HumanBytes(d.Bytes),
+		}
+		out := template.HTMLEscapeString(strings.Join(parts, " · "))
+		for i, w := range d.Warnings {
+			if i >= 3 {
+				out += fmt.Sprintf(" <em>(+%d more)</em>", len(d.Warnings)-3)
+				break
+			}
+			out += "<br>⚠ " + template.HTMLEscapeString(truncate(w, 120))
+		}
+		if d.Errors > 0 {
+			out += fmt.Sprintf("<br>⛔ %d errors", d.Errors)
+		}
+		return template.HTML(out)
+	}
+	return template.HTML(template.HTMLEscapeString(truncate(r.Detail, 160)))
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n-1] + "…"
 }
 
 func runPill(status string) template.HTML {
