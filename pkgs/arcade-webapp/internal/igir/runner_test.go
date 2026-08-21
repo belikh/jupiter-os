@@ -182,7 +182,17 @@ func (r *rig) verifyResult(sys string) *store.VerifyResult {
 }
 
 // TestArgvMatchesCartridgeVerifyScript pins the EXACT igir invocation —
-// the flag set proven on europa (scripts/cartridge-verify.sh:104-113).
+// the flag set proven on europa (scripts/cartridge-verify.sh:104-113)
+// plus the webapp's one deliberate addition: --input-exclude
+// <input>/**/*.torrent (D-P3e — aria2 drops infohash .torrent metadata
+// companions into every download dir even via addTorrent, proven
+// empirically against the pinned aria2 1.37.0; no DAT can claim a
+// .torrent, so the exclusion cannot hide a real deviation, and the
+// served report carries zero unmatched rows for them). The glob MUST be
+// anchored to the absolute input dir: igir expands exclude globs
+// against the filesystem from the process cwd (a bare **/*.torrent from
+// cwd=/ crawls the whole tree — proven: EACCES scandir '/root' as a
+// user, the minutes-long nix-store walk as root, the P3 VM hang).
 func TestArgvMatchesCartridgeVerifyScript(t *testing.T) {
 	r := newRig(t)
 	r.stage("nes", "Starlit Vault (USA).nes")
@@ -202,6 +212,7 @@ func TestArgvMatchesCartridgeVerifyScript(t *testing.T) {
 		"--output", filepath.Join(r.cartr, "nes"),
 		"--report-output", filepath.Join(r.reports, "nes.csv"),
 		"--input-checksum-max", "CRC32",
+		"--input-exclude", filepath.Join(r.incoming, "nes", "**", "*.torrent"),
 		"--dir-game-subdir", "never",
 		"--reader-threads", "2",
 		"--writer-threads", "2",
@@ -458,11 +469,13 @@ func TestParseReportRealShape(t *testing.T) {
 	defer f.Close() //nolint:errcheck // test
 	// The committed report from a REAL igir 5.3.0 run over the fixture
 	// corpus (make fixture-arcade): 5 FOUND rows, zero anything else.
-	rep, err := ParseReport(f, "/home/io/Projects/jupiter-os/tests/fixtures/arcade/verified/nes")
+	rep, err := ParseReport(f,
+		"/home/io/Projects/jupiter-os/tests/fixtures/arcade/incoming/nes",
+		"/home/io/Projects/jupiter-os/tests/fixtures/arcade/verified/nes")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rep.Found != 5 || rep.Missing != 0 || rep.Unmatched != 0 || rep.Duplicate != 0 || rep.Other != 0 {
+	if rep.Found != 5 || rep.Missing != 0 || rep.Unmatched != 0 || rep.Duplicate != 0 || rep.Extra != 0 || rep.Other != 0 {
 		t.Errorf("counts = %+v, want 5 FOUND only", rep)
 	}
 	if len(rep.FoundRels) != 5 || rep.FoundRels[0] != "Crystal Carp (USA) (Rev A).nes" {
@@ -476,13 +489,15 @@ func TestParseReportEdgeShapes(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer f.Close() //nolint:errcheck // test
-	rep, err := ParseReport(f, "/out/nes")
+	rep, err := ParseReport(f, "/incoming/nes", "/out/nes")
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 3 FOUND, 1 MISSING, 2 UNUSED, 1 DUPLICATE; dat games = found+missing.
-	if rep.Found != 3 || rep.Missing != 1 || rep.Unmatched != 2 || rep.Duplicate != 1 || rep.Other != 0 {
-		t.Errorf("counts = %+v, want 3/1/2/1/0", rep)
+	// 3 FOUND, 1 MISSING; input-side: 2 UNUSED + 1 DUPLICATE (staged
+	// duplicate of an already-FOUND game); output-side: 1 DUPLICATE echo
+	// + 1 UNUSED extra (games-tree file the DAT doesn't claim).
+	if rep.Found != 3 || rep.Missing != 1 || rep.Unmatched != 3 || rep.Duplicate != 1 || rep.Extra != 1 || rep.Other != 0 {
+		t.Errorf("counts = %+v, want 3/1/3/1/1/0", rep)
 	}
 	if rep.DatGames != 4 {
 		t.Errorf("DatGames = %d, want 4 (found+missing)", rep.DatGames)
@@ -503,7 +518,7 @@ func TestParseReportQuotedCommas(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer f.Close() //nolint:errcheck // test
-	rep, err := ParseReport(f, "/out/c64")
+	rep, err := ParseReport(f, "/in", "/out/c64")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -521,7 +536,7 @@ func TestParseReportCRLFAndUnknownStatuses(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer f.Close() //nolint:errcheck // test
-	rep, err := ParseReport(f, "/out/nes")
+	rep, err := ParseReport(f, "/in", "/out/nes")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -534,7 +549,7 @@ func TestParseReportCRLFAndUnknownStatuses(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer f2.Close() //nolint:errcheck // test
-	rep, err = ParseReport(f2, "")
+	rep, err = ParseReport(f2, "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -546,8 +561,45 @@ func TestParseReportCRLFAndUnknownStatuses(t *testing.T) {
 }
 
 func TestParseReportRejectsNonIgirCSV(t *testing.T) {
-	if _, err := ParseReport(strings.NewReader("a,b,c\n1,2,3\n"), ""); err == nil {
+	if _, err := ParseReport(strings.NewReader("a,b,c\n1,2,3\n"), "", ""); err == nil {
 		t.Error("a CSV without a Status column must be rejected")
+	}
+}
+
+// TestParseReportProvenance is the real-igir bring-up lesson as a unit:
+// igir scans BOTH --input and --output, so the SAME status means
+// different things per side. Input-side UNUSED/DUPLICATE are staged-set
+// deviations (red); output-side UNUSED is a tree extra (amber) and
+// output-side DUPLICATE is the idempotent re-verify echo (benign). A row
+// on neither side counts as Other (red, conservative).
+func TestParseReportProvenance(t *testing.T) {
+	csvText := `DAT Name,Game Name,Status,ROM Files
+NES,Game A,FOUND,/out/nes/Game A.nes
+NES,Game B,MISSING,
+,,UNUSED,/in/nes/junk.nes
+,,UNUSED,/out/nes/operator drop.zip
+,,DUPLICATE,/in/nes/Game A [1].nes
+,,DUPLICATE,/out/nes/Game A.nes
+,,UNUSED,/nowhere/orphan.bin
+`
+	rep, err := ParseReport(strings.NewReader(csvText), "/in/nes", "/out/nes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Found != 1 || rep.Missing != 1 {
+		t.Errorf("Found/Missing = %d/%d, want 1/1", rep.Found, rep.Missing)
+	}
+	if rep.Unmatched != 2 {
+		t.Errorf("Unmatched = %d, want 2 (input UNUSED + input DUPLICATE)", rep.Unmatched)
+	}
+	if rep.Extra != 1 {
+		t.Errorf("Extra = %d, want 1 (output UNUSED)", rep.Extra)
+	}
+	if rep.Duplicate != 1 {
+		t.Errorf("Duplicate = %d, want 1 (output echo)", rep.Duplicate)
+	}
+	if rep.Other != 1 {
+		t.Errorf("Other = %d, want 1 (row on neither side)", rep.Other)
 	}
 }
 

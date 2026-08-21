@@ -271,8 +271,9 @@ func TestRecordVerifyResultReplacesPrevious(t *testing.T) {
 	// A later run replaces the row — the pill always shows the LATEST report.
 	if err := s.RecordVerifyResult(VerifyResult{
 		SystemKey: "nes", RunID: 2, FinishedAt: "2026-08-21T02:00:00Z",
-		DatGames: 5, Found: 5, Missing: 0, Unmatched: 0, PromotedBytes: 4096,
-		ReportPath: "/scratch/reports/nes.csv",
+		DatGames: 5, Found: 5, Missing: 0, Unmatched: 0, Duplicate: 5, Extra: 2,
+		PromotedBytes: 4096,
+		ReportPath:    "/scratch/reports/nes.csv",
 	}); err != nil {
 		t.Fatalf("RecordVerifyResult 2: %v", err)
 	}
@@ -283,6 +284,9 @@ func TestRecordVerifyResultReplacesPrevious(t *testing.T) {
 	v := rows[0].Verify
 	if !rows[0].VerifyPresent || v.RunID != 2 || v.Found != 5 || v.Missing != 0 || v.PromotedBytes != 4096 {
 		t.Errorf("verify_results join = present=%v %+v, want run 2 / 5 found / 0 missing / 4096 B", rows[0].VerifyPresent, v)
+	}
+	if v.Duplicate != 5 || v.Extra != 2 {
+		t.Errorf("provenance counts = dup %d / extra %d, want 5 / 2 (re-verify echoes + tree extras survive the roundtrip)", v.Duplicate, v.Extra)
 	}
 }
 
@@ -432,5 +436,52 @@ func TestMigrateV1DatabaseStepsToV2(t *testing.T) {
 	}
 	if err := s.RecordVerifyResult(VerifyResult{SystemKey: "nes", RunID: 9, DatGames: 1, Found: 1}); err != nil {
 		t.Fatalf("RecordVerifyResult on migrated db: %v", err)
+	}
+}
+
+// TestMigrateV2DatabaseStepsToV3 proves a database from the first P3 cut
+// (verify_results without the provenance-split extra column, e.g. a dev
+// VM's surviving state dir) migrates in place, keeping its rows.
+func TestMigrateV2DatabaseStepsToV3(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "v2.db")
+	db, err := sql.Open("sqlite", "file:"+p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stmt := range append(append([]string{}, schemaV1...), schemaV2...) {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("seed v2 schema: %v", err)
+		}
+	}
+	if _, err := db.Exec(`INSERT INTO systems (key, collection, bucket, sort_order) VALUES ('nes', 'NES', 'cartridge', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	// A pre-v3 row: no extra column exists yet.
+	if _, err := db.Exec(`INSERT INTO verify_results
+		(system_key, run_id, finished_at, dat_games, found, missing, unmatched, duplicate, other, promoted_bytes, unchecked, report_path)
+		VALUES ('nes', 7, '2026-08-21T00:00:00Z', 5, 5, 0, 0, 5, 0, 0, 0, '/r/nes.csv')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`PRAGMA user_version = 2`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := Open(p)
+	if err != nil {
+		t.Fatalf("Open v2 database: %v", err)
+	}
+	defer s.Close() //nolint:errcheck // test
+	if got := s.SchemaVersion(); got != SchemaVersion {
+		t.Fatalf("migrated user_version = %d, want %d", got, SchemaVersion)
+	}
+	rows, err := s.SystemSummary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || !rows[0].VerifyPresent || rows[0].Verify.Found != 5 || rows[0].Verify.Extra != 0 {
+		t.Errorf("pre-v3 row lost or mangled by migration: %+v", rows)
 	}
 }

@@ -195,6 +195,37 @@ func TestVerifyPillStates(t *testing.T) {
 		t.Error("unchecked pill text missing")
 	}
 
+	// Re-verify echo (the real-igir shape proven in the VM bring-up):
+	// every DAT game FOUND again, and the staged input re-seen in the
+	// output as DUPLICATE echoes — COPY semantics keep the staged tree,
+	// so this is what EVERY second verify looks like. Must stay GREEN
+	// (the original classifier counted duplicates red, flipping every
+	// green system red on its second verify).
+	if err := srv.st.RecordVerifyResult(store.VerifyResult{SystemKey: "nes", FinishedAt: stamp, DatGames: 5, Found: 5, Duplicate: 5}); err != nil {
+		t.Fatal(err)
+	}
+	body = get(t, srv.Handler(), "/").Body.String()
+	if !strings.Contains(body, `data-system="nes" data-games="5" data-coverage="60" data-verify="verified"`) {
+		t.Error("nes re-verify with output echoes must STAY verified (idempotency)")
+	}
+	if !strings.Contains(body, `title="5 of 5 DAT games found, 0 unmatched (5 already-promoted echo)"`) {
+		t.Error("echo count must surface in the pill title")
+	}
+
+	// Extra (amber): all DAT games found, but the games tree holds files
+	// the DAT doesn't claim (operator drops / scanner fixtures) — a
+	// deviation worth surfacing, milder than junk arriving in staging.
+	if err := srv.st.RecordVerifyResult(store.VerifyResult{SystemKey: "gb", FinishedAt: stamp, DatGames: 4, Found: 4, Extra: 2}); err != nil {
+		t.Fatal(err)
+	}
+	body = get(t, srv.Handler(), "/").Body.String()
+	if !strings.Contains(body, `data-system="gb" data-games="4" data-coverage="0" data-verify="extra"`) {
+		t.Error("gb card must carry data-verify=extra")
+	}
+	if !strings.Contains(body, `>2 extra</span>`) {
+		t.Error("extra pill count missing")
+	}
+
 	// The downloads systems table shares the same indicator (needs the
 	// downloads-configured server — its systems table renders only then).
 	root := t.TempDir()
@@ -299,6 +330,70 @@ func TestDATRefreshViaStub(t *testing.T) {
 	runs := get(t, srv.Handler(), "/partials/status").Body.String()
 	if !strings.Contains(runs, "<td>dat-fetch</td>") {
 		t.Error("dat-fetch run not recorded")
+	}
+}
+
+// TestDATRefreshAllSurvivesHandlerReturn: refresh-ALL kicks its batch in
+// the background, so the fetches must outlive the HTTP request. Handing
+// the goroutine r.Context() would cancel every fetch the moment
+// ServeHTTP returns (net/http cancels request contexts at handler
+// return) — the endpoint would 202 and then record a run whose every
+// fetch failed "context canceled". The fix hands the batch
+// context.Background() (each fetch keeps its own 60s cap; the scheduled
+// refresh in main.go does the same). NOTE the POST goes through a REAL
+// http.Server (httptest.NewServer): a recorder-based request carries
+// context.Background() nobody ever cancels, so it cannot see this bug.
+func TestDATRefreshAllSurvivesHandlerReturn(t *testing.T) {
+	srv, _ := newVerifyServer(t)
+
+	hs := httptest.NewServer(srv.Handler())
+	t.Cleanup(hs.Close)
+	req, err := http.NewRequest(http.MethodPost, hs.URL+"/dats/refresh", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("X-HX-Request", "true")
+	resp, err := hs.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close() //nolint:errcheck // test
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("POST /dats/refresh over real HTTP: status = %d, want 202", resp.StatusCode)
+	}
+
+	// The fixture catalogue (nes/snes/gb) is fully McLean-mapped and the
+	// stub serves every *.dat: a surviving batch fetches all three.
+	deadline := time.Now().Add(10 * time.Second)
+	var last *store.Run
+	for time.Now().Before(deadline) {
+		r, err := srv.st.LastRun()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r != nil && r.Kind == "dat-fetch" && r.Status != "running" {
+			last = r
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if last == nil {
+		t.Fatal("background dat-fetch run never finished within 10s")
+	}
+	var res struct {
+		Fetched  int      `json:"Fetched"`
+		Warnings []string `json:"Warnings"`
+	}
+	if err := json.Unmarshal([]byte(last.Detail), &res); err != nil {
+		t.Fatalf("dat-fetch detail not JSON: %v (%q)", err, last.Detail)
+	}
+	if res.Fetched != 3 {
+		t.Errorf("refresh-all fetched %d DATs, want 3 (warnings: %v)", res.Fetched, res.Warnings)
+	}
+	for _, w := range res.Warnings {
+		if strings.Contains(w, "context canceled") {
+			t.Errorf("background fetch died with the request context: %s", w)
+		}
 	}
 }
 
