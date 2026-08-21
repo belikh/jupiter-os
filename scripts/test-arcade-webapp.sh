@@ -31,7 +31,7 @@ if [[ ! -x "${runner}" ]]; then
   exit 1
 fi
 
-logfile="$(mktemp)"
+logfile="${LOGFILE:-$(mktemp)}"
 echo ">> Booting ${HOST} headless (timeout ${TIMEOUT_SECS}s); serial log: ${logfile}"
 
 # -nographic routes the serial console to stdout (captured); -no-reboot so
