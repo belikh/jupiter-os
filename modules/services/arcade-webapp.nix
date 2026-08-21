@@ -232,34 +232,33 @@ in
       # suno-web.nix pattern) — the scanner walks them at startup.
       unitConfig.RequiresMountsFor = poolPaths;
 
-      environment =
-        {
-          ARCADE_WEBAPP_ADDR = ":${toString cfg.port}";
-          ARCADE_WEBAPP_CATALOGUE_TSV = toString cfg.catalogueTsv;
-          ARCADE_WEBAPP_CARTRIDGE_ROOT = cfg.cartridgeRoot;
-          ARCADE_WEBAPP_OPTICAL_ROOT = cfg.opticalRoot;
-          ARCADE_WEBAPP_MODERN_ROOT = cfg.modernRoot;
-          ARCADE_WEBAPP_DAT_DIR = cfg.datDir;
-          ARCADE_WEBAPP_SKYSCRAPER_CACHE_DIR = cfg.skyscraperCacheDir;
-          ARCADE_WEBAPP_INCOMING_DIR = cfg.incomingDir;
-          ARCADE_WEBAPP_DB = "${cfg.stateDir}/arcade-webapp.db";
-        }
-        # Optional inputs append via optionalAttrs (absent options never
-        # reference undeclared sops paths — the arcade-inventory.nix
-        # publishMqtt pattern). Secret PATHS only: the app reads files at
-        # runtime; values never enter the store or the journal.
-        // lib.optionalAttrs (cfg.inventoryFile != null) {
-          ARCADE_WEBAPP_INVENTORY_FILE = cfg.inventoryFile;
-        }
-        // lib.optionalAttrs (cfg.aria2SecretFile != null) {
-          ARCADE_WEBAPP_ARIA2_SECRET_FILE = toString cfg.aria2SecretFile;
-        }
-        // lib.optionalAttrs (cfg.screenscraperCredsFile != null) {
-          ARCADE_WEBAPP_SCREENSCRAPER_CREDS_FILE = toString cfg.screenscraperCredsFile;
-        }
-        // lib.optionalAttrs (cfg.tgdbApikeyFile != null) {
-          ARCADE_WEBAPP_TGDB_APIKEY_FILE = toString cfg.tgdbApikeyFile;
-        };
+      environment = {
+        ARCADE_WEBAPP_ADDR = ":${toString cfg.port}";
+        ARCADE_WEBAPP_CATALOGUE_TSV = toString cfg.catalogueTsv;
+        ARCADE_WEBAPP_CARTRIDGE_ROOT = cfg.cartridgeRoot;
+        ARCADE_WEBAPP_OPTICAL_ROOT = cfg.opticalRoot;
+        ARCADE_WEBAPP_MODERN_ROOT = cfg.modernRoot;
+        ARCADE_WEBAPP_DAT_DIR = cfg.datDir;
+        ARCADE_WEBAPP_SKYSCRAPER_CACHE_DIR = cfg.skyscraperCacheDir;
+        ARCADE_WEBAPP_INCOMING_DIR = cfg.incomingDir;
+        ARCADE_WEBAPP_DB = "${cfg.stateDir}/arcade-webapp.db";
+      }
+      # Optional inputs append via optionalAttrs (absent options never
+      # reference undeclared sops paths — the arcade-inventory.nix
+      # publishMqtt pattern). Secret PATHS only: the app reads files at
+      # runtime; values never enter the store or the journal.
+      // lib.optionalAttrs (cfg.inventoryFile != null) {
+        ARCADE_WEBAPP_INVENTORY_FILE = cfg.inventoryFile;
+      }
+      // lib.optionalAttrs (cfg.aria2SecretFile != null) {
+        ARCADE_WEBAPP_ARIA2_SECRET_FILE = toString cfg.aria2SecretFile;
+      }
+      // lib.optionalAttrs (cfg.screenscraperCredsFile != null) {
+        ARCADE_WEBAPP_SCREENSCRAPER_CREDS_FILE = toString cfg.screenscraperCredsFile;
+      }
+      // lib.optionalAttrs (cfg.tgdbApikeyFile != null) {
+        ARCADE_WEBAPP_TGDB_APIKEY_FILE = toString cfg.tgdbApikeyFile;
+      };
 
       preStart = ''
         # Belt-and-braces after tmpfiles: covers a state dir on a pool
