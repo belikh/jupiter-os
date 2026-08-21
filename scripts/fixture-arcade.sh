@@ -15,6 +15,12 @@
 #                  (default: <repo>/tests/fixtures/arcade)
 #   IGIR           igir invocation (default: nix run pinned to the flake's
 #                  locked nixpkgs — no channel drift)
+#   SKIP_REGEN=1   gate the EXISTING incoming tree instead of regenerating
+#                  (negative-control path: run once normally, corrupt a ROM
+#                  under $FIXTURE_ROOT/incoming, re-run with SKIP_REGEN=1 —
+#                  the gate must then FAIL with found<games and unused>0).
+#                  Without this knob the wipe-first regeneration would
+#                  silently heal the corruption and the gate would PASS.
 #
 # Gate (exits non-zero on any failure):
 #   * `igir copy test report` per system with the exact flag set of
@@ -42,9 +48,19 @@ log()  { printf '[fixture-arcade] %s\n' "$*" >&2; }
 #    half-written file must never wedge the gate. Drift between the
 #    generator and the COMMITTED DATs is caught separately (and airtight) by
 #    TestRomsMatchCommittedDATs in pkgs/arcade-webapp.
-log "generating fixture ROM tree under $INCOMING"
-rm -rf "$INCOMING" "$VERIFIED" "$REPORTS"
-( cd "$REPO_ROOT/pkgs/arcade-webapp" && go run ./cmd/fixturegen --roms "$INCOMING" )
+if [ "${SKIP_REGEN:-0}" = "1" ]; then
+  log "SKIP_REGEN=1 — gating the EXISTING tree at $INCOMING (negative-control path)"
+  [ -d "$INCOMING" ] || { log "$INCOMING does not exist; run without SKIP_REGEN first"; exit 1; }
+  # Still wipe outputs: leftover verified/reports from a prior run make igir
+  # emit DUPLICATE rows (output files re-seen as inputs to `test`) and the
+  # gate would fail a CLEAN tree. Only the incoming tree is preserved —
+  # that is the corruption under test.
+  rm -rf "$VERIFIED" "$REPORTS"
+else
+  log "generating fixture ROM tree under $INCOMING"
+  rm -rf "$INCOMING" "$VERIFIED" "$REPORTS"
+  ( cd "$REPO_ROOT/pkgs/arcade-webapp" && go run ./cmd/fixturegen --roms "$INCOMING" )
+fi
 
 # 2. Per-system igir gate. process_system runs in a subshell so a hard
 #    failure on one system is reported and skipped without aborting the
