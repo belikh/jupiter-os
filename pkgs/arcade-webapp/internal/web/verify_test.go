@@ -67,7 +67,7 @@ done
 	}
 
 	reportDir := filepath.Join(root, "scratch", "reports")
-	runner := igir.New(igir.Config{
+	runner, nerr := igir.New(igir.Config{
 		Binary:        fakeBin,
 		IncomingDir:   filepath.Join(root, "cache", "incoming"),
 		DATDir:        filepath.Join(root, "metadata", "no-intro-dats"),
@@ -76,6 +76,9 @@ done
 		ModernRoot:    filepath.Join(root, "games", "modern"),
 		ReportDir:     reportDir,
 	}, st, nil, nil)
+	if nerr != nil {
+		t.Fatalf("igir.New: %v", nerr)
+	}
 
 	// Stub Fresh1G1R: serves the gb fixture DAT for any *.dat path.
 	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -238,6 +241,84 @@ func TestVerifyPillStates(t *testing.T) {
 	dl := get(t, dls.Handler(), "/downloads").Body.String()
 	if !strings.Contains(dl, `data-system="nes"`) || !strings.Contains(dl, ">verified</span>") {
 		t.Error("downloads join must render the same verify pill")
+	}
+}
+
+// TestVerifyLastAttemptFailedMarker (ADV-P3-02): a re-verify whose
+// report fails to parse returns BEFORE RecordVerifyResult, so the pill
+// keeps rendering the last GOOD ingest (by design — the ingested report
+// is the authority) with the error visible only in runs/LastError. The
+// fragment must carry an honesty marker when a system's newest verify
+// attempt failed without ingesting, and clear it once a newer attempt
+// ingests again.
+func TestVerifyLastAttemptFailedMarker(t *testing.T) {
+	srv, _ := newVerifyServer(t)
+	stamp := time.Now().UTC().Format(time.RFC3339)
+
+	finishVerifyRun := func(status string, systems []igir.SystemOutcome) int64 {
+		t.Helper()
+		runID, err := srv.st.StartRun("verify")
+		if err != nil {
+			t.Fatal(err)
+		}
+		detail, err := json.Marshal(verifyRunDetail{Systems: systems})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := srv.st.FinishRun(runID, status, string(detail)); err != nil {
+			t.Fatal(err)
+		}
+		return runID
+	}
+
+	// Run 1: a successful verify that INGESTED (the last good report).
+	runID := finishVerifyRun("ok", []igir.SystemOutcome{
+		{Sys: "nes", Outcome: igir.OutcomeVerified, DatGames: 5, Found: 5},
+	})
+	if err := srv.st.RecordVerifyResult(store.VerifyResult{
+		SystemKey: "nes", RunID: runID, FinishedAt: stamp, DatGames: 5, Found: 5,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	frag := get(t, srv.Handler(), "/partials/verify").Body.String()
+	if !strings.Contains(frag, `data-system="nes" data-verify="verified"`) {
+		t.Fatal("precondition: nes must render its green pill from the ingested report")
+	}
+	if strings.Contains(frag, "last attempt failed") {
+		t.Error("marker must not render while the newest attempt ingested fine")
+	}
+
+	// Run 2 (newer): the ADV-P3-02 shape — igir died / the report failed
+	// to parse, so the runner recorded a failed outcome and the early
+	// return skipped RecordVerifyResult entirely.
+	finishVerifyRun("error", []igir.SystemOutcome{
+		{Sys: "nes", Outcome: igir.OutcomeFailed, Err: "igir: report: open /scratch/reports/nes.csv: no such file or directory"},
+	})
+
+	frag = get(t, srv.Handler(), "/partials/verify").Body.String()
+	if !strings.Contains(frag, `data-system="nes" data-verify="verified"`) {
+		t.Error("the pill must still render the last GOOD ingest (the report is authoritative)")
+	}
+	if !strings.Contains(frag, ">last attempt failed</span>") {
+		t.Error("a failed attempt newer than the last ingest must render the honesty marker")
+	}
+	if !strings.Contains(frag, `title="last attempt failed — showing last good report"`) {
+		t.Error("marker tooltip must say the report shown is the last good one")
+	}
+
+	// Run 3 (newest): a successful attempt that ingests again — marker clears.
+	runID3 := finishVerifyRun("ok", []igir.SystemOutcome{
+		{Sys: "nes", Outcome: igir.OutcomeVerified, DatGames: 5, Found: 5},
+	})
+	if err := srv.st.RecordVerifyResult(store.VerifyResult{
+		SystemKey: "nes", RunID: runID3, FinishedAt: stamp, DatGames: 5, Found: 5, Duplicate: 5,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	frag = get(t, srv.Handler(), "/partials/verify").Body.String()
+	if strings.Contains(frag, "last attempt failed") {
+		t.Error("marker must clear once a newer attempt ingests")
 	}
 }
 
@@ -501,6 +582,64 @@ func TestStageTorrentValidation(t *testing.T) {
 	}
 	if !found {
 		t.Error("stage-torrent run not recorded")
+	}
+}
+
+// TestStageTorrentRefusesExistingTarget (ADV-P3-04): the store step
+// must open with O_CREATE|O_EXCL|O_NOFOLLOW — whatever already sits at
+// torrentDir/<catalogue-name> (a regular file OR a pre-planted symlink)
+// fails loudly with 409 instead of being overwritten/followed. Not
+// remotely reachable today (root-owned dir, catalogue-whitelisted
+// names); the flag pair makes it structurally impossible anyway.
+func TestStageTorrentRefusesExistingTarget(t *testing.T) {
+	root := t.TempDir()
+	srv, _ := newDownloadsServer(t, root)
+	tdir := filepath.Join(root, "metadata", "minerva-torrents")
+
+	upload := func() *httptest.ResponseRecorder {
+		b, c := stageBody(t, "my snes set.torrent", []byte("d4:infod4:name4:snes-NEW"))
+		req := httptest.NewRequest("POST", "/systems/snes/stage-torrent", b)
+		req.Header.Set("X-HX-Request", "true")
+		req.Header.Set("Content-Type", c)
+		rec := httptest.NewRecorder()
+		srv.Handler().ServeHTTP(rec, req)
+		return rec
+	}
+
+	// 1. Existing regular file at the catalogue name: 409, NOT overwritten.
+	staged := filepath.Join(tdir, "T2.torrent")
+	if err := os.WriteFile(staged, []byte("ORIGINAL"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if rec := upload(); rec.Code != http.StatusConflict {
+		t.Errorf("re-upload over an existing torrent = %d, want 409", rec.Code)
+	}
+	if got, _ := os.ReadFile(staged); string(got) != "ORIGINAL" {
+		t.Errorf("existing torrent was modified: %q, want ORIGINAL", got)
+	}
+
+	// 2. Pre-planted SYMLINK at the catalogue name: refused, NOT followed.
+	target := filepath.Join(root, "evil-payload.bin")
+	if err := os.WriteFile(target, []byte("PRECIOUS"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(staged); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, staged); err != nil {
+		t.Fatal(err)
+	}
+	if rec := upload(); rec.Code != http.StatusConflict {
+		t.Errorf("upload through a pre-planted symlink = %d, want 409 (not followed)", rec.Code)
+	}
+	if got, _ := os.ReadFile(target); string(got) != "PRECIOUS" {
+		t.Errorf("symlink target was written through: %q, want PRECIOUS", got)
+	}
+	// The symlink itself is left in place — the operator removes it
+	// deliberately; the handler only refuses to write through it.
+	fi, err := os.Lstat(staged)
+	if err != nil || fi.Mode()&os.ModeSymlink == 0 {
+		t.Errorf("the pre-planted symlink must survive untouched (err=%v)", err)
 	}
 }
 

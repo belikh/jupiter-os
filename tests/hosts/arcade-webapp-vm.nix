@@ -343,6 +343,24 @@ let
     [ "$size" = 2097152 ] || fail "payload size $size, want 2097152"
     echo "smoke: resume works; download completed (2.0 MiB into incoming/nes)"
 
+    # ADV-P3-01: the P3 verify steps below depend on the infohash-named
+    # .torrent companion aria2 just dropped into incoming/nes — it is
+    # what exercises the runner's --input-exclude against the REAL igir
+    # (D-P3e). No later step can notice it never arrived: green would
+    # still pass with the exclude never having mattered, i.e. vacuous
+    # coverage. Assert it exists HERE, at the step that produces it.
+    # The natural idiom here is `compgen -G`, but nixpkgs' bash 5.3 is
+    # built WITHOUT programmable completion ("compgen: command not
+    # found", rc=127) — use a POSIX glob loop instead, which any shell
+    # handles.
+    torrent_seen=""
+    for f in ${incoming}/nes/*.torrent; do
+      if [ -e "$f" ]; then torrent_seen=1; break; fi
+    done
+    [ -n "$torrent_seen" ] \
+      || fail "aria2 metadata companion missing — --input-exclude coverage is vacuous"
+    echo "smoke: aria2 .torrent metadata companion present in incoming/nes (--input-exclude coverage is real)"
+
     # The acquire submission is recorded in the runs table (audit trail).
     for _ in $(seq 1 10); do
       status=$(curl -sf "$base/partials/status" || true)
@@ -375,7 +393,8 @@ let
     # exercises the runner's --input-exclude **/*.torrent against the
     # real igir (aria2 writes these into every download dir even via
     # addTorrent — D-P3e; the run must still reach green with it
-    # present).
+    # present; its presence is asserted right after the resume step —
+    # ADV-P3-01, so the coverage can never silently go vacuous).
     rm -f ${incoming}/nes/vm-fixture-payload.bin
 
     # The verify worklist renders with pills still unknown (nothing

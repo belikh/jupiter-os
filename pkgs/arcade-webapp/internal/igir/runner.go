@@ -134,8 +134,30 @@ type Runner struct {
 }
 
 // New builds a Runner. rescan may be nil.
-func New(cfg Config, st *store.Store, rescan func() error, lg *log.Logger) *Runner {
-	return &Runner{cfg: cfg, st: st, rescan: rescan, log: lg}
+//
+// Every path field except Binary must be an ABSOLUTE path (empty
+// included in the rejection: filepath.Join("", sys) yields a bare
+// relative key): igir resolves relative path arguments — and expands
+// the input-anchored --input-exclude glob — against its process cwd,
+// so a relative root silently re-arms exactly the cwd-rooted crawl the
+// anchored exclude exists to prevent (D-P3e, the run-2/5 VM hang that
+// walked the whole nix store). The NixOS module always passes absolute
+// paths; this guard exists for hand-rolled envs and fails construction
+// loudly instead of hanging minutes later (ADV-P3-03).
+func New(cfg Config, st *store.Store, rescan func() error, lg *log.Logger) (*Runner, error) {
+	for _, f := range []struct{ field, path string }{
+		{"IncomingDir", cfg.IncomingDir},
+		{"DATDir", cfg.DATDir},
+		{"CartridgeRoot", cfg.CartridgeRoot},
+		{"OpticalRoot", cfg.OpticalRoot},
+		{"ModernRoot", cfg.ModernRoot},
+		{"ReportDir", cfg.ReportDir},
+	} {
+		if f.path == "" || !filepath.IsAbs(f.path) {
+			return nil, fmt.Errorf("igir: Config.%s must be an absolute path, got %q (relative roots re-arm igir's cwd-rooted glob expansion)", f.field, f.path)
+		}
+	}
+	return &Runner{cfg: cfg, st: st, rescan: rescan, log: lg}, nil
 }
 
 // State returns the current in-memory verify status.

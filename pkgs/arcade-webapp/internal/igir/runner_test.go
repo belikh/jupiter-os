@@ -117,7 +117,7 @@ func newRig(t *testing.T, systems ...store.SystemRow) *rig {
 	}
 	r.st = st
 	r.argsFile = filepath.Join(root, "argv")
-	r.runner = New(Config{
+	runner, err := New(Config{
 		Binary:        fakeIgir(t, root),
 		IncomingDir:   r.incoming,
 		DATDir:        r.datDir,
@@ -126,6 +126,10 @@ func newRig(t *testing.T, systems ...store.SystemRow) *rig {
 		ModernRoot:    r.modern,
 		ReportDir:     r.reports,
 	}, st, func() error { r.rescans++; return nil }, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.runner = runner
 	t.Setenv("FAKE_IGIR_ARGS", r.argsFile)
 	return r
 }
@@ -456,6 +460,40 @@ func TestUnconfiguredRunner(t *testing.T) {
 	}
 	if oc[0].Outcome == OutcomeVerified {
 		t.Error("unconfigured runner must not report verified")
+	}
+}
+
+// TestNewRejectsRelativeRoots (ADV-P3-03): igir resolves relative path
+// arguments (and expands the --input-exclude glob) against its process
+// cwd, so a relative config root would silently re-arm exactly the
+// cwd-rooted crawl the input-anchored exclude exists to prevent (the
+// run-2/5 VM hang, D-P3e). Construction must fail loudly instead —
+// every path field except Binary is checked (empty included:
+// filepath.Join("", sys) yields a bare relative key). The module always
+// passes absolute paths; this guard is for hand-rolled envs.
+func TestNewRejectsRelativeRoots(t *testing.T) {
+	dir := t.TempDir()
+	cfg := Config{
+		Binary:        "/bin/true",
+		IncomingDir:   filepath.Join(dir, "incoming"),
+		DATDir:        filepath.Join(dir, "dats"),
+		CartridgeRoot: filepath.Join(dir, "games", "cartridge"),
+		OpticalRoot:   filepath.Join(dir, "games", "optical"),
+		ModernRoot:    filepath.Join(dir, "games", "modern"),
+		ReportDir:     filepath.Join(dir, "scratch", "reports"),
+	}
+	if r, err := New(cfg, nil, nil, nil); err != nil || r == nil {
+		t.Fatalf("all-absolute config must build (runner=%v, err=%v)", r, err)
+	}
+	for _, field := range []string{"IncomingDir", "DATDir", "CartridgeRoot", "OpticalRoot", "ModernRoot", "ReportDir"} {
+		for _, bad := range []string{"relative/path", ""} {
+			mut := cfg
+			reflect.ValueOf(&mut).Elem().FieldByName(field).SetString(bad)
+			_, err := New(mut, nil, nil, nil)
+			if err == nil || !strings.Contains(err.Error(), field) || (bad != "" && !strings.Contains(err.Error(), bad)) {
+				t.Errorf("Config.%s = %q must fail construction naming the field and path (got err=%v)", field, bad, err)
+			}
+		}
 	}
 }
 
