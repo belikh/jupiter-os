@@ -21,8 +21,8 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@b4b293eae0b79aac8a161bb32925a5508c9cca93 # v31
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0 (node24)
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
       - name: Check formatting
         run: nix run nixpkgs#nixfmt -- --check .
       - name: Flake check (evaluates every host)
@@ -44,7 +44,7 @@ jobs:
           - host-group: "kiosks"
             hosts: "amalthea metis adrastea thebe"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0 (node24)
       # Free ~30 GiB before building.
       - name: Free disk space
         uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be  # v1.3.1
@@ -63,7 +63,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       # Cache Nix evaluation/download cache by nixpkgs commit (flake.lock hash)
-      - uses: actions/cache@v4
+      - uses: actions/cache@a7833574556fa59680c1b7cb190c1735db73ebf0 # v5.0.0 (node24)
         with:
           path: ~/.cache/nix
           key: nix-${{ runner.os }}-nixpkgs-${{ hashFiles('flake.lock') }}
@@ -75,7 +75,7 @@ jobs:
           sudo install -d -m 755 /opt/ci
           sudo cp scripts/ci/post-build-hook.sh scripts/ci/cache-drainer.sh scripts/ci/retain-recent.sh /opt/ci/
           sudo chmod 755 /opt/ci/*.sh
-      - uses: cachix/install-nix-action@b4b293eae0b79aac8a161bb32925a5508c9cca93 # v31
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           extra_nix_config: |

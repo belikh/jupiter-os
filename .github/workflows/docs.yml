@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0 (node24)
 
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@252ce0ac769a3b5e2f2869cbdbb0e050f23a5a90 # v1

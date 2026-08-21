@@ -136,7 +136,7 @@ jobs:
       matrix:
         idx: [1, 2, 3, 4, 5]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0 (node24)
 
       # Same as ci.yml's build-host job — builders here do real compiling
       # (that's the whole point), so they need the same headroom.
@@ -166,14 +166,14 @@ jobs:
 
       # Cache Nix evaluation/download cache by nixpkgs commit (flake.lock hash) —
       # each builder gets its own runner-local cache, same key scheme as ci.yml.
-      - uses: actions/cache@v4
+      - uses: actions/cache@a7833574556fa59680c1b7cb190c1735db73ebf0 # v5.0.0 (node24)
         with:
           path: ~/.cache/nix
           key: nix-${{ runner.os }}-nixpkgs-${{ hashFiles('flake.lock') }}
           restore-keys: |
             nix-${{ runner.os }}-nixpkgs-${{ hashFiles('flake.lock') }}-
 
-      - uses: cachix/install-nix-action@b4b293eae0b79aac8a161bb32925a5508c9cca93 # v31
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           extra_nix_config: |
@@ -366,7 +366,7 @@ jobs:
             echo "Per-run log: \`/var/log/jupiter-ci/nom-${{ github.run_id }}-callisto.jsonl\` (replay after the fact with \`nom --json < <file>\`)."
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0 (node24)
 
       - name: Free disk space
         uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be  # v1.3.1
@@ -385,7 +385,7 @@ jobs:
           sudo apt-get install -y qemu-user-static binfmt-support
           sudo update-binfmts --enable qemu-i386 || true
 
-      - uses: cachix/install-nix-action@b4b293eae0b79aac8a161bb32925a5508c9cca93 # v31
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           extra_nix_config: |
@@ -1051,7 +1051,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0 (node24)
 
       - uses: actions/download-artifact@v4
         with:
