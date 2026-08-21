@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE datafile PUBLIC "-//Logiqx//DTD ROM Management Datafile//EN" "http://www.logiqx.com/Dats/datafile.dtd">
+<datafile>
+	<header>
+		<name>Nintendo Entertainment System (jupiter fixture)</name>
+		<description>Self-authored jupiter-os arcade-webapp fixture DAT: dummy ROM bytes, no copyrighted material</description>
+		<version>1.0</version>
+		<date>2026-08-21</date>
+		<author>jupiter-os</author>
+		<homepage>https://github.com/belikh/jupiter-os</homepage>
+	</header>
+	<game name="Starlit Vault (USA)">
+		<description>Starlit Vault (USA)</description>
+		<rom name="Starlit Vault (USA).nes" size="24592" crc="d61290e9" md5="22454567868b1ce3bb82bfc2a74791e4" sha1="d2e3a621e3cb2185d8f0557f7cc911a90eb206c4"/>
+	</game>
+	<game name="Mecha Garden (Japan)">
+		<description>Mecha Garden (Japan)</description>
+		<rom name="Mecha Garden (Japan).nes" size="131072" crc="fcdcf797" md5="65cd9ddb613c3e20d098b0d28cc895fb" sha1="760922e248ec0abd0674de72007dbf5b6b044076"/>
+	</game>
+	<game name="Pogo Postman (Europe)">
+		<description>Pogo Postman (Europe)</description>
+		<rom name="Pogo Postman (Europe).nes" size="65536" crc="f15cb71a" md5="c41db066afe4d9b350fb3530e978c93b" sha1="146c949fe7397af4158745cbba51a43c94b3dfed"/>
+	</game>
+	<game name="Crystal Carp (USA) (Rev A)">
+		<description>Crystal Carp (USA) (Rev A)</description>
+		<rom name="Crystal Carp (USA) (Rev A).nes" size="40961" crc="abe808ee" md5="f757cf1aab64d1263802fa34de5b0d05" sha1="d45eee5497f4354bdd1a6a26ccfa650330629b04"/>
+	</game>
+	<game name="Neon Ninjutsu (World)">
+		<description>Neon Ninjutsu (World)</description>
+		<rom name="Neon Ninjutsu (World).nes" size="32768" crc="907aff7a" md5="80ef58cbf1e60a81a400303fee709374" sha1="c952978bf8772a9b06442adf1015c0e8b849c62b"/>
+	</game>
+</datafile>

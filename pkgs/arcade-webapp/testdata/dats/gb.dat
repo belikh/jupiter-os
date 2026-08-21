@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE datafile PUBLIC "-//Logiqx//DTD ROM Management Datafile//EN" "http://www.logiqx.com/Dats/datafile.dtd">
+<datafile>
+	<header>
+		<name>Nintendo Game Boy (jupiter fixture)</name>
+		<description>Self-authored jupiter-os arcade-webapp fixture DAT: dummy ROM bytes, no copyrighted material</description>
+		<version>1.0</version>
+		<date>2026-08-21</date>
+		<author>jupiter-os</author>
+		<homepage>https://github.com/belikh/jupiter-os</homepage>
+	</header>
+	<game name="Pocket Plumber (USA)">
+		<description>Pocket Plumber (USA)</description>
+		<rom name="Pocket Plumber (USA).gb" size="65536" crc="1d9550b0" md5="0498caec75b9a0b3cd1afa8a9c2241b4" sha1="41ce2177db00bdfa25d7d346bff98a7b82c3ea5e"/>
+	</game>
+	<game name="Grumble Weed (Japan)">
+		<description>Grumble Weed (Japan)</description>
+		<rom name="Grumble Weed (Japan).gb" size="32769" crc="16a6bd6d" md5="d9109ee40353c162e5791acb1eb78e89" sha1="13e25bcb7a3bb6a23a51410696542497dd2de906"/>
+	</game>
+	<game name="Marble Marsupial (Europe)">
+		<description>Marble Marsupial (Europe)</description>
+		<rom name="Marble Marsupial (Europe).gb" size="131072" crc="f10b9ae9" md5="ac72344c238cf6ac4f74fed7efab3ff6" sha1="44e2d3b91cb4140a4f36d8d4382557dd31f047d1"/>
+	</game>
+	<game name="Static Sheep (World)">
+		<description>Static Sheep (World)</description>
+		<rom name="Static Sheep (World).gb" size="8192" crc="bf684445" md5="3de29c8466f262ba03807461ac9cc859" sha1="fdb42a1e3a754dcfdef9f149b05f877c1175915e"/>
+	</game>
+</datafile>

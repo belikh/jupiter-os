@@ -5,12 +5,13 @@ The live heartbeat of the builder/critic loop driving
 every critic verdict. Screenshots (when they exist) land under
 `arcade-webapp-gauntlet/` next to this file.
 
-- **Phase:** 0 — evaluation, ADR, fixture corpus, stub (fixture corpus in
-  flight; P1–P8 pending)
+- **Phase:** 0 **complete** (exit gate met: D1–D4 decided with evidence,
+  ADR committed, fixture igir-green, stub building, fmt/check green) —
+  Phase 1 (P1 dashboard) is next
 - **Branch:** `arcade/webapp-gauntlet`
 - **ADR:** [ADR-0002 — custom, not RomM](../adr/0002-arcade-webapp-custom-vs-romm.md)
   (D1 research-confirmed 2026-08-21; D2–D4 accepted)
-- **Last update:** 2026-08-21 11:05 AEST
+- **Last update:** 2026-08-21 11:20 AEST
 
 ## Piece table
 
@@ -38,11 +39,11 @@ every boundary, pass/fail/blocked — never asserted without a run.
 
 | Command | Result | Notes |
 |---|---|---|
-| `nix build .#arcade-webapp` | **pass** (2026-08-21) | stub + flake wiring verified post-commit; `result/bin/arcade-webapp` |
-| `go test ./...` (in `pkgs/arcade-webapp`) | **pass** (2026-08-21) | stub handler tests green; fixture corpus tests (determinism, DAT well-formed) land with the fixture commit |
-| `make fixture-arcade` | pending | gate: `igir copy test report` per system with zero unmatched |
-| `make fmt` then `make fmt-check` | pending | run at the Phase 0 boundary |
-| `make check` | pending | `nix flake check --no-build` — every host still evals |
+| `nix build .#arcade-webapp` | **pass** (2026-08-21) | verified again post-fixture (subPackages pins the package to `cmd/arcade-webapp` only); `result/bin/arcade-webapp` |
+| `go test ./...` (in `pkgs/arcade-webapp`) | **pass** (2026-08-21) | `internal/web` handler tests + `internal/fixture`: DAT↔generator hash equivalence (both directions), determinism, idempotence + stale-DAT guard, name invariants, DAT byte-stability |
+| `make fixture-arcade` | **pass** (2026-08-21) | gate: igir 5.3.0 (pinned via flake-locked nixpkgs) `copy test report` per system with cartridge-verify.sh's exact flags — **nes 5/5, snes 4/4, gb 4/4 FOUND, 0 UNUSED (zero unmatched)**; negative control (corrupted ROM) fails the gate ✓; UNUSED tripwire verified against a probe CSV ✓ |
+| `make fmt` then `make fmt-check` | **pass** (2026-08-21) | clean at the Phase 0 boundary |
+| `make check` | **pass** (2026-08-21) | `nix flake check --no-build` — every host still evals |
 | D1 RomM research | **pass** (2026-08-21) | adversarial source-level research confirmed CUSTOM with corrections F1–F3 (ADR-0002 §D1); runtime VM experiment optional, not blocking |
 
 ## Decision log

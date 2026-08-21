@@ -1,4 +1,4 @@
-.PHONY: build-all check update fmt fmt-check verify-arcade status-arcade docs docs-serve
+.PHONY: build-all check update fmt fmt-check verify-arcade status-arcade fixture-arcade docs docs-serve
 
 # Build every registered host closure (the 4 dashboard kiosks).
 build-all:
@@ -51,6 +51,14 @@ verify-arcade:
 # at 10.1.1.2 and the arcade-inventory timer to have run at least once.
 status-arcade:
 	./scripts/arcade-status.sh
+
+# Regenerate the arcade-webapp fixture ROM tree (deterministic, self-authored
+# dummy bytes — see tests/fixtures/arcade/README.md) and run the igir
+# zero-unmatched gate over it (gauntlet plan §1.3 item 6 / AC-3 fixture half).
+# Needs go on PATH; igir comes from the flake's locked nixpkgs via nix run
+# (override with IGIR=/path/to/igir to use a local binary).
+fixture-arcade:
+	./scripts/fixture-arcade.sh
 
 # Update flake locks
 update:
