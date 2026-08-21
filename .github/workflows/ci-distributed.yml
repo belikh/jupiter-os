@@ -158,6 +158,12 @@ jobs:
 
       - name: Enable i686 binfmt emulation
         run: |
+          # nothing-but-nix's background purge can hold the dpkg lock here
+          # too (same race as the tailscale install) — wait it out.
+          for _ in $(seq 1 60); do
+            sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || break
+            echo "dpkg busy (nothing-but-nix purge); waiting..."; sleep 5
+          done
           sudo apt-get update
           sudo apt-get install -y qemu-user-static binfmt-support
           sudo update-binfmts --enable qemu-i386 || true
@@ -395,6 +401,12 @@ jobs:
 
       - name: Enable i686 binfmt emulation (coordinator)
         run: |
+          # nothing-but-nix's background purge can hold the dpkg lock here
+          # too (same race as the tailscale install) — wait it out.
+          for _ in $(seq 1 60); do
+            sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || break
+            echo "dpkg busy (nothing-but-nix purge); waiting..."; sleep 5
+          done
           sudo apt-get update
           sudo apt-get install -y qemu-user-static binfmt-support
           sudo update-binfmts --enable qemu-i386 || true
