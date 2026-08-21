@@ -1,0 +1,1121 @@
+name: CI (distributed builders) — europa+callisto
+
+# DESIGN DRAFT — not wired to any trigger yet, not enabled. See PR/commit
+# discussion before flipping `on:` to something live. Costs ~6 concurrent
+# GH-hosted runner-minutes per invocation (5 builders + 1 coordinator) vs.
+# ci.yml's current ~6, and needs one new repo secret (CI_BUILDER_SSH_KEY,
+# see below) that does not exist yet.
+#
+# ---------------------------------------------------------------------------
+# WHY THIS SHAPE
+# ---------------------------------------------------------------------------
+# ci.yml parallelizes at HOST granularity (matrix, one job per host/group) —
+# capped at ~6 real hosts. This workflow instead parallelizes at DERIVATION
+# granularity: 5 disposable machines register as Nix remote builders, and
+# ONE coordinator job builds each host closure in turn, letting Nix's own
+# scheduler fan that host's independent derivations out across all 5
+# builders concurrently — regardless of host count.
+#
+# The coordinator builds hosts SEQUENTIALLY (one nix build per host, looped),
+# not as a single combined `nix build` across all 6 nixosConfigurations at
+# once. An earlier attempt at the combined form hit store issues traced to
+# the kiosks (shared cross-host derivations confusing one evaluation's
+# GC-root/output bookkeeping) — see the "Build + push each host closure
+# sequentially" step below. Cross-host derivation sharing (e.g. the skylake
+# kiosk base every kiosk shares) still substitutes from Harmonia after the
+# first kiosk pushes it, it just isn't deduped within a single evaluation.
+#
+# ---------------------------------------------------------------------------
+# RENDEZVOUS: deterministic Tailscale hostnames, no discovery service needed
+# ---------------------------------------------------------------------------
+# headscale has MagicDNS enabled with base_domain=ts.jupiter.au
+# (modules/services/headscale.nix). Each builder registers as
+# `ci-b<idx>-<run_id>.ts.jupiter.au` — `idx` (matrix value) and `run_id`
+# (github.run_id) are both known to EVERY job in the run before it starts,
+# so the coordinator can address all 5 builders directly with no artifact
+# upload / polling / external KV store to discover them. run_id is included
+# specifically to avoid hostname collisions between two CI runs that overlap
+# on different refs (main push + an open PR, say) — idx alone would collide.
+#
+# ---------------------------------------------------------------------------
+# SHUTDOWN: builders poll the Actions API for the coordinator's status
+# ---------------------------------------------------------------------------
+# Builders have no fixed amount of work — they must stay alive exactly as
+# long as the coordinator needs them. There's no push-based signal available
+# between sibling jobs in one run, so each builder polls
+# `GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs` (via `gh api`,
+# using the default GITHUB_TOKEN) every 15s and exits once the job named
+# "coordinator" is no longer queued/in_progress. A hard `timeout-minutes`
+# ceiling on the builder job is the backstop if that never resolves.
+#
+# ---------------------------------------------------------------------------
+# NEW SECRET REQUIRED: CI_BUILDER_SSH_KEY
+# ---------------------------------------------------------------------------
+# A dedicated ed25519 keypair, CI-only, distinct from EUROPA_CI_SSH_KEY and
+# the fleet's nix_build_ssh_key sops secret (that one's private half lives
+# only on already-provisioned hosts, not in GitHub Secrets). Generate once:
+#   ssh-keygen -t ed25519 -N "" -C jupiter-ci-builder -f ci_builder_key
+# Store the PRIVATE half as the repo secret CI_BUILDER_SSH_KEY. The public
+# half is derived at runtime on each builder via `ssh-keygen -y` — only one
+# secret to manage, nothing to keep in sync.
+#
+# ---------------------------------------------------------------------------
+# KNOWN GAPS / THINGS TO VALIDATE BEFORE ENABLING
+# ---------------------------------------------------------------------------
+# - Not yet load-tested: 5 concurrent ephemeral tailnet joins/leaves per
+#   run against headscale — confirm it doesn't choke or leak stale nodes
+#   (ephemeral nodes should self-prune on disconnect, but verify empirically
+#   rather than trusting that here).
+# - No per-builder resource tuning: every builder advertises maxJobs=1,
+#   speedFactor=4, and the same feature set (kvm, benchmark, big-parallel,
+#   gccarch-bdver4, gccarch-skylake). maxJobs=1 matches the builder's own
+#   nix.conf (max-jobs=1, cores=4 — one derivation at a time on all 4 cores,
+#   the callisto/kiosk large-package shape, not pallene's cores=1
+#   many-small-packages shape); declaring more would lie to the coordinator,
+#   which dispatches against this number and would queue jobs at a remote
+#   daemon that only runs one at a time. GH-hosted runners are homogeneous,
+#   so this is fine unless a future variant mixes runner sizes.
+# - The 90-minute hard caps below are a guess, not measured against a real
+#   distributed run — revisit once this has actually built the fleet once.
+# - GITHUB_TOKEN needs `actions: read` for the builder jobs' polling step;
+#   declared explicitly below rather than relying on default repo policy.
+#
+# ---------------------------------------------------------------------------
+# COORDINATOR-ONLY PUSH: builders do not drain to europa
+# ---------------------------------------------------------------------------
+# ci.yml's build-host job stages scripts/ci/post-build-hook.sh +
+# cache-drainer.sh so the job pushes each output as it's built. Builders here
+# don't: with the ssh-ng remote-build protocol every output a builder produces
+# is streamed back to the COORDINATOR's own store, so the coordinator is the
+# single node holding every host's full closure. Its post-build-hook +
+# cache-drainer (see "Install async push system") drain to root@europa
+# one path at a time as the hook fires, and a final `nix copy` of the
+# toplevels ("Stop drainer, final push") guarantees completeness.
+#
+# History: an earlier version wired cache-drainers onto all 19 builders too.
+# That meant up to 19 concurrent `nix copy` sessions hitting jupiter-ci@europa,
+# which overloaded it — batches timed out (rc=123 at the 600s ceiling) and
+# ~75% of push attempts failed. (The coordinator's own pusher was meanwhile
+# dead: it ran push-daemon.sh against `europa-build`, an alias never defined
+# in this workflow.) Both fixed: builders no longer push, and the coordinator
+# drains as root@europa (the jupiter-ci key was never offered by ssh on the
+# coordinator, but root->europa already works — the nom log streams over it).
+# Revisit only if the
+# coordinator's single serial push becomes the bottleneck.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  # false, not true: a full-fleet distributed build can take more than one
+  # run to land (retry after a flaky builder, iterate on a fix), and a
+  # second workflow_dispatch shouldn't kill a build already in flight on the
+  # 5 shared builders. false makes the new run QUEUE behind the running one
+  # instead of cancelling it. Caveat: GitHub's queue only holds one pending
+  # run per group — if you dispatch a third run while one is running and one
+  # is already queued, the previously-queued run is cancelled in favor of the
+  # newest (the in-progress run is never touched). Fire dispatches one at a
+  # time if you need every one of them to actually run.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  builder:
+    name: builder-${{ matrix.idx }}
+    runs-on: ubuntu-latest
+    # 360 is GitHub's hard per-job ceiling — `timeout-minutes` cannot exceed
+    # it, and omitting it would default to the same 360 anyway. See the
+    # coordinator's cap for why these three numbers move together.
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        idx: [1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0 (node24)
+
+      # Same as ci.yml's build-host job — builders here do real compiling
+      # (that's the whole point), so they need the same headroom.
+      # Nothing but Nix: carves a BTRFS volume out of /mnt's unused space for
+      # /nix (65-130GB vs ~22GB stock), purges preinstalled software in the
+      # background while the build runs, and grows the volume dynamically.
+      # Full-fleet closures were overflowing stock runners partway through;
+      # replaces jlumbroso/free-disk-space which freed less and raced the build.
+      - name: Nothing but Nix (disk space)
+        uses: wimpysworld/nothing-but-nix@687c797a730352432950c707ab493fcc951818d7  # v10
+
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Enable i686 binfmt emulation
+        run: |
+          # nothing-but-nix purges with apt-get in the background; a
+          # pre-check races (lock can appear between check and install).
+          # DPkg::Lock::Timeout makes apt WAIT natively instead of exiting 100.
+          sudo apt-get -o DPkg::Lock::Timeout=300 update
+          sudo apt-get -o DPkg::Lock::Timeout=300 install -y qemu-user-static binfmt-support
+          sudo update-binfmts --enable qemu-i386 || true
+
+      # Cache Nix evaluation/download cache by nixpkgs commit (flake.lock hash) —
+      # each builder gets its own runner-local cache, same key scheme as ci.yml.
+      - uses: actions/cache@a7833574556fa59680c1b7cb190c1735db73ebf0 # v5.0.0 (node24)
+        with:
+          path: ~/.cache/nix
+          key: nix-${{ runner.os }}-nixpkgs-${{ hashFiles('flake.lock') }}
+          restore-keys: |
+            nix-${{ runner.os }}-nixpkgs-${{ hashFiles('flake.lock') }}-
+
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: |
+            # Harmonia throttle + cache.nixos.org-first. nix's defaults
+            # (max-substitution-jobs 16, http-connections 25) across 19 builders
+            # meant hundreds of concurrent connections to cache.jupiter.au and
+            # overloaded it. Cap each builder to 1 substitution job / 2 http
+            # connections (19 x 1 = 19 jobs, 19 x 2 = 38 conns fleet-wide).
+            # cache.nixos.org first so Harmonia is only queried for paths the
+            # public cache lacks (the tuned closures), not a 404 per standard
+            # path. http2 = false ON PURPOSE: cache.jupiter.au is Harmonia over
+            # a Cloudflare Tunnel, and h2 NAR downloads intermittently die with
+            # "Stream error in the HTTP/2 framing layer" (HTTP 200 mid-transfer);
+            # one such error makes nix disable the substituter for the rest of
+            # the run, so the tuned closures then build from source (seen in run
+            # 31373157599). http/1.1 (one connection per fetch) is reliable; the
+            # connection count is bounded by max-substitution-jobs=1 +
+            # http-connections=1 per builder, and connect-timeout=60 absorbs the
+            # start-of-build herd.
+            substituters = https://cache.nixos.org https://cache.jupiter.au
+            trusted-public-keys = ${{ secrets.HARMONIA_PUBLIC_KEY }} cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+            connect-timeout = 60
+            # Auto-GC before the run drowns the disk: full-fleet closures plus
+            # their substitutions overflow a ~60GB runner partway through.
+            # Active derivations are GC-rooted, so this only prunes paths we
+            # can re-substitute later if needed.
+            min-free = 10G
+            max-free = 25G
+            # Never-disable policy: nix disables a binary cache for 60s per failed
+            # download and that window is hardcoded upstream — the only lever is
+            # making failures rare. stalled-download-timeout governs zero-data
+            # gaps mid-transfer (DERP relays trickle); default 300s aborts
+            # transfers that would otherwise complete.
+            stalled-download-timeout = 900
+            trusted-users = root runner
+            http2 = false
+            max-substitution-jobs = 1
+            http-connections = 1
+            system-features = kvm benchmark big-parallel gccarch-bdver4 gccarch-skylake
+            extra-platforms = i686-linux x86_64-linux
+            cores = 4
+            max-jobs = 1
+            # No post-build-hook: builders don't push. The coordinator is the
+            # sole pusher (its post-build-hook + cache-drainer drain to europa).
+            # A hook here would write to a FIFO nothing reads, and once the pipe
+            # buffer fills it would block nix's build loop.
+            fallback = true
+
+      - name: Join tailnet under deterministic hostname
+        run: |
+          # nothing-but-nix purges with apt-get in the background; install.sh
+          # runs its own un-tunable apt-get -> retry until it wins the lock.
+          # NO curl|sh pipelines: without pipefail a failed download makes sh
+          # run empty-input and exit 0 ("success" with no tailscale installed).
+          # Fetch to file first, then execute, then VERIFY the binary exists.
+          TS_OK=0
+          for _ in $(seq 1 30); do
+            if curl -fsSL -o /tmp/ts-install.sh https://tailscale.com/install.sh \
+               && sudo sh /tmp/ts-install.sh \
+               && command -v tailscale >/dev/null; then
+              TS_OK=1; break
+            fi
+            echo "tailscale install failed (dpkg busy / network?); retrying in 10s"; sleep 10
+          done
+          [ "$TS_OK" = 1 ] || { echo "::error::tailscale install never succeeded"; exit 1; }
+          sudo tailscale up \
+            --login-server=https://neptune.jupiter.au:8080 \
+            --authkey=${{ secrets.TAILSCALE_CI_AUTHKEY }} \
+            --hostname="ci-b${{ matrix.idx }}-${{ github.run_id }}" \
+            --accept-routes
+
+      - name: Authorize coordinator's key, start sshd
+        run: |
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "${{ secrets.CI_BUILDER_SSH_KEY }}" > /tmp/ci_builder_key
+          chmod 600 /tmp/ci_builder_key
+          ssh-keygen -y -f /tmp/ci_builder_key > "$HOME/.ssh/authorized_keys"
+          rm -f /tmp/ci_builder_key
+          chmod 600 "$HOME/.ssh/authorized_keys"
+          sudo mkdir -p /run/sshd
+          sudo /usr/sbin/sshd -D -o Port=22 -o PasswordAuthentication=no -o PermitRootLogin=no \
+            -o AuthorizedKeysFile="$HOME/.ssh/authorized_keys" &
+          echo "builder ci-b${{ matrix.idx }}-${{ github.run_id }} ready: $(tailscale ip -4)"
+
+      # Builders do NOT drain to europa — the coordinator is the sole pusher.
+      # (The steps that used to stage cache-drainer.sh + europa SSH and launch a
+      # per-builder drainer lived here; removed when pushing moved to the
+      # coordinator. See the header's "coordinator-only push" note.)
+
+      # Sampler runs for the whole window the coordinator is dispatching to
+      # us. /proc/stat is the only honest source here: `nix build` output
+      # lives on the coordinator, so a builder can't tell from its own logs
+      # whether it was saturated or idling on the critical path.
+      - name: Start build-stats sampler
+        run: |
+          mkdir -p /tmp/stats
+          # Baseline BEFORE any coordinator work arrives, so install-nix's
+          # own activity isn't counted as builds we performed.
+          find /nix/var/log/nix/drvs -type f 2>/dev/null | wc -l > /tmp/stats/drv_before
+          nproc > /tmp/stats/nproc
+          date +%s > /tmp/stats/t_start
+          nohup bash -c '
+            prev_total=0; prev_idle=0
+            while true; do
+              read -r _ u n s i w irq sirq st _ < /proc/stat
+              total=$((u+n+s+i+w+irq+sirq+st)); idle=$((i+w))
+              if [ "$prev_total" -ne 0 ]; then
+                dt=$((total-prev_total)); di=$((idle-prev_idle))
+                [ "$dt" -gt 0 ] && echo $(( (100*(dt-di))/dt )) >> /tmp/stats/cpu_samples
+              fi
+              prev_total=$total; prev_idle=$idle
+              sleep 5
+            done' >/dev/null 2>&1 &
+          echo "sampler started (pid $!)"
+
+      - name: Wait until the coordinator job finishes, then exit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # 355, not 360: builders must serve for as long as the coordinator
+          # can possibly run, but the job itself is killed at 360, so leave 5
+          # minutes for the stats collection + upload steps below. If this
+          # deadline ever drops BELOW the coordinator's timeout, builders
+          # shut down mid-build and the coordinator is left with zero
+          # builders and max-jobs=0 — it then stalls doing nothing until its
+          # own timeout, a silent failure that looks nothing like its cause.
+          deadline=$(( $(date +%s) + 355*60 ))
+          while [ "$(date +%s)" -lt "$deadline" ]; do
+            status=$(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}/jobs" \
+              --jq '.jobs[] | select(.name=="coordinator") | .status')
+            case "$status" in
+              completed) echo "coordinator finished, shutting down"; exit 0 ;;
+              "") echo "coordinator job not visible yet, waiting" ;;
+              *) echo "coordinator status: $status" ;;
+            esac
+            sleep 15
+          done
+          echo "hit hard deadline without seeing coordinator complete, shutting down anyway"
+
+      # if: always() — a builder that died mid-build still has the most
+      # interesting stats. Never fail the job over reporting.
+      - name: Collect builder stats
+        if: always()
+        run: |
+          s=/tmp/stats
+          before=$(cat "$s/drv_before" 2>/dev/null || echo 0)
+          after=$(find /nix/var/log/nix/drvs -type f 2>/dev/null | wc -l)
+          built=$(( after - before )); [ "$built" -lt 0 ] && built=0
+          cores=$(cat "$s/nproc" 2>/dev/null || nproc)
+          window=$(( $(date +%s) - $(cat "$s/t_start" 2>/dev/null || date +%s) ))
+
+          n=0; mean=0; peak=0; sat=0
+          if [ -s "$s/cpu_samples" ]; then
+            n=$(wc -l < "$s/cpu_samples")
+            mean=$(awk '{t+=$1} END{printf "%.1f", t/NR}' "$s/cpu_samples")
+            peak=$(sort -n "$s/cpu_samples" | tail -1)
+            sat=$(awk '$1>=90{c++} END{printf "%.1f", (c/NR)*100}' "$s/cpu_samples")
+          fi
+
+          mkdir -p out
+          cat > out/stats.json <<JSON
+          {"idx": ${{ matrix.idx }}, "drvs_built": $built, "cores": $cores,
+           "cpu_mean": $mean, "cpu_peak": $peak, "cpu_pct_saturated": $sat,
+           "samples": $n, "window_s": $window}
+          JSON
+          cat out/stats.json
+
+      - name: Upload builder stats
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: builder-stats-${{ matrix.idx }}
+          path: out/stats.json
+          retention-days: 7
+
+  coordinator:
+    name: coordinator
+    needs: []  # deliberately NOT depending on `builder` — they must run concurrently, not before
+    runs-on: ubuntu-latest
+    # Maxed to GitHub's 360 ceiling: the previous 75 was, by the header's own
+    # admission, "a guess, not measured against a real distributed run", and
+    # run 31147835511 passed it with europa's btver2 closure still building.
+    #
+    # These three numbers are a LADDER and must move together:
+    #   coordinator timeout-minutes  360   (this)
+    #   builder poll deadline        355   (builders serve past every build)
+    #   builder timeout-minutes      360   (room for the stats steps)
+    # Builders idle-poll until the coordinator completes, so if their
+    # deadline ever falls below this cap they exit mid-build and strand the
+    # coordinator with no builders and max-jobs=0.
+    #
+    # Cost note: because 5 builders idle alongside this job, a hung
+    # coordinator now burns up to 6 x 6h of runner time rather than 6 x
+    # 75min. The cap is a cost circuit-breaker, and it has been widened
+    # deliberately in exchange for not truncating a real full-fleet build.
+    timeout-minutes: 360
+    steps:
+      # Emit the nom watch tip + job summary FIRST, so it renders on the run
+      # Summary page the moment the coordinator starts — not minutes later
+      # when the Build step runs. Points at the run-specific log, not the
+      # current.jsonl symlink: that symlink isn't repointed to this run until
+      # the Build step, and a `tail -F` started now would otherwise stick on
+      # the previous run's target. tail -F on the run-specific path waits for
+      # the file the Build step creates, then streams.
+      - name: nom watch tip
+        run: |
+          NOM_TIP="ssh -t root@europa 'tail -n +1 -F /var/log/jupiter-ci/nom-${{ github.run_id }}-callisto.jsonl | nom --json'"
+          echo "::notice title=Watch this build in nom::$NOM_TIP"
+          {
+            echo "### Watch this build live in \`nom\`"
+            echo
+            echo '```bash'
+            echo "$NOM_TIP"
+            echo '```'
+            echo
+            echo "Per-run log: \`/var/log/jupiter-ci/nom-${{ github.run_id }}-callisto.jsonl\` (replay after the fact with \`nom --json < <file>\`)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0 (node24)
+
+      # Nothing but Nix: carves a BTRFS volume out of /mnt's unused space for
+      # /nix (65-130GB vs ~22GB stock), purges preinstalled software in the
+      # background while the build runs, and grows the volume dynamically.
+      # Full-fleet closures were overflowing stock runners partway through;
+      # replaces jlumbroso/free-disk-space which freed less and raced the build.
+      - name: Nothing but Nix (disk space)
+        uses: wimpysworld/nothing-but-nix@687c797a730352432950c707ab493fcc951818d7  # v10
+
+
+      - name: Enable i686 binfmt emulation (coordinator)
+        run: |
+          # nothing-but-nix purges with apt-get in the background; a
+          # pre-check races (lock can appear between check and install).
+          # DPkg::Lock::Timeout makes apt WAIT natively instead of exiting 100.
+          sudo apt-get -o DPkg::Lock::Timeout=300 update
+          sudo apt-get -o DPkg::Lock::Timeout=300 install -y qemu-user-static binfmt-support
+          sudo update-binfmts --enable qemu-i386 || true
+
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        with:
+          github_access_token: ${{ secrets.GITHUB_TOKEN }}
+          extra_nix_config: |
+            # cache.nixos.org first: the coordinator pulls the bulk of the
+            # closure, so reordered to hit Harmonia only for tuned/custom paths
+            # the public cache lacks (not a 404 for every standard path).
+            # Coordinator keeps nix's default substitution-job/connection caps —
+            # single node (not 19x), and after the reorder its parallel pulls
+            # land on cache.nixos.org, not Harmonia.
+            substituters = https://cache.nixos.org https://cache.jupiter.au
+            trusted-public-keys = ${{ secrets.HARMONIA_PUBLIC_KEY }} cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
+            connect-timeout = 60
+            # Auto-GC before the run drowns the disk: full-fleet closures plus
+            # their substitutions overflow a ~60GB runner partway through.
+            # Active derivations are GC-rooted, so this only prunes paths we
+            # can re-substitute later if needed.
+            min-free = 10G
+            max-free = 25G
+            # Never-disable policy: nix disables a binary cache for 60s per failed
+            # download and that window is hardcoded upstream — the only lever is
+            # making failures rare. stalled-download-timeout governs zero-data
+            # gaps mid-transfer (DERP relays trickle); default 300s aborts
+            # transfers that would otherwise complete.
+            stalled-download-timeout = 900
+            builders-use-substitutes = true
+            http2 = false
+            fallback = true
+            # Coordinator builds i686 locally via qemu-user, dispatches x86_64 to builders
+            system-features = kvm benchmark big-parallel gccarch-bdver4 gccarch-skylake
+            extra-platforms = i686-linux x86_64-linux
+            max-jobs = 2
+            cores = 4
+
+      - name: Install async push system (post-build-hook + cache-drainer)
+        env:
+          EUROPA_SSH_KEY: ${{ secrets.EUROPA_SSH_KEY }}
+          # The Harmonia cache SECRET key (<name>:<base64> raw cache-key line) — same key
+          # europa's harmonia sops secret holds. TODO(operator): add this
+          # GitHub secret; until it exists the hook logs a loud warning per
+          # build and europa (require-sigs=true) rejects the pushes.
+          HARMONIA_SECRET_KEY: ${{ secrets.HARMONIA_SECRET_KEY }}
+        run: |
+          # The coordinator is the SOLE pusher. Its post-build-hook fires once
+          # per path built (the remote builders stream results back here over
+          # ssh-ng, the hook fires as each lands), writing each path to a FIFO
+          # that cache-drainer.sh drains one path at a time to root@europa.
+          # Builders do NOT push — they only build what the coordinator
+          # dispatches. (The old push-daemon.sh targeted europa-build, an alias
+          # never defined in this workflow, so it never pushed anything; the 19
+          # per-builder cache-drainers were the workaround AND the source of the
+          # rc=123 contention. This restores the intended coordinator-only push.)
+          #
+          # Pushes as root, not jupiter-ci: the jupiter-ci key was never offered
+          # by ssh on the coordinator (every push failed auth, nothing landed),
+          # whereas root->europa already works — the nom log streams over that
+          # exact path. cache-drainer.sh's target/alias/key come from EUROPA_*.
+          sudo install -m 755 ${{ github.workspace }}/scripts/ci/post-build-hook.sh /usr/local/bin/nix-post-build-hook
+          sudo install -m 755 ${{ github.workspace }}/scripts/ci/cache-drainer.sh /usr/local/bin/cache-drainer
+
+          # FIFO mode 666: the hook runs as root (via nix-daemon), the drainer
+          # as the runner user — both must open it (mirrors post-build-hook.sh).
+          sudo mkdir -p /var/run /var/log
+          sudo mkfifo -m 666 /var/run/nix-push-fifo 2>/dev/null || true
+          sudo touch /var/log/nix-push-hook.log
+          sudo chmod 644 /var/log/nix-push-hook.log
+
+          # root->europa key + alias for cache-drainer.sh. The key lives at
+          # $HOME/.ssh/europa_ci (same path the Build step uses for nom-log
+          # streaming — re-staged here so it exists when the drainer launches,
+          # before the Build step runs). No pre-warm: this step runs before
+          # tailnet join, so europa isn't reachable yet — cache-drainer opens its
+          # ControlMaster on the first push during the build. (The Build step
+          # sets up the same Host europa-log block again — harmless duplicate.)
+          install -m 700 -d "$HOME/.ssh" "$HOME/.ssh/controlmasters"
+          printf '%s\n' "$EUROPA_SSH_KEY" > "$HOME/.ssh/europa_ci"
+          chmod 600 "$HOME/.ssh/europa_ci"
+          {
+            echo "Host europa-log"
+            echo "  HostName europa"
+            echo "  User root"
+            echo "  IdentityFile $HOME/.ssh/europa_ci"
+            echo "  StrictHostKeyChecking accept-new"
+            echo "  ControlMaster auto"
+            echo "  ControlPath $HOME/.ssh/controlmasters/%r@%h:%p"
+            echo "  ControlPersist 30m"
+          } >> "$HOME/.ssh/config"
+
+          # Stage the cache signing key root-readable: the post-build-hook
+          # runs via nix-daemon (as root) and signs every path before it is
+          # queued (europa enforces require-sigs=true — unsigned pushes are
+          # rejected). systemctl set-environment is how the restarted daemon
+          # (and thus the hook) receives HARMONIA_SIGNING_KEY_FILE.
+          if [ -n "$HARMONIA_SECRET_KEY" ]; then
+            # Sanitize ONLY — never reformat. Proven on europa (Nix 2.34):
+            #   nix store sign -k expects the RAW generate-binary-cache-key
+            #   line  <name>:<base64>          -> "added 1 signatures"
+            # Prefixing with 'secret-key:' makes it fail decoding key ''.
+            # A stray leading newline/CR in the GitHub secret yields a blank
+            # first line -> same "key named ''" error. Strip CRs, drop blank
+            # lines, take the last non-empty line, keep everything else as-is.
+            KEY_MATERIAL="$(printf '%s' "$HARMONIA_SECRET_KEY" | tr -d '\r' | sed '/^[[:space:]]*$/d' | tail -n1)"
+            if ! [[ "$KEY_MATERIAL" =~ ^[^:[:space:]]+:[A-Za-z0-9+/]+=*$ ]]; then
+              echo "::error::HARMONIA_SECRET_KEY malformed after sanitize (raw_len=${#HARMONIA_SECRET_KEY}, sanitized_len=${#KEY_MATERIAL}). Expected '<name>:<base64>' exactly as emitted by nix-store --generate-binary-cache-key."
+              exit 1
+            fi
+            echo "signing key staged OK: fields=$(awk -F: '{print NF}' <<<"$KEY_MATERIAL") name_len=$(awk -F: '{print length($1)}' <<<"$KEY_MATERIAL") b64_len=$(awk -F: '{print length($2)}' <<<"$KEY_MATERIAL") (valid b64 len for a 64-byte Ed25519 cache key is 88)"
+            printf '%s\n' "$KEY_MATERIAL" | sudo install -m 600 /dev/stdin /etc/nix/harmonia-signing-key
+            sudo systemctl set-environment HARMONIA_SIGNING_KEY_FILE=/etc/nix/harmonia-signing-key
+          else
+            echo "WARNING: HARMONIA_SECRET_KEY not set — paths will be unsigned and europa (require-sigs=true) will reject the push" >&2
+          fi
+
+          # Configure nix to use post-build-hook (requires daemon restart).
+          sudo tee -a /etc/nix/nix.conf > /dev/null <<'EOF'
+          post-build-hook = /usr/local/bin/nix-post-build-hook
+          EOF
+          sudo systemctl restart nix-daemon
+          echo "nix-daemon restarted with post-build-hook"
+          nix show-config post-build-hook
+
+          # Signing preflight (see ci-distributed.yml for full rationale):
+          # proves hook-path signing works before a 40min build; hard-fails
+          # otherwise instead of every push being rejected by require-sigs.
+          NIX_ABS="$(command -v nix)"
+          echo ci-signcheck | sudo tee /tmp/ci-signcheck >/dev/null
+          SIGNCHECK_P="$(sudo "$NIX_ABS" store add-file /tmp/ci-signcheck)"
+          sudo "$NIX_ABS" store sign --key-file /etc/nix/harmonia-signing-key "$SIGNCHECK_P" \
+            || { echo "::error::Signing preflight FAILED — europa require-sigs will reject all pushes. check HARMONIA_SECRET_KEY (raw '<name>:<base64>' form) and daemon env."; exit 1; }
+          echo "::notice::Signing preflight OK ($SIGNCHECK_P signed)"
+
+          # Launch the drainer (runner user). It holds the FIFO open on fd 3 and
+          # loops for the whole build, so it must outlive this step (nohup + &).
+          # EUROPA_STORE/EUROPA_SSH/EUROPA_KEY point cache-drainer.sh at root@europa
+          # (overriding its jupiter-ci defaults); NIX_BIN pins nix's path in case
+          # the background shell's PATH differs from this step's.
+          NIX_BIN="$(command -v nix)" \
+            EUROPA_STORE="ssh-ng://root@europa" \
+            EUROPA_SSH="europa-log" \
+            EUROPA_KEY="$HOME/.ssh/europa_ci" \
+            nohup /usr/local/bin/cache-drainer >/tmp/cache-drainer.log 2>&1 &
+          echo "DRAINER_PID=$!" >> $GITHUB_ENV
+          echo "cache-drainer started (PID $!) — sole pusher to root@europa"
+
+      - name: Join tailnet
+        run: |
+          # nothing-but-nix purges with apt-get in the background; install.sh
+          # runs its own un-tunable apt-get -> retry until it wins the lock.
+          # NO curl|sh pipelines: without pipefail a failed download makes sh
+          # run empty-input and exit 0 ("success" with no tailscale installed).
+          # Fetch to file first, then execute, then VERIFY the binary exists.
+          TS_OK=0
+          for _ in $(seq 1 30); do
+            if curl -fsSL -o /tmp/ts-install.sh https://tailscale.com/install.sh \
+               && sudo sh /tmp/ts-install.sh \
+               && command -v tailscale >/dev/null; then
+              TS_OK=1; break
+            fi
+            echo "tailscale install failed (dpkg busy / network?); retrying in 10s"; sleep 10
+          done
+          [ "$TS_OK" = 1 ] || { echo "::error::tailscale install never succeeded"; exit 1; }
+          sudo tailscale up \
+            --login-server=https://neptune.jupiter.au:8080 \
+            --authkey=${{ secrets.TAILSCALE_CI_AUTHKEY }} \
+            --hostname="ci-coordinator-${{ github.run_id }}" \
+            --accept-routes
+
+      - name: Start SSH daemon (coordinator also serves as builder)
+        run: |
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "${{ secrets.CI_BUILDER_SSH_KEY }}" > /tmp/ci_builder_key
+          chmod 600 /tmp/ci_builder_key
+          ssh-keygen -y -f /tmp/ci_builder_key > "$HOME/.ssh/authorized_keys"
+          rm -f /tmp/ci_builder_key
+          chmod 600 "$HOME/.ssh/authorized_keys"
+          sudo mkdir -p /run/sshd
+          sudo /usr/sbin/sshd -D -o Port=22 -o PasswordAuthentication=no -o PermitRootLogin=no \
+            -o AuthorizedKeysFile="$HOME/.ssh/authorized_keys" &
+          echo "COORDINATOR_SSHD_PID=$!" >> $GITHUB_ENV
+          echo "SSH daemon started (PID: $!)"
+
+          # Wait for SSH to be ready on localhost
+          for i in {1..60}; do
+            timeout 1 bash -c "echo > /dev/tcp/127.0.0.1/22" 2>/dev/null && break
+            sleep 1
+          done
+
+      # UNCONDITIONAL, never fails the job. `ssh: Could not resolve hostname`
+      # (the failure this workflow died on for every run up to 31145262216)
+      # is emitted identically in three different situations, and nothing
+      # downstream distinguishes them:
+      #   W1 peers absent from THIS node's netmap -> headscale isn't
+      #      propagating just-registered ephemeral same-tag peers
+      #      (juanfont/headscale#2375).
+      #   W2 netmap fine, but tailscaled never installed 100.100.100.100 as
+      #      the resolver for ts.jupiter.au on this runner, so the lookup
+      #      went to the runner's upstream resolver.
+      #   W3 netmap + DNS fine, but headscale's given_name sanitization
+      #      means the MagicDNS name isn't literally ci-b<idx>-<run_id>.
+      # The builder-side logs can't tell these apart (they show a healthy
+      # join in all three), so the discriminator has to be captured HERE,
+      # on the coordinator, before any probing narrows the picture.
+      - name: Coordinator tailnet diagnostics
+        run: |
+          echo "--- tailscale ip -4 (did this node register at all?) ---"
+          tailscale ip -4 || echo "NO TAILSCALE IP — coordinator never registered"
+
+          echo "--- peer count ---"
+          tailscale status --json | jq '.Peer // {} | length' || true
+
+          echo "--- peers (HostName | DNSName | IP | online) ---"
+          tailscale status --json \
+            | jq -r '.Peer // {} | to_entries[] | .value
+                     | "\(.HostName // "?") | \(.DNSName // "?") | \((.TailscaleIPs // ["?"])[0]) | online=\(.Online)"' \
+            || true
+
+          # One full peer object verbatim: settles which field headscale
+          # actually populates with the requested hostname, rather than
+          # leaving the discovery step's matching to assumption.
+          echo "--- first peer object, verbatim ---"
+          tailscale status --json | jq '.Peer // {} | to_entries[0].value' || true
+
+          echo "--- prefs (is DNS takeover even enabled? CorpDNS=accept-dns) ---"
+          tailscale debug prefs || true
+
+          echo "--- does MagicDNS work for THIS runner? ---"
+          getent hosts europa.ts.jupiter.au || echo "europa.ts.jupiter.au DID NOT RESOLVE"
+
+          echo "--- resolver state ---"
+          cat /etc/resolv.conf || true
+          resolvectl status 2>/dev/null | head -40 || true
+
+      # The probe below runs as `runner`, but the ACTUAL remote-build
+      # dispatch is done by nix-daemon running as ROOT — root reads
+      # /root/.ssh/config and /etc/ssh/ssh_config{,.d/*.conf} and ignores
+      # /home/runner/.ssh/config entirely. The previous shape put
+      # StrictHostKeyChecking only in the runner's own config, so every
+      # dispatch would have died with "Host key verification failed" the
+      # moment rendezvous started working (ephemeral builders generate a
+      # fresh host key every run, and root defaults to StrictHostKeyChecking=ask
+      # with no TTY attached). See nix.dev distributed-builds: when builds
+      # go through the daemon, the DAEMON user needs the SSH access.
+      # /etc/ssh/ssh_config.d/ covers runner and root in one write — the
+      # coordinator's own `ssh -vvv` output confirmed that include is
+      # honoured ("matched no files").
+      - name: Stage builder SSH key + host-checking config (runner AND root)
+        run: |
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "${{ secrets.CI_BUILDER_SSH_KEY }}" > "$HOME/.ssh/ci_builder_key"
+          chmod 600 "$HOME/.ssh/ci_builder_key"
+          # Readable by the nix-daemon's ssh (runs as root; root reads
+          # anything, but the file must exist before first dispatch).
+          ls -l "$HOME/.ssh/ci_builder_key"
+
+          # Run-scoped known-hosts + controlmasters (shared by runner and root).
+          # builders are ephemeral and generate a fresh host key every run,
+          # so accumulating them in root's real known_hosts is pure noise.
+          sudo install -m 600 /dev/null /run/ci-builders-known-hosts
+          sudo install -m 777 -d /run/ci-builders-controlmasters
+
+          sudo mkdir -p /etc/ssh/ssh_config.d
+          sudo tee /etc/ssh/ssh_config.d/ci-builders.conf >/dev/null <<EOF
+          Host 100.*
+              User runner
+              IdentityFile $HOME/.ssh/ci_builder_key
+              StrictHostKeyChecking accept-new
+              UserKnownHostsFile /run/ci-builders-known-hosts
+              ControlMaster auto
+              ControlPath /run/ci-builders-controlmasters/%r@%h:%p
+              ControlPersist 30m
+          EOF
+          sudo chmod 644 /etc/ssh/ssh_config.d/ci-builders.conf
+
+      # RENDEZVOUS BY LOCAL NETMAP, NOT BY DNS.
+      #
+      # The previous shape dialled ci-b<idx>-<run_id>.ts.jupiter.au and died
+      # with "Could not resolve hostname" on all 19 for the full deadline,
+      # while every builder job was green and had a tailnet IP. That put
+      # three unrelated failure modes (W1/W2/W3, see the diagnostics step
+      # above) behind one indistinguishable error string.
+      #
+      # `tailscale status --json` reads the LOCAL tailscaled netmap: no
+      # resolver, no systemd-resolved, no ts.jupiter.au suffix in the path,
+      # and matching raw HostName/DNSName sidesteps headscale's given_name
+      # sanitization. That eliminates W2 and W3 outright.
+      #
+      # It does NOT fix W1, and it must not pretend to: MagicDNS is DERIVED
+      # from this same netmap rather than queried from headscale per lookup,
+      # so a peer missing from the netmap is missing from `tailscale status`
+      # too. Hence the explicit empty-netmap abort below — an empty peer
+      # list is a control-plane diagnosis, not "builders still starting",
+      # and silently treating it as the latter is what would hide W1.
+      - name: Discover builders via local netmap, write /etc/nix/machines
+        env:
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          deadline=$(( $(date +%s) + 5*60 ))
+          declare -A ip_of
+          declare -A why
+          for idx in $(seq 1 5); do why[$idx]="absent from netmap"; done
+          saw_any_peer=0
+
+          # Poll: builders register ~45s after the coordinator, and late
+          # joiners must still be picked up.
+          while [ "$(date +%s)" -lt "$deadline" ]; do
+            status_json=$(tailscale status --json 2>/dev/null || echo '{}')
+            npeer=$(printf '%s' "$status_json" | jq '.Peer // {} | length' 2>/dev/null || echo 0)
+            [ "$npeer" -gt 0 ] && saw_any_peer=1
+
+            for idx in $(seq 1 5); do
+              [ -n "${ip_of[$idx]:-}" ] && continue
+              want="ci-b${idx}-${RUN_ID}"
+
+              # Match on EITHER field: depending on client version HostName
+              # is the OS hostname while DNSName is the normalized MagicDNS
+              # name, and headscale may suffix a given_name on collision.
+              # startswith is unambiguous here because the run_id follows the
+              # index (ci-b1-<id> can never prefix-match ci-b19-<id>).
+              ip=$(printf '%s' "$status_json" | jq -r --arg w "$want" '
+                    .Peer // {} | to_entries[] | .value
+                    | select(((.HostName // "") | startswith($w))
+                          or ((.DNSName  // "") | startswith($w)))
+                    | (.TailscaleIPs // [])
+                    | map(select(contains(":") | not))
+                    | .[0] // empty' 2>/dev/null | head -1)
+
+              if [ -z "$ip" ]; then
+                continue
+              fi
+
+              # A netmap entry is not proof the ACL permits port 22 — verify
+              # before trusting it, same fail-closed posture as before.
+              if timeout 15 ssh -o ConnectTimeout=5 -o BatchMode=yes \
+                   -o StrictHostKeyChecking=accept-new \
+                   -o UserKnownHostsFile=/dev/null \
+                   -i "$HOME/.ssh/ci_builder_key" "runner@$ip" true 2>"/tmp/probe-$idx.log"; then
+                ip_of[$idx]="$ip"
+                why[$idx]="verified"
+              else
+                # Separate "no tailnet path" from "path fine, SSH refused".
+                if timeout 15 tailscale ping "$ip" >/dev/null 2>&1; then
+                  why[$idx]="present ($ip), tailnet path OK, ssh failed"
+                else
+                  why[$idx]="present ($ip), tailscale ping FAILED"
+                fi
+              fi
+            done
+
+            verified=0
+            for idx in $(seq 1 5); do [ -n "${ip_of[$idx]:-}" ] && verified=$((verified+1)); done
+            echo "$(date +%T) netmap peers=$npeer, verified=$verified/5"
+            [ "$verified" -eq 5 ] && break
+            sleep 5
+          done
+
+          echo "--- per-builder outcome ---"
+          ready=()
+          for idx in $(seq 1 5); do
+            if [ -n "${ip_of[$idx]:-}" ]; then
+              echo "  builder $idx: verified ${ip_of[$idx]}"
+              ready+=("${ip_of[$idx]}")
+            else
+              echo "  builder $idx: ${why[$idx]}"
+              [ -s "/tmp/probe-$idx.log" ] && sed 's/^/      /' "/tmp/probe-$idx.log" | tail -n 5
+            fi
+          done
+          echo "${#ready[@]}/5 builders verified"
+
+          if [ "$saw_any_peer" -eq 0 ]; then
+            echo "::error::W1 CONFIRMED: coordinator's netmap contained ZERO peers for the whole deadline."
+            echo "::error::This is headscale not propagating peers to this node, NOT a DNS or SSH problem."
+            echo "::error::Next step is the untagged-ephemeral-authkey workaround (juanfont/headscale#2375)."
+            exit 1
+          fi
+          if [ "${#ready[@]}" -eq 0 ]; then
+            echo "::error::peers were visible in the netmap but none verified over SSH — see per-builder outcome above"
+            exit 1
+          fi
+
+          : > /tmp/machines
+          for ip in "${ready[@]}"; do
+            echo "ssh-ng://runner@${ip} x86_64-linux,i686-linux $HOME/.ssh/ci_builder_key 1 4 kvm,benchmark,big-parallel,gccarch-bdver4,gccarch-skylake -" \
+              >> /tmp/machines
+          done
+
+          sudo install -m 644 /tmp/machines /etc/nix/machines
+          cat /etc/nix/machines
+          # nix.conf's default `builders = @/etc/nix/machines` picks this up;
+          # no daemon restart needed, the machines file is read per-build.
+
+          # Prove the DAEMON's context works, not just the runner's — root
+          # uses a different SSH config entirely, and a green probe as
+          # `runner` says nothing about it. This is the check that would
+          # have caught the /root/.ssh gap before a 90-minute build died on
+          # "Host key verification failed".
+          echo "--- root-context SSH probe (this is what nix-daemon does) ---"
+          sudo -H ssh -o BatchMode=yes -o ConnectTimeout=10 "runner@${ready[0]}" \
+            'echo root-context ssh OK on $(hostname)' \
+            || { echo "::error::nix-daemon (root) cannot SSH to a builder — remote dispatch will fail"; exit 1; }
+
+      # Build all hosts in a SINGLE nix build invocation — lets nix's scheduler
+      # interleave derivations across all six closures at once. Shared store paths
+      # (kernel, systemd, etc.) build once and every host's independent work
+      # competes for the 5 builders together. `--keep-going` means one host
+      # failing doesn't stop the others from finishing, giving a full pass/fail
+      # picture instead of stopping at the first broken host.
+      #
+      # nom-tailable build log: `--log-format internal-json` is the wire format
+      # nix-output-monitor consumes. The log is written to europa so it can be
+      # tailed live from there:
+      #
+      #   ssh -t root@europa 'tail -n +1 -F /var/log/jupiter-ci/current.jsonl | nom --json'
+      #
+      # `tail -n +1` replays from byte 0, so nom's table reflects the whole
+      # build even when you attach late; the same file replays after the fact
+      # with `nom --json < nom-<run_id>-<hosts>.jsonl`. The raw per-derivation build output (every GCC/configure/make line — GBs/run)
+      # is stripped before it lands here: NOM_FILTER keeps only start/stop/msg +
+      # progress results, dropping the build-output result lines so nom renders
+      # the full activity tree without per-builder stdout noise; the human-readable
+      # CI transcript (NOM_TO_HUMAN) is reconstructed from the same stream.
+      - name: Build all hosts (parallel across 5 builders, nom log on europa)
+        env:
+          RUN_ID: ${{ github.run_id }}
+          EUROPA_SSH_KEY: ${{ secrets.EUROPA_SSH_KEY }}
+        run: |
+          # Set up SSH to europa for nom log streaming
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$EUROPA_SSH_KEY" > "$HOME/.ssh/europa_ci"
+          chmod 600 "$HOME/.ssh/europa_ci"
+          {
+            echo "Host europa-log"
+            echo "  HostName europa"
+            echo "  User root"
+            echo "  IdentityFile $HOME/.ssh/europa_ci"
+            echo "  StrictHostKeyChecking accept-new"
+          } >> "$HOME/.ssh/config"
+
+          # Prepare nom log directory on europa
+          NOM_LOG="/var/log/jupiter-ci/nom-${RUN_ID}-callisto.jsonl"
+          ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-log \
+            "mkdir -p /var/log/jupiter-ci && : > '$NOM_LOG' && ln -sfn '$NOM_LOG' /var/log/jupiter-ci/current.jsonl"
+
+          # The CI transcript keeps only what you would actually read here:
+          # errors, warnings and notices (nix levels 0-2, which includes this
+          # workflow's own "=== jupiter-ci … ===" headers). Everything at info
+          # level and below — the per-derivation "building '…'", "copying path
+          # '…'", "querying info about '…'" chatter and the thousand-line
+          # "these N derivations will be built:" listing — is dropped: it ran
+          # to hundreds of thousands of lines per run and buried the failures
+          # this log exists to show. The raw per-derivation build
+          # output is stripped from BOTH views on purpose (NOM_FILTER for europa; the
+          # build-output result lines aren't msgs, so NOM_TO_HUMAN never showed them
+          # either) — GBs/run of GCC noise. Failures still surface: nix emits the
+          # failing derivation's tail as an error msg (level 0) that NOM_TO_HUMAN
+          # keeps, and nom still gets the full activity/progress stream it renders.
+          NOM_TO_HUMAN='if (startswith("@nix ") | not) then .
+            else (.[5:] | (fromjson? // empty)
+                  | select((.level // 3) <= 2)
+                  | if .action == "msg" then .msg else empty end)
+            end'
+          NOM_FILTER='if (startswith("@nix ") | not) then .
+            else (.[5:] | fromjson? // empty) as $j
+            | if (($j | .action // "") == "result")
+                  and (($j | .fields // []) | map(type) | any(. != "number"))
+              then empty
+              else ("@nix " + ($j | tostring))
+              end
+            end'
+
+          HOSTS="europa callisto"
+          INSTALLABLES=()
+          for host in $HOSTS; do
+            INSTALLABLES+=(".#nixosConfigurations.$host.config.system.build.toplevel")
+          done
+          # europa's netboot assets (boot.ipxe + callisto's bzImage/initrd) are
+          # deliberately NOT part of any host's closure — that split is what
+          # keeps building europa from also building callisto (see
+          # modules/network/pxe-server.nix). Build them HERE, where callisto's
+          # kernel/initrd are being built anyway, so the final push below lands
+          # them on europa: europa's `systemctl start jupiter-pxe-assets` then
+          # substitutes from its own store instead of compiling a
+          # skylake-tagged kernel on a 2-core Opteron. Also the only place this
+          # package is ever built — `nix flake check` is eval-only, so a broken
+          # linkFarm here would otherwise first surface at publish time.
+          INSTALLABLES+=(".#pxe-netboot-assets")
+
+          OUT_PATHS="/tmp/outpaths-${RUN_ID}"
+          set +e  # Don't exit on build failure, we need to report it
+
+          # Derivation dependency graph, written next to the nom log as
+          # deps-<run_id>.txt (one `<input-drv> <dependent-drv>` pair per line,
+          # store basenames). nom-web renders its dependency tree from this.
+          #
+          # It has to be exported here rather than derived downstream: the
+          # internal-json stream carries no dependency edges at all (every
+          # build activity nix emits has "parent":0, and the "these N
+          # derivations will be built:" listing names derivations without
+          # relating them). nom reconstructs the graph by reading the .drv
+          # files out of the local store instead, which only works where the
+          # build was evaluated — of one run's 1144 planned drvs, 9 exist on
+          # europa. The coordinator has just evaluated all of them, so it is
+          # the only place the graph is free.
+          #
+          # ~4 MB per host, heavily overlapping, and `nix-store -q --graph` is
+          # ~1s per closure; the eval is already warm from the flake check.
+          # Non-fatal by design: a missing deps file only means no tree.
+          DEPS_LOG="/var/log/jupiter-ci/deps-${RUN_ID}-callisto.txt"
+          TOP_DRVS=$(nix path-info --derivation "${INSTALLABLES[@]}" 2>/dev/null)
+          if [ -n "$TOP_DRVS" ]; then
+            # shellcheck disable=SC2086  # word splitting is the point
+            nix-store -q --graph $TOP_DRVS 2>/dev/null \
+              | grep -oE '"[a-z0-9]{32}-[^"]+\.drv" -> "[a-z0-9]{32}-[^"]+\.drv"' \
+              | sed -E 's/"//g; s/ -> / /' \
+              | sort -u \
+              | ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-log \
+                  "cat > '$DEPS_LOG' && wc -l < '$DEPS_LOG'" \
+              | sed "s|^|dependency graph -> $DEPS_LOG, edges: |"
+          else
+            echo "WARNING: could not instantiate top-level drvs; no dependency tree for this run"
+          fi
+
+          # Write header to europa's nom log
+          printf '@nix {"action":"msg","level":2,"msg":"=== jupiter-ci %s: building all hosts (%s) ==="}\n' \
+            "$RUN_ID" "$HOSTS" | ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-log "cat >> '$NOM_LOG'"
+
+          # Dispatch-concurrency diagnostic. We can't SSH into a GHA runner, so
+          # sample the coordinator for the whole build and surface it here. The
+          # question this settles: under the intended maxJobs=1 x 5 builders,
+          # ssh-to-builders should sit near 5; if it's in the hundreds, nix's
+          # flock slot-locks in /nix/var/nix/current-load aren't contending on
+          # this runner's filesystem (hence the over-dispatch). nix-fs reports
+          # what FS /nix lives on (overlayfs would explain non-contending flock).
+          nohup bash -c '
+            while true; do
+              ts=$(date -u +%T)
+              br=$(pgrep -fc build-remote 2>/dev/null || echo 0)
+              slots=$(find /nix/var/nix/current-load -type f 2>/dev/null | wc -l)
+              conns=$(ss -tnH 2>/dev/null | grep -c "100\.64\." || echo 0)
+              fs=$(stat -f -c "%T" /nix/var/nix 2>/dev/null || echo "?")
+              echo "$ts build-remote=$br current-load-files=$slots ssh-to-builders=$conns nix-fs=$fs"
+              sleep 15
+            done' > /tmp/coordinator-concurrency.log 2>&1 &
+          CONC_PID=$!
+          echo "concurrency sampler started (pid $CONC_PID) -> /tmp/coordinator-concurrency.log"
+
+          # Builders were written to /etc/nix/machines by the discover step.
+          # --builders "@/etc/nix/machines" tells nix to read that file.
+          # 2>&1 1>"$OUT_PATHS": stderr (the json log) piped to europa via ssh tee,
+          # then stdout (--print-out-paths) aside to a file. Order matters.
+          # --max-jobs 0: force EVERY derivation onto the 5 remote builders in
+          # /etc/nix/machines. The coordinator is dispatch-only — it orchestrates
+          # the build, streams the nom log, and runs the sole cache-drainer +
+          # final push to europa, so its CPU stays free for that rather than
+          # joining the build pool. (Historically max-jobs=0 also avoided
+          # building locally because the local push path was broken; that's
+          # fixed now — see "Install async push system" — but dispatch-only is
+          # still the chosen shape.) A previous `--max-jobs auto` silently undid
+          # this: Nix reads `max-jobs = auto` as "one local slot per core" (=4
+          # on the runner), overriding nix.conf's `max-jobs = 0` and making the
+          # coordinator build locally — which is why all 19 remote builders
+          # showed zero work on every run. max-jobs governs LOCAL slots only;
+          # remote fan-out is controlled by the builders list.
+          nix build "${INSTALLABLES[@]}" \
+            --builders "@/etc/nix/machines" \
+            --builders-use-substitutes \
+            --max-jobs 0 \
+            --keep-going \
+            --print-out-paths --no-link --fallback \
+            --log-format internal-json 2>&1 1>"$OUT_PATHS" \
+            | stdbuf -o0 tee >(stdbuf -o0 jq -rR --unbuffered "$NOM_FILTER" | ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-log "cat >> '$NOM_LOG'") \
+            | { stdbuf -o0 jq -rR --unbuffered "$NOM_TO_HUMAN" || cat; }
+          # pipefail is on, so $? is the pipeline's -- nix's own status is
+          # PIPESTATUS[0].
+          BUILD_EXIT=${PIPESTATUS[0]}
+
+          # Stop the dispatch-concurrency sampler and surface its samples +
+          # peak into the run log and the job summary. ssh-to-builders peaks
+          # near 5 = the cap holds; in the hundreds = the flock slot-locks in
+          # current-load/ aren't contending (see the sampler comment above).
+          kill $CONC_PID 2>/dev/null || true
+          sleep 1
+          echo "=== coordinator dispatch-concurrency samples (15s cadence) ==="
+          cat /tmp/coordinator-concurrency.log
+          peak=$(awk -F'ssh-to-builders=' '{print $2}' /tmp/coordinator-concurrency.log \
+            | awk '{print $1}' | sort -n | tail -1)
+          nixfs=$(awk -F'nix-fs=' '{print $2}' /tmp/coordinator-concurrency.log | tail -1)
+          echo "peak ssh-to-builders: ${peak:-?} (intended ~5)   nix-fs: ${nixfs:-?}"
+          {
+            echo "### Coordinator dispatch concurrency"
+            echo "Peak concurrent ssh-to-builder connections: **${peak:-?}** (intended ~5)."
+            echo "nix state dir filesystem: \`${nixfs:-?}\` (overlayfs would explain non-contending flock slot-locks)."
+            echo "Full 15s sample series is in the build step log."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "Out paths:"
+          cat "$OUT_PATHS"
+          ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-log \
+            "echo \"nom log: $NOM_LOG (\$(du -h '$NOM_LOG' | cut -f1), \$(wc -l < '$NOM_LOG') events)\""
+
+          # --keep-going means a host that failed doesn't take its siblings
+          # down with it, but the single combined exit code can't say which
+          # host was which -- check each host's toplevel individually against
+          # the local store to render a per-host table.
+          echo "========================================"
+          echo "Per-host result:"
+          echo "========================================"
+          for host in $HOSTS; do
+            out=$(nix eval --raw ".#nixosConfigurations.$host.config.system.build.toplevel" 2>/dev/null)
+            if [ -n "$out" ] && nix path-info "$out" >/dev/null 2>&1; then
+              echo "  OK   $host -> $out"
+            else
+              echo "  FAIL $host"
+            fi
+          done
+
+          if [ $BUILD_EXIT -eq 0 ]; then
+            echo "========================================"
+            echo "All builds completed successfully"
+            echo "========================================"
+          else
+            echo "========================================"
+            echo "Build failed for one or more hosts -- see table above"
+            echo "  full log (with builder output): $NOM_LOG" >&2
+            echo "  replay: nom --json < $NOM_LOG" >&2
+            echo "========================================"
+          fi
+
+          exit $BUILD_EXIT
+
+      # When the build finishes, stop the coordinator's incremental drainer so
+      # the final push lands unobstructed. During the build the coordinator's
+      # cache-drainer pushed each path one at a time as the post-build-hook
+      # fired; left running, it would contend with this step's `nix copy` at
+      # europa's nix-daemon/SSH. Kill it, then ONE authoritative `nix copy` of
+      # every toplevel from the coordinator — the single node holding each
+      # host's full closure (streamed back from the builders over ssh-ng). nix
+      # copy is idempotent, so paths the drainer already landed are skipped;
+      # this fills any gaps and guarantees the closures are complete on europa.
+      - name: Stop drainer, final push to europa
+        if: always()
+        env:
+          RUN_ID: ${{ github.run_id }}
+          EUROPA_SSH_KEY: ${{ secrets.EUROPA_SSH_KEY }}
+        run: |
+          set +e
+          # 1. Stop the coordinator's cache-drainer (the sole incremental
+          #    pusher) so it isn't contending with the final nix copy.
+          pkill -f /usr/local/bin/cache-drainer 2>/dev/null \
+            && echo "stopped coordinator cache-drainer" \
+            || echo "(no coordinator cache-drainer running)"
+
+          # 2. Final authoritative push of every toplevel that built.
+          OUT_PATHS="/tmp/outpaths-${RUN_ID}"
+          if [ ! -s "$OUT_PATHS" ]; then
+            echo "no out paths ($OUT_PATHS empty/missing) — build produced nothing to push"
+            exit 0
+          fi
+          n=$(wc -l < "$OUT_PATHS")
+          echo "final push: $n toplevel(s) -> root@europa (drainer stopped)"
+
+          # Re-stage the root->europa key + controlmasters dir (the push-system
+          # step also stages these, but this step is `if: always()` — be
+          # self-contained in case that step didn't run). Same NIX_SSHOPTS
+          # pattern as cache-drainer.sh.
+          install -m 700 -d "$HOME/.ssh" "$HOME/.ssh/controlmasters"
+          printf '%s\n' "$EUROPA_SSH_KEY" > "$HOME/.ssh/europa_ci"
+          chmod 600 "$HOME/.ssh/europa_ci"
+
+          # Idempotent (paths already present are skipped); retry so one
+          # transient drop doesn't fail the whole final push.
+          ok=0
+          for attempt in 1 2 3 4 5; do
+            if timeout 1800 env \
+                NIX_SSHOPTS="-i $HOME/.ssh/europa_ci -o StrictHostKeyChecking=accept-new -o ControlMaster=auto -o ControlPath=$HOME/.ssh/controlmasters/%r@%h:%p -o ControlPersist=30m" \
+                nix copy --to "ssh-ng://root@europa" $(cat "$OUT_PATHS"); then
+              echo "final push OK on attempt $attempt"
+              ok=1; break
+            fi
+            echo "final push attempt $attempt failed; retry in $((attempt*5))s"
+            sleep $((attempt*5))
+          done
+          if [ "$ok" != 1 ]; then
+            echo "::error::final push to europa failed after 5 attempts — cache not updated"
+            exit 1
+          fi
+
+  # Aggregation has to be its own job: the builders deliberately outlive the
+  # coordinator (they poll until it completes), so the coordinator can never
+  # collect their stats — it is always gone first. `needs` both, always().
+  report:
+    name: build stats
+    needs: [ builder, coordinator ]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0 (node24)
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: builder-stats-*
+          path: stats
+
+      - name: Render summary
+        run: |
+          python3 scripts/ci/render-build-stats.py stats | tee -a "$GITHUB_STEP_SUMMARY"
