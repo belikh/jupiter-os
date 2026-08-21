@@ -25,6 +25,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/aria2"
@@ -575,7 +576,29 @@ func (s *Server) handleStageTorrent(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "empty torrent file", http.StatusBadRequest)
 		return
 	}
-	if err := os.WriteFile(dst, b, 0o644); err != nil {
+	// ADV-P3-04: O_CREATE|O_EXCL|O_NOFOLLOW — whatever already sits at
+	// torrentDir/<catalogue-name> (a regular file OR a pre-planted
+	// symlink) fails loudly instead of being overwritten/followed;
+	// os.WriteFile would write straight through a symlink. Not remotely
+	// reachable today (root-owned dir, catalogue-whitelisted names) —
+	// the flag pair makes it structurally impossible anyway.
+	// (syscall.O_NOFOLLOW: not in the portable os set — the webapp is
+	// Linux-only, every consumer is a NixOS host.)
+	out, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0o644)
+	if err != nil {
+		if errors.Is(err, os.ErrExist) {
+			http.Error(w, "torrent already staged as "+torrentName+" — delete it first (refusing to overwrite)", http.StatusConflict)
+			return
+		}
+		http.Error(w, "storing torrent failed", http.StatusInternalServerError)
+		return
+	}
+	if _, werr := out.Write(b); werr != nil {
+		out.Close() //nolint:errcheck // error path
+		http.Error(w, "storing torrent failed", http.StatusInternalServerError)
+		return
+	}
+	if cerr := out.Close(); cerr != nil {
 		http.Error(w, "storing torrent failed", http.StatusInternalServerError)
 		return
 	}

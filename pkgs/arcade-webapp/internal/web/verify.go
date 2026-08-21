@@ -134,6 +134,12 @@ type verifyRowVM struct {
 	FinishedAgo   string
 	PromotedHuman string
 	HasReport     bool
+	// LastAttemptFailed: the system's NEWEST verify run errored without
+	// ingesting (the parse-failure early return ahead of
+	// RecordVerifyResult) — the counts/pill above show the last GOOD
+	// report, and the marker says so instead of implying all is well
+	// (ADV-P3-02).
+	LastAttemptFailed bool
 	// Button affordances.
 	CanVerify bool
 }
@@ -179,6 +185,7 @@ func (s *Server) fetchVerify() verifyVM {
 			staged[r.SystemKey] = r
 		}
 	}
+	lastAttempt := s.lastVerifyAttempts()
 
 	for _, sys := range summary {
 		st := staged[sys.Key]
@@ -206,6 +213,17 @@ func (s *Server) fetchVerify() verifyVM {
 		}
 		row.DATMapped = dats.McLeanDATs[sys.Key] != "" // mapping is static
 		row.State = classifyVerify(sys.Verify, sys.VerifyPresent)
+		// ADV-P3-02 pill honesty: a re-verify whose report failed to
+		// parse never reaches RecordVerifyResult, so the pill keeps the
+		// last GOOD ingest (right — the report is the authority) but
+		// must say so when the newest attempt died. The RunID
+		// comparison excludes failed runs whose own report WAS ingested
+		// (igir non-zero exit + parseable report records counts too —
+		// that pill is not stale).
+		if at, ok := lastAttempt[sys.Key]; ok &&
+			at.Outcome == igir.OutcomeFailed && at.RunID > sys.Verify.RunID {
+			row.LastAttemptFailed = true
+		}
 		if sys.Verify.FinishedAt != "" {
 			row.FinishedAgo = relTime(vm.Now, sys.Verify.FinishedAt)
 		}
@@ -235,6 +253,45 @@ func (s *Server) fetchVerify() verifyVM {
 		vm.Rows = append(vm.Rows, row)
 	}
 	return vm
+}
+
+// lastAttemptScanRuns bounds the run-table scan behind the
+// last-attempt-failed marker: well beyond the status partial's 8-row
+// window, still one cheap indexed query + parse on the 2s poll.
+const lastAttemptScanRuns = 100
+
+// verifyAttempt is one system's newest recorded verify outcome.
+type verifyAttempt struct {
+	RunID   int64
+	Outcome string
+}
+
+// lastVerifyAttempts maps system key -> the newest verify outcome the
+// runs table holds for it (runs arrive newest-first; the first hit per
+// system wins, so a per-system re-verify correctly outranks an older
+// verify-all). Runs with unparseable detail — still running — are
+// skipped. Feeds the ADV-P3-02 honesty marker in fetchVerify.
+func (s *Server) lastVerifyAttempts() map[string]verifyAttempt {
+	out := map[string]verifyAttempt{}
+	runs, err := s.st.RecentRuns(lastAttemptScanRuns)
+	if err != nil {
+		return out // no marker rather than a broken page
+	}
+	for _, run := range runs {
+		if run.Kind != "verify" {
+			continue
+		}
+		var d verifyRunDetail
+		if err := json.Unmarshal([]byte(run.Detail), &d); err != nil {
+			continue
+		}
+		for _, oc := range d.Systems {
+			if _, seen := out[oc.Sys]; !seen {
+				out[oc.Sys] = verifyAttempt{RunID: run.ID, Outcome: oc.Outcome}
+			}
+		}
+	}
+	return out
 }
 
 // scannerAgeDays/ageDaysHuman/relTime are thin aliases so this file

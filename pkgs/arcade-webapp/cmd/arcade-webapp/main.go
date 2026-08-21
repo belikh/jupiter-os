@@ -115,7 +115,8 @@ func main() {
 	scratchDir := envOr("ARCADE_WEBAPP_SCRATCH_DIR", "")
 	var runner *igir.Runner
 	if igirBin != "" {
-		runner = igir.New(igir.Config{
+		var nerr error
+		runner, nerr = igir.New(igir.Config{
 			Binary:        igirBin,
 			IncomingDir:   cfg.IncomingDir,
 			DATDir:        cfg.DATDir,
@@ -127,6 +128,13 @@ func main() {
 			_, err := scan.Scan()
 			return err
 		}, log.Default())
+		// ADV-P3-03: relative roots re-arm igir's cwd-rooted glob
+		// expansion (the D-P3e hang) — fatal at startup, never a
+		// minutes-long crawl in production. The module always passes
+		// absolute paths; this catches hand-rolled envs.
+		if nerr != nil {
+			log.Fatalf("arcade-webapp: verify runner misconfigured: %v", nerr)
+		}
 		log.Printf("arcade-webapp: verify runner wired (igir %s, reports %s)", igirBin, filepath.Join(scratchDir, "reports"))
 	} else {
 		log.Printf("arcade-webapp: verify not configured (ARCADE_WEBAPP_IGIR_BIN empty)")
