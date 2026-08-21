@@ -1,0 +1,36 @@
+{{/* Systems fragment: the per-system card wall. Active systems render as
+     cards; empty catalogue systems collapse into a footer count (a
+     stranger must answer "is the pipeline healthy?" in 5s — 50 zero
+     cards would bury the signal). Polled every 10s; id="system-cards"
+     is the hx target. */ -}}
+{{define "partial-systems"}}
+<div id="system-cards" hx-get="/partials/systems" hx-trigger="every 10s" hx-swap="outerHTML">
+  <div class="cards">
+    {{range .Cards}}
+    <div class="card{{if not .Active}} empty{{end}}"
+         data-system="{{.Key}}" data-games="{{.GameCount}}" data-coverage="{{.CoveragePct}}">
+      <header>
+        <h3 title="{{.Collection}}">{{.Collection}}</h3>
+        <span class="chip">{{.Key}}</span>
+      </header>
+      <div class="metrics">
+        <span class="k">roms</span><span class="v strong">{{.GameCount}} · {{.SizeHuman}}</span>
+        <span class="k">dat</span><span class="v">
+          {{if .DATDate}}
+            {{.DATDate}} <span class="pill {{.DATAgeClass}}">{{.DATAgeHuman}}</span>
+          {{else}}<span class="pill unknown">no dat</span>{{end}}
+        </span>
+        <span class="k">verify</span><span class="v">{{verifyPill .}}</span>
+        <span class="k">art</span><span class="v">
+          {{if ge .CoveragePct 0}}{{.CoveragePct}}%{{else}}—{{end}}
+        </span>
+        <div class="meter" title="cache coverage {{.CoveragePct}}%">
+          {{if ge .CoveragePct 0}}<span style="width: {{.CoveragePct}}%"></span>{{end}}
+        </div>
+      </div>
+    </div>
+    {{end}}
+  </div>
+  {{if .EmptyCount}}<p class="sub">{{.EmptyCount}} catalogue system{{if gt .EmptyCount 1}}s{{end}} empty (no ROMs, DAT, or cache).</p>{{end}}
+</div>
+{{end}}

@@ -1,0 +1,31 @@
+{{/* Layout: the html skeleton every full page renders into. Fragments
+     (partial-status/partial-systems) render standalone for htmx. */ -}}
+{{define "layout"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>jupiterOS Arcade — pipeline</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js"></script>
+</head>
+<body>
+  <div class="topbar">
+    <div class="wrap">
+      <h1>jupiterOS <span class="accent">Arcade</span></h1>
+      <span class="sub">pipeline dashboard</span>
+      <span class="spacer"></span>
+      <span class="pill {{.Totals.HealthClass}}">{{.Totals.HealthLabel}}</span>
+    </div>
+  </div>
+  <main class="wrap">
+    {{template "content" .}}
+    <footer>
+      jupiterOS Arcade webapp — <a href="https://github.com/belikh/jupiter-os/blob/main/docs/plans/arcade-webapp-gauntlet.md">gauntlet plan</a>
+      · fragments auto-refresh every 10s via htmx
+    </footer>
+  </main>
+</body>
+</html>
+{{end}}

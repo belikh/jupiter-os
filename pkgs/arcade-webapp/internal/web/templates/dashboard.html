@@ -1,0 +1,10 @@
+{{/* Dashboard page: status strip + recent runs (polled), then the
+     per-system card wall (polled). The polls refresh these exact
+     fragments in place; the rescan button targets the status panel. */ -}}
+{{define "content"}}
+{{template "partial-status" .}}
+<section>
+  <h2>Systems</h2>
+  {{template "partial-systems" .}}
+</section>
+{{end}}
