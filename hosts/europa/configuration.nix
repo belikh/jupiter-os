@@ -44,6 +44,7 @@
     ../../modules/services/rom-acquire.nix
     ../../modules/services/rom-scraper.nix
     ../../modules/services/arcade-inventory.nix
+    ../../modules/services/arcade-webapp.nix
     ../../modules/services/suno-backup.nix
     ../../modules/services/suno-web.nix
     ../../modules/services/aria2.nix
@@ -513,6 +514,19 @@
   jupiter.services.romAcquire.enable = true;
   jupiter.services.romScraper.enable = true;
   jupiter.services.arcadeInventory.enable = true;
+
+  # Arcade pipeline dashboard (gauntlet plan Phase 1 / P1, ADR-0002) — the
+  # webapp that will own the whole pipeline. Phase 1: scanner + dashboard
+  # (per-system ROM counts/sizes, DAT currency, verify state unknown until
+  # P3, Skyscraper cache coverage, rescan button, htmx 10s polling). Reads
+  # the retro trees read-only; its one write is the SQLite state file at
+  # /tank/archive/retro/state/arcade-webapp.db. LAN-only like suno-web (no
+  # tunnel exposure); secret-file options stay null until the P2/P5 pieces
+  # that consume them land.
+  jupiter.services.arcadeWebapp = {
+    enable = true;
+    openFirewall = true;
+  };
 
   # Suno account backup daemon — WAV masters + full per-clip metadata into
   # /tank/archive/suno. The suno_cookie sops secret must hold the Clerk

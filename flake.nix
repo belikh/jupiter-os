@@ -351,6 +351,16 @@
         # over ext4-iSCSI on europa's zvol).
         callisto = mkHost ./hosts/callisto/configuration.nix [ ];
 
+        # Arcade webapp pipeline TEST host — a minimal VM (tests/hosts/
+        # arcade-webapp-vm.nix) running the real
+        # modules/services/arcade-webapp.nix against the deterministic
+        # fixture corpus, with in-VM smoke assertions. Not a fleet machine:
+        # no common.nix, no sops. Driven by `make test-arcade-webapp`
+        # (scripts/test-arcade-webapp.sh); registered here so
+        # `nixos-rebuild build-vm` / the driver can reach it (and `make
+        # check` proves it evaluates).
+        arcade-webapp-vm = mkHost ./tests/hosts/arcade-webapp-vm.nix [ ];
+
         # Kamatera VPS (persistent, disk-booted; not a fleet member — built
         # standalone, not via mkHost). The raw disk image is built with nixpkgs'
         # make-disk-image.nix (see hosts/pallene/disk-configuration.nix),

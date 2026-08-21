@@ -29,7 +29,7 @@ buildGoModule {
   # modernc.org/sqlite (ADR-0002 D3: pure-Go SQLite driver, no cgo) flipped
   # vendorHash from null to a real hash in Phase 1 via the standard
   # buildGoModule bump procedure.
-  vendorHash = "sha256-isqeSOokeSJQrrjhDz3fh77WhQ1tI/KOPBAHCcqL3wM=";
+  vendorHash = "sha256-BAvfNq8jRMtxnNRnCfD4m3N9Yqc7o9dM/v6eVfK0Iag=";
 
   ldflags = [ "-s" ];
 

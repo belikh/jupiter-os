@@ -26,8 +26,40 @@ func envOr(key, def string) string {
 	return def
 }
 
+// secretPaths are the sops-decrypted secret FILE paths handed in by the
+// NixOS module. P1 only records their presence (never their content — the
+// values are read at runtime by the phases that need them: aria2 RPC in
+// P2, ScreenScraper/TGDB in P5).
+type secretPaths struct {
+	Aria2RPC      string
+	ScreenScraper string
+	TGDBAPIKey    string
+}
+
 func main() {
 	addr := envOr("ARCADE_WEBAPP_ADDR", ":8094")
+
+	secrets := secretPaths{
+		Aria2RPC:      envOr("ARCADE_WEBAPP_ARIA2_SECRET_FILE", ""),
+		ScreenScraper: envOr("ARCADE_WEBAPP_SCREENSCRAPER_CREDS_FILE", ""),
+		TGDBAPIKey:    envOr("ARCADE_WEBAPP_TGDB_APIKEY_FILE", ""),
+	}
+	for name, p := range map[string]string{
+		"aria2-rpc":     secrets.Aria2RPC,
+		"screenscraper": secrets.ScreenScraper,
+		"tgdb-apikey":   secrets.TGDBAPIKey,
+	} {
+		if p == "" {
+			log.Printf("arcade-webapp: secret %s: not configured", name)
+			continue
+		}
+		if _, err := os.Stat(p); err != nil {
+			// Presence check only — the file CONTENT is never read here.
+			log.Printf("arcade-webapp: secret %s: %s not readable yet (%v)", name, p, err)
+		} else {
+			log.Printf("arcade-webapp: secret %s: file present at %s", name, p)
+		}
+	}
 
 	cfg := scanner.Config{
 		CatalogueTsv:       envOr("ARCADE_WEBAPP_CATALOGUE_TSV", ""),
