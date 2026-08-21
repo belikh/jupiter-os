@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE datafile PUBLIC "-//Logiqx//DTD ROM Management Datafile//EN" "http://www.logiqx.com/Dats/datafile.dtd">
+<datafile>
+	<header>
+		<name>Sega Mega CD &amp; Sega CD (jupiter header-shape testdata)</name>
+		<description>Header-shape copy of the Fresh1G1R McLean 1G1R DATs: the date element carries a space separator and dash-formatted time. Self-authored sample content only — no upstream DAT content.</description>
+		<version>20260622-074423</version>
+		<date>2026-06-22 07-44-23</date>
+		<author>jupiter-os</author>
+		<homepage>https://github.com/belikh/jupiter-os</homepage>
+	</header>
+	<game name="Sample Disc (USA)">
+		<description>Sample Disc (USA)</description>
+		<rom name="Sample Disc (USA).cue" size="128" crc="00000000" md5="00000000000000000000000000000000" sha1="0000000000000000000000000000000000000000"/>
+	</game>
+	<game name="Sample Disc (Europe)">
+		<description>Sample Disc (Europe)</description>
+		<rom name="Sample Disc (Europe).cue" size="96" crc="00000000" md5="00000000000000000000000000000000" sha1="0000000000000000000000000000000000000000"/>
+	</game>
+</datafile>

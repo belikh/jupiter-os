@@ -255,6 +255,28 @@ func TestDATHeaderParse(t *testing.T) {
 	}
 }
 
+// ADV-P1-02: real Fresh1G1R McLean 1G1R DATs carry
+// <date>2026-06-22 07-44-23</date> (space separator, dash time). The
+// header must parse and AgeDays must turn it into days — otherwise every
+// live card shows a "?" age chip and the staleness aggregate can never
+// fire.
+func TestDATHeaderParseMcLeanShape(t *testing.T) {
+	info, err := readDAT(filepath.Join("..", "..", "testdata", "dats", "mclean-shape.dat"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Date != "2026-06-22 07-44-23" {
+		t.Errorf("mclean-shape.dat date = %q, want the raw McLean-shaped string", info.Date)
+	}
+	if info.Version != "20260622-074423" || info.RomCount != 2 {
+		t.Errorf("mclean-shape.dat version/roms = %q/%d", info.Version, info.RomCount)
+	}
+	now := time.Date(2026, 8, 21, 0, 0, 0, 0, time.UTC)
+	if got := AgeDays(info.Date, now); got != 60 {
+		t.Errorf("AgeDays(%q) = %d, want 60 (2026-06-22 → 2026-08-21)", info.Date, got)
+	}
+}
+
 func TestParseSkyHandleRouting(t *testing.T) {
 	// ps1's cache lives under the skyHandle dir (psx), not the system key.
 	dir := t.TempDir()
@@ -286,6 +308,10 @@ func TestAgeDays(t *testing.T) {
 		"2026-01-01": 232,
 		"":           -1,
 		"garbage":    -1,
+		// ADV-P1-02: the Fresh1G1R McLean family — space separator,
+		// dash time — plus the colon variant, defensively.
+		"2026-06-22 07-44-23": 60,
+		"2026-06-22 07:44:23": 60,
 	}
 	for date, want := range cases {
 		if got := AgeDays(date, now); got != want {
