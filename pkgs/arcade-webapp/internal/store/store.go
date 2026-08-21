@@ -19,6 +19,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -41,7 +42,12 @@ import (
 // output tree too, and output-side UNUSED rows (games-tree files the DAT
 // doesn't claim) are a different signal from input-side junk; they get
 // their own column + amber indicator instead of joining 'unmatched'.
-const SchemaVersion = 3
+//
+// v4 (P4): verify_unmatched persists the offender filenames themselves
+// (the P3 critic's gap — the aggregate count alone can't answer "which
+// files?"), replaced per verify run, plus the runs detail JSON feeding
+// SystemVerifyHistory's per-system sparkline.
+const SchemaVersion = 4
 
 // SystemRow is one catalogue system as persisted (Extensions is a JSON
 // array string — enough for P1's rendering needs).
@@ -253,6 +259,13 @@ func (s *Store) Migrate() error {
 			}
 		}
 	}
+	if version < 4 {
+		for _, stmt := range schemaV4 {
+			if _, err := tx.Exec(stmt); err != nil {
+				return fmt.Errorf("store: migrate v4: %w", err)
+			}
+		}
+	}
 	if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, SchemaVersion)); err != nil {
 		return err
 	}
@@ -346,6 +359,19 @@ var schemaV2 = []string{
 // schemaV3 adds the provenance-split extra count (see SchemaVersion).
 var schemaV3 = []string{
 	`ALTER TABLE verify_results ADD COLUMN extra INTEGER NOT NULL DEFAULT 0`,
+}
+
+// schemaV4 persists the unmatched-file offenders (see SchemaVersion): one
+// row per filename, tagged with the verify run that reported it. The
+// system index serves both the read (by run+system) and the replace
+// delete (by system).
+var schemaV4 = []string{
+	`CREATE TABLE verify_unmatched (
+		run_id     INTEGER NOT NULL,
+		system_key TEXT NOT NULL REFERENCES systems(key) ON DELETE CASCADE,
+		filename   TEXT NOT NULL
+	)`,
+	`CREATE INDEX verify_unmatched_system_run ON verify_unmatched(system_key, run_id)`,
 }
 
 // Close closes the database.
@@ -680,6 +706,119 @@ func (s *Store) SetSystemVerifyStates(systemKey string, verifiedRels []string) e
 		}
 	}
 	return tx.Commit()
+}
+
+// ---- P4: unmatched-file persistence + verify history ----------------------
+
+// RecordVerifyUnmatched persists one verify run's unmatched-file list for
+// a system in a single transaction: the system's previous rows are
+// deleted (replace semantics — the table always describes the latest
+// verify) and the new filenames inserted under the run id that produced
+// them. The caller reads them back with VerifyUnmatched(runID, systemKey)
+// — the pair is the identity, so an older run's list reads as gone after
+// a newer one replaced it.
+func (s *Store) RecordVerifyUnmatched(systemKey string, runID int64, files []string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after commit
+	if _, err := tx.Exec(`DELETE FROM verify_unmatched WHERE system_key=?`, systemKey); err != nil {
+		return fmt.Errorf("store: clear unmatched %s: %w", systemKey, err)
+	}
+	for _, f := range files {
+		if _, err := tx.Exec(`INSERT INTO verify_unmatched (run_id, system_key, filename) VALUES (?,?,?)`,
+			runID, systemKey, f); err != nil {
+			return fmt.Errorf("store: record unmatched %s/%s: %w", systemKey, f, err)
+		}
+	}
+	return tx.Commit()
+}
+
+// VerifyUnmatched returns the persisted unmatched filenames for one
+// system's verify run, filename-ordered; nil when nothing is recorded for
+// that pair.
+func (s *Store) VerifyUnmatched(runID int64, systemKey string) ([]string, error) {
+	rows, err := s.db.Query(`SELECT filename FROM verify_unmatched
+		WHERE run_id=? AND system_key=? ORDER BY filename`, runID, systemKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	var out []string
+	for rows.Next() {
+		var f string
+		if err := rows.Scan(&f); err != nil {
+			return nil, err
+		}
+		out = append(out, f)
+	}
+	return out, rows.Err()
+}
+
+// VerifyRunPoint is one historical verify run's outcome for a system — a
+// history sparkline data point.
+type VerifyRunPoint struct {
+	FinishedAt string
+	Found      int
+	Unmatched  int
+	Extra      int
+}
+
+// verifyHistoryScanBound caps how many runs SystemVerifyHistory walks no
+// matter what n asks for — the sparkline never needs more and the scan
+// must stay cheap even on a long-lived database.
+const verifyHistoryScanBound = 100
+
+// verifyRunDetail mirrors the JSON FinishRun detail payload internal/igir
+// writes (only the fields the history needs).
+type verifyRunDetail struct {
+	Systems []struct {
+		Sys       string `json:"Sys"`
+		Found     int    `json:"Found"`
+		Unmatched int    `json:"Unmatched"`
+		Extra     int    `json:"Extra"`
+	} `json:"Systems"`
+}
+
+// SystemVerifyHistory returns up to n verify-run outcomes for one system,
+// newest first. It scans runs WHERE kind='verify' newest-first (bounded by
+// verifyHistoryScanBound), parsing each run's detail JSON for that
+// system's outcome; runs without a detail entry for the system (other
+// systems only, or non-JSON error text) contribute nothing. n<=0 yields
+// nil.
+func (s *Store) SystemVerifyHistory(systemKey string, n int) ([]VerifyRunPoint, error) {
+	if n <= 0 {
+		return nil, nil
+	}
+	rows, err := s.db.Query(`SELECT finished_at, detail FROM runs
+		WHERE kind='verify' ORDER BY id DESC LIMIT ?`, verifyHistoryScanBound)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	var out []VerifyRunPoint
+	for rows.Next() {
+		var finished, detail string
+		if err := rows.Scan(&finished, &detail); err != nil {
+			return nil, err
+		}
+		var d verifyRunDetail
+		if err := json.Unmarshal([]byte(detail), &d); err != nil {
+			continue // error-text detail: nothing plottable in this run
+		}
+		for _, sys := range d.Systems {
+			if sys.Sys != systemKey {
+				continue
+			}
+			out = append(out, VerifyRunPoint{FinishedAt: finished, Found: sys.Found, Unmatched: sys.Unmatched, Extra: sys.Extra})
+			break
+		}
+		if len(out) >= n {
+			break
+		}
+	}
+	return out, rows.Err()
 }
 
 // ReplaceStaging upserts the scan-time incoming staging summary rows.
