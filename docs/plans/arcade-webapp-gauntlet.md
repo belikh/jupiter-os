@@ -42,6 +42,18 @@ NixOS wiki/Docker docs — all fetched 2026-08-21):
 
 ### 1.1 Verified RomM facts (evidence on record)
 
+> **Superseded in part (2026-08-21, post-research):** three rows below are
+> stale — see [ADR-0002](../adr/0002-arcade-webapp-custom-vs-romm.md) §D1 for
+> the code-verified corrections. (F1) "Not in nixpkgs / no `services.romm`"
+> and criterion 9's "first container runtime on europa": nixpkgs PR #547607
+> (merged 2026-08-11) ships romm 5.1.0 + a native NixOS module — container
+> argument void, decision unchanged. (F2) "No DAT-based verification": RomM
+> does have a Hasheous cloud-hash "verified" filter — but no local DATs, no
+> DAT currency, no organize/promote, no missing-set reporting. (F3) The
+> Pegasus export emits **no `launch:` lines, no collections, and does not
+> exclude hidden games** (verified at romm master `42e80433`); the
+> docs.romm.app example shows lines the code never emits — trust the code.
+
 | Fact | Evidence |
 |---|---|
 | RomM 5.1.0 metadata providers: IGDB, ScreenScraper, MobyGames, LaunchBox, Hasheous, PlayMatch, SteamGridDB, RetroAchievements, Flashpoint, HLTB, ES-DE gamelist import (+ TheGamesDB listed on romm.app) | docs.romm.app → Metadata Providers; romm.app |
@@ -105,13 +117,15 @@ Python/React codebase vs a ~5k-line Go app we fully own.
    sweet spot. Postgres only if a concurrent-writer need appears (it won't on
    a 2-core NAS).
 4. **D4 stack** — default: **Go stdlib `net/http` + `html/template` + htmx
-   (one vendored JS file) + hand-rolled CSS**. No node, no SPA framework, no
-   build step beyond `buildGoModule`. Precedent: suno-web (stdlib-only Go).
-   Reversal trigger: if the critic rejects our gallery UI twice on polish
-   grounds specifically attributable to server-rendering, escalate the front
-   half to a vite/preact island layer built with `buildNpmPackage` (house
-   already ships npm-built packages: ariang, dsh, aeon).
-5. **ADR** — write `docs/adr/0002-arcade-webapp-architecture.md` recording D1
+    (one vendored JS file) + hand-rolled CSS**. No node, no SPA framework, no
+    build step beyond `buildGoModule`. Precedent: suno-web (stdlib-only Go).
+    htmx is BSD-2-Clause (not MIT like the rest of `pkgs/`): vendor it with
+    its upstream LICENSE file next to it and record the pinned version.
+    Reversal trigger: if the critic rejects our gallery UI twice on polish
+    grounds specifically attributable to server-rendering, escalate the front
+    half to a vite/preact island layer built with `buildNpmPackage` (house
+    already ships npm-built packages: ariang, dsh, aeon).
+5. **ADR** — write `docs/adr/0002-arcade-webapp-custom-vs-romm.md` recording D1
    verdict + D2/D3/D4 with evidence links. Coordinator locks it. No
    implementation of phases 1+ before the lock.
 6. **Fixture corpus** (needed by every later phase) — `pkgs/arcade-webapp/testdata/`

@@ -41,7 +41,7 @@ every boundary, pass/fail/blocked — never asserted without a run.
 |---|---|---|
 | `nix build .#arcade-webapp` | **pass** (2026-08-21) | verified again post-fixture (subPackages pins the package to `cmd/arcade-webapp` only); `result/bin/arcade-webapp` |
 | `go test ./...` (in `pkgs/arcade-webapp`) | **pass** (2026-08-21) | `internal/web` handler tests + `internal/fixture`: DAT↔generator hash equivalence (both directions), determinism, idempotence + stale-DAT guard, name invariants, DAT byte-stability |
-| `make fixture-arcade` | **pass** (2026-08-21) | gate: igir 5.3.0 (pinned via flake-locked nixpkgs) `copy test report` per system with cartridge-verify.sh's exact flags — **nes 5/5, snes 4/4, gb 4/4 FOUND, 0 UNUSED (zero unmatched)**; negative control (corrupted ROM) fails the gate ✓; UNUSED tripwire verified against a probe CSV ✓ |
+| `make fixture-arcade` | **pass** (2026-08-21) | gate: igir 5.3.0 (pinned via flake-locked nixpkgs) `copy test report` per system with cartridge-verify.sh's exact flags — **nes 5/5, snes 4/4, gb 4/4 FOUND, 0 UNUSED (zero unmatched)**; negative control (method: run gate once, corrupt a ROM under `tests/fixtures/arcade/incoming`, re-run with `SKIP_REGEN=1 make fixture-arcade` — regeneration is skipped so corruption survives to igir) fails the gate ✓; UNUSED tripwire verified against a probe CSV ✓ |
 | `make fmt` then `make fmt-check` | **pass** (2026-08-21) | clean at the Phase 0 boundary |
 | `make check` | **pass** (2026-08-21) | `nix flake check --no-build` — every host still evals |
 | D1 RomM research | **pass** (2026-08-21) | adversarial source-level research confirmed CUSTOM with corrections F1–F3 (ADR-0002 §D1); runtime VM experiment optional, not blocking |
