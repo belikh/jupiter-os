@@ -1,0 +1,298 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>jupiterOS Arcade — downloads</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js"></script>
+</head>
+<body>
+  
+<div class="topbar">
+  <div class="wrap">
+    <h1>jupiterOS <span class="accent">Arcade</span></h1>
+    <span class="sub">download control</span>
+    <span class="spacer"></span>
+    <nav class="nav" aria-label="pages">
+      <a href="/" >Dashboard</a>
+      <a href="/downloads" class="active" aria-current="page">Downloads</a>
+    </nav>
+    <span class="pill ok">aria2 1.37.0</span>
+  </div>
+</div>
+
+  <main class="wrap">
+    
+<div id="downloads-panel" hx-get="/partials/downloads" hx-trigger="every 2s" hx-swap="outerHTML"
+     role="region" aria-label="download queue" aria-live="polite"
+     data-aria2="ok"
+     >
+
+  
+
+  
+  <section>
+    <h2>Queue
+      
+        <span class="chip">2 active</span>
+        <span class="chip">1 waiting</span>
+        <span class="chip">3 stopped</span>
+        <span class="chip">118.8 KiB/s</span>
+        <span class="chip" title="aria2 daemon">aria2 1.37.0</span>
+      
+    </h2>
+
+    
+    
+    
+    
+    <table class="dl">
+      <thead><tr>
+        <th scope="col">download</th><th scope="col">system</th><th scope="col">status</th>
+        <th scope="col">progress</th><th scope="col">size</th><th scope="col">speed</th>
+        <th scope="col"><span class="visually-hidden">actions</span></th>
+      </tr></thead>
+      <tbody>
+        
+        <tr data-gid="3e197cb847990fcd" data-status="active" data-system="nes">
+          <td class="name" title="/tmp/opencode/gauntlet/p2/incoming/nes">Omega Odyssey (World).zip
+            
+          </td>
+          <td><span class="chip">nes</span></td>
+          <td><span class="pill running">active</span></td>
+          <td class="prog">
+            <div class="meter dl" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+                 aria-valuenow="12" aria-label="download progress Omega Odyssey (World).zip"
+                 >
+              <span style="width: 12%"></span>
+            </div>
+          </td>
+          <td class="num">7.9 MiB / 64.0 MiB</td>
+          <td class="num">60.2 KiB/s</td>
+          <td class="acts">
+            <button class="mini" hx-post="/downloads/3e197cb847990fcd/pause"
+              hx-target="#downloads-panel" hx-swap="outerHTML">pause</button>
+            
+            <button class="mini danger" hx-post="/downloads/3e197cb847990fcd/remove"
+              hx-target="#downloads-panel" hx-swap="outerHTML"
+              hx-confirm="Remove Omega Odyssey (World).zip from the queue? (partial files stay for resume)">remove</button>
+          </td>
+        </tr>
+        
+        <tr data-gid="46bdd916d585f389" data-status="active" data-system="snes">
+          <td class="name" title="/tmp/opencode/gauntlet/p2/incoming/snes">Crystal Caravan (USA).zip
+            
+          </td>
+          <td><span class="chip">snes</span></td>
+          <td><span class="pill running">active</span></td>
+          <td class="prog">
+            <div class="meter dl" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+                 aria-valuenow="11" aria-label="download progress Crystal Caravan (USA).zip"
+                 >
+              <span style="width: 11%"></span>
+            </div>
+          </td>
+          <td class="num">7.5 MiB / 64.0 MiB</td>
+          <td class="num">58.6 KiB/s</td>
+          <td class="acts">
+            <button class="mini" hx-post="/downloads/46bdd916d585f389/pause"
+              hx-target="#downloads-panel" hx-swap="outerHTML">pause</button>
+            
+            <button class="mini danger" hx-post="/downloads/46bdd916d585f389/remove"
+              hx-target="#downloads-panel" hx-swap="outerHTML"
+              hx-confirm="Remove Crystal Caravan (USA).zip from the queue? (partial files stay for resume)">remove</button>
+          </td>
+        </tr>
+        
+        <tr data-gid="004d64ef45bd7a7f" data-status="paused" data-system="gb">
+          <td class="name" title="/tmp/opencode/gauntlet/p2/incoming/gb">Pocket Vault (Europe).zip
+            
+          </td>
+          <td><span class="chip">gb</span></td>
+          <td><span class="pill warn">paused</span></td>
+          <td class="prog">
+            <div class="meter dl" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+                 aria-valuenow="1" aria-label="download progress Pocket Vault (Europe).zip"
+                 >
+              <span style="width: 1%"></span>
+            </div>
+          </td>
+          <td class="num">144.0 KiB / 8.0 MiB</td>
+          <td class="num"></td>
+          <td class="acts">
+            
+            <button class="mini" hx-post="/downloads/004d64ef45bd7a7f/resume"
+              hx-target="#downloads-panel" hx-swap="outerHTML">resume</button>
+            <button class="mini danger" hx-post="/downloads/004d64ef45bd7a7f/remove"
+              hx-target="#downloads-panel" hx-swap="outerHTML"
+              hx-confirm="Remove Pocket Vault (Europe).zip from the queue? (partial files stay for resume)">remove</button>
+          </td>
+        </tr>
+        
+        <tr data-gid="18e7ec30eefe7996" data-status="complete" data-system="nes">
+          <td class="name" title="/tmp/opencode/gauntlet/p2/incoming/nes">Starlit Vault (USA).nes
+            
+          </td>
+          <td><span class="chip">nes</span></td>
+          <td><span class="pill ok">complete</span></td>
+          <td class="prog">
+            <div class="meter dl" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+                 aria-valuenow="100" aria-label="download progress Starlit Vault (USA).nes"
+                 >
+              <span style="width: 100%"></span>
+            </div>
+          </td>
+          <td class="num">256.0 KiB / 256.0 KiB</td>
+          <td class="num"></td>
+          <td class="acts">
+            
+            
+            <button class="mini danger" hx-post="/downloads/18e7ec30eefe7996/remove"
+              hx-target="#downloads-panel" hx-swap="outerHTML"
+              hx-confirm="Remove Starlit Vault (USA).nes from the queue? (partial files stay for resume)">remove</button>
+          </td>
+        </tr>
+        
+        <tr data-gid="535a8cd2821f3a56" data-status="complete" data-system="nes">
+          <td class="name" title="/tmp/opencode/gauntlet/p2/incoming/nes">Super Jupiter Bros (USA).zip
+            
+          </td>
+          <td><span class="chip">nes</span></td>
+          <td><span class="pill ok">complete</span></td>
+          <td class="prog">
+            <div class="meter dl" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+                 aria-valuenow="100" aria-label="download progress Super Jupiter Bros (USA).zip"
+                 >
+              <span style="width: 100%"></span>
+            </div>
+          </td>
+          <td class="num">24.0 MiB / 24.0 MiB</td>
+          <td class="num"></td>
+          <td class="acts">
+            
+            
+            <button class="mini danger" hx-post="/downloads/535a8cd2821f3a56/remove"
+              hx-target="#downloads-panel" hx-swap="outerHTML"
+              hx-confirm="Remove Super Jupiter Bros (USA).zip from the queue? (partial files stay for resume)">remove</button>
+          </td>
+        </tr>
+        
+        <tr data-gid="e8cd7f2ec2435348" data-status="complete" data-system="snes">
+          <td class="name" title="/tmp/opencode/gauntlet/p2/incoming/snes">Mecha Garden (Japan).zip
+            
+          </td>
+          <td><span class="chip">snes</span></td>
+          <td><span class="pill ok">complete</span></td>
+          <td class="prog">
+            <div class="meter dl" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+                 aria-valuenow="100" aria-label="download progress Mecha Garden (Japan).zip"
+                 >
+              <span style="width: 100%"></span>
+            </div>
+          </td>
+          <td class="num">24.0 MiB / 24.0 MiB</td>
+          <td class="num"></td>
+          <td class="acts">
+            
+            
+            <button class="mini danger" hx-post="/downloads/e8cd7f2ec2435348/remove"
+              hx-target="#downloads-panel" hx-swap="outerHTML"
+              hx-confirm="Remove Mecha Garden (Japan).zip from the queue? (partial files stay for resume)">remove</button>
+          </td>
+        </tr>
+        
+      </tbody>
+    </table>
+    
+    
+  </section>
+
+  <section>
+    <h2>Systems
+      <span class="chip">57 idle</span>
+    </h2>
+    <p class="sub">per catalogue system: live download state (from the queue, attributed by its
+      <code>incoming/&lt;sys&gt;</code> dir) joined with verify state (unknown until the verify
+      piece lands) — the view AriaNg cannot express.</p>
+    
+    <table class="dl systems">
+      <thead><tr>
+        <th scope="col">system</th><th scope="col">download</th><th scope="col">verify</th>
+        <th scope="col">roms</th><th scope="col">acquire</th>
+      </tr></thead>
+      <tbody>
+        
+        <tr data-system="nes">
+          <td>Nintendo Entertainment System <span class="chip">nes</span></td>
+          <td><span class="pill running">downloading</span>
+            <span class="chip">12%</span>
+            <span class="chip">1 in queue</span>
+          </td>
+          <td><span class="pill unknown">unknown</span></td>
+          <td class="num">7</td>
+          <td>
+            <span class="sub" title="Minerva_Myrient - No-Intro - Nintendo - Nintendo Entertainment System (Headerless).torrent not staged in torrentDir">torrent missing</span>
+            
+          </td>
+        </tr>
+        
+        <tr data-system="snes">
+          <td>Super Nintendo Entertainment System <span class="chip">snes</span></td>
+          <td><span class="pill running">downloading</span>
+            <span class="chip">11%</span>
+            <span class="chip">1 in queue</span>
+          </td>
+          <td><span class="pill unknown">unknown</span></td>
+          <td class="num">4</td>
+          <td>
+            <span class="sub" title="Minerva_Myrient - No-Intro - Nintendo - Super Nintendo Entertainment System.torrent not staged in torrentDir">torrent missing</span>
+            
+          </td>
+        </tr>
+        
+        <tr data-system="gb">
+          <td>Nintendo Game Boy <span class="chip">gb</span></td>
+          <td><span class="pill warn">queued</span>
+            
+            <span class="chip">1 in queue</span>
+          </td>
+          <td><span class="pill unknown">unknown</span></td>
+          <td class="num">4</td>
+          <td>
+            <span class="sub" title="Minerva_Myrient - No-Intro - Nintendo - Game Boy.torrent not staged in torrentDir">torrent missing</span>
+            
+          </td>
+        </tr>
+        
+        <tr data-system="segacd">
+          <td>Sega Mega CD &amp; Sega CD <span class="chip">segacd</span></td>
+          <td><span class="pill unknown">—</span>
+            
+            
+          </td>
+          <td><span class="pill unknown">unknown</span></td>
+          <td class="num">1</td>
+          <td>
+            <span class="sub" title="Minerva_Myrient - Redump - Sega - Mega CD &amp; Sega CD.torrent not staged in torrentDir">torrent missing</span>
+            
+          </td>
+        </tr>
+        
+      </tbody>
+    </table>
+    
+  </section>
+  
+</div>
+
+    
+<footer>
+  jupiterOS Arcade webapp — <a href="https://github.com/belikh/jupiter-os/blob/main/docs/plans/arcade-webapp-gauntlet.md">gauntlet plan</a>
+  · fragments auto-refresh via htmx (dashboard 10s, download queue 2s)
+</footer>
+
+  </main>
+</body>
+</html>
