@@ -254,3 +254,53 @@ func TestHumanBytes(t *testing.T) {
 		}
 	}
 }
+
+// ADV-P1-05: a scan that finished ok but recorded warnings must surface in
+// the health chip (not silently "healthy"), and the recent-runs detail
+// cell must render human lines, not raw JSON.
+func TestHealthChipAndDetailShowWarnings(t *testing.T) {
+	srv := newTestServer(t)
+
+	// Inject a finished run with one warning — newer than the scan run the
+	// fixture server already recorded.
+	id, err := srv.st.StartRun("scan")
+	if err != nil {
+		t.Fatal(err)
+	}
+	detail := `{"Systems":61,"Games":13,"Bytes":2236435,"IncomingFiles":0,"IncomingBytes":0,"Errors":0,"Warnings":["nes: ROM walk failed, kept previous rows: permission denied"]}`
+	if err := srv.st.FinishRun(id, "ok", detail); err != nil {
+		t.Fatal(err)
+	}
+
+	body := get(t, srv.Handler(), "/").Body.String()
+	if !strings.Contains(body, `>1 warning<`) {
+		t.Error("health chip does not show '1 warning' — warnings are invisible")
+	}
+	if strings.Contains(body, `<span class="pill ok">healthy</span>`) {
+		t.Error("health chip says 'healthy' despite a warned run")
+	}
+	// The detail cell renders the warning line, not the JSON envelope.
+	if !strings.Contains(body, "nes: ROM walk failed, kept previous rows: permission denied") {
+		t.Error("runs table does not surface the warning text")
+	}
+	if strings.Contains(body, `{"Systems":61`) {
+		t.Error("runs table still dumps raw JSON detail")
+	}
+}
+
+// ADV-P1-05: a clean run's detail cell summarizes (systems/games/bytes),
+// and a non-JSON detail (legacy/error rows) renders escaped+truncated.
+func TestRunDetailHelper(t *testing.T) {
+	clean := runDetail(store.Run{Kind: "scan", Status: "ok", Detail: `{"Systems":61,"Games":13,"Bytes":2236435,"Warnings":null}`})
+	if s := string(clean); !strings.Contains(s, "61 systems") || !strings.Contains(s, "13 games") {
+		t.Errorf("runDetail(clean) = %q, want systems/games summary", s)
+	}
+	warned := runDetail(store.Run{Kind: "scan", Status: "ok", Detail: `{"Systems":3,"Games":4,"Bytes":10,"Warnings":["boom","sizzle"]}`})
+	if s := string(warned); !strings.Contains(s, "boom") || !strings.Contains(s, "sizzle") {
+		t.Errorf("runDetail(warned) = %q, want both warning lines", s)
+	}
+	legacy := runDetail(store.Run{Kind: "verify", Status: "error", Detail: "igir exited 2: disk full & <gone>"})
+	if s := string(legacy); !strings.Contains(s, "disk full") || strings.Contains(s, "<gone>") {
+		t.Errorf("runDetail(non-JSON) = %q, want escaped text", s)
+	}
+}
