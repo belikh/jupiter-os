@@ -196,6 +196,12 @@ jobs:
             substituters = https://cache.nixos.org https://cache.jupiter.au
             trusted-public-keys = ${{ secrets.HARMONIA_PUBLIC_KEY }} cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
             connect-timeout = 60
+            # Auto-GC before the run drowns the disk: full-fleet closures plus
+            # their substitutions overflow a ~60GB runner partway through.
+            # Active derivations are GC-rooted, so this only prunes paths we
+            # can re-substitute later if needed.
+            min-free = 10G
+            max-free = 25G
             # Never-disable policy: nix disables a binary cache for 60s per failed
             # download and that window is hardcoded upstream — the only lever is
             # making failures rare. stalled-download-timeout governs zero-data
@@ -404,6 +410,12 @@ jobs:
             substituters = https://cache.nixos.org https://cache.jupiter.au
             trusted-public-keys = ${{ secrets.HARMONIA_PUBLIC_KEY }} cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
             connect-timeout = 60
+            # Auto-GC before the run drowns the disk: full-fleet closures plus
+            # their substitutions overflow a ~60GB runner partway through.
+            # Active derivations are GC-rooted, so this only prunes paths we
+            # can re-substitute later if needed.
+            min-free = 10G
+            max-free = 25G
             # Never-disable policy: nix disables a binary cache for 60s per failed
             # download and that window is hardcoded upstream — the only lever is
             # making failures rare. stalled-download-timeout governs zero-data
