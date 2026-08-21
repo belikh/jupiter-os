@@ -46,16 +46,14 @@ jobs:
     steps:
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0 (node24)
       # Free ~30 GiB before building.
-      - name: Free disk space
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be  # v1.3.1
-        with:
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: true
-          tool-cache: true
+      # Nothing but Nix: carves a BTRFS volume out of /mnt's unused space for
+      # /nix (65-130GB vs ~22GB stock), purges preinstalled software in the
+      # background while the build runs, and grows the volume dynamically.
+      # Full-fleet closures were overflowing stock runners partway through;
+      # replaces jlumbroso/free-disk-space which freed less and raced the build.
+      - name: Nothing but Nix (disk space)
+        uses: wimpysworld/nothing-but-nix@687c797a730352432950c707ab493fcc951818d7  # v10
+
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
