@@ -225,15 +225,21 @@ jobs:
 
       - name: Join tailnet under deterministic hostname
         run: |
-          # nothing-but-nix purges with apt-get in the background; the
-          # install.sh script runs its own un-tunable apt-get, so retry the
-          # whole install until it wins the dpkg lock.
+          # nothing-but-nix purges with apt-get in the background; install.sh
+          # runs its own un-tunable apt-get -> retry until it wins the lock.
+          # NO curl|sh pipelines: without pipefail a failed download makes sh
+          # run empty-input and exit 0 ("success" with no tailscale installed).
+          # Fetch to file first, then execute, then VERIFY the binary exists.
           TS_OK=0
           for _ in $(seq 1 30); do
-            if curl -fsSL https://tailscale.com/install.sh | sudo sh; then TS_OK=1; break; fi
-            echo "tailscale install failed (dpkg busy?); retrying in 10s"; sleep 10
+            if curl -fsSL -o /tmp/ts-install.sh https://tailscale.com/install.sh \
+               && sudo sh /tmp/ts-install.sh \
+               && command -v tailscale >/dev/null; then
+              TS_OK=1; break
+            fi
+            echo "tailscale install failed (dpkg busy / network?); retrying in 10s"; sleep 10
           done
-          [ "$TS_OK" = 1 ] || { echo "::error::tailscale install kept losing the dpkg race"; exit 1; }
+          [ "$TS_OK" = 1 ] || { echo "::error::tailscale install never succeeded"; exit 1; }
           sudo tailscale up \
             --login-server=https://neptune.jupiter.au:8080 \
             --authkey=${{ secrets.TAILSCALE_CI_AUTHKEY }} \
@@ -556,15 +562,21 @@ jobs:
 
       - name: Join tailnet
         run: |
-          # nothing-but-nix purges with apt-get in the background; the
-          # install.sh script runs its own un-tunable apt-get, so retry the
-          # whole install until it wins the dpkg lock.
+          # nothing-but-nix purges with apt-get in the background; install.sh
+          # runs its own un-tunable apt-get -> retry until it wins the lock.
+          # NO curl|sh pipelines: without pipefail a failed download makes sh
+          # run empty-input and exit 0 ("success" with no tailscale installed).
+          # Fetch to file first, then execute, then VERIFY the binary exists.
           TS_OK=0
           for _ in $(seq 1 30); do
-            if curl -fsSL https://tailscale.com/install.sh | sudo sh; then TS_OK=1; break; fi
-            echo "tailscale install failed (dpkg busy?); retrying in 10s"; sleep 10
+            if curl -fsSL -o /tmp/ts-install.sh https://tailscale.com/install.sh \
+               && sudo sh /tmp/ts-install.sh \
+               && command -v tailscale >/dev/null; then
+              TS_OK=1; break
+            fi
+            echo "tailscale install failed (dpkg busy / network?); retrying in 10s"; sleep 10
           done
-          [ "$TS_OK" = 1 ] || { echo "::error::tailscale install kept losing the dpkg race"; exit 1; }
+          [ "$TS_OK" = 1 ] || { echo "::error::tailscale install never succeeded"; exit 1; }
           sudo tailscale up \
             --login-server=https://neptune.jupiter.au:8080 \
             --authkey=${{ secrets.TAILSCALE_CI_AUTHKEY }} \
