@@ -152,17 +152,17 @@ jobs:
           tool-cache: true
 
       - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
 
       - name: Enable i686 binfmt emulation
         run: |
           sudo apt-get update
           sudo apt-get install -y qemu-user-static binfmt-support
           sudo update-binfmts --enable qemu-i386 || true
-        run: |
-          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
-            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
-          sudo udevadm control --reload-rules
-          sudo udevadm trigger --name-match=kvm
 
       # Cache Nix evaluation/download cache by nixpkgs commit (flake.lock hash) —
       # each builder gets its own runner-local cache, same key scheme as ci.yml.
