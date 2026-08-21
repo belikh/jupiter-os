@@ -158,14 +158,11 @@ jobs:
 
       - name: Enable i686 binfmt emulation
         run: |
-          # nothing-but-nix's background purge can hold the dpkg lock here
-          # too (same race as the tailscale install) — wait it out.
-          for _ in $(seq 1 60); do
-            sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || break
-            echo "dpkg busy (nothing-but-nix purge); waiting..."; sleep 5
-          done
-          sudo apt-get update
-          sudo apt-get install -y qemu-user-static binfmt-support
+          # nothing-but-nix purges with apt-get in the background; a
+          # pre-check races (lock can appear between check and install).
+          # DPkg::Lock::Timeout makes apt WAIT natively instead of exiting 100.
+          sudo apt-get -o DPkg::Lock::Timeout=300 update
+          sudo apt-get -o DPkg::Lock::Timeout=300 install -y qemu-user-static binfmt-support
           sudo update-binfmts --enable qemu-i386 || true
 
       # Cache Nix evaluation/download cache by nixpkgs commit (flake.lock hash) —
@@ -228,13 +225,15 @@ jobs:
 
       - name: Join tailnet under deterministic hostname
         run: |
-          # nothing-but-nix purges preinstalled software with apt-get in the
-          # background; wait out the dpkg lock instead of racing it (exit 100).
-          for _ in $(seq 1 60); do
-            sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || break
-            echo "dpkg busy (nothing-but-nix purge); waiting..."; sleep 5
+          # nothing-but-nix purges with apt-get in the background; the
+          # install.sh script runs its own un-tunable apt-get, so retry the
+          # whole install until it wins the dpkg lock.
+          TS_OK=0
+          for _ in $(seq 1 30); do
+            if curl -fsSL https://tailscale.com/install.sh | sudo sh; then TS_OK=1; break; fi
+            echo "tailscale install failed (dpkg busy?); retrying in 10s"; sleep 10
           done
-          curl -fsSL https://tailscale.com/install.sh | sudo sh
+          [ "$TS_OK" = 1 ] || { echo "::error::tailscale install kept losing the dpkg race"; exit 1; }
           sudo tailscale up \
             --login-server=https://neptune.jupiter.au:8080 \
             --authkey=${{ secrets.TAILSCALE_CI_AUTHKEY }} \
@@ -401,14 +400,11 @@ jobs:
 
       - name: Enable i686 binfmt emulation (coordinator)
         run: |
-          # nothing-but-nix's background purge can hold the dpkg lock here
-          # too (same race as the tailscale install) — wait it out.
-          for _ in $(seq 1 60); do
-            sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || break
-            echo "dpkg busy (nothing-but-nix purge); waiting..."; sleep 5
-          done
-          sudo apt-get update
-          sudo apt-get install -y qemu-user-static binfmt-support
+          # nothing-but-nix purges with apt-get in the background; a
+          # pre-check races (lock can appear between check and install).
+          # DPkg::Lock::Timeout makes apt WAIT natively instead of exiting 100.
+          sudo apt-get -o DPkg::Lock::Timeout=300 update
+          sudo apt-get -o DPkg::Lock::Timeout=300 install -y qemu-user-static binfmt-support
           sudo update-binfmts --enable qemu-i386 || true
 
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
@@ -560,13 +556,15 @@ jobs:
 
       - name: Join tailnet
         run: |
-          # nothing-but-nix purges preinstalled software with apt-get in the
-          # background; wait out the dpkg lock instead of racing it (exit 100).
-          for _ in $(seq 1 60); do
-            sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || break
-            echo "dpkg busy (nothing-but-nix purge); waiting..."; sleep 5
+          # nothing-but-nix purges with apt-get in the background; the
+          # install.sh script runs its own un-tunable apt-get, so retry the
+          # whole install until it wins the dpkg lock.
+          TS_OK=0
+          for _ in $(seq 1 30); do
+            if curl -fsSL https://tailscale.com/install.sh | sudo sh; then TS_OK=1; break; fi
+            echo "tailscale install failed (dpkg busy?); retrying in 10s"; sleep 10
           done
-          curl -fsSL https://tailscale.com/install.sh | sudo sh
+          [ "$TS_OK" = 1 ] || { echo "::error::tailscale install kept losing the dpkg race"; exit 1; }
           sudo tailscale up \
             --login-server=https://neptune.jupiter.au:8080 \
             --authkey=${{ secrets.TAILSCALE_CI_AUTHKEY }} \
