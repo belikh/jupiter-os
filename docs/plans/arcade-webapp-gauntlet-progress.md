@@ -6,18 +6,18 @@ every critic verdict. Screenshots (when they exist) land under
 `arcade-webapp-gauntlet/` next to this file.
 
 - **Phase:** 2 in progress — **P1 won** (blind critic, 1 loop, 0 rebuilds) ·
-  P2 built, in review · P3 next
+  P2 reconciled (adversarial FIX: 6 fixed, 1 accepted), in review · P3 next
 - **Branch:** `arcade/webapp-gauntlet`
 - **ADR:** [ADR-0002 — custom, not RomM](../adr/0002-arcade-webapp-custom-vs-romm.md)
   (D1 research-confirmed 2026-08-21; D2–D4 accepted)
-- **Last update:** 2026-08-21 15:35 AEST
+- **Last update:** 2026-08-21 16:20 AEST
 
 ## Piece table
 
 | Piece | State | Builder loops | Last critic verdict | Critic's named gap | Evidence |
 |---|---|---|---|---|---|
 | P1 — Pipeline dashboard | **won** | 1 (0 rebuilds) | **ours** (blind, labels stripped; DOM A/B, data-scale asymmetry disclosed+discounted) | download stage has no surface (queue depth/active/errored/throughput) — folds into P2; meters lack `role="progressbar"`/`aria-valuenow`, polling regions lack `aria-live` (carry to P2) | `p1-ours-desktop.png`, `p1-ours-mobile.png`, `p1-bar-desktop.png`; critic: "B answers the 5-second question in one strip… A contains zero pipeline vocabulary — verify 0, torrent 0, scan 0, coverage 0" |
-| P2 — Download control | review | 1 (0 rebuilds) | — | — | aria2 JSON-RPC client (`internal/aria2`, aria2-rpc.sh semantics ported, secret-never-logged grep-proof), downloads page + 2s queue poll + system-centric join + per-system acquire, module wiring (`aria2RpcUrl`, `torrentDir`), VM test driving a REAL aria2 daemon (webseed torrent, pause/resume, journal secret grep); commits `f883582`/`ad361c2`/`b8f8315`/`f0b29b2` |
+| P2 — Download control | review | 1 (0 rebuilds) + adversarial reconciliation | — | — | aria2 JSON-RPC client (`internal/aria2`, aria2-rpc.sh semantics ported, secret-never-logged grep-proof), downloads page + 2s queue poll + system-centric join + per-system acquire, module wiring (`aria2RpcUrl`, `torrentDir`), VM test driving a REAL aria2 daemon (webseed torrent, pause/resume, journal secret grep w/ canary); commits `f883582`/`ad361c2`/`b8f8315`/`f0b29b2`, review fixes `4be90e9`/`dfa680b` |
 | P3 — Verify & organize | pending | 0 | — | — | — |
 | P4 — Library browsing | pending | 0 | — | — | — |
 | P5 — Metadata engine control | pending | 0 | — | — | — |
@@ -90,7 +90,7 @@ Builder loop 1. All fresh on the committed tree (`f883582` client →
 
 | Command | Result | Notes |
 |---|---|---|
-| `go test -count=1 ./...` (in `pkgs/arcade-webapp`) | **pass** (2026-08-21) | new suite `internal/aria2` (12 tests vs a mock JSON-RPC endpoint): token-first auth on every method, aria2's string-encoded numbers, the load-bearing EMPTY uris array on addTorrent (#2075), check-integrity driven by `.aria2` control-file presence, JSON-RPC error = hard result never retried, transport-only submit retries with backoff, typed unreachable + timeout + malformed-body errors, and **TestSecretNeverLogged** — every log line of a full client run (all methods + every failure mode) grepped for the secret while the mock proves the token WAS sent (non-vacuous). `internal/web` grows the downloads suite: page/fragment shape, 2s-poll + `aria-live` + `role="progressbar"`/`aria-valuenow` markers, summary fragment incl. unreachable → 200-state-not-500, nil-client "not configured", acquire wire shape (dir routing + seed-time=0 + allow-overwrite + check-integrity) + audit-run recording + all failure modes, pause/resume/remove daemon calls, X-HX-Request CSRF on every mutating endpoint (incl. `/rescan`), the join state machine over fixture store data (active/waiting/errored aggregation, aggregate %, torrent availability, non-arcade downloads never attribute, idle collapse), button-visibility matrix, dir-attribution boundaries |
+| `go test -count=1 ./...` (in `pkgs/arcade-webapp`) | **pass** (2026-08-21) | new suite `internal/aria2` (12 tests vs a mock JSON-RPC endpoint): token-first auth on every method, aria2's string-encoded numbers, the load-bearing EMPTY uris array on addTorrent (#2075), check-integrity driven by `.aria2` control-file presence, JSON-RPC error = hard result never retried, transport-only submit retries with backoff, typed unreachable + timeout + malformed-body errors, and **TestSecretNeverLogged** — every log line of a client run covering all methods plus the unreachable / HTTP-500 / malformed-body / JSON-RPC-error failure modes is grepped for the secret while the mock proves the token WAS sent (non-vacuous); the timeout path is covered separately by TestQueryTimeoutBoundsCall, which asserts the typed deadline error but does not grep logs (deadline-expiry errors carry only the ctx error string — no secret can enter them, as the token exists solely inside the request body). `internal/web` grows the downloads suite: page/fragment shape, 2s-poll + `aria-live` + `role="progressbar"`/`aria-valuenow` markers, summary fragment incl. unreachable → 200-state-not-500, nil-client "not configured", acquire wire shape (dir routing + seed-time=0 + allow-overwrite + check-integrity) + audit-run recording + all failure modes (code-12 duplicate → ok-with-note, other codes → surfaced error), pause/resume/remove daemon calls, X-HX-Request CSRF on every mutating endpoint (incl. `/rescan`), the join state machine over fixture store data (active/waiting/errored aggregation, aggregate %, torrent availability, non-arcade downloads never attribute, idle collapse), button-visibility matrix, dir-attribution boundaries, queue-truncation hints, partial-batch hint, acquire-503-when-unconfigured |
 | `nix build .#arcade-webapp` | **pass** (2026-08-21) | no vendorHash change (the aria2 package is stdlib-only; everything committed before the FOD ran — the D-P1e rule). Binary smoke: starts, logs secret-presence paths, fatal-exits on missing catalogue env as designed |
 | `make test-arcade-webapp` | **pass** (2026-08-21, 5 runs: 3 consecutive + mutation + final) | the VM now runs a REAL aria2 daemon (minimal local-secret config — `jupiter.services.aria2` itself would drag nginx/AriaNg/sops into the sops-free test host). The smoke drives the whole P2 cycle through the webapp: aria2 reachable chip → `POST /systems/nes/acquire` 202 → download appears in the queue fragment **attributed to nes** → pause → `data-status="paused"` → resume → **complete**, payload verified at `incoming/nes/vm-fixture-payload.bin` = 2097152 B → `acquire` run in the runs table → **journal grep: secret value never logged**. Determinism: the download is a self-authored torrent (mktorrent, private, single webseed) fed by an in-VM darkhttpd, throttled to 256 KiB/s so the 2 MiB payload stays in flight long enough to pause; ~41–44 s wall per run (well under the ~90 s budget). Mutation proof: payload-size assertion broken on purpose → explicit `ARCADE-WEBAPP-VM: FAIL` marker + make exit 1 (fail-fast verdict channel intact) |
 | `make fixture-arcade` | **pass** (2026-08-21) | igir gate still green post-P2: nes 5/5, snes 4/4, gb 4/4 FOUND, **0 unmatched** |
@@ -102,8 +102,11 @@ included) now carries `role="progressbar"` + `aria-valuenow` (+
 `aria-valuemin/max`, label); every polled region is `aria-live="polite"`
 with `role="region"` + label; the two pages get a nav with
 `aria-current`. RED proof: `git show HEAD:pkgs/.../partial_systems.html
-| grep -c role="progressbar"` → 0 at the P1 boundary; assertions now
-pin all three coverage meters + `aria-live` in the dashboard render test.
+| grep -c role="progressbar"` → 0 at the P1 boundary. The unit render
+test asserts two distinct meter values (`aria-valuenow="60"` for nes,
+`aria-valuenow="0"` for gb) + `aria-live`; the 100 % case is asserted
+only in the VM test's card wall (`data-coverage="100"` on snes), not by
+a unit test.
 
 **Deviation from the letter of the plan, logged as D-P2a:** the VM test
 was specified as "download a small local file via http URL"; it instead
@@ -115,6 +118,33 @@ using no real torrents and no trackers/DHT (private flag). Pause/resume
 specifically requires the webseed server to answer HTTP Range —
 darkhttpd does, python's `http.server` does not (resumed download stalls
 forever; verified locally before wiring).
+
+### Phase 2 adversarial review — reconciliation (2026-08-21)
+
+Verdict **FIX**; 7 findings: **6 fixed** (`4be90e9` code, `dfa680b` VM+module,
+this commit for the two wording items), **1 accepted as residual**, none
+rejected. Piece stays in `review` until the blind critic.
+
+| Finding | Disposition | What changed |
+|---|---|---|
+| ADV-P2-01 MED (gating) — VM secret grep could pass vacuously (dead journal → `grep -c` prints 0, `\|\| true` swallows journalctl failure) | **fixed** (`dfa680b`) | the check now two-guards itself: journalctl must succeed AND the journal must contain the unit's stable startup line (`arcade-webapp: listening on`, emitted right before ListenAndServe). Mutation re-proof: journal capture scratch-emptied → `ARCADE-WEBAPP-VM: FAIL: webapp journal lacks its startup line — journal capture broken (secret grep would be vacuous)` + make exit 1; restored → clean PASS ("journal alive: startup line present, grep clean") |
+| ADV-P2-02 LOW — capped tellWaiting/tellStopped hid overflow without a hint | **fixed** (`4be90e9`) | fetchDownloads diffs each successful fetch against GlobalStat's counts; the fragment renders "+N more waiting/stopped downloads not shown". Computed only on successful fetches (a failed fetch is a partial, not a truncation). RED→GREEN TestQueueTruncationHint (+148/+60, and no hint within caps) |
+| ADV-P2-03 LOW — (a) tell* failures discarded → confidently short queue; (b) acquire 202 vs dlControl 503 for not-configured | **fixed** (`4be90e9`) | (a) any tell* failure (or shared-ctx expiry) marks the VM `Partial` → `data-partial="true"` + "partial queue — … may be incomplete" hint, distinct from unreachable (stat/version answered = daemon up); (b) acquire answers 503 when unconfigured, consistent with dlControl. RED→GREEN TestPartialQueueHint, TestAcquireNotConfiguredIs503 |
+| ADV-P2-04 LOW — ambiguous addTorrent timeout retried → code-12 duplicate-infohash reported as failure although the download registered | **fixed** (`4be90e9`) | `aria2.IsAlreadyRegistered` (code 12) on submit = success-with-existing-download: run recorded ok with an "already registered" note, no error surfaced — the same idempotent-rerun semantics jupiter-rom-acquire relies on. Genuine rejections (other codes) still surface + record error runs. RED→GREEN TestAcquireDuplicateIsSuccess; the rejection case of TestAcquireFailureModes now uses code 1 |
+| ADV-P2-05 LOW — torrentDir missing from poolPaths/RequiresMountsFor | **fixed** (`dfa680b`) | added (transitively covered on europa today; the ordering intent is per-path and the downloads page stats it at render time) |
+| ADV-P2-06 LOW — Phase-2 wording overclaims (a) "pins all three coverage meters" (b) "every failure mode" grepped | **fixed** (this commit) | (a) now states exactly: the unit test asserts two distinct meter values (60, 0); the 100 % case is VM-only (`data-coverage="100"`); (b) now states exactly: the inline grep covers all methods + the unreachable/500/malformed/JSON-RPC-error modes; the timeout path is covered by TestQueryTimeoutBoundsCall, which asserts the typed deadline error but does not grep logs |
+| ADV-P2-07 — 2 s queue poll cost on the LAN | **accepted (residual)** | parity with AriaNg's 1 s default (we poll half as often); browsers throttle htmx timers in hidden tabs, and the fragment degrades to a static state when unreachable — the poll never multiplies under failure. Revisit only if the critic flags interactivity lag |
+
+### Phase 2 post-review verification (fresh, on the reconciled tree)
+
+| Command | Result | Notes |
+|---|---|---|
+| `go test -count=1 ./...` (in `pkgs/arcade-webapp`) | **pass** (2026-08-21) | 6 packages; 4 new RED→GREEN tests (truncation, partial, 503-consistency, code-12-success) + the split rejection case; no existing assertion weakened |
+| `make test-arcade-webapp` | **pass** (2026-08-21) | ADV-P2-01 mutation run: dead-journal scratch mutation → explicit FAIL marker + make exit 1 (fail-fast at the check, no timeout burn); restored → clean PASS, final line "RPC secret never logged (journal alive: startup line present, grep clean)" |
+| `nix build .#arcade-webapp` | **pass** (2026-08-21) | no vendorHash change (stdlib-only edits) |
+| `make fixture-arcade` | **pass** (2026-08-21) | igir gate still zero-unmatched (nes 5/5, snes 4/4, gb 4/4) |
+| `make fmt` then `make fmt-check` | **pass** (2026-08-21) | clean, no diff |
+| `make check` | **pass** (2026-08-21) | every host evals incl. the VM host with torrentDir in RequiresMountsFor |
 
 ## Decision log
 
