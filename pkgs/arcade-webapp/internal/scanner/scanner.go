@@ -180,12 +180,23 @@ func (s *Scanner) scanAll() Result {
 		// (extension match or zip), companion bytes attributed — see
 		// scanSystemDir.
 		games, walkErr := scanSystemDir(filepath.Join(s.cfg.bucketRoot(sys.Bucket), sys.Key), sys)
-		if walkErr != nil && !errors.Is(walkErr, fs.ErrNotExist) {
-			res.Warnings = append(res.Warnings, fmt.Sprintf("%s: ROM walk: %v", sys.Key, walkErr))
-		}
-		if err := s.st.ReplaceSystemGames(sys.Key, games, seen); err != nil {
-			res.Errors++
-			res.Warnings = append(res.Warnings, fmt.Sprintf("%s: persist games: %v", sys.Key, err))
+		if walkErr == nil {
+			// nil error covers both a real walk and an absent dir (nil
+			// games): absent = system not populated → zero games, and
+			// stale rows for a deliberately removed dir go with it.
+			if err := s.st.ReplaceSystemGames(sys.Key, games, seen); err != nil {
+				res.Errors++
+				res.Warnings = append(res.Warnings, fmt.Sprintf("%s: persist games: %v", sys.Key, err))
+			}
+		} else {
+			// Any walk error (unmounted bucket, permission shift, a dir
+			// vanishing mid-walk): DO NOT replace — ReplaceSystemGames
+			// would prune every row the failed walk didn't see, wiping
+			// the hidden/verify_state/first_seen the schema promises
+			// rescans preserve (ADV-P1-03). Keep the previous rows,
+			// surface the failure loudly.
+			res.Warnings = append(res.Warnings,
+				fmt.Sprintf("%s: ROM walk failed, kept previous rows: %v", sys.Key, walkErr))
 		}
 		for _, g := range games {
 			res.Games++

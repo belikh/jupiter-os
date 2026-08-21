@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -320,4 +321,82 @@ func TestAgeDays(t *testing.T) {
 			t.Errorf("AgeDays(%q) = %d, want %d", date, got, want)
 		}
 	}
+}
+
+// ADV-P1-03: a rescan while a bucket is unreadable (unmounted pool,
+// permission shift) must NOT prune the affected systems' games rows —
+// replacing with a partial/empty walk would silently wipe the
+// hidden/verify_state/first_seen the schema promises rescans preserve.
+func TestScanKeepsRowsWhenDirUnreadable(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("chmod 000 does not block reads for root; run as a normal user")
+	}
+	root, dbPath := buildFixtureTree(t)
+	st, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close() //nolint:errcheck // test
+
+	sc := New(testConfig(root, dbPath), st)
+	if _, err := sc.Scan(); err != nil {
+		t.Fatal(err)
+	}
+	nesDir := filepath.Join(root, "games", "cartridge", "nes")
+	rowsBefore := gameCount(t, st, "nes")
+	if rowsBefore != 5 {
+		t.Fatalf("nes rows after first scan = %d, want 5", rowsBefore)
+	}
+
+	// Make the nes dir unreadable (EACCES on ReadDir), rescan. The sleep
+	// crosses an RFC3339-second boundary: ReplaceSystemGames prunes by
+	// last_seen_at < ts, so a same-second rescan would hide the prune the
+	// test exists to catch.
+	if err := os.Chmod(nesDir, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(nesDir, 0o755) })
+	time.Sleep(1100 * time.Millisecond)
+
+	res, err := sc.Scan()
+	if err != nil {
+		t.Fatalf("second Scan returned error %v (warnings, not failures)", err)
+	}
+	if got := gameCount(t, st, "nes"); got != rowsBefore {
+		t.Errorf("nes rows after unreadable rescan = %d, want %d (rows must survive)", got, rowsBefore)
+	}
+	// The failure must be visible: a warning naming the system.
+	warned := false
+	for _, w := range res.Warnings {
+		if strings.Contains(w, "nes") && strings.Contains(w, "ROM walk") {
+			warned = true
+		}
+	}
+	if !warned {
+		t.Errorf("no 'nes: ROM walk' warning among %v", res.Warnings)
+	}
+	// Other systems still refresh normally.
+	if got := gameCount(t, st, "snes"); got != 4 {
+		t.Errorf("snes rows = %d, want 4 (unrelated system must still scan)", got)
+	}
+}
+
+func gameCount(t *testing.T, st *store.Store, system string) int64 {
+	t.Helper()
+	for _, s := range mustSummary(t, st) {
+		if s.Key == system {
+			return s.GameCount
+		}
+	}
+	t.Fatalf("system %q missing from summary", system)
+	return -1
+}
+
+func mustSummary(t *testing.T, st *store.Store) []store.SystemSummary {
+	t.Helper()
+	rows, err := st.SystemSummary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return rows
 }
