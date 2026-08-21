@@ -135,6 +135,19 @@ rejected. Piece stays in `review` until the blind critic.
 | ADV-P2-06 LOW — Phase-2 wording overclaims (a) "pins all three coverage meters" (b) "every failure mode" grepped | **fixed** (this commit) | (a) now states exactly: the unit test asserts two distinct meter values (60, 0); the 100 % case is VM-only (`data-coverage="100"`); (b) now states exactly: the inline grep covers all methods + the unreachable/500/malformed/JSON-RPC-error modes; the timeout path is covered by TestQueryTimeoutBoundsCall, which asserts the typed deadline error but does not grep logs |
 | ADV-P2-07 — 2 s queue poll cost on the LAN | **accepted (residual)** | parity with AriaNg's 1 s default (we poll half as often); browsers throttle htmx timers in hidden tabs, and the fragment degrades to a static state when unreachable — the poll never multiplies under failure. Revisit only if the critic flags interactivity lag |
 
+### Phase 3 adversarial review — reconciliation (2026-08-22)
+
+| Finding | Disposition |
+|---|---|
+| ADV-P3-01 vacuous companion assertion | **fixed** — VM smoke asserts aria2's `<infohash>.torrent` sidecar exists in incoming/nes before the amber-extra step; --input-exclude coverage cannot pass vacuously |
+| ADV-P3-02 stale green pill on parse failure | **fixed** — verify pill shows a "last attempt failed" hint when the most recent verify run errored |
+| ADV-P3-03 relative input roots re-arm glob crawl | **fixed** — Runner construction fatals loudly on non-absolute roots |
+| ADV-P3-04 stage-torrent symlink follow | **fixed** — writes use O_CREATE\|O_EXCL\|O_NOFOLLOW; pre-planted symlinks fail loudly |
+| ADV-P3-05 copyTree skips non-regular files vs rsync -a | **accepted** — safer direction; documented divergence from cartridge-verify.sh |
+| ADV-P3-06 stage-uri LAN-trust posture | **accepted** — same no-auth LAN class as ADV-P1-07/08 |
+
+Post-review verification (fresh): `go build/vet/test -count=1 ./...` pass · `nix build .#arcade-webapp` pass · `make test-arcade-webapp` pass · `make fixture-arcade` pass · `make fmt-check` pass · `make check` pass (transient nix evaluator segfault on packages.dsh, clean on re-run).
+
 ### Phase 2 post-review verification (fresh, on the reconciled tree)
 
 | Command | Result | Notes |
