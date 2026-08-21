@@ -21,8 +21,8 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: cachix/install-nix-action@b4b293eae0b79aac8a161bb32925a5508c9cca93 # v31
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0 (node24)
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
       - name: Check formatting
         run: nix run nixpkgs#nixfmt -- --check .
       - name: Flake check (evaluates every host)
@@ -44,18 +44,16 @@ jobs:
           - host-group: "kiosks"
             hosts: "amalthea metis adrastea thebe"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0 (node24)
       # Free ~30 GiB before building.
-      - name: Free disk space
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be  # v1.3.1
-        with:
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: true
-          tool-cache: true
+      # Nothing but Nix: carves a BTRFS volume out of /mnt's unused space for
+      # /nix (65-130GB vs ~22GB stock), purges preinstalled software in the
+      # background while the build runs, and grows the volume dynamically.
+      # Full-fleet closures were overflowing stock runners partway through;
+      # replaces jlumbroso/free-disk-space which freed less and raced the build.
+      - name: Nothing but Nix (disk space)
+        uses: wimpysworld/nothing-but-nix@687c797a730352432950c707ab493fcc951818d7  # v10
+
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
@@ -63,7 +61,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       # Cache Nix evaluation/download cache by nixpkgs commit (flake.lock hash)
-      - uses: actions/cache@v4
+      - uses: actions/cache@a7833574556fa59680c1b7cb190c1735db73ebf0 # v5.0.0 (node24)
         with:
           path: ~/.cache/nix
           key: nix-${{ runner.os }}-nixpkgs-${{ hashFiles('flake.lock') }}
@@ -75,13 +73,25 @@ jobs:
           sudo install -d -m 755 /opt/ci
           sudo cp scripts/ci/post-build-hook.sh scripts/ci/cache-drainer.sh scripts/ci/retain-recent.sh /opt/ci/
           sudo chmod 755 /opt/ci/*.sh
-      - uses: cachix/install-nix-action@b4b293eae0b79aac8a161bb32925a5508c9cca93 # v31
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           extra_nix_config: |
             substituters = https://cache.jupiter.au https://cache.nixos.org
             trusted-public-keys = ${{ secrets.HARMONIA_PUBLIC_KEY }} cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
             connect-timeout = 60
+            # Auto-GC before the run drowns the disk: full-fleet closures plus
+            # their substitutions overflow a ~60GB runner partway through.
+            # Active derivations are GC-rooted, so this only prunes paths we
+            # can re-substitute later if needed.
+            min-free = 10G
+            max-free = 25G
+            # Never-disable policy: nix disables a binary cache for 60s per failed
+            # download and that window is hardcoded upstream — the only lever is
+            # making failures rare. stalled-download-timeout governs zero-data
+            # gaps mid-transfer (DERP relays trickle); default 300s aborts
+            # transfers that would otherwise complete.
+            stalled-download-timeout = 900
             post-build-hook = /opt/ci/post-build-hook.sh
             system-features = gccarch-bdver4 gccarch-skylake big-parallel
             extra-platforms = i686-linux x86_64-linux
@@ -101,8 +111,11 @@ jobs:
 
       - name: Enable i686 binfmt emulation
         run: |
-          sudo apt-get update
-          sudo apt-get install -y qemu-user-static binfmt-support
+          # nothing-but-nix purges with apt-get in the background; a
+          # pre-check races (lock can appear between check and install).
+          # DPkg::Lock::Timeout makes apt WAIT natively instead of exiting 100.
+          sudo apt-get -o DPkg::Lock::Timeout=300 update
+          sudo apt-get -o DPkg::Lock::Timeout=300 install -y qemu-user-static binfmt-support
           sudo update-binfmts --enable qemu-i386 || true
 
       # ---- Tailscale + cache drainer + build ----
@@ -114,7 +127,21 @@ jobs:
           HOSTS: ${{ matrix.hosts }}
         run: |
           # Install Tailscale
-          curl -fsSL https://tailscale.com/install.sh | sudo sh
+          # nothing-but-nix purges with apt-get in the background; install.sh
+          # runs its own un-tunable apt-get -> retry until it wins the lock.
+          # NO curl|sh pipelines: without pipefail a failed download makes sh
+          # run empty-input and exit 0 ("success" with no tailscale installed).
+          # Fetch to file first, then execute, then VERIFY the binary exists.
+          TS_OK=0
+          for _ in $(seq 1 30); do
+            if curl -fsSL -o /tmp/ts-install.sh https://tailscale.com/install.sh \
+               && sudo sh /tmp/ts-install.sh \
+               && command -v tailscale >/dev/null; then
+              TS_OK=1; break
+            fi
+            echo "tailscale install failed (dpkg busy / network?); retrying in 10s"; sleep 10
+          done
+          [ "$TS_OK" = 1 ] || { echo "::error::tailscale install never succeeded"; exit 1; }
           
           # Start Tailscale with auth key (pre-auth key for CI tag)
           # Uses reusable ephemeral key from Headscale (configured in headscale.nix)

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
 # Async cache drainer for CI — two-threaded version.
-#   fast drainer:  short timeout (300s), handles small/normal NARs
+#   fast drainer:  short timeout (15s) — a quick classifier: small NARs land
+#   almost instantly; anything slower graduates to the slow queue
 #   slow drainer:  long timeout (1200s), handles paths that timed out in fast
 # Both read from the post-build-hook FIFO; fast drainer is the primary consumer.
 # Slow drainer reads from a second FIFO that fast drainer writes timeouts to.
@@ -24,13 +25,36 @@ store="${EUROPA_STORE:-ssh-ng://europa-ci}"
 log_path="/var/log/jupiter-ci/cache-drainer.log"
 nix_bin="${NIX_BIN:-nix}"
 
-FAST_TIMEOUT=300
+FAST_TIMEOUT=15
 SLOW_TIMEOUT=1200
+
+# Lines logged before tailnet join (startup, config) cannot ship — ssh to
+# europa is unroutable then. Buffer them and flush on first successful ship,
+# otherwise the europa-side log permanently lacks the startup/self-description
+# block and looks like the drainer misconfigured itself.
+_buffer="${TMPDIR:-/tmp}/cache-drainer-unshipped"
+
+_ship_b64() {
+  local b64="$1"
+  echo "$b64" | ssh -o ControlPath="$cm/%r@%h:%p" -o ConnectTimeout=10 "$ssh" \
+    "mkdir -p /var/log/jupiter-ci && base64 -d >> $log_path" 2>/dev/null
+}
 
 log_to_europa() {
   local msg="$1"
-  ssh -o ControlPath="$cm/%r@%h:%p" "$ssh" \
-    "mkdir -p /var/log/jupiter-ci && echo \"$msg\" >> $log_path" 2>/dev/null || true
+  # base64 round-trip: the old `echo \"$msg\"` broke on any line containing
+  # quotes/$/backticks (remote shell syntax error, swallowed by ||true) —
+  # which is exactly what nix error lines contain. That is why logs showed
+  # "copying N paths..." and never the actual failure reason.
+  local b64
+  b64=$(printf '%s\n' "$msg" | base64 -w0) || return 0
+  # Flush anything buffered from the pre-connectivity window first.
+  if [ -s "$_buffer" ]; then
+    ssh -o ControlPath="$cm/%r@%h:%p" -o ConnectTimeout=10 "$ssh" \
+      "mkdir -p /var/log/jupiter-ci && cat >> $log_path" <"$_buffer" 2>/dev/null \
+      && : > "$_buffer"
+  fi
+  _ship_b64 "$b64" || printf '%s\n' "$msg" >> "$_buffer"
 }
 
 log() {
@@ -43,6 +67,7 @@ log() {
 [[ -p "$SLOW_FIFO" ]] || mkfifo -m 666 "$SLOW_FIFO"
 
 log "drainer started (fast: ${FAST_TIMEOUT}s, slow: ${SLOW_TIMEOUT}s)"
+log "config: store=$store ssh=$ssh key=$key cm=$cm nix=$nix_bin fifo=$FAST_FIFO slow_fifo=$SLOW_FIFO"
 
 total_pushed=0
 enqueue_cnt="${ENQUEUE_CNT:-/var/run/nix-push-enqueued}"
@@ -68,10 +93,11 @@ flush() {
   # rewrites every child exit code in 1-125 to 123 — which is how the old
   # logs showed an undiagnosable wall of rc=123. Here rc is honest:
   # 124 = our timeout fired (candidate for the slow queue), anything else
-  # is nix's/ssh's own failure code with the stderr below.
+  # is nix's/ssh's own failure code with the stderr below. stdout is
+  # captured too: nothing the push prints may escape diagnosis.
   if timeout "$timeout_sec" env \
       NIX_SSHOPTS="-i $key -o ControlPath=$cm/%r@%h:%p -o StrictHostKeyChecking=accept-new" \
-      "$nix_bin" copy --to "$store" "$path" 2>"$err_file"; then
+      "$nix_bin" copy --to "$store" "$path" >"$err_file" 2>&1; then
     total_pushed=$((total_pushed + 1))
     status_line "$tag: pushed $path"
     rm -f "$err_file"
@@ -79,8 +105,23 @@ flush() {
   else
     local rc=$?
     status_line "$tag: push failed (rc=$rc)"
-    while IFS= read -r line; do log "  stderr: $line"; done < "$err_file"
+    while IFS= read -r line; do log "  out: $line"; done < "$err_file"
     rm -f "$err_file"
+    # One-shot probe on failure: separates auth/network breakage from
+    # store-protocol rejection (e.g. require-sigs) in one log line.
+    ssh -o ControlPath="$cm/%r@%h:%p" -o ConnectTimeout=10 "$ssh" true 2>/dev/null
+    log "  probe: ssh $ssh -> rc=$?"
+    # Diagnostic re-attempt with ssh -vv: shows exactly WHERE the transfer
+    # dies (master-socket reuse, channel open, auth, protocol). Capped so
+    # the log doesn't explode.
+    local diag_file; diag_file="$(mktemp)"
+    timeout 60 env \
+      NIX_SSHOPTS="-i $key -o ControlPath=$cm/%r@%h:%p -o StrictHostKeyChecking=accept-new -vv" \
+      "$nix_bin" copy --to "$store" "$path" >"$diag_file" 2>&1
+    local drc=$?
+    log "  diag: rc=$drc path_exists=$([ -e "$path" ] && echo yes || echo NO)"
+    log "  diag-tail: $(tail -c 1500 "$diag_file" | tr '\n' ' ')"
+    rm -f "$err_file" "$diag_file"
     return "$rc"
   fi
 }
@@ -92,8 +133,10 @@ requeue=()
 
 slow_drainer() {
   log "slow drainer started (reading from $SLOW_FIFO)"
+  local idle=0
   while true; do
     if IFS= read -r -t 5 STORE_PATH <&4; then
+      idle=0
       [ -z "${STORE_PATH:-}" ] && continue
       if flush "$STORE_PATH" "$SLOW_TIMEOUT" "slow"; then
         :
@@ -104,6 +147,14 @@ slow_drainer() {
         sleep 60
         printf '%s\n' "$STORE_PATH" >&4
       fi
+    else
+      # Heartbeat every ~2min of idleness: proves the subshell is alive and
+      # the queue is genuinely empty (vs. this process being wedged).
+      idle=$((idle + 1))
+      if [ "$idle" -ge 24 ]; then
+        status_line "slow: idle, queue empty"
+        idle=0
+      fi
     fi
   done
 }
@@ -111,6 +162,14 @@ slow_drainer() {
 slow_drainer &
 SLOW_PID=$!
 log "slow drainer PID: $SLOW_PID"
+# A dead slow-drainer is silent by construction (empty queue = no logs), and
+# its first log call once hung forever on pre-tailnet ssh. Verify it actually
+# came up; if it dies later the heartbeat below stops and the fast loop's
+# status lines make the stall visible in pending counts.
+sleep 1
+if ! kill -0 "$SLOW_PID" 2>/dev/null; then
+  log "ERROR: slow drainer (PID $SLOW_PID) died at startup — timeouts will pile up unread"
+fi
 
 # Classify a failed fast push: genuine timeout (rc=124) graduates to the slow
 # FIFO; any other failure stays in the fast requeue list. Top-level loop, so

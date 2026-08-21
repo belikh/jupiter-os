@@ -1,4 +1,4 @@
-name: CI (distributed builders) — callisto
+name: CI (distributed builders) — kiosks
 
 # DESIGN DRAFT — not wired to any trigger yet, not enabled. See PR/commit
 # discussion before flipping `on:` to something live. Costs ~6 concurrent
@@ -381,7 +381,7 @@ jobs:
       # the file the Build step creates, then streams.
       - name: nom watch tip
         run: |
-          NOM_TIP="ssh -t root@europa 'tail -n +1 -F /var/log/jupiter-ci/nom-${{ github.run_id }}-callisto.jsonl | nom --json'"
+          NOM_TIP="ssh -t root@europa 'tail -n +1 -F /var/log/jupiter-ci/nom-${{ github.run_id }}-kiosks.jsonl | nom --json'"
           echo "::notice title=Watch this build in nom::$NOM_TIP"
           {
             echo "### Watch this build live in \`nom\`"
@@ -390,7 +390,7 @@ jobs:
             echo "$NOM_TIP"
             echo '```'
             echo
-            echo "Per-run log: \`/var/log/jupiter-ci/nom-${{ github.run_id }}-callisto.jsonl\` (replay after the fact with \`nom --json < <file>\`)."
+            echo "Per-run log: \`/var/log/jupiter-ci/nom-${{ github.run_id }}-kiosks.jsonl\` (replay after the fact with \`nom --json < <file>\`)."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0 (node24)
@@ -450,7 +450,7 @@ jobs:
       - name: Install async push system (post-build-hook + cache-drainer)
         env:
           EUROPA_SSH_KEY: ${{ secrets.EUROPA_SSH_KEY }}
-          # The Harmonia cache SECRET key (<name>:<base64> raw cache-key line) — same key
+          # The Harmonia cache SECRET key (secret-key:...:<base32>) — same key
           # europa's harmonia sops secret holds. TODO(operator): add this
           # GitHub secret; until it exists the hook logs a loud warning per
           # build and europa (require-sigs=true) rejects the pushes.
@@ -851,7 +851,7 @@ jobs:
           } >> "$HOME/.ssh/config"
 
           # Prepare nom log directory on europa
-          NOM_LOG="/var/log/jupiter-ci/nom-${RUN_ID}-callisto.jsonl"
+          NOM_LOG="/var/log/jupiter-ci/nom-${RUN_ID}-kiosks.jsonl"
           ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-log \
             "mkdir -p /var/log/jupiter-ci && : > '$NOM_LOG' && ln -sfn '$NOM_LOG' /var/log/jupiter-ci/current.jsonl"
 
@@ -882,22 +882,11 @@ jobs:
               end
             end'
 
-          HOSTS="callisto"
+          HOSTS="amalthea metis adrastea thebe"
           INSTALLABLES=()
           for host in $HOSTS; do
             INSTALLABLES+=(".#nixosConfigurations.$host.config.system.build.toplevel")
           done
-          # europa's netboot assets (boot.ipxe + callisto's bzImage/initrd) are
-          # deliberately NOT part of any host's closure — that split is what
-          # keeps building europa from also building callisto (see
-          # modules/network/pxe-server.nix). Build them HERE, where callisto's
-          # kernel/initrd are being built anyway, so the final push below lands
-          # them on europa: europa's `systemctl start jupiter-pxe-assets` then
-          # substitutes from its own store instead of compiling a
-          # skylake-tagged kernel on a 2-core Opteron. Also the only place this
-          # package is ever built — `nix flake check` is eval-only, so a broken
-          # linkFarm here would otherwise first surface at publish time.
-          INSTALLABLES+=(".#pxe-netboot-assets")
 
           OUT_PATHS="/tmp/outpaths-${RUN_ID}"
           set +e  # Don't exit on build failure, we need to report it
@@ -919,7 +908,7 @@ jobs:
           # ~4 MB per host, heavily overlapping, and `nix-store -q --graph` is
           # ~1s per closure; the eval is already warm from the flake check.
           # Non-fatal by design: a missing deps file only means no tree.
-          DEPS_LOG="/var/log/jupiter-ci/deps-${RUN_ID}-callisto.txt"
+          DEPS_LOG="/var/log/jupiter-ci/deps-${RUN_ID}-kiosks.txt"
           TOP_DRVS=$(nix path-info --derivation "${INSTALLABLES[@]}" 2>/dev/null)
           if [ -n "$TOP_DRVS" ]; then
             # shellcheck disable=SC2086  # word splitting is the point

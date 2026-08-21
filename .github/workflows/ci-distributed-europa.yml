@@ -136,20 +136,18 @@ jobs:
       matrix:
         idx: [1, 2, 3, 4, 5]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0 (node24)
 
       # Same as ci.yml's build-host job — builders here do real compiling
       # (that's the whole point), so they need the same headroom.
-      - name: Free disk space
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be  # v1.3.1
-        with:
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: true
-          tool-cache: true
+      # Nothing but Nix: carves a BTRFS volume out of /mnt's unused space for
+      # /nix (65-130GB vs ~22GB stock), purges preinstalled software in the
+      # background while the build runs, and grows the volume dynamically.
+      # Full-fleet closures were overflowing stock runners partway through;
+      # replaces jlumbroso/free-disk-space which freed less and raced the build.
+      - name: Nothing but Nix (disk space)
+        uses: wimpysworld/nothing-but-nix@687c797a730352432950c707ab493fcc951818d7  # v10
+
 
       - name: Enable KVM
         run: |
@@ -160,20 +158,23 @@ jobs:
 
       - name: Enable i686 binfmt emulation
         run: |
-          sudo apt-get update
-          sudo apt-get install -y qemu-user-static binfmt-support
+          # nothing-but-nix purges with apt-get in the background; a
+          # pre-check races (lock can appear between check and install).
+          # DPkg::Lock::Timeout makes apt WAIT natively instead of exiting 100.
+          sudo apt-get -o DPkg::Lock::Timeout=300 update
+          sudo apt-get -o DPkg::Lock::Timeout=300 install -y qemu-user-static binfmt-support
           sudo update-binfmts --enable qemu-i386 || true
 
       # Cache Nix evaluation/download cache by nixpkgs commit (flake.lock hash) —
       # each builder gets its own runner-local cache, same key scheme as ci.yml.
-      - uses: actions/cache@v4
+      - uses: actions/cache@a7833574556fa59680c1b7cb190c1735db73ebf0 # v5.0.0 (node24)
         with:
           path: ~/.cache/nix
           key: nix-${{ runner.os }}-nixpkgs-${{ hashFiles('flake.lock') }}
           restore-keys: |
             nix-${{ runner.os }}-nixpkgs-${{ hashFiles('flake.lock') }}-
 
-      - uses: cachix/install-nix-action@b4b293eae0b79aac8a161bb32925a5508c9cca93 # v31
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           extra_nix_config: |
@@ -191,15 +192,27 @@ jobs:
             # the run, so the tuned closures then build from source (seen in run
             # 31373157599). http/1.1 (one connection per fetch) is reliable; the
             # connection count is bounded by max-substitution-jobs=1 +
-            # http-connections=2 per builder, and connect-timeout=60 absorbs the
+            # http-connections=1 per builder, and connect-timeout=60 absorbs the
             # start-of-build herd.
             substituters = https://cache.nixos.org https://cache.jupiter.au
             trusted-public-keys = ${{ secrets.HARMONIA_PUBLIC_KEY }} cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
             connect-timeout = 60
+            # Auto-GC before the run drowns the disk: full-fleet closures plus
+            # their substitutions overflow a ~60GB runner partway through.
+            # Active derivations are GC-rooted, so this only prunes paths we
+            # can re-substitute later if needed.
+            min-free = 10G
+            max-free = 25G
+            # Never-disable policy: nix disables a binary cache for 60s per failed
+            # download and that window is hardcoded upstream — the only lever is
+            # making failures rare. stalled-download-timeout governs zero-data
+            # gaps mid-transfer (DERP relays trickle); default 300s aborts
+            # transfers that would otherwise complete.
+            stalled-download-timeout = 900
             trusted-users = root runner
             http2 = false
             max-substitution-jobs = 1
-            http-connections = 2
+            http-connections = 1
             system-features = kvm benchmark big-parallel gccarch-bdver4 gccarch-skylake
             extra-platforms = i686-linux x86_64-linux
             cores = 4
@@ -212,7 +225,21 @@ jobs:
 
       - name: Join tailnet under deterministic hostname
         run: |
-          curl -fsSL https://tailscale.com/install.sh | sudo sh
+          # nothing-but-nix purges with apt-get in the background; install.sh
+          # runs its own un-tunable apt-get -> retry until it wins the lock.
+          # NO curl|sh pipelines: without pipefail a failed download makes sh
+          # run empty-input and exit 0 ("success" with no tailscale installed).
+          # Fetch to file first, then execute, then VERIFY the binary exists.
+          TS_OK=0
+          for _ in $(seq 1 30); do
+            if curl -fsSL -o /tmp/ts-install.sh https://tailscale.com/install.sh \
+               && sudo sh /tmp/ts-install.sh \
+               && command -v tailscale >/dev/null; then
+              TS_OK=1; break
+            fi
+            echo "tailscale install failed (dpkg busy / network?); retrying in 10s"; sleep 10
+          done
+          [ "$TS_OK" = 1 ] || { echo "::error::tailscale install never succeeded"; exit 1; }
           sudo tailscale up \
             --login-server=https://neptune.jupiter.au:8080 \
             --authkey=${{ secrets.TAILSCALE_CI_AUTHKEY }} \
@@ -366,26 +393,27 @@ jobs:
             echo "Per-run log: \`/var/log/jupiter-ci/nom-${{ github.run_id }}-europa.jsonl\` (replay after the fact with \`nom --json < <file>\`)."
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0 (node24)
 
-      - name: Free disk space
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be  # v1.3.1
-        with:
-          android: true
-          dotnet: true
-          haskell: true
-          large-packages: true
-          docker-images: true
-          swap-storage: true
-          tool-cache: true
+      # Nothing but Nix: carves a BTRFS volume out of /mnt's unused space for
+      # /nix (65-130GB vs ~22GB stock), purges preinstalled software in the
+      # background while the build runs, and grows the volume dynamically.
+      # Full-fleet closures were overflowing stock runners partway through;
+      # replaces jlumbroso/free-disk-space which freed less and raced the build.
+      - name: Nothing but Nix (disk space)
+        uses: wimpysworld/nothing-but-nix@687c797a730352432950c707ab493fcc951818d7  # v10
+
 
       - name: Enable i686 binfmt emulation (coordinator)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y qemu-user-static binfmt-support
+          # nothing-but-nix purges with apt-get in the background; a
+          # pre-check races (lock can appear between check and install).
+          # DPkg::Lock::Timeout makes apt WAIT natively instead of exiting 100.
+          sudo apt-get -o DPkg::Lock::Timeout=300 update
+          sudo apt-get -o DPkg::Lock::Timeout=300 install -y qemu-user-static binfmt-support
           sudo update-binfmts --enable qemu-i386 || true
 
-      - uses: cachix/install-nix-action@b4b293eae0b79aac8a161bb32925a5508c9cca93 # v31
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
         with:
           github_access_token: ${{ secrets.GITHUB_TOKEN }}
           extra_nix_config: |
@@ -398,6 +426,18 @@ jobs:
             substituters = https://cache.nixos.org https://cache.jupiter.au
             trusted-public-keys = ${{ secrets.HARMONIA_PUBLIC_KEY }} cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
             connect-timeout = 60
+            # Auto-GC before the run drowns the disk: full-fleet closures plus
+            # their substitutions overflow a ~60GB runner partway through.
+            # Active derivations are GC-rooted, so this only prunes paths we
+            # can re-substitute later if needed.
+            min-free = 10G
+            max-free = 25G
+            # Never-disable policy: nix disables a binary cache for 60s per failed
+            # download and that window is hardcoded upstream — the only lever is
+            # making failures rare. stalled-download-timeout governs zero-data
+            # gaps mid-transfer (DERP relays trickle); default 300s aborts
+            # transfers that would otherwise complete.
+            stalled-download-timeout = 900
             builders-use-substitutes = true
             http2 = false
             fallback = true
@@ -467,7 +507,20 @@ jobs:
           # rejected). systemctl set-environment is how the restarted daemon
           # (and thus the hook) receives HARMONIA_SIGNING_KEY_FILE.
           if [ -n "$HARMONIA_SECRET_KEY" ]; then
-            printf '%s\n' "$HARMONIA_SECRET_KEY" | sudo install -m 600 /dev/stdin /etc/nix/harmonia-signing-key
+            # Sanitize ONLY — never reformat. Proven on europa (Nix 2.34):
+            #   nix store sign -k expects the RAW generate-binary-cache-key
+            #   line  <name>:<base64>          -> "added 1 signatures"
+            # Prefixing with 'secret-key:' makes it fail decoding key ''.
+            # A stray leading newline/CR in the GitHub secret yields a blank
+            # first line -> same "key named ''" error. Strip CRs, drop blank
+            # lines, take the last non-empty line, keep everything else as-is.
+            KEY_MATERIAL="$(printf '%s' "$HARMONIA_SECRET_KEY" | tr -d '\r' | sed '/^[[:space:]]*$/d' | tail -n1)"
+            if ! [[ "$KEY_MATERIAL" =~ ^[^:[:space:]]+:[A-Za-z0-9+/]+=*$ ]]; then
+              echo "::error::HARMONIA_SECRET_KEY malformed after sanitize (raw_len=${#HARMONIA_SECRET_KEY}, sanitized_len=${#KEY_MATERIAL}). Expected '<name>:<base64>' exactly as emitted by nix-store --generate-binary-cache-key."
+              exit 1
+            fi
+            echo "signing key staged OK: fields=$(awk -F: '{print NF}' <<<"$KEY_MATERIAL") name_len=$(awk -F: '{print length($1)}' <<<"$KEY_MATERIAL") b64_len=$(awk -F: '{print length($2)}' <<<"$KEY_MATERIAL") (valid b64 len for a 64-byte Ed25519 cache key is 88)"
+            printf '%s\n' "$KEY_MATERIAL" | sudo install -m 600 /dev/stdin /etc/nix/harmonia-signing-key
             sudo systemctl set-environment HARMONIA_SIGNING_KEY_FILE=/etc/nix/harmonia-signing-key
           else
             echo "WARNING: HARMONIA_SECRET_KEY not set — paths will be unsigned and europa (require-sigs=true) will reject the push" >&2
@@ -480,6 +533,16 @@ jobs:
           sudo systemctl restart nix-daemon
           echo "nix-daemon restarted with post-build-hook"
           nix show-config post-build-hook
+
+          # Signing preflight (see ci-distributed.yml for full rationale):
+          # proves hook-path signing works before a 40min build; hard-fails
+          # otherwise instead of every push being rejected by require-sigs.
+          NIX_ABS="$(command -v nix)"
+          echo ci-signcheck | sudo tee /tmp/ci-signcheck >/dev/null
+          SIGNCHECK_P="$(sudo "$NIX_ABS" store add-file /tmp/ci-signcheck)"
+          sudo "$NIX_ABS" store sign --key-file /etc/nix/harmonia-signing-key "$SIGNCHECK_P" \
+            || { echo "::error::Signing preflight FAILED — europa require-sigs will reject all pushes. check HARMONIA_SECRET_KEY (raw '<name>:<base64>' form) and daemon env."; exit 1; }
+          echo "::notice::Signing preflight OK ($SIGNCHECK_P signed)"
 
           # Launch the drainer (runner user). It holds the FIFO open on fd 3 and
           # loops for the whole build, so it must outlive this step (nohup + &).
@@ -496,7 +559,21 @@ jobs:
 
       - name: Join tailnet
         run: |
-          curl -fsSL https://tailscale.com/install.sh | sudo sh
+          # nothing-but-nix purges with apt-get in the background; install.sh
+          # runs its own un-tunable apt-get -> retry until it wins the lock.
+          # NO curl|sh pipelines: without pipefail a failed download makes sh
+          # run empty-input and exit 0 ("success" with no tailscale installed).
+          # Fetch to file first, then execute, then VERIFY the binary exists.
+          TS_OK=0
+          for _ in $(seq 1 30); do
+            if curl -fsSL -o /tmp/ts-install.sh https://tailscale.com/install.sh \
+               && sudo sh /tmp/ts-install.sh \
+               && command -v tailscale >/dev/null; then
+              TS_OK=1; break
+            fi
+            echo "tailscale install failed (dpkg busy / network?); retrying in 10s"; sleep 10
+          done
+          [ "$TS_OK" = 1 ] || { echo "::error::tailscale install never succeeded"; exit 1; }
           sudo tailscale up \
             --login-server=https://neptune.jupiter.au:8080 \
             --authkey=${{ secrets.TAILSCALE_CI_AUTHKEY }} \
@@ -717,7 +794,7 @@ jobs:
 
           : > /tmp/machines
           for ip in "${ready[@]}"; do
-            echo "ssh-ng://runner@${ip} x86_64-linux $HOME/.ssh/ci_builder_key 1 4 kvm,benchmark,big-parallel,gccarch-bdver4,gccarch-skylake -" \
+            echo "ssh-ng://runner@${ip} x86_64-linux,i686-linux $HOME/.ssh/ci_builder_key 1 4 kvm,benchmark,big-parallel,gccarch-bdver4,gccarch-skylake -" \
               >> /tmp/machines
           done
 
@@ -1021,7 +1098,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0 (node24)
 
       - uses: actions/download-artifact@v4
         with:

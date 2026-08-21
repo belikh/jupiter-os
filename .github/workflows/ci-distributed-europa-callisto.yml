@@ -1,4 +1,4 @@
-name: CI (distributed builders) — callisto
+name: CI (distributed builders) — europa+callisto
 
 # DESIGN DRAFT — not wired to any trigger yet, not enabled. See PR/commit
 # discussion before flipping `on:` to something live. Costs ~6 concurrent
@@ -882,7 +882,7 @@ jobs:
               end
             end'
 
-          HOSTS="callisto"
+          HOSTS="europa callisto"
           INSTALLABLES=()
           for host in $HOSTS; do
             INSTALLABLES+=(".#nixosConfigurations.$host.config.system.build.toplevel")
