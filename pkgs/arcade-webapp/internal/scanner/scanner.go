@@ -491,11 +491,22 @@ func countTree(root string) (files, bytes int64) {
 	return files, bytes
 }
 
-// AgeDays returns whole days between date (Logiqx <date> shapes) and now;
-// -1 when unparseable (rendered as unknown). Shared with the web layer so
-// the DAT-currency chip and the scanner agree on one parser.
+// AgeDays returns whole days between date and now; -1 when unparseable
+// (rendered as unknown). Shared with the web layer so the DAT-currency
+// chip and the scanner agree on one parser. Layouts seen in the wild:
+// plain Logiqx dates, the Fresh1G1R McLean family ("2026-06-22 07-44-23",
+// space separator + dash time), its colon variant, clrmamepro dd/mm/yyyy,
+// and RFC3339.
 func AgeDays(date string, now time.Time) int {
-	for _, layout := range []string{"2006-01-02", "2006-01-02T15:04:05", "02/01/2006", time.RFC3339} {
+	layouts := []string{
+		"2006-01-02",
+		"2006-01-02 15-04-05", // Fresh1G1R McLean 1G1R (ADV-P1-02)
+		"2006-01-02 15:04:05", // colon-time variant, defensively
+		"2006-01-02T15:04:05",
+		"02/01/2006",
+		time.RFC3339,
+	}
+	for _, layout := range layouts {
 		if t, err := time.Parse(layout, date); err == nil {
 			return int(now.Sub(t).Hours() / 24)
 		}
