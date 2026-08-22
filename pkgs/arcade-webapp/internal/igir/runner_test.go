@@ -17,7 +17,9 @@ import (
 // staged inputs into --output and writes a FOUND-per-input report CSV to
 // --report-output. Env knobs: FAKE_IGIR_FAIL_INPUT (exit 1 when --input
 // equals this path — the report is still written, like igir's partial
-// reports), FAKE_IGIR_NO_REPORT (skip writing the report).
+// reports), FAKE_IGIR_NO_REPORT (skip writing the report),
+// FAKE_IGIR_CRC / FAKE_IGIR_SHA1 (emit CRC32/SHA1 report columns with
+// these values on every FOUND row — newer igir's hash columns).
 //
 // The script is a test double for the REAL igir the VM test exercises
 // (module option igirPackage); unit tests must stay offline + fast.
@@ -44,13 +46,18 @@ if [ -n "$out" ]; then
 fi
 if [ -n "$rep" ] && [ -z "$FAKE_IGIR_NO_REPORT" ]; then
   mkdir -p "$(dirname "$rep")"
+  crc="${FAKE_IGIR_CRC:-}"; sha="${FAKE_IGIR_SHA1:-}"
+  hashcols=""; hashcells=""
+  if [ -n "$crc" ] || [ -n "$sha" ]; then
+    hashcols=",CRC32,SHA1"; hashcells=",$crc,$sha"
+  fi
   {
-    printf '%s\n' 'DAT Name,Game Name,Status,ROM Files,Patched,BIOS,Retail Release,Unlicensed,Debug,Demo,Beta,Sample,Prototype,Program,Aftermarket,Homebrew,Bad'
+    printf '%s\n' "DAT Name,Game Name,Status,ROM Files,Patched,BIOS,Retail Release,Unlicensed,Debug,Demo,Beta,Sample,Prototype,Program,Aftermarket,Homebrew,Bad$hashcols"
     if [ -n "$out" ]; then
       for f in "$in"/*; do
         [ -f "$f" ] || continue
         b="$(basename "$f")"
-        printf '%s\n' "Fake DAT,$b,FOUND,$out/$b,false,false,true,false,false,false,false,false,false,false,false,false"
+        printf '%s\n' "Fake DAT,$b,FOUND,$out/$b,false,false,true,false,false,false,false,false,false,false,false,false,false$hashcells"
       done
     fi
   } > "$rep"
@@ -378,6 +385,64 @@ func TestIngestionFlipsGameStates(t *testing.T) {
 	}
 }
 
+// TestChecksumsIngestedFromReport (P5): when the fake igir's report
+// carries CRC32/SHA1 columns, the FOUND rows' hashes persist into
+// games.crc32/sha1 keyed by output-relative path; a re-verify with the
+// columns absent must NOT erase them (selective update).
+func TestChecksumsIngestedFromReport(t *testing.T) {
+	r := newRig(t)
+	r.stage("nes", "A (USA).nes")
+	r.stageDAT("nes")
+	now := time.Now().UTC()
+	if err := r.st.ReplaceSystemGames("nes", []store.GameRow{
+		{RelPath: "A (USA).nes", SizeBytes: 1024},
+	}, now); err != nil {
+		t.Fatal(err)
+	}
+
+	// First verify: report carries hash columns.
+	t.Setenv("FAKE_IGIR_CRC", "deadbeef")
+	t.Setenv("FAKE_IGIR_SHA1", "aaa111")
+	if _, err := r.runner.Verify([]string{"nes"}); err != nil {
+		t.Fatal(err)
+	}
+	d, err := r.st.GetGame("nes", mustGameID(r.t, r.st, "nes"))
+	if err != nil || d == nil {
+		t.Fatalf("GetGame: %v, %v", d, err)
+	}
+	if d.CRC32 != "deadbeef" || d.SHA1 != "aaa111" {
+		t.Errorf("ingested checksums = %s/%s, want deadbeef/aaa111", d.CRC32, d.SHA1)
+	}
+
+	// Second verify WITHOUT hash columns: prior values must survive.
+	if err := os.Unsetenv("FAKE_IGIR_CRC"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Unsetenv("FAKE_IGIR_SHA1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.runner.Verify([]string{"nes"}); err != nil {
+		t.Fatal(err)
+	}
+	d, _ = r.st.GetGame("nes", mustGameID(r.t, r.st, "nes"))
+	if d.CRC32 != "deadbeef" || d.SHA1 != "aaa111" {
+		t.Errorf("checksums after hash-less re-verify = %s/%s, want preserved deadbeef/aaa111", d.CRC32, d.SHA1)
+	}
+}
+
+// mustGameID fetches the single game row's id for sys.
+func mustGameID(t *testing.T, st *store.Store, sys string) int64 {
+	t.Helper()
+	page, err := st.ListGames(store.GameListOpts{SystemKey: sys})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Games) != 1 {
+		t.Fatalf("%s games = %d rows, want 1", sys, len(page.Games))
+	}
+	return page.Games[0].ID
+}
+
 // TestIgirNonZeroExitIsWarningNotAbort: a failing igir that still wrote
 // a report records its counts with a failed outcome; the next system in
 // the batch still runs (subshell-per-system isolation).
@@ -563,6 +628,35 @@ func TestParseReportEdgeShapes(t *testing.T) {
 	wantExtraFiles := []string{"Bonza Box (USA).zip"}
 	if !reflect.DeepEqual(rep.ExtraFiles, wantExtraFiles) {
 		t.Errorf("ExtraFiles = %v, want %v", rep.ExtraFiles, wantExtraFiles)
+	}
+}
+
+// TestParseReportChecksumColumns (P5): when the report carries CRC32/SHA1
+// columns (newer igir), the FOUND rows' hashes ride back aligned with
+// FoundRels by index; empty cells parse as empty strings and a MISSING
+// row contributes nothing. Reports WITHOUT the columns keep parsing
+// identically (covered by every other parser test).
+func TestParseReportChecksumColumns(t *testing.T) {
+	f, err := os.Open(filepath.Join("testdata", "checksum-columns.csv"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close() //nolint:errcheck // test
+	rep, err := ParseReport(f, "/in/nes", "/out/nes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Found != 4 || rep.Missing != 1 {
+		t.Fatalf("counts = %+v, want 4 FOUND / 1 MISSING", rep)
+	}
+	wantCRCs := []string{"deadbeef", "", "", "cafebabe"}
+	wantSHAs := []string{"aaa1112223334445556667778889990001112223", "bbb2223334445556667778889990001112223334", "", ""}
+	if !reflect.DeepEqual(rep.FoundCRCs, wantCRCs) || !reflect.DeepEqual(rep.FoundSHAs, wantSHAs) {
+		t.Errorf("checksum columns = %v / %v\nwant           %v / %v", rep.FoundCRCs, rep.FoundSHAs, wantCRCs, wantSHAs)
+	}
+	if len(rep.FoundCRCs) != len(rep.FoundRels) || len(rep.FoundSHAs) != len(rep.FoundPaths) {
+		t.Errorf("hash slices not index-aligned with paths/rels: %d/%d vs %d",
+			len(rep.FoundCRCs), len(rep.FoundSHAs), len(rep.FoundPaths))
 	}
 }
 
