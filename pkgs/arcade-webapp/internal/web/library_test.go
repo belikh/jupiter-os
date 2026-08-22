@@ -38,15 +38,15 @@ func TestLibraryPageRendersCards(t *testing.T) {
 	}
 	body := rec.Body.String()
 	for _, marker := range []string{
-		`class="gcard"`,                                        // the card grid rendered at all
-		"Starlit Vault (USA)",                                  // nes title
-		"Astral Almari (USA)",                                  // snes title
-		"Pocket Plumber (USA)",                                 // gb title
-		`<span class="chip">nes</span>`,                        // system chip …
-		`<span class="chip">gb</span>`,                         // … for more than one system
-		`data-system="nes" data-verify="unknown"`,              // card carries its verify state
+		`class="gcard"`,                           // the card grid rendered at all
+		"Starlit Vault (USA)",                     // nes title
+		"Astral Almari (USA)",                     // snes title
+		"Pocket Plumber (USA)",                    // gb title
+		`<span class="chip">nes</span>`,           // system chip …
+		`<span class="chip">gb</span>`,            // … for more than one system
+		`data-system="nes" data-verify="unknown"`, // card carries its verify state
 		`<span class="pill unknown" title="never verified">unknown</span>`, // per-game pill
-		`src="/art/nes/`,                                       // cover art wired to the art route
+		`src="/art/nes/`, // cover art wired to the art route
 	} {
 		if !strings.Contains(body, marker) {
 			t.Errorf("GET /library: body missing marker %q", marker)

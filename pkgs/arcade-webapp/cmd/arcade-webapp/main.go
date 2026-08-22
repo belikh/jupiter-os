@@ -9,6 +9,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -20,6 +21,7 @@ import (
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/dats"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/igir"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/scanner"
+	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/scrape"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/store"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/web"
 )
@@ -159,6 +161,66 @@ func main() {
 		log.Printf("arcade-webapp: game art wired (%s; SVG poster fallback)", artDir)
 	} else {
 		log.Printf("arcade-webapp: game art not configured (ARCADE_WEBAPP_ART_DIR empty) — SVG posters only")
+	}
+
+	// Metadata engine (P5): the Skyscraper driver execs the binary the
+	// module hands us (ARCADE_WEBAPP_SKYSCRAPER_BIN), writing into the
+	// SAME resource cache the scanner reads for coverage
+	// (ARCADE_WEBAPP_SKYSCRAPER_CACHE_DIR) and dropping Pegasus media next
+	// to the games-tree ROMs. Credential FILES (the existing sops secret
+	// paths, read at call time by the driver, never here, never logged)
+	// enable the ScreenScraper primary pass and the TGDB apikey.
+	var scraper *scrape.Driver
+	skyBin := envOr("ARCADE_WEBAPP_SKYSCRAPER_BIN", "")
+	if skyBin != "" && cfg.SkyscraperCacheDir != "" {
+		scraper = &scrape.Driver{
+			BinPath:                skyBin,
+			CacheDir:               cfg.SkyscraperCacheDir,
+			ScreenscraperCredsFile: secrets.ScreenScraper,
+			TGDBKeyFile:            secrets.TGDBAPIKey,
+			Store:                  st,
+			CartridgeRoot:          cfg.CartridgeRoot,
+			OpticalRoot:            cfg.OpticalRoot,
+			ModernRoot:             cfg.ModernRoot,
+		}
+		log.Printf("arcade-webapp: scrape driver wired (%s, cache %s)", skyBin, cfg.SkyscraperCacheDir)
+	} else {
+		log.Printf("arcade-webapp: scrape not configured (need ARCADE_WEBAPP_SKYSCRAPER_BIN + ARCADE_WEBAPP_SKYSCRAPER_CACHE_DIR)")
+	}
+	opts = append(opts, web.WithScrape(scraper))
+
+	// Metadata schedule: every interval hours (default 24 — the old
+	// jupiter-rom-scrape daily timer's cadence; 0 disables). Deliberately
+	// NO startup run: scraping hits rate-limited community APIs with real
+	// quota costs, so the first batch waits for the first tick or an
+	// operator click. The driver serializes jobs itself, so a tick that
+	// lands while a manual scrape runs is skipped (never stacked).
+	if scraper != nil {
+		hours := 24 // the old daily timer's default
+		if v, err := strconv.Atoi(envOr("ARCADE_WEBAPP_SCRAPE_INTERVAL_HOURS", "")); err == nil {
+			hours = v
+		}
+		switch {
+		case hours > 0:
+			go func() {
+				t := time.NewTicker(time.Duration(hours) * time.Hour)
+				defer t.Stop()
+				for range t.C {
+					err := scraper.StartAll()
+					switch {
+					case errors.Is(err, scrape.ErrBusy):
+						log.Printf("arcade-webapp: scheduled scrape skipped (one already running)")
+					case err != nil:
+						log.Printf("arcade-webapp: scheduled scrape: %v", err)
+					default:
+						log.Printf("arcade-webapp: scheduled scrape kicked (%dh interval)", hours)
+					}
+				}
+			}()
+			log.Printf("arcade-webapp: scrape scheduled every %dh", hours)
+		default:
+			log.Printf("arcade-webapp: scrape schedule disabled (interval 0)")
+		}
 	}
 
 	// DAT currency schedule: refresh at startup + every interval hours

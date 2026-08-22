@@ -1,0 +1,138 @@
+{{/* Metadata page (P5): full-page shell around the metadata fragment.
+      The fragment polls every 3s ONLY while a scrape run is active —
+      Skyscraper batches are long and quota-metered, an idle page stays
+      quiet (the POST actions swap the fragment themselves). */ -}}
+{{define "layout-metadata"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>jupiterOS Arcade — {{.Meta.Title}}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js"></script>
+</head>
+<body>
+  {{template "topbar" .Meta}}
+  <main class="wrap">
+    {{template "partial-metadata" .}}
+    {{template "foot"}}
+  </main>
+</body>
+</html>
+{{end}}
+
+{{define "partial-metadata"}}
+<div id="metadata-panel"
+     {{if .State.Running}}hx-get="/partials/metadata" hx-trigger="every 3s" {{end}}hx-swap="outerHTML"
+     role="region" aria-label="metadata coverage and scraping" aria-live="polite"
+     {{if .Configured}}data-scrape="ok"{{else}}data-scrape="unconfigured"{{end}}>
+
+  {{if .Error}}<div class="action-error" role="alert">{{.Error}}</div>{{end}}
+
+  <section>
+    <h2>Metadata &amp; scraping
+      {{if .Configured}}
+        {{if .State.Running}}
+        <span class="pill running">scraping{{if .State.CurrentSystem}}: {{.State.CurrentSystem}}{{end}}…</span>
+        {{else if .State.LastError}}
+        <span class="pill error">{{.State.LastError}}</span>
+        {{else if .State.LastOKAt}}
+        <span class="pill ok">last batch {{age .Now .State.LastOKAt}}</span>
+        {{else}}
+        <span class="pill unknown">never scraped</span>
+        {{end}}
+      {{else}}
+        <span class="pill unknown">Skyscraper not configured</span>
+      {{end}}
+      <span class="chip" title="systems whose every game has description AND cover flags">{{.NFull}} full</span>
+      <span class="chip" title="systems with some scraped games but gaps remaining">{{.NPartial}} partial</span>
+      <span class="chip" title="systems with ROMs but no coverage yet — the gap worklist">{{.NCold}} cold</span>
+    </h2>
+
+    {{if .Configured}}{{if .State.Running}}
+    {{/* In-flight batch: a real progressbar over systems done/total. */}}
+    <div class="meter dl" role="progressbar" aria-valuemin="0" aria-valuemax="{{.State.Total}}"
+         aria-valuenow="{{.State.Done}}" aria-label="scrape batch progress">
+      <span style="width: {{if .State.Total}}{{mul100 .State.Done .State.Total}}{{else}}0{{end}}%"></span>
+    </div>
+    <p class="sub">{{.State.Done}} / {{.State.Total}} systems processed…</p>
+    {{end}}{{end}}
+
+    <p class="sub">Skyscraper per system in three passes — ScreenScraper primary (checksum-exact,
+      free-tier thread cap), the configured source as an onlymissing gap-fill, then the Pegasus
+      compose — all into the shared resource cache; the coverage refresh lands after any
+      successful pass. One job at a time: a second submit while one runs is refused.</p>
+
+    <div class="actions">
+      <button class="primary" hx-post="/metadata/scrape" hx-target="#metadata-panel" hx-swap="outerHTML"
+              {{if or (not .Configured) .State.Running}}disabled{{end}}>
+        {{if .State.Running}}scraping…{{else}}Scrape all{{end}}</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Coverage {{if .IdleCount}}<span class="chip">{{.IdleCount}} idle</span>{{end}}</h2>
+    {{if .Rows}}
+    <table class="dl systems metadata">
+      <thead><tr>
+        <th scope="col">system</th><th scope="col">description</th><th scope="col">cover art</th>
+        <th scope="col">cache ids</th><th scope="col">last scrape</th>
+        <th scope="col"><span class="visually-hidden">actions</span></th>
+      </tr></thead>
+      <tbody>
+        {{range .Rows}}
+        <tr data-system="{{.Key}}" data-games="{{.Games}}" data-desc-pct="{{.DescPct}}" data-cover-pct="{{.CoverPct}}">
+          <td>{{.Collection}} <span class="chip">{{.Key}}</span></td>
+          <td>
+            {{if ge .DescPct 0}}
+            <div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+                 aria-valuenow="{{.DescPct}}" aria-label="description coverage {{.Collection}}"
+                 title="description coverage {{.DescPct}}% ({{.Desc}} of {{.Games}})">
+              <span style="width: {{.DescPct}}%"></span>
+            </div>
+            {{else}}<span class="sub">no roms</span>{{end}}
+          </td>
+          <td>
+            {{if ge .CoverPct 0}}
+            <div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+                 aria-valuenow="{{.CoverPct}}" aria-label="cover coverage {{.Collection}}"
+                 title="cover-art coverage {{.CoverPct}}% ({{.Cover}} of {{.Games}})">
+              <span style="width: {{.CoverPct}}%"></span>
+            </div>
+            {{else}}<span class="sub">no roms</span>{{end}}
+          </td>
+          <td class="num">{{.CacheEntries}}{{if .RefreshedAgo}} <span class="sub" title="coverage last recomputed">{{.RefreshedAgo}}</span>{{end}}</td>
+          <td>
+            {{if .LastOutcome}}
+              {{if eq .LastOutcome "failed"}}
+                <span class="pill error" title="{{.LastErr}}">failed</span>
+              {{else if eq .LastOutcome "skipped-empty"}}
+                <span class="pill warn">skipped-empty</span>
+              {{else}}
+                <span class="pill ok">scraped</span>
+              {{end}}
+              <span class="sub">{{.LastAgo}}</span>
+            {{else}}<span class="sub">never</span>{{end}}
+            {{if .History}}
+            <details class="stage"><summary class="sub">run history ({{len .History}})</summary>
+              <ul>{{range .History}}<li class="sub">{{.FinishedHuman}} — {{.Outcome}}{{if eq .Outcome "scraped"}} desc={{.Desc}} cover={{.Cover}}{{end}}{{if .DeltaCovered}} (Δ{{.DeltaCovered}} covered){{end}}{{if eq .Status "error"}} · batch had failures{{end}}</li>{{end}}</ul>
+            </details>
+            {{end}}
+          </td>
+          <td>
+            <button class="mini primary" hx-post="/systems/{{.Key}}/scrape"
+              hx-target="#metadata-panel" hx-swap="outerHTML"
+              {{if not .CanScrape}}disabled{{end}}
+              title="run the three-pass Skyscraper flow for this system now">scrape</button>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <p class="sub">no systems with ROMs to cover.</p>
+    {{end}}
+  </section>
+</div>
+{{end}}

@@ -240,6 +240,13 @@ type gameDetailVM struct {
 	HasReport   bool // a last-igir-report CSV exists for this system
 	Hidden      bool
 
+	// P5 metadata-engine fields: the best-effort cache flags (the
+	// detail page's coverage facts) + the actions region (live
+	// re-scrape button; hide/show stays a P7 affordance).
+	HasDescription bool
+	HasCover       bool
+	Actions        gameActionsVM
+
 	ArtURL   string
 	BackHref string // sanitized ?back= target (defaults /library)
 	Meta     pageMeta
@@ -292,23 +299,26 @@ func (s *Server) handleGameDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	title := gameTitle(g.RelPath)
 	vm := gameDetailVM{
-		ID:           g.ID,
-		SystemKey:    g.SystemKey,
-		Title:        title,
-		RelPath:      g.RelPath,
-		Bucket:       g.System.Bucket,
-		Core:         g.System.Core,
-		Emulator:     g.System.Emulator,
-		SizeHuman:    HumanBytes(g.SizeBytes),
-		FirstSeenDay: dayOf(g.FirstSeenAt),
-		LastSeenDay:  dayOf(g.LastSeenAt),
-		LastSeenAgo:  ageFrom(time.Now(), g.LastSeenAt),
-		VerifyState:  g.VerifyState,
-		Hidden:       g.Hidden,
-		ArtURL:       fmt.Sprintf("/art/%s/%d", g.SystemKey, g.ID),
-		BackHref:     safeBackPath(r.URL.Query().Get("back")),
-		Meta:         pageMeta{Title: truncate(title, 40), Sub: "game detail"},
-		Now:          time.Now(),
+		ID:             g.ID,
+		SystemKey:      g.SystemKey,
+		Title:          title,
+		RelPath:        g.RelPath,
+		Bucket:         g.System.Bucket,
+		Core:           g.System.Core,
+		Emulator:       g.System.Emulator,
+		SizeHuman:      HumanBytes(g.SizeBytes),
+		FirstSeenDay:   dayOf(g.FirstSeenAt),
+		LastSeenDay:    dayOf(g.LastSeenAt),
+		LastSeenAgo:    ageFrom(time.Now(), g.LastSeenAt),
+		VerifyState:    g.VerifyState,
+		Hidden:         g.Hidden,
+		HasDescription: g.HasDescription,
+		HasCover:       g.HasCover,
+		Actions:        s.fetchGameActions(g),
+		ArtURL:         fmt.Sprintf("/art/%s/%d", g.SystemKey, g.ID),
+		BackHref:       safeBackPath(r.URL.Query().Get("back")),
+		Meta:           pageMeta{Title: truncate(title, 40), Sub: "game detail"},
+		Now:            time.Now(),
 	}
 	if summary, err := s.st.SystemSummary(); err == nil {
 		for _, ss := range summary {
