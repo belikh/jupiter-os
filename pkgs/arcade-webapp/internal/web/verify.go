@@ -157,10 +157,10 @@ const verifyDrillDownPoints = 5
 // plus its delta against the next-older point ("Δ+2 unmatched" = two
 // more unmatched files than the previous run).
 type verifyPointVM struct {
-	FinishedHuman string // relative age, like the rest of the page
-	Found         int
-	Unmatched     int
-	Extra         int // shown only when non-zero
+	FinishedHuman  string // relative age, like the rest of the page
+	Found          int
+	Unmatched      int
+	Extra          int    // shown only when non-zero
 	DeltaUnmatched string // "" on the oldest point (no prior run to diff)
 }
 
