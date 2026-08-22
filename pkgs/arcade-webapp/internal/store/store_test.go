@@ -135,6 +135,125 @@ func TestReplaceSystemGamesUpsertPreservesCurationColumns(t *testing.T) {
 	}
 }
 
+// TestReplaceSystemGamesPrunesAcrossSubSecondBoundary pins ADV-P6-01:
+// two replaces inside the SAME wall-clock second must order
+// deterministically. On the old second-truncated stamps both writes
+// shared one string, so a subset replace milliseconds after a full one
+// could never prune (and, crossing the boundary the other way, deleted
+// rows upserted moments earlier — the generate-test ENOENT flake).
+func TestReplaceSystemGamesPrunesAcrossSubSecondBoundary(t *testing.T) {
+	s := openTemp(t)
+	if err := s.UpsertSystems([]SystemRow{{Key: "nes", Collection: "NES", Bucket: "cartridge", SortOrder: 1, Extensions: `["nes"]`}}); err != nil {
+		t.Fatal(err)
+	}
+	// Strictly INSIDE a second: every write below shares its truncation.
+	base := time.Now().UTC().Truncate(time.Second).Add(100 * time.Millisecond)
+	if err := s.ReplaceSystemGames("nes", []GameRow{
+		{RelPath: "A (USA).nes", SizeBytes: 1},
+		{RelPath: "B (USA).nes", SizeBytes: 2},
+	}, base); err != nil {
+		t.Fatal(err)
+	}
+	// 250ms later, still the same second, A has vanished from the scan.
+	if err := s.ReplaceSystemGames("nes", []GameRow{
+		{RelPath: "B (USA).nes", SizeBytes: 2},
+	}, base.Add(250*time.Millisecond)); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	rows, err := s.db.Query(`SELECT rel_path FROM games WHERE system_key='nes' ORDER BY rel_path`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, p)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0] != "B (USA).nes" {
+		t.Fatalf("rows after sub-second subset replace = %v, want [B (USA).nes] (A pruned)", got)
+	}
+
+	// The stamps themselves carry sub-second precision (the fixed-width
+	// fraction is what makes the string prune correct).
+	var stamp string
+	if err := s.db.QueryRow(`SELECT last_seen_at FROM games WHERE rel_path='B (USA).nes'`).Scan(&stamp); err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, stamp)
+	if err != nil {
+		t.Fatalf("last_seen_at %q unparsable: %v", stamp, err)
+	}
+	if frac := parsed.Nanosecond(); frac != 350_000_000 {
+		t.Fatalf("last_seen_at fraction = %d ns, want 350000000 (100ms base + 250ms)", frac)
+	}
+}
+
+// TestReplaceSystemGamesLegacyStampRowsCompareSanely pins the migration
+// contract documented on gameStamp: pre-upgrade second-truncated rows in
+// EARLIER seconds still sort below new-format stamps, so upgrade never
+// deletes live data early nor keeps vanished files forever past their
+// next rewrite.
+func TestReplaceSystemGamesLegacyStampRowsCompareSanely(t *testing.T) {
+	s := openTemp(t)
+	if err := s.UpsertSystems([]SystemRow{{Key: "nes", Collection: "NES", Bucket: "cartridge", SortOrder: 1, Extensions: `["nes"]`}}); err != nil {
+		t.Fatal(err)
+	}
+	first := time.Now().UTC().Truncate(time.Second).Add(2 * time.Second)
+	if err := s.ReplaceSystemGames("nes", []GameRow{
+		{RelPath: "Old (Japan).nes", SizeBytes: 7},
+	}, first); err != nil {
+		t.Fatal(err)
+	}
+	// Downgrade the row to the legacy shape a pre-ADV-P6-01 binary wrote.
+	legacy := first.UTC().Format(time.RFC3339) // second-truncated, no fraction
+	if _, err := s.db.Exec(`UPDATE games SET last_seen_at=?, first_seen_at=? WHERE rel_path='Old (Japan).nes'`,
+		legacy, legacy); err != nil {
+		t.Fatal(err)
+	}
+
+	// A superset rescan in a LATER second upserts the row and rewrites it
+	// to the new format (live data survives the upgrade boundary).
+	if err := s.ReplaceSystemGames("nes", []GameRow{
+		{RelPath: "Old (Japan).nes", SizeBytes: 8},
+		{RelPath: "New (USA).nes", SizeBytes: 9},
+	}, first.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	var stamp string
+	if err := s.db.QueryRow(`SELECT last_seen_at FROM games WHERE rel_path='Old (Japan).nes'`).Scan(&stamp); err != nil {
+		t.Fatal(err)
+	}
+	// first was second-truncated, so the rewritten stamp carries the
+	// fixed-width zero fraction — unambiguously the new shape, not the
+	// bare-second legacy string it replaced.
+	if !strings.HasSuffix(stamp, ".000000000Z") || stamp == legacy {
+		t.Fatalf("legacy stamp not rewritten to fixed-fraction format: %q (legacy %q)", stamp, legacy)
+	}
+
+	// A later subset replace prunes the (now new-format) row normally —
+	// and would equally prune a still-legacy row from an earlier second,
+	// because "…56Z" < "…57.<frac>Z" holds lexicographically.
+	if err := s.ReplaceSystemGames("nes", []GameRow{
+		{RelPath: "New (USA).nes", SizeBytes: 9},
+	}, first.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM games WHERE system_key='nes'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("games after subset replace = %d, want 1", n)
+	}
+}
+
 func TestSetDATInfo(t *testing.T) {
 	s := openTemp(t)
 	if err := s.UpsertSystems([]SystemRow{{Key: "nes", Collection: "NES", Bucket: "cartridge", SortOrder: 1, Extensions: `["nes"]`}}); err != nil {

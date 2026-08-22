@@ -523,12 +523,45 @@ func (s *Store) Systems() ([]SystemRow, error) {
 	return out, rows.Err()
 }
 
+// gameStampLayout is gameStamp's shape. The fraction is FIXED-width
+// (always 9 digits) on purpose: variable-length fractions (RFC3339Nano
+// strips trailing zeros) misorder lexicographically when one fraction is
+// a prefix of the other ("…00.5Z" sorts AFTER "…00.52Z"), which would
+// reintroduce this exact bug class at sub-second granularity.
+const gameStampLayout = "2006-01-02T15:04:05.000000000Z07:00"
+
+// gameStamp formats t as the persisted games.first_seen_at/last_seen_at
+// value: RFC3339 UTC with a fixed 9-digit fractional second.
+//
+// Why sub-second (ADV-P6-01): the rescan prune compares last_seen_at <
+// ts as STRINGS, and second-truncated stamps made any two scans that
+// straddled a wall-clock second boundary read as ≥1s apart — a subset
+// replace milliseconds after a full one deleted rows upserted moments
+// earlier (the generate-test ENOENT flake class), while a same-second
+// rescan masked real prunes (the scanner_test sleep). With the fixed
+// fraction, lexicographic order IS chronological order for every pair
+// of new-format stamps.
+//
+// Migration compat (no backfill needed): rows written by pre-upgrade
+// binaries carry second-truncated stamps ("…56Z"). Against a new stamp
+// in an EARLIER second they still sort below it, so prune decisions can
+// never fire early and delete live data. An old-format row in the SAME
+// second as a new write compares GREATER ('Z' > '.'), i.e. reads as
+// newer than it is — the only effect is surviving one extra prune cycle
+// until its next upsert rewrites it in the new format; SortRecent can
+// likewise only misorder within that single upgrade-boundary second.
+func gameStamp(t time.Time) string { return t.UTC().Format(gameStampLayout) }
+
 // ReplaceSystemGames upserts the scanned ROM set for one system at scan
 // time seen: sizes update, new files appear, vanished files are pruned.
 // Curation columns (hidden, verify_state) are deliberately preserved —
 // rescans never clobber later-phase state.
+//
+// seen carries sub-second precision through gameStamp (ADV-P6-01): two
+// replaces within the same wall-clock second must order deterministically
+// or the subset-replace prune deletes fresh rows.
 func (s *Store) ReplaceSystemGames(systemKey string, games []GameRow, seen time.Time) error {
-	ts := seen.UTC().Format(time.RFC3339)
+	ts := gameStamp(seen)
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err

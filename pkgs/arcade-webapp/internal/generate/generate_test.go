@@ -76,16 +76,17 @@ func writeROMBytes(t *testing.T, path string, body []byte) {
 }
 
 // seedNES inserts three visible games (one enriched, one with pending
-// bytes later corrupted per-test) and one hidden row.
+// bytes later corrupted per-test) and one hidden row, in ONE batch.
+// Single-batch is deliberate (ADV-P6-01 hygiene): two ReplaceSystemGames
+// calls are a subset-replace, and on second-truncated stamps a call that
+// crossed a wall-clock second boundary pruned the previous batch's rows
+// mid-seed (~15% of -race runs). The store-level prune semantics have
+// their own regression tests; seeding must not depend on them.
 func seedNES(t *testing.T, st *store.Store) {
 	t.Helper()
 	if err := st.ReplaceSystemGames("nes", []store.GameRow{
 		{RelPath: "Astral Alpha (USA).nes", SizeBytes: 4},
 		{RelPath: "Beta Garden (Japan).nes", SizeBytes: 4},
-	}, time.Now()); err != nil {
-		t.Fatal(err)
-	}
-	if err := st.ReplaceSystemGames("nes", []store.GameRow{
 		{RelPath: "Hidden Gem (Europe).nes", SizeBytes: 9},
 	}, time.Now()); err != nil {
 		t.Fatal(err)
