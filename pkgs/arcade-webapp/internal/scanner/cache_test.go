@@ -307,3 +307,86 @@ func sha1Hex(t *testing.T, b []byte) string {
 	sum := sha1.Sum(b)
 	return hex.EncodeToString(sum[:])
 }
+
+// ---- P6 carry-in: scan persists per-game sha1 ------------------------------
+
+// TestScanPersistsSHA1 pins the P6 carry-in: a scan fills games.sha1 from
+// CacheID for rows that lack one (best-effort), oversized files stay NULL
+// (the ApplyCacheFlags cap), and the fill is ONCE — a later scan must not
+// re-hash (or overwrite) an already-known row even if its bytes changed
+// (sha1 is a display fact, verify ingest is the authority).
+func TestScanPersistsSHA1(t *testing.T) {
+	root := t.TempDir()
+	st, err := store.Open(filepath.Join(root, "arcade.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close() //nolint:errcheck // test
+
+	tsv := filepath.Join(root, "cat.tsv")
+	if err := os.WriteFile(tsv, []byte("nes\tNES\tfceumm\t-\tnes\t-\tcartridge\t-\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sysDir := filepath.Join(root, "games", "nes")
+	if err := os.MkdirAll(sysDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	romBody := bytes.Repeat([]byte("first"), 16)
+	if err := os.WriteFile(filepath.Join(sysDir, "A (USA).nes"), romBody, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := Config{
+		CatalogueTsv:  tsv,
+		CartridgeRoot: filepath.Join(root, "games"),
+		DBPath:        "unused",
+	}
+	s := New(cfg, st)
+	if _, err := s.Scan(); err != nil {
+		t.Fatalf("scan 1: %v", err)
+	}
+	d, err := st.GetGame("nes", 1)
+	if err != nil || d == nil {
+		t.Fatalf("get game: %v/%v", d, err)
+	}
+	want := sha1Hex(t, romBody)
+	if d.SHA1 != want {
+		t.Fatalf("scan did not persist sha1: got %q want %q", d.SHA1, want)
+	}
+
+	// Oversized rows stay NULL (cap shrunk below the file size for the test).
+	old := romHashSizeLimit
+	romHashSizeLimit = 1024
+	defer func() { romHashSizeLimit = old }()
+	if err := os.WriteFile(filepath.Join(sysDir, "Huge (USA).nes"), bytes.Repeat([]byte("h"), 4096), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Scan(); err != nil {
+		t.Fatalf("scan 2: %v", err)
+	}
+	page, err := st.ListGames(store.GameListOpts{SystemKey: "nes"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, g := range page.Games {
+		if g.RelPath == "Huge (USA).nes" {
+			d2, _ := st.GetGame("nes", g.ID)
+			if d2.SHA1 != "" {
+				t.Fatalf("oversized file got sha1 %q, want empty", d2.SHA1)
+			}
+		}
+	}
+
+	// Fill-once: changed content under the same path keeps the recorded id.
+	romHashSizeLimit = old
+	if err := os.WriteFile(filepath.Join(sysDir, "A (USA).nes"), bytes.Repeat([]byte("second"), 16), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Scan(); err != nil {
+		t.Fatalf("scan 3: %v", err)
+	}
+	d, _ = st.GetGame("nes", 1)
+	if d.SHA1 != want {
+		t.Fatalf("fill-once violated: sha1 moved from %q to %q on re-scan", want, d.SHA1)
+	}
+}

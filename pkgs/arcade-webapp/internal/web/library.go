@@ -245,7 +245,11 @@ type gameDetailVM struct {
 	// re-scrape button; hide/show stays a P7 affordance).
 	HasDescription bool
 	HasCover       bool
-	Actions        gameActionsVM
+	// P6 carry-in: the game file's SHA1 (scanner CacheID / igir ingest),
+	// rendered in the facts block; "" until the next scan or a
+	// checksum-bearing verify report fills it.
+	SHA1    string
+	Actions gameActionsVM
 
 	ArtURL   string
 	BackHref string // sanitized ?back= target (defaults /library)
@@ -314,6 +318,7 @@ func (s *Server) handleGameDetail(w http.ResponseWriter, r *http.Request) {
 		Hidden:         g.Hidden,
 		HasDescription: g.HasDescription,
 		HasCover:       g.HasCover,
+		SHA1:           g.SHA1,
 		Actions:        s.fetchGameActions(g),
 		ArtURL:         fmt.Sprintf("/art/%s/%d", g.SystemKey, g.ID),
 		BackHref:       safeBackPath(r.URL.Query().Get("back")),
