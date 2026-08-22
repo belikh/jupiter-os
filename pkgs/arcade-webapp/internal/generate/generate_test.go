@@ -497,6 +497,48 @@ func TestNewlinesInValuesSanitized(t *testing.T) {
 	}
 }
 
+// TestGeneratorStateLastOKAtWired pins ADV-P6-06: LastOKAt is assigned
+// on a fully ok run (previously declared + snapshotted but never
+// written), LastError flips on a failed run, and both move under the
+// snapshot lock.
+func TestGeneratorStateLastOKAtWired(t *testing.T) {
+	g, st, root := newGenHarness(t)
+	if s := g.State(); s.LastOKAt != "" || s.LastError != "" {
+		t.Fatalf("fresh generator state = %+v, want zero", s)
+	}
+	seedNES(t, st)
+	if _, err := g.Generate(false); err != nil {
+		t.Fatal(err)
+	}
+	okState := g.State()
+	if okState.LastOKAt == "" {
+		t.Fatal("LastOKAt still empty after an ok run")
+	}
+	if _, err := time.Parse(time.RFC3339, okState.LastOKAt); err != nil {
+		t.Fatalf("LastOKAt %q not RFC3339: %v", okState.LastOKAt, err)
+	}
+
+	// A failing system makes the run "error": LastError set, LastOKAt
+	// untouched (the last GOOD generation stays visible).
+	nlDir := filepath.Join(root, "games", "cartridge", "nolaunch")
+	writeROM(t, filepath.Join(nlDir, "X.nes"), "x")
+	if err := st.ReplaceSystemGames("nolaunch", []store.GameRow{{RelPath: "X.nes", SizeBytes: 1}}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	res, err := g.Generate(false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertOutcome(t, res, "nolaunch", OutcomeFailed)
+	failState := g.State()
+	if failState.LastError == "" {
+		t.Fatal("LastError empty after a run with failures")
+	}
+	if failState.LastOKAt != okState.LastOKAt {
+		t.Fatalf("LastOKAt moved on a failed run: %q -> %q", okState.LastOKAt, failState.LastOKAt)
+	}
+}
+
 func assertOutcome(t *testing.T, r Result, sys, outcome string) {
 	t.Helper()
 	for _, oc := range r.Systems {

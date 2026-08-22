@@ -36,6 +36,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/pegasus"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/pipeline"
@@ -138,7 +139,9 @@ type State struct {
 	LastError string
 }
 
-func (g *Generator) snapshot() State {
+// State returns the current in-memory generation status — the UI seam
+// mirroring the igir/scrape/scanner runners' State() accessors.
+func (g *Generator) State() State {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return State{Running: g.running, LastOKAt: g.lastOKAt, LastError: g.lastErr}
@@ -279,15 +282,35 @@ func (g *Generator) GenerateOptions(dryRun bool, opts Options) (Result, error) {
 		res.Systems = append(res.Systems, p.oc)
 	}
 
+	status := g.finishRun(runID, &res)
+	g.mu.Lock()
+	defer g.mu.Unlock()
 	g.lastErr = ""
-	if !res.Validated {
+	switch {
+	case !res.Validated:
 		g.lastErr = "validation refused generated output"
+	case status != "ok":
+		failed := 0
+		for _, oc := range res.Systems {
+			if oc.Outcome == OutcomeFailed {
+				failed++
+			}
+		}
+		g.lastErr = fmt.Sprintf("%d system(s) failed generation", failed)
 	}
-	g.finishRun(runID, &res)
+	if status == "ok" {
+		// LastOKAt was declared but never assigned (ADV-P6-06) — the UI
+		// seam read as "never ran" forever. Mirror the igir/scrape/scanner
+		// runners: stamp on a fully ok run, under the same lock as the
+		// snapshot readers.
+		g.lastOKAt = time.Now().UTC().Format(time.RFC3339)
+	}
 	return res, nil
 }
 
-func (g *Generator) finishRun(runID int64, res *Result) {
+// finishRun records the run row and reports the status it wrote
+// ("ok"|"error") — the State stamping decision reads it back.
+func (g *Generator) finishRun(runID int64, res *Result) string {
 	status := "ok"
 	for _, oc := range res.Systems {
 		if oc.Outcome == OutcomeFailed {
@@ -303,6 +326,7 @@ func (g *Generator) finishRun(runID int64, res *Result) {
 	if err := g.St.FinishRun(runID, status, string(detail)); err != nil {
 		logf("finish run: %v", err)
 	}
+	return status
 }
 
 // renderSystem builds one system's full file bytes: main collection
