@@ -357,24 +357,26 @@ func (d *Driver) scrapeOutcome(systemKey, startAt string) (string, error) {
 	anyOK := false
 	attempted := 0
 	haveSS := false
+	sec := &secrets{} // every credential read below is registered for redaction
 
 	// Pass A: ScreenScraper primary — CRC-exact for zips via unpack, -t 1
 	// for the free-tier thread cap. Only when the creds FILE is readable.
 	if creds, cerr := readCreds(d.ScreenscraperCredsFile); cerr == nil {
 		haveSS = true
+		sec.add(creds)
 		args := []string{
 			"-p", skyPlatform,
 			"-s", "screenscraper",
 			"-i", dir,
 			"-d", cache,
 			"-c", iniPath,
-			"-u", creds, // contents: exec argv only, never logged
+			"-u", creds, // contents: exec argv only, never logged unredacted
 			"-t", "1",
 			"--flags", "unattend,unpack",
 		}
 		args = addWindow(args, startAt)
 		attempted++
-		if err := d.runPass(systemKey, "screenscraper", args); err != nil {
+		if err := d.runPass(systemKey, "screenscraper", args, sec); err != nil {
 			logf("%s: %v (continuing)", systemKey, err)
 		} else {
 			anyOK = true
@@ -397,13 +399,14 @@ func (d *Driver) scrapeOutcome(systemKey, startAt string) (string, error) {
 	}
 	if source == defaultSource {
 		if key, cerr := readCreds(d.TGDBKeyFile); cerr == nil {
+			sec.add(key)
 			args = append(args, "-u", key)
 		}
 	}
 	args = append(args, "--flags", flags)
 	args = addWindow(args, startAt)
 	attempted++
-	if err := d.runPass(systemKey, source, args); err != nil {
+	if err := d.runPass(systemKey, source, args, sec); err != nil {
 		logf("%s: %v (continuing)", systemKey, err)
 	} else {
 		anyOK = true
@@ -423,7 +426,7 @@ func (d *Driver) scrapeOutcome(systemKey, startAt string) (string, error) {
 		"--flags", "unattend",
 	}
 	attempted++
-	if err := d.runPass(systemKey, "pegasus", args); err != nil {
+	if err := d.runPass(systemKey, "pegasus", args, sec); err != nil {
 		logf("%s: %v (continuing)", systemKey, err)
 	} else {
 		anyOK = true
@@ -470,6 +473,27 @@ func readCreds(path string) (string, error) {
 	return strings.TrimSpace(string(b)), nil
 }
 
+// secrets carries the credential VALUES read for one scrape run (ADV-P5-
+// 02): Skyscraper echoes its own argv in failure output and Qt network
+// errors embed URLs carrying ssid/sspassword, so any child-output tail
+// folded into an error or a log line can carry live credentials. apply is
+// the SINGLE choke point every such tail passes through before it enters
+// an error or a log — each known value becomes [redacted].
+type secrets struct{ vals []string }
+
+func (s *secrets) add(v string) {
+	if v != "" {
+		s.vals = append(s.vals, v)
+	}
+}
+
+func (s *secrets) apply(out string) string {
+	for _, v := range s.vals {
+		out = strings.ReplaceAll(out, v, "[redacted]")
+	}
+	return out
+}
+
 // addWindow restricts a gather pass to one ROM (--startat/--endat).
 func addWindow(args []string, startAt string) []string {
 	if startAt == "" {
@@ -480,7 +504,10 @@ func addWindow(args []string, startAt string) []string {
 
 // runPass execs BinPath with the given args, mirroring runner.go: combined
 // output is folded (tail-first) into the returned error, never dumped raw.
-func (d *Driver) runPass(systemKey, name string, args []string) error {
+// The tail passes through sec.apply FIRST (ADV-P5-02): a failing
+// Skyscraper echoes its own argv and Qt network errors embed URLs carrying
+// credentials, so no child output reaches an error or a log unredacted.
+func (d *Driver) runPass(systemKey, name string, args []string, sec *secrets) error {
 	ctx, cancel := context.WithTimeout(context.Background(), passTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, d.BinPath, args...)
@@ -488,7 +515,7 @@ func (d *Driver) runPass(systemKey, name string, args []string) error {
 	// surface without offscreen (cartridge-scrape.sh's unit environment).
 	cmd.Env = append(os.Environ(), "QT_QPA_PLATFORM=offscreen")
 	out, err := cmd.CombinedOutput()
-	tail := strings.TrimSpace(string(out))
+	tail := strings.TrimSpace(sec.apply(string(out))) // THE redaction choke point
 	if len(tail) > 400 {
 		tail = "…" + tail[len(tail)-400:]
 	}
