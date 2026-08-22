@@ -253,12 +253,7 @@
   jupiter.nas.enable = true;
 
   # ---- Phase 2: CPU-tuned closure ------------------------------------------
-  # DISABLED again 2026-08-16: no CI pipeline is currently delivering a
-  # bdver4 closure (last successful push: f58fc16, 2026-08-06, which was
-  # itself UNTUNED — microarch was commented out at that commit). With this
-  # enabled and no substituter, every rebuild wants ~1830 local builds.
-  # Europa runs the untuned cache.nixos.org closure (gen 79) for now.
-  # jupiter.build.microarch = "bdver4"; # CI builds this host's closure with -march=bdver4
+  jupiter.build.microarch = "bdver4"; # CI builds this host's closure with -march=bdver4
 
   # ---- nixpkgs overlays ----------------------------------------------------
   # bmake's `deptgt-interrupt` unit test is timing-sensitive (it asserts a
