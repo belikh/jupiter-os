@@ -48,11 +48,49 @@ const (
 	OutcomeFailed       = "failed"        // setup error or every pass failed
 )
 
-// romSuffixes is the ROM-count filter (cartridge-scrape.sh's $ROM_RE,
-// case-insensitive, matched against file suffixes recursively).
-var romSuffixes = []string{
+// defaultRomSuffixes is the ROM-count filter used ONLY when a system's
+// catalogue row carries no usable Extensions (ADV-P5-05): real systems
+// carry 30+ extensions across the fleet and every row already carries its
+// own list, so the per-row set is authoritative and this hardcoded common
+// subset is just the fallback (cartridge-scrape.sh's $ROM_RE shape).
+var defaultRomSuffixes = []string{
 	".zip", ".nes", ".sfc", ".gb", ".gbc", ".gba",
 	".n64", ".cue", ".bin", ".chd", ".iso",
+}
+
+// globalRomExtras are appended to EVERY row-derived set: No-Intro sets ship
+// as zips and cue/bin pairs travel together (the script's GLOBAL_RE extras),
+// whatever else the row lists.
+var globalRomExtras = []string{".zip", ".bin"}
+
+// romSuffixSet builds one system's allowed ROM-file suffix set (lowercased,
+// dotted) from its persisted Extensions JSON (`["nes","zip"]`), unioned
+// with the script's global extras. A missing/unparseable/empty list falls
+// back to defaultRomSuffixes so an unpopulated row can never widen the
+// gate to "any file".
+func romSuffixSet(row store.SystemRow) map[string]bool {
+	set := map[string]bool{}
+	var exts []string
+	if err := json.Unmarshal([]byte(row.Extensions), &exts); err == nil {
+		for _, e := range exts {
+			e = strings.ToLower(strings.TrimSpace(e))
+			if e == "" {
+				continue
+			}
+			set["."+strings.TrimPrefix(e, ".")] = true
+		}
+	}
+	if len(set) == 0 {
+		set = make(map[string]bool, len(defaultRomSuffixes))
+		for _, s := range defaultRomSuffixes {
+			set[s] = true
+		}
+		return set // fallback already includes the global extras
+	}
+	for _, s := range globalRomExtras {
+		set[s] = true
+	}
+	return set
 }
 
 // defaultSource is cartridge-scrape.sh's positional <source> default.
@@ -200,7 +238,7 @@ func (d *Driver) StartAll() error {
 	keys := make([]string, 0, len(systems))
 	for _, sys := range systems {
 		dir := filepath.Join(d.bucketRoot(sys.Bucket), sys.Key)
-		if fi, serr := os.Stat(dir); serr == nil && fi.IsDir() && romCount(dir) > 0 {
+		if fi, serr := os.Stat(dir); serr == nil && fi.IsDir() && romCount(dir, romSuffixSet(sys)) > 0 {
 			keys = append(keys, sys.Key)
 		}
 	}
@@ -327,7 +365,7 @@ func (d *Driver) scrapeOutcome(systemKey, startAt string) (string, error) {
 		logf("%s: games dir missing (%s); skipping", systemKey, dir)
 		return OutcomeSkippedEmpty, nil
 	}
-	if romCount(dir) == 0 {
+	if romCount(dir, romSuffixSet(sys)) == 0 {
 		logf("%s: no ROM files in %s; skipping to protect Skyscraper cache", systemKey, dir)
 		return OutcomeSkippedEmpty, nil
 	}
@@ -636,10 +674,11 @@ func (d *Driver) runPass(systemKey, name string, args []string, sec *secrets) er
 	return nil
 }
 
-// romCount counts regular ROM-suffixed files anywhere below dir — counting
-// ACTUAL ROM files, not "any file" (a stray .gitkeep must not falsely pass;
-// recursive so nested layouts count too, like the script's find).
-func romCount(dir string) int {
+// romCount counts regular files whose suffix is in the system's allowed
+// set anywhere below dir — counting ACTUAL ROM files, not "any file" (a
+// stray .gitkeep must not falsely pass; recursive so nested layouts count
+// too, like the script's find).
+func romCount(dir string, allowed map[string]bool) int {
 	count := 0
 	_ = filepath.WalkDir(dir, func(_ string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -649,11 +688,8 @@ func romCount(dir string) int {
 			return nil
 		}
 		ext := strings.ToLower(filepath.Ext(entry.Name()))
-		for _, want := range romSuffixes {
-			if ext == want {
-				count++
-				break
-			}
+		if allowed[ext] {
+			count++
 		}
 		return nil
 	})
