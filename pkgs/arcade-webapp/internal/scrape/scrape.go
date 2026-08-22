@@ -325,7 +325,14 @@ func (d *Driver) scrapeOutcome(systemKey, startAt string) (string, error) {
 	if sys.SkyHandle != "" {
 		skyPlatform = sys.SkyHandle
 	}
-	cache := filepath.Join(d.CacheDir, skyPlatform)
+	// The cache dir is keyed on the CATALOGUE KEY, exactly like
+	// cartridge-scrape.sh ($platform_cache="$CACHE_DIR/$platform" where
+	// $platform is our key): only -p receives Skyscraper's handle. Keying
+	// -d on the handle instead made every diverging system (ps1→psx,
+	// gamecube→gc, pokemonmini→pokemini, dsi→nds, …) miss its live europa
+	// cache — quota burn — and collided new3ds/3ds on the shared "3ds"
+	// handle (ADV-P5-01).
+	cache := filepath.Join(d.CacheDir, systemKey)
 	if err := os.MkdirAll(cache, 0o755); err != nil {
 		return OutcomeFailed, fmt.Errorf("scrape: %s: cache dir: %w", systemKey, err)
 	}

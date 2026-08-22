@@ -52,7 +52,7 @@ type harness struct {
 
 const (
 	hSysKey    = "famicom"
-	hSkyHandle = "nes" // deliberately ≠ hSysKey: proves -p/-d use SkyHandle
+	hSkyHandle = "nes" // deliberately ≠ hSysKey: -p must carry the SkyHandle while -d/-c key on the catalogue key (ADV-P5-01)
 )
 
 func newHarness(t *testing.T) *harness {
@@ -215,7 +215,10 @@ func TestScrapeArgvParity(t *testing.T) {
 	wantFlag(t, "pass C", passC, "-f", "pegasus")
 	wantFlag(t, "pass C", passC, "--flags", "unattend")
 
-	cacheWant := filepath.Join(h.cacheDir, hSkyHandle) // SkyHandle mapping, NOT sys.Key
+	// -d keys on the CATALOGUE KEY (cartridge-scrape.sh's $CACHE_DIR/$platform
+	// — the live europa caches sit under our keys), NOT the SkyHandle;
+	// only -p carries SkyHandle (ADV-P5-01).
+	cacheWant := filepath.Join(h.cacheDir, hSysKey)
 	for i, inv := range invs {
 		wantFlag(t, "all passes", inv, "-p", hSkyHandle)
 		wantFlag(t, "all passes", inv, "-d", cacheWant)
