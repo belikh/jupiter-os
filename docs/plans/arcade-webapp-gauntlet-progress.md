@@ -5,11 +5,11 @@ The live heartbeat of the builder/critic loop driving
 every critic verdict. Screenshots (when they exist) land under
 `arcade-webapp-gauntlet/` next to this file.
 
-- **Phase:** 2-3 complete — **P1–P4 won** (blind critics) · P5 in review
+- **Phase:** 2-3 complete — **P1–P5 won** (blind critics) · P6 next
 - **Branch:** `arcade/webapp-gauntlet`
 - **ADR:** [ADR-0002 — custom, not RomM](../adr/0002-arcade-webapp-custom-vs-romm.md)
   (D1 research-confirmed 2026-08-21; D2–D4 accepted)
-- **Last update:** 2026-08-22 21:49 AEST
+- **Last update:** 2026-08-22 22:56 AEST
 
 ## Piece table
 
@@ -19,7 +19,7 @@ every critic verdict. Screenshots (when they exist) land under
 | P2 — Download control | **won** | 1 (0 rebuilds) + adversarial reconciliation | **ours** (blind, labels stripped; A=AriaNg's literal list-view template extracted from its shipped JS bundle, B=ours rendering a live aria2d queue: 2 active 64 MiB, 1 paused, 3 completed) | acquire column is a dead end when the torrent is missing — no stage/paste/trigger control on-page (carried to P3) | `p2-ours-downloads.html`, `p2-bar-ariang-list-template.html`, `p2-ours-{desktop,mobile}.png`; critic: "B understands the job is a collection pipeline, not a file list… A manages the daemon, not the collection"; implementation commits `f883582`/`ad361c2`/`b8f8315`/`f0b29b2`, review fixes `4be90e9`/`dfa680b` |
 | P3 — Verify & organize | **won** — 1 loop + adversarial reconciliation | 1 (real-igir bring-up: 3 root-caused VM failures, 0 masked) + adversarial review pending | **ours** (blind; A=RomM demo DOM, B=our /verify page with a real igir run — snes/gb green, nes red-unmatched, segacd unknown) | unmatched files not drillable in-page + no run history w/ deltas (carry to P4) | commits `ca09507` (Go half) + `b1809bc`/`ce84fde` (real-igir refinements + wiring); VM smoke 27 steps green ×2 consecutive incl. REAL igir amber-extra → green zero-unmatched on a fresh promotion (log excerpt in the Phase 3 verification section); `p3-ours-verify.html`, `p3-ours-verify.png` |
 | P4 — Library browsing | **won** — 1 loop + adversarial micro-audits | 1 (2 VM bring-up failures, both root-caused: pagination + missing awk) | **ours** (blind; A=anonymized RomM gallery home DOM, B=our /library grid + detail over the fixture store w/ generated SVG posters) | detail lacks CRC/SHA1 checksum rows + persistent report link (carry to P5) | `p4-ours-library.html`, `p4-ours-detail.html`, `p4-ours-library.png`, `p4-bar-romm-gallery.html`; critic: "findability exists only in B — A's home has zero input/select elements… B puts verification state on every card" |
-| P5 — Metadata engine control | **review** — 1 loop + adversarial reconciliation | 1 (VM bring-up runs 1–2 clean after the stub argv-journal fix, per `bb465d5`; post-push runs 3–4 flaked TEST-side races → completion-gated + slot-free wait in `108beae`, final PASS fresh below) | — | — | commits `c94be34` (shared cache parser/CacheID/ApplyCacheFlags) `f01bcc3` `2663eb7` `ccb057f` (/metadata UI, serialized Driver) `449cd97` (module wiring) `bb465d5` (stubbed-Skyscraper smoke) + hardening `108beae`; reconciliation `0722aa7`…`c9241fc`; VM smoke: nes desc/cover 0→100 through the real driver→store→ApplyCacheFlags stack |
+| P5 — Metadata engine control | **won** — 1 loop + adversarial reconciliation (2 HIGH fixed incl cache-key drift + secret-tail redaction) | 1 (VM bring-up runs 1–2 clean after the stub argv-journal fix, per `bb465d5`; post-push runs 3–4 flaked TEST-side races → completion-gated + slot-free wait in `108beae`, final PASS fresh below) | **ours** (blind; A=anonymized RomM home DOM + its published metadata docs — deep pages don't render headless, B=our /metadata + game detail after a real igir verify) | scrape run-history/deltas not visible post-run + no hash value displayed on detail (carry to P6) | commits `c94be34` (shared cache parser/CacheID/ApplyCacheFlags) `f01bcc3` `2663eb7` `ccb057f` (/metadata UI, serialized Driver) `449cd97` (module wiring) `bb465d5` (stubbed-Skyscraper smoke) + hardening `108beae`; reconciliation `0722aa7`…`c9241fc`; VM smoke: nes desc/cover 0→100 through the real driver→store→ApplyCacheFlags stack; `p5-ours-metadata.html`, `p5-ours-detail.html`, `p5-bar-romm-metadata-docs.html`; critic: "B renders a real per-system table… A's library DOM contains zero rendered content" |
 | P6 — Launcher DB generator | pending | 0 | — | — | — |
 | P7 — Curation | pending | 0 | — | — | — |
 | P8 — eXo integration + sprawl retirement | pending | 0 | — | — | — |
@@ -317,5 +317,5 @@ stays in `review` until the blind critic.
 
 ## Gauntlet scoreboard
 
-**4 won / 4 remaining (P1-P4)**. Exit (AC-10) = every piece P1–P8 won with the final
+**5 won / 3 remaining (P1-P5)**. Exit (AC-10) = every piece P1–P8 won with the final
 named-gap=null or an accepted-residual note recorded in the piece table.
