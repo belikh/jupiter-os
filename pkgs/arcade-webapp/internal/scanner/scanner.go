@@ -13,12 +13,16 @@
 package scanner
 
 import (
+	"archive/zip"
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -431,45 +435,228 @@ func ReadDAT(path string) (*store.DATInfo, error) {
 	return info, nil
 }
 
-// countCacheGames implements the Skyscraper coverage heuristic: a game
-// counts as covered when its db.xml holds at least one <resource> entry
-// for the game's unique id (see Skyscraper's CACHE.md — the cache is a
-// flat list of <resource id=".." type=".." source=".."> elements keyed by
-// ROM hash). We count DISTINCT ids: per-type coverage (art/desc/video
-// separately) is P5's coverage tracker, this is the P1 presence-level
-// number. An absent cache dir reads as 0 (not an error); a corrupt db.xml
-// is an error the scan records as a warning.
+// countCacheGames implements the Skyscraper coverage heuristic via
+// ReadCacheCoverage (P5 refactored the raw counter out so the scrape
+// driver and the coverage tracker share one parser).
 func countCacheGames(cacheDir string) (int64, error) {
+	cc, err := ReadCacheCoverage(cacheDir)
+	if err != nil {
+		return 0, err
+	}
+	return cc.Entries, nil
+}
+
+// ---- P5: shared Skyscraper-cache parsing -----------------------------------
+
+// CacheCoverage is the parsed shape of one platform's Skyscraper resource
+// cache (<cacheDir>/db.xml — see Skyscraper's CACHE.md: a flat list of
+// <resource id=".." type=".." source=".."> elements keyed by ROM hash).
+//
+// Entries counts DISTINCT ids (the P1 presence-level number); Descriptions
+// / Covers count distinct ids holding at least one resource of type
+// "description" / "cover" (the P5 coverage tracker's headline split). The
+// ID sets are exported so per-game mapping (CacheID + ApplyCacheFlags)
+// runs off the SAME single parse.
+type CacheCoverage struct {
+	Entries      int64
+	Descriptions int64
+	Covers       int64
+	DescIDs      map[string]struct{}
+	CoverIDs     map[string]struct{}
+}
+
+// ReadCacheCoverage parses <cacheDir>/db.xml. An absent db.xml reads as a
+// zero-value coverage (not an error — an unscraped platform); a corrupt
+// one is an error the caller records as a warning.
+func ReadCacheCoverage(cacheDir string) (*CacheCoverage, error) {
 	path := filepath.Join(cacheDir, "db.xml")
 	f, err := os.Open(path)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return 0, nil
+			return &CacheCoverage{}, nil
 		}
-		return 0, err
+		return nil, err
 	}
 	defer f.Close() //nolint:errcheck // read-only
 
-	dec := xml.NewDecoder(f)
+	cc := &CacheCoverage{
+		DescIDs:  map[string]struct{}{},
+		CoverIDs: map[string]struct{}{},
+	}
 	ids := map[string]struct{}{}
+	dec := xml.NewDecoder(f)
 	for {
 		tok, err := dec.Token()
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				break
 			}
-			return 0, fmt.Errorf("scanner: parse %s: %w", path, err)
+			return nil, fmt.Errorf("scanner: parse %s: %w", path, err)
 		}
 		if se, ok := tok.(xml.StartElement); ok && se.Name.Local == "resource" {
+			var id, typ string
 			for _, a := range se.Attr {
-				if a.Name.Local == "id" {
-					ids[a.Value] = struct{}{}
-					break
+				switch a.Name.Local {
+				case "id":
+					id = a.Value
+				case "type":
+					typ = a.Value
+				}
+			}
+			if id == "" {
+				continue
+			}
+			if _, seen := ids[id]; !seen {
+				ids[id] = struct{}{}
+				cc.Entries++
+			}
+			// Type strings verified against europa-produced caches and the
+			// committed fixtures: textual metadata is "description", box art
+			// is "cover". Unknown types simply contribute to Entries only.
+			switch typ {
+			case "description":
+				if _, seen := cc.DescIDs[id]; !seen {
+					cc.DescIDs[id] = struct{}{}
+					cc.Descriptions++
+				}
+			case "cover":
+				if _, seen := cc.CoverIDs[id]; !seen {
+					cc.CoverIDs[id] = struct{}{}
+					cc.Covers++
 				}
 			}
 		}
 	}
-	return int64(len(ids)), nil
+	return cc, nil
+}
+
+// romHashSizeLimit caps what CacheID will hash: multi-hundred-MB optical
+// images would stall the coverage recompute on europa's HDD for a
+// best-effort flag. Files above the cap stay unflagged (false negative,
+// never a false positive). A var, not a const, so tests can shrink it.
+var romHashSizeLimit int64 = 512 << 20 // 512 MiB
+
+// ErrROMTooLarge reports that a game file exceeded romHashSizeLimit and
+// was therefore left unmapped (errors.Is-able).
+var ErrROMTooLarge = errors.New("scanner: rom exceeds hashing size limit")
+
+// CacheID computes Skyscraper's cache id for a game FILE: the lowercase
+// hex SHA1 of its contents (40 chars — the shape every committed cache
+// fixture shows). For .zip archives (No-Intro cartridge sets ship as
+// zips) the SHA1 of the FIRST regular entry's decompressed contents is
+// used, matching Skyscraper's inside-the-archive keying closely enough
+// for a best-effort flag.
+//
+// TRAP (documented, accepted): Skyscraper has varied its archive keying
+// across versions (inner CRC32 vs SHA1, first-entry heuristics). A wrong
+// id here can only MISS a cache hit — flags stay false (a false NEGATIVE
+// the drill-down treats as "uncovered"), and can never falsely claim a
+// game is covered. Oversized files return ErrROMTooLarge (id ""), also a
+// false negative. Never wire a consumer to this that cannot tolerate a miss.
+func CacheID(path string) (string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", err
+	}
+	if info.Size() > romHashSizeLimit {
+		return "", fmt.Errorf("scanner: %s: %w", filepath.Base(path), ErrROMTooLarge)
+	}
+	h := sha1.New()
+	if strings.EqualFold(filepath.Ext(path), ".zip") {
+		zr, err := zip.OpenReader(path)
+		if err != nil {
+			return "", fmt.Errorf("scanner: zip %s: %w", filepath.Base(path), err)
+		}
+		defer zr.Close() //nolint:errcheck // read-only
+		for _, zf := range zr.File {
+			if zf.FileInfo().IsDir() {
+				continue
+			}
+			rc, err := zf.Open()
+			if err != nil {
+				return "", fmt.Errorf("scanner: zip entry %s/%s: %w", filepath.Base(path), zf.Name, err)
+			}
+			_, cerr := io.Copy(h, rc)
+			closeErr := rc.Close()
+			if cerr != nil {
+				return "", fmt.Errorf("scanner: zip entry %s/%s: %w", filepath.Base(path), zf.Name, cerr)
+			}
+			if closeErr != nil {
+				return "", closeErr
+			}
+			return hex.EncodeToString(h.Sum(nil)), nil
+		}
+		return "", fmt.Errorf("scanner: zip %s holds no entries", filepath.Base(path))
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close() //nolint:errcheck // read-only
+	if _, err := io.Copy(h, f); err != nil {
+		return "", fmt.Errorf("scanner: hash %s: %w", filepath.Base(path), err)
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// CacheDirFor maps a persisted system row onto its Skyscraper platform
+// cache directory: <cacheRoot>/<sky handle>, the same mapping
+// catalogue.System.SkyPlatform applies on the parsed side (ps1→psx,
+// gamecube→gc, …).
+func CacheDirFor(cacheRoot string, sys store.SystemRow) string {
+	key := sys.Key
+	if sys.SkyHandle != "" {
+		key = sys.SkyHandle
+	}
+	return filepath.Join(cacheRoot, key)
+}
+
+// ApplyCacheFlags recomputes one system's scrape coverage after a run
+// (gauntlet plan §2 P5): the scrape_coverage aggregate is refreshed from
+// a single ReadCacheCoverage parse of the platform's db.xml, and each
+// game row's has_description/has_cover flips best-effort from cache
+// presence — the game file's CacheID appearing among the description /
+// cover resource ids. Games whose files cannot be keyed (oversized,
+// unreadable, zip-keying mismatch) stay false; the flags are a coverage
+// HINT, never an authority. Full-replace semantics (SetSystemScrapeFlags),
+// so a wiped cache clears every flag.
+//
+// sysDir is the system's games-tree directory (files are hashed there);
+// cacheDir is the PLATFORM cache dir (CacheDirFor).
+func ApplyCacheFlags(st *store.Store, sys store.SystemRow, sysDir, cacheDir string) error {
+	cc, err := ReadCacheCoverage(cacheDir)
+	if err != nil {
+		return fmt.Errorf("scanner: coverage %s: %w", sys.Key, err)
+	}
+	if err := st.SetScrapeCoverage(sys.Key, cc.Entries); err != nil {
+		return fmt.Errorf("scanner: coverage persist %s: %w", sys.Key, err)
+	}
+	page, err := st.ListGames(store.GameListOpts{SystemKey: sys.Key})
+	if err != nil {
+		return fmt.Errorf("scanner: games %s: %w", sys.Key, err)
+	}
+	// Nothing to match against (or no games): clear and stop — no hashing.
+	if len(cc.DescIDs)+len(cc.CoverIDs) == 0 || len(page.Games) == 0 {
+		return st.SetSystemScrapeFlags(sys.Key, nil)
+	}
+	flags := make([]store.GameScrapeFlag, 0, len(page.Games))
+	skipped := 0
+	for _, g := range page.Games {
+		id, err := CacheID(filepath.Join(sysDir, g.RelPath))
+		if err != nil {
+			skipped++ // oversized/unreadable: flag stays false (documented miss)
+			continue
+		}
+		_, desc := cc.DescIDs[id]
+		_, cover := cc.CoverIDs[id]
+		if desc || cover {
+			flags = append(flags, store.GameScrapeFlag{RelPath: g.RelPath, Description: desc, Cover: cover})
+		}
+	}
+	if skipped > 0 {
+		log.Printf("scanner: %s: %d game file(s) not keyed for coverage (size/read limits)", sys.Key, skipped)
+	}
+	return st.SetSystemScrapeFlags(sys.Key, flags)
 }
 
 // size mirrors one inventory JSON per-system entry.
