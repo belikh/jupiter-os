@@ -809,3 +809,101 @@ func TestVerifyUnmatched(t *testing.T) {
 		t.Errorf("n=0 gave %v, want empty", zero)
 	}
 }
+
+// ---- P5: metadata-engine columns -------------------------------------------
+
+// TestScrapeFlagsAndChecksums covers the v5 migration (a pre-v5 database's
+// seeded games row survives reopen and reads as unscraped/unchecked), the
+// full-replace semantics of SetSystemScrapeFlags, the selective
+// (never-clobber) SetGameChecksums update, and GetGame's exposure of all
+// four new fields.
+func TestScrapeFlagsAndChecksums(t *testing.T) {
+	// Seed a v4 database with one system + one game row.
+	p := filepath.Join(t.TempDir(), "v4.db")
+	db, err := sql.Open("sqlite", "file:"+p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v4Schema := append(append(append(append([]string{}, schemaV1...), schemaV2...), schemaV3...), schemaV4...)
+	for _, stmt := range v4Schema {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("seed v4 schema: %v", err)
+		}
+	}
+	if _, err := db.Exec(`INSERT INTO systems (key, collection, bucket, sort_order) VALUES ('nes', 'NES', 'cartridge', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO games (system_key, rel_path, size_bytes, first_seen_at, last_seen_at)
+		VALUES ('nes', 'A (USA).nes', 1024, '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`PRAGMA user_version = 4`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := Open(p)
+	if err != nil {
+		t.Fatalf("Open v4 database: %v", err)
+	}
+	defer s.Close() //nolint:errcheck // test
+	if got := s.SchemaVersion(); got != SchemaVersion {
+		t.Fatalf("migrated user_version = %d, want %d", got, SchemaVersion)
+	}
+
+	page, err := s.ListGames(GameListOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Games) != 1 || page.Games[0].RelPath != "A (USA).nes" {
+		t.Fatalf("pre-v5 games lost or mangled by migration: %+v", page.Games)
+	}
+
+	// GetGame reads the fresh columns as zero-value (unscraped).
+	d, err := s.GetGame("nes", page.Games[0].ID)
+	if err != nil || d == nil {
+		t.Fatalf("GetGame: %v, %v", d, err)
+	}
+	if d.HasDescription || d.HasCover || d.CRC32 != "" || d.SHA1 != "" {
+		t.Errorf("fresh columns = %+v, want zero-value (unscraped)", d)
+	}
+
+	// Scrape flags: two positives land.
+	if err := s.SetSystemScrapeFlags("nes", []GameScrapeFlag{
+		{RelPath: "A (USA).nes", Description: true},
+		{RelPath: "B (Europe).zip", Cover: true}, // unknown rel_path: no-op
+	}); err != nil {
+		t.Fatalf("SetSystemScrapeFlags: %v", err)
+	}
+	d, _ = s.GetGame("nes", page.Games[0].ID)
+	if !d.HasDescription || d.HasCover {
+		t.Errorf("flags after set = desc:%v cover:%v, want desc:true cover:false", d.HasDescription, d.HasCover)
+	}
+
+	// Full-replace: a recompute that no longer claims the game clears it.
+	if err := s.SetSystemScrapeFlags("nes", []GameScrapeFlag{}); err != nil {
+		t.Fatalf("SetSystemScrapeFlags replace: %v", err)
+	}
+	d, _ = s.GetGame("nes", page.Games[0].ID)
+	if d.HasDescription || d.HasCover {
+		t.Errorf("flags after clear = %+v, want both false (full-replace)", d)
+	}
+
+	// Checksums are selective: a partial row must not erase prior data.
+	if err := s.SetGameChecksums("nes", []GameChecksum{{RelPath: "A (USA).nes", CRC32: "deadbeef", SHA1: "aaa111"}}); err != nil {
+		t.Fatalf("SetGameChecksums: %v", err)
+	}
+	if err := s.SetGameChecksums("nes", []GameChecksum{{RelPath: "A (USA).nes", SHA1: "bbb222"}}); err != nil {
+		t.Fatalf("SetGameChecksums partial: %v", err)
+	}
+	d, _ = s.GetGame("nes", page.Games[0].ID)
+	if d.CRC32 != "deadbeef" || d.SHA1 != "bbb222" {
+		t.Errorf("checksums after selective update = %s/%s, want deadbeef/bbb222", d.CRC32, d.SHA1)
+	}
+	// Empty fields on an unknown rel path stay harmless no-ops.
+	if err := s.SetGameChecksums("nes", []GameChecksum{{RelPath: "nope.nes"}}); err != nil {
+		t.Fatalf("SetGameChecksums unknown rel: %v", err)
+	}
+}
