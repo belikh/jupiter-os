@@ -507,6 +507,59 @@ func TestPostComposeWarnsWhenUnlaunchable(t *testing.T) {
 	}
 }
 
+// TestROMSuffixSet pins the ADV-P5-05 semantics: the allowed-suffix set
+// comes from the system row's Extensions JSON (the fleet carries 30+
+// extensions across systems; the hardcoded list is only a fallback),
+// always unioned with the script's zip/bin extras.
+func TestROMSuffixSet(t *testing.T) {
+	// Row-derived: row extensions + global extras, lowercased/dotted.
+	set := romSuffixSet(store.SystemRow{Extensions: `["nes","ZIP","smc"]`})
+	for _, want := range []string{".nes", ".zip", ".smc", ".bin"} {
+		if !set[want] {
+			t.Errorf("row-derived set lacks %q: %v", want, set)
+		}
+	}
+	if set[".iso"] {
+		t.Errorf("row-derived set must not silently widen to the fallback list: %v", set)
+	}
+
+	// A row extension OUTSIDE the hardcoded list counts as a ROM now —
+	// the exact case the 11-extension list got wrong (wiiu .rpx trees).
+	// A dedicated tree: one .rpx game in a nested layout plus a dotfile.
+	tree := filepath.Join(t.TempDir(), "wiiu")
+	rpx := filepath.Join(tree, "Starlit Vault (USA)/code/starlit.rpx")
+	if err := os.MkdirAll(filepath.Dir(rpx), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(rpx, []byte("ROM"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(filepath.Dir(rpx), ".gitkeep"), []byte(""), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if n := romCount(tree, romSuffixSet(store.SystemRow{
+		Key: "wiiu", Extensions: `["rpx","wud"]`})); n != 1 {
+		t.Errorf("romCount with row extensions = %d, want 1 (.rpx counted, dotfile not)", n)
+	}
+	// Same tree under the FALLBACK list (no row extensions): not a game —
+	// and never "any file" either.
+	fallback := romSuffixSet(store.SystemRow{Key: "wiiu"})
+	for _, want := range []string{".zip", ".nes", ".iso"} {
+		if !fallback[want] {
+			t.Errorf("fallback set lacks %q: %v", want, fallback)
+		}
+	}
+	if n := romCount(tree, fallback); n != 0 {
+		t.Errorf("fallback romCount = %d, want 0 (rpx outside fallback; dotfile never counts)", n)
+	}
+
+	// Malformed JSON falls back too.
+	malformed := romSuffixSet(store.SystemRow{Key: hSysKey, Extensions: `{oops`})
+	if len(malformed) != len(defaultRomSuffixes) {
+		t.Errorf("malformed Extensions → set %v, want the full fallback", malformed)
+	}
+}
+
 // waitIdle blocks until the driver's background job releases its slots
 // (bounded; a hung job fails the test instead of hanging it).
 func waitIdle(t *testing.T, h *harness) {
