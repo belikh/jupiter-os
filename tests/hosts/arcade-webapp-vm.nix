@@ -605,6 +605,46 @@ let
     [ "$code" = 400 ] || fail "stage-uri ftp -> $code, want 400"
     echo "smoke: stage-uri magnet queued, bad scheme rejected"
 
+    # ---- P4: library gallery + detail + art fallback ----
+    #
+    # artDir stays UNSET on this host: the /art route must serve its
+    # deterministic SVG posters (content-type image/svg+xml) when no
+    # cover root is wired — the scraped-cover path is unit-covered.
+    echo "smoke: P4 library renders fixture titles"
+    # Page size is 10 (libPageSize); the 16-game corpus spans two pages,
+    # so page 1 carries the alphabetically-early titles + the next link.
+    page=$(curl -sf "$base/library" || fail "GET /library")
+    grep -q 'Mecha Garden' <<<"$page" || fail "library page 1 missing a fixture card"
+    grep -q 'rel="next"' <<<"$page" || fail "library pager missing (16 games must paginate)"
+    grep -q 'src="/art/' <<<"$page" || fail "library cards not wired to the /art route"
+
+    echo "smoke: library filter ?q= narrows the grid"
+    page=$(curl -sf "$base/library?q=Starlit" || fail "GET /library?q=Starlit")
+    grep -q 'Starlit Vault' <<<"$page" || fail "?q=Starlit lost its match"
+    grep -q 'Mecha Garden' <<<"$page" && fail "?q=Starlit must exclude Mecha Garden"
+
+    # Detail page via the card's OWN href (ids are autoincrement — never
+    # assumed); the page must carry the rel_path file fact.
+    href=$(awk '
+      /class="gcard" href="/ { match($0, /href="[^"]*"/); h = substr($0, RSTART + 6, RLENGTH - 7) }
+      /gcard-title" title="Starlit Vault/ { print h; exit }
+    ' <<<"$page")
+    [ -n "$href" ] || fail "no Starlit Vault card link in the filtered grid"
+    case "$href" in /systems/nes/games/*) ;; *) fail "card href '$href' is not a detail-route link" ;; esac
+    code=$(curl -s -o /tmp/detail.out -w '%{http_code}' "$base$href")
+    [ "$code" = 200 ] || fail "GET $href -> $code, want 200"
+    grep -q '<code>Starlit Vault (USA).nes</code>' /tmp/detail.out \
+      || fail "detail page missing the rel_path fact"
+
+    # Art route: SVG fallback content-type for a real scanned game id.
+    gid=$(sed -n 's|.*/games/\([0-9]*\).*|\1|p' <<<"$href")
+    [ -n "$gid" ] || fail "could not parse game id from href '$href'"
+    ctype=$(curl -s -o /dev/null -w '%{content_type}' "$base/art/nes/$gid")
+    [ "$ctype" = "image/svg+xml" ] \
+      || fail "/art/nes/$gid content-type '$ctype', want image/svg+xml (SVG fallback)"
+    curl -sf "$base/art/nes/$gid" | grep -q '<svg' || fail "/art body is not SVG"
+    echo "smoke: P4 library + filtered grid + detail rel_path + svg art ok"
+
     pass
   '';
 in
@@ -800,6 +840,7 @@ in
       curl
       gnugrep
       gnused
+      gawk # P4: pair each library card's href with its title
       systemd
       coreutils
       procps # ps: the P3 verify DEBUG hang-check

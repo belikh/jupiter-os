@@ -155,6 +155,20 @@ in
       '';
     };
 
+    artDir = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = ''
+        Optional cover-media root for the P4 gallery/detail surfaces
+        (Skyscraper's media layout): covers live at
+        <literal>&lt;root&gt;/&lt;systemKey&gt;/&lt;rom basename without
+        extension&gt;/cover.png</literal> (or .jpg). When set, the
+        <literal>/art/&lt;system&gt;/&lt;game&gt;</literal> route serves a
+        present cover file; a missing cover falls back to a deterministic
+        generated SVG poster. Read-only to the service.
+      '';
+    };
+
     incomingDir = lib.mkOption {
       type = lib.types.str;
       default = "/tank/archive/retro/cache/incoming/nointro-nintendo";
@@ -345,8 +359,9 @@ in
       wants = [ "systemd-tmpfiles-setup.service" ];
 
       # Don't start until every pool path is mounted (rom-acquire.nix /
-      # suno-web.nix pattern) — the scanner walks them at startup.
-      unitConfig.RequiresMountsFor = poolPaths;
+      # suno-web.nix pattern) — the scanner walks them at startup. The
+      # optional art root joins the gate only when configured.
+      unitConfig.RequiresMountsFor = poolPaths ++ lib.optionals (cfg.artDir != null) [ cfg.artDir ];
 
       environment = {
         ARCADE_WEBAPP_ADDR = ":${toString cfg.port}";
@@ -382,6 +397,11 @@ in
       }
       // lib.optionalAttrs (cfg.datRefreshIntervalHours != null) {
         ARCADE_WEBAPP_DAT_REFRESH_HOURS = toString cfg.datRefreshIntervalHours;
+      }
+      # P4 gallery covers: only wired when configured — unwired, the app
+      # serves SVG posters only (its own log line says so).
+      // lib.optionalAttrs (cfg.artDir != null) {
+        ARCADE_WEBAPP_ART_DIR = cfg.artDir;
       };
 
       preStart = ''
@@ -428,7 +448,8 @@ in
         ReadOnlyPaths = [
           cfg.skyscraperCacheDir
           cfg.incomingDir
-        ];
+        ]
+        ++ lib.optionals (cfg.artDir != null) [ cfg.artDir ];
       }
       // commonServiceHardening;
     };
