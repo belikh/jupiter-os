@@ -23,18 +23,25 @@
 # runner exec'ing cartridge-verify.sh's flag set (+ the aria2-metadata
 # input exclusion, D-P3e: COPY promotion, .aria2 in-flight skip, per-bucket routing, promote-unchecked when the
 # DAT is missing), a Fresh1G1R McLean DAT manager (on demand + on a
-# schedule), report ingestion into SQLite, and the zero-unmatched
-# indicator — plus torrent staging (upload a .torrent / paste a
-# magnet-URL) closing the P2 critic's acquire dead-end.
-#
+ # schedule), report ingestion into SQLite, and the zero-unmatched
+ # indicator — plus torrent staging (upload a .torrent / paste a
+ # magnet-URL) closing the P2 critic's acquire dead-end. P5 adds the
+ # metadata-engine control surface: a Skyscraper driver exec'ing
+ # cartridge-scrape.sh's three-pass flow (ScreenScraper primary /
+ # configured-source onlymissing gap-fill / Pegasus compose, offscreen,
+ # credential FILES read at call time), a serialized scrape queue with
+ # per-system + per-game actions on the /metadata page, run history with
+ # coverage deltas, and an in-process schedule carrying the old
+ # jupiter-rom-scrape daily timer's cadence.
+ #
 # LAN-only by design (like suno-web): no reverse-proxy exposure, no tunnel
 # wiring — flip <option>openFirewall</option> for trusted-LAN access.
 #
 # Secrets discipline (house rule): the *File options below take PATHS.
 # sops-nix decrypts the values at activation; the app reads files at
 # runtime and never sees inline values, and nothing secret ever enters the
-# nix store. P2 consumes the aria2 secret; P5 (ScreenScraper/TGDB)
-# consumes the rest.
+# nix store. P2 consumes the aria2 secret; P5 consumes ScreenScraper/TGDB
+# (the Skyscraper driver reads both credential FILES per scrape call).
 let
   cfg = config.jupiter.services.arcadeWebapp;
 
@@ -150,8 +157,9 @@ in
         Skyscraper resource cache root (rom-scraper.nix's cacheDir). The
         scanner counts distinct game ids in each platform's
         <literal>&lt;dir&gt;/&lt;skyPlatform&gt;/db.xml</literal> for the
-        coverage card — a presence-level heuristic; the per-type coverage
-        tracker lands with Phase 3 (P5).
+        coverage card; the P5 scrape driver WRITES the same cache (gather
+        passes + Pegasus compose, one per-system config ini at the root),
+        so it is on the unit's ReadWritePaths.
       '';
     };
 
@@ -223,6 +231,37 @@ in
         input-anchored <literal>--input-exclude
         &lt;input&gt;/**/*.torrent</literal> (aria2's infohash metadata
         companions in the download tree — see the runner's D-P3e note).
+      '';
+    };
+
+    skyscraperPackage = lib.mkOption {
+      type = lib.types.package;
+      default = pkgs.skyscraper;
+      description = ''
+        The Skyscraper package the metadata driver execs (gauntlet P5).
+        Defaults to <literal>pkgs.skyscraper</literal> — 3.18.5 is IN the
+        fleet's pinned nixpkgs (verified the same way as igir, D-P3a), so
+        no store-path workaround is needed and no new flake input is
+        added (AC-9). Scrape runs the cartridge-scrape.sh three-pass flow
+        per system (ScreenScraper primary via
+        <option>screenscraperCredsFile</option>, configured-source
+        onlymissing gap-fill via <option>tgdbApikeyFile</option>, Pegasus
+        compose) with <literal>QT_QPA_PLATFORM=offscreen</literal>, into
+        <option>skyscraperCacheDir</option>.
+      '';
+    };
+
+    scrapeIntervalHours = lib.mkOption {
+      type = lib.types.nullOr lib.types.int;
+      default = 24;
+      description = ''
+        Hours between scheduled full scrapes (every system whose games
+        tree holds ROM files; one at a time — a tick landing while a
+        manual scrape runs is skipped, never stacked). null disables the
+        schedule — the on-demand buttons on the metadata page always
+        work. The default (24) matches the retired jupiter-rom-scrape
+        daily timer's cadence; there is deliberately NO startup scrape
+        (community APIs have real quota costs).
       '';
     };
 
@@ -317,8 +356,11 @@ in
       example = lib.literalExpression "config.sops.secrets.screenscraper_creds.path";
       description = ''
         File PATH holding the ScreenScraper credentials (sops secret path,
-        not value). Consumed by the metadata-engine piece (P5); Phase 1
-        only checks presence.
+        not value). Consumed by the metadata driver (P5): read at scrape
+        call time and passed to Skyscraper's <literal>-u</literal> — the
+        value never enters a log, an error, or the store. Unset, the
+        ScreenScraper primary pass is skipped and the configured source
+        scrapes alone.
       '';
     };
 
@@ -328,8 +370,9 @@ in
       example = lib.literalExpression "config.sops.secrets.tgdb_apikey.path";
       description = ''
         File PATH holding the TheGamesDB API key (sops secret path, not
-        value). Consumed by the metadata-engine piece (P5); Phase 1 only
-        checks presence.
+        value). Consumed by the metadata driver (P5) for its default
+        gap-fill source, read at scrape call time like
+        <option>screenscraperCredsFile</option>.
       '';
     };
   };
@@ -375,6 +418,13 @@ in
         ARCADE_WEBAPP_TORRENT_DIR = cfg.torrentDir;
         ARCADE_WEBAPP_ARIA2_RPC_URL = cfg.aria2RpcUrl;
         ARCADE_WEBAPP_IGIR_BIN = lib.getExe cfg.igirPackage;
+        # P5: the metadata driver (Skyscraper) — always wired when the
+        # module is enabled, like igir. The interval maps null → "0"
+        # explicitly (the app's own default when the env is ABSENT is 24,
+        # so a bare omission could not express "disabled").
+        ARCADE_WEBAPP_SKYSCRAPER_BIN = lib.getExe cfg.skyscraperPackage;
+        ARCADE_WEBAPP_SCRAPE_INTERVAL_HOURS =
+          if cfg.scrapeIntervalHours == null then "0" else toString cfg.scrapeIntervalHours;
         ARCADE_WEBAPP_DAT_FETCH_BASE_URL = cfg.datFetchBaseUrl;
         ARCADE_WEBAPP_SCRATCH_DIR = cfg.scratchDir;
         ARCADE_WEBAPP_DB = "${cfg.stateDir}/arcade-webapp.db";
@@ -422,18 +472,21 @@ in
         # state lives in a StateDirectory; this service writes its SQLite
         # state ON-POOL per ADR-0002 D3, and a dynamic uid can't own
         # /tank/archive/retro/state). Root like suno-backup, with the same
-        # strict sandbox. Write surface as of P3 (the webapp owns verify +
-        # organize + DAT currency + torrent staging, per the plan):
-        #   - stateDir      the SQLite database
-        #   - scratchDir    igir audit reports
-        #   - datDir        fetched McLean DATs (temp+rename)
-        #   - torrentDir    stage-torrent uploads (catalogue-named)
+        # strict sandbox. Write surface as of P5 (the webapp owns verify +
+        # organize + DAT currency + torrent staging + Skyscraper
+        # scraping, per the plan):
+        #   - stateDir            the SQLite database
+        #   - scratchDir          igir audit reports
+        #   - datDir              fetched McLean DATs (temp+rename)
+        #   - torrentDir          stage-torrent uploads (catalogue-named)
+        #   - skyscraperCacheDir  the resource cache the P5 driver writes
+        #     (gather passes, per-system config ini) and the scanner reads
         #   - the three bucket roots — igir COPY-promotes verified ROMs
         #     into them (the pipeline's whole point; on europa they are
-        #     on-pool datasets, writable by design)
-        # Everything else stays read-only: the Skyscraper cache and the
-        # incoming staging tree are the DAEMON's/scanner's to write, not
-        # the verify runner's. Common stanza shared with
+        #     on-pool datasets, writable by design); the P5 Pegasus
+        #     compose additionally drops metadata/media next to ROMs (-g)
+        # Everything else stays read-only: the incoming staging tree is
+        # the daemon's to write. Common stanza shared with
         # nom-web/suno-web/suno-backup (modules/lib.nix:
         # commonServiceHardening).
         ReadWritePaths = [
@@ -441,12 +494,12 @@ in
           cfg.scratchDir
           cfg.datDir
           cfg.torrentDir
+          cfg.skyscraperCacheDir
           cfg.cartridgeRoot
           cfg.opticalRoot
           cfg.modernRoot
         ];
         ReadOnlyPaths = [
-          cfg.skyscraperCacheDir
           cfg.incomingDir
         ]
         ++ lib.optionals (cfg.artDir != null) [ cfg.artDir ];
