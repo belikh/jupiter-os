@@ -249,11 +249,30 @@ func TestScrapeArgvParity(t *testing.T) {
 	}
 }
 
+// failingEchoSkyscraper is the ADV-P5-02 leak vector as a stub: a
+// "failing Skyscraper" that echoes its OWN argv (credentials included)
+// to stderr — exactly what a real failing run does via Qt network errors,
+// which embed URLs carrying ssid/sspassword — and exits 1.
+const failingEchoSkyscraper = `#!/bin/sh
+{
+  echo 'failing-echo stub: argv was:'
+  for a in "$@"; do
+    printf '%s\n' "$a"
+  done
+} >&2
+exit 1
+`
+
 // TestScrapeSecretsNeverLogged is the package's house-critical guarantee:
 // credential FILE contents travel exec-argv-only. With the standard logger
 // captured into a buffer across a full three-pass run, neither marker may
 // appear in the log — while BOTH must be provably present in the captured
 // argv, so the guarantee can't be won vacuously by never sending them.
+//
+// The second phase runs the same driver against a FAILING skyscraper that
+// echoes its argv into stderr: every pass fails, each tail is folded into
+// an error and logged — and the markers must still never surface (the
+// [redacted] marker proves output really flowed through the fold).
 func TestScrapeSecretsNeverLogged(t *testing.T) {
 	h := newHarness(t)
 
@@ -281,6 +300,36 @@ func TestScrapeSecretsNeverLogged(t *testing.T) {
 	}
 	wantFlag(t, "pass A", invs[0], "-u", testSSCreds)
 	wantFlag(t, "pass B", invs[1], "-u", testTGDBKey)
+
+	// ADV-P5-02: the failing-echo path. Same driver shape, but the binary
+	// echoes its argv (markers included) to stderr and exits 1.
+	echo := filepath.Join(t.TempDir(), "skyscraper-failing-echo")
+	if err := os.WriteFile(echo, []byte(failingEchoSkyscraper), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	h.driver.BinPath = echo
+
+	logs.Reset()
+	serr := h.driver.ScrapeSystem(hSysKey)
+	if serr == nil {
+		t.Fatal("failing-echo ScrapeSystem = nil, want error (all passes failed)")
+	}
+
+	out = logs.String()
+	if strings.Contains(out, testSSCreds) {
+		t.Fatalf("SCREENSCRAPER CREDS LEAKED into logs on the failing-echo path:\n%s", out)
+	}
+	if strings.Contains(out, testTGDBKey) {
+		t.Fatalf("TGDB KEY LEAKED into logs on the failing-echo path:\n%s", out)
+	}
+	// Non-vacuous on this path too: the echoed output DID reach the logs
+	// (via the folded per-pass error), redacted.
+	if !strings.Contains(out, "[redacted]") {
+		t.Errorf("no [redacted] marker in logged failure tails — redaction not exercised:\n%s", out)
+	}
+	if !strings.Contains(out, "screenscraper pass failed") || !strings.Contains(out, "thegamesdb pass failed") {
+		t.Errorf("expected both credentialed passes' failures in logs:\n%s", out)
+	}
 }
 
 func TestScrapeSkipsEmptyDir(t *testing.T) {
