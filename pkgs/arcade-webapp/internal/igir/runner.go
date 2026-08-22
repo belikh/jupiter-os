@@ -385,6 +385,30 @@ func (r *Runner) processSystem(sys store.SystemRow, runID int64) SystemOutcome {
 	if err := r.st.SetSystemVerifyStates(sys.Key, rep.FoundRels); err != nil {
 		r.logf("%s: verify states: %v", sys.Key, err)
 	}
+	// P5: persist per-game checksums when this report carries hash
+	// columns (SetGameChecksums is selective, so a checksum-less report
+	// cannot erase previously ingested values). Best effort: a store hiccup
+	// must not fail an otherwise-verified run.
+	cks := make([]store.GameChecksum, 0, len(rep.FoundRels))
+	for i, rel := range rep.FoundRels {
+		crc := ""
+		if i < len(rep.FoundCRCs) {
+			crc = rep.FoundCRCs[i]
+		}
+		sha := ""
+		if i < len(rep.FoundSHAs) {
+			sha = rep.FoundSHAs[i]
+		}
+		if crc == "" && sha == "" {
+			continue
+		}
+		cks = append(cks, store.GameChecksum{RelPath: rel, CRC32: crc, SHA1: sha})
+	}
+	if len(cks) > 0 {
+		if err := r.st.SetGameChecksums(sys.Key, cks); err != nil {
+			r.logf("%s: game checksums: %v", sys.Key, err)
+		}
+	}
 	// P4 drill-down: persist this run's per-file offenders (input-side
 	// junk + output-side extras) under the run that produced them.
 	// Replace semantics clear the list on a clean re-verify (empty slice).
@@ -496,6 +520,12 @@ type Report struct {
 	ExtraFiles     []string // output-side UNUSED basenames (amber)
 	FoundPaths     []string
 	FoundRels      []string // FoundPaths relative to the igir --output dir
+	// Checksum columns from the report's FOUND rows, aligned BY INDEX with
+	// FoundPaths/FoundRels (empty string = column absent or cell empty —
+	// older igir reports carry no hash columns at all). P5 persists these
+	// into games.crc32/sha1 so the library detail page can show them.
+	FoundCRCs []string
+	FoundSHAs []string
 }
 
 // parseReportFile reads + parses the CSV at path.
@@ -539,6 +569,8 @@ func ParseReport(rd io.Reader, inputDir, outputDir string) (*Report, error) {
 	}
 	gameIdx := col("Game Name")
 	romIdx := col("ROM Files")
+	crcIdx := col("CRC32") // optional: absent in reports from older igir
+	shaIdx := col("SHA1")  // optional: ditto
 
 	underDir := func(dir, path string) bool {
 		if dir == "" || path == "" {
@@ -581,6 +613,17 @@ func ParseReport(rd io.Reader, inputDir, outputDir string) (*Report, error) {
 						rep.FoundRels = append(rep.FoundRels, filepath.Base(romPath))
 					}
 				}
+				// Optional hash cells ride the same index as the path
+				// (empty when the column/cell is missing — never an error).
+				crc, sha := "", ""
+				if crcIdx >= 0 && crcIdx < len(row) {
+					crc = strings.TrimSpace(row[crcIdx])
+				}
+				if shaIdx >= 0 && shaIdx < len(row) {
+					sha = strings.TrimSpace(row[shaIdx])
+				}
+				rep.FoundCRCs = append(rep.FoundCRCs, crc)
+				rep.FoundSHAs = append(rep.FoundSHAs, sha)
 			}
 		case "MISSING":
 			rep.Missing++
