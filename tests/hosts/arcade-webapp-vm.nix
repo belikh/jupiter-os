@@ -872,6 +872,16 @@ let
     code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$base/generate")
     [ "$code" = 403 ] || fail "POST /generate without X-HX-Request -> $code, want 403"
 
+    # The shared pipeline slot must be FREE before generating: the P5
+    # game re-scrape above can still be finishing (its stub-log marker
+    # lands mid-batch), and a busy Regenerate is an honest 409 by design.
+    # Wait on the fragment's in-flight-only markers (run-4 lesson).
+    for _ in $(seq 1 60); do
+      frag=$(curl -sf "$base/partials/metadata" || true)
+      if ! grep -q 'every 3s' <<<"$frag" && ! grep -q '>scraping' <<<"$frag"; then break; fi
+      sleep 1
+    done
+
     # First generation answers 200 synchronously (bounded local job).
     code=$(curl -s -o /dev/null -w '%{http_code}' -H "$HX" -X POST "$base/generate")
     [ "$code" = 200 ] || fail "POST /generate -> $code, want 200"
@@ -899,7 +909,9 @@ let
     # before anything was renamed).
     status=$(curl -sf "$base/partials/status" || true)
     grep -q '<td>generate</td>' <<<"$status" || fail "generate run not recorded in the audit trail"
-    grep -A2 '<td>generate</td>' <<<"$status" | grep -q 'validated' \
+    # A run row spans six template lines; the detail cell is the sixth
+    # (-A6 reaches it from the kind cell).
+    grep -A6 '<td>generate</td>' <<<"$status" | grep -q 'validated' \
       || fail "generate run detail does not show the validation verdict"
     echo "smoke: generate run recorded + strict-parser validated"
 
@@ -925,6 +937,7 @@ let
     # game, then land in a trailing "(Pending)" collection — listed but
     # NOT launchable — while the complete cue stays playable.
     head -c 1048576 /dev/zero > "${gamesRoot}/optical/segacd/Pending Planet (USA).chd"
+    curl -s -o /dev/null -H "$HX" -X POST "$base/rescan"
     ok=0
     for _ in $(seq 1 60); do
       page=$(curl -sf "$base/" || true)
