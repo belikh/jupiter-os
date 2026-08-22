@@ -5,11 +5,12 @@ The live heartbeat of the builder/critic loop driving
 every critic verdict. Screenshots (when they exist) land under
 `arcade-webapp-gauntlet/` next to this file.
 
-- **Phase:** 2-3 complete — **P1–P5 won** (blind critics) · P6 next
+- **Phase:** 2-4 building — **P1–P5 won** (blind critics) · P6 in review
+  (builder loop 1 done, critic next)
 - **Branch:** `arcade/webapp-gauntlet`
 - **ADR:** [ADR-0002 — custom, not RomM](../adr/0002-arcade-webapp-custom-vs-romm.md)
   (D1 research-confirmed 2026-08-21; D2–D4 accepted)
-- **Last update:** 2026-08-22 22:56 AEST
+- **Last update:** 2026-08-23 09:40 AEST
 
 ## Piece table
 
@@ -20,7 +21,7 @@ every critic verdict. Screenshots (when they exist) land under
 | P3 — Verify & organize | **won** — 1 loop + adversarial reconciliation | 1 (real-igir bring-up: 3 root-caused VM failures, 0 masked) + adversarial review pending | **ours** (blind; A=RomM demo DOM, B=our /verify page with a real igir run — snes/gb green, nes red-unmatched, segacd unknown) | unmatched files not drillable in-page + no run history w/ deltas (carry to P4) | commits `ca09507` (Go half) + `b1809bc`/`ce84fde` (real-igir refinements + wiring); VM smoke 27 steps green ×2 consecutive incl. REAL igir amber-extra → green zero-unmatched on a fresh promotion (log excerpt in the Phase 3 verification section); `p3-ours-verify.html`, `p3-ours-verify.png` |
 | P4 — Library browsing | **won** — 1 loop + adversarial micro-audits | 1 (2 VM bring-up failures, both root-caused: pagination + missing awk) | **ours** (blind; A=anonymized RomM gallery home DOM, B=our /library grid + detail over the fixture store w/ generated SVG posters) | detail lacks CRC/SHA1 checksum rows + persistent report link (carry to P5) | `p4-ours-library.html`, `p4-ours-detail.html`, `p4-ours-library.png`, `p4-bar-romm-gallery.html`; critic: "findability exists only in B — A's home has zero input/select elements… B puts verification state on every card" |
 | P5 — Metadata engine control | **won** — 1 loop + adversarial reconciliation (2 HIGH fixed incl cache-key drift + secret-tail redaction) | 1 (VM bring-up runs 1–2 clean after the stub argv-journal fix, per `bb465d5`; post-push runs 3–4 flaked TEST-side races → completion-gated + slot-free wait in `108beae`, final PASS fresh below) | **ours** (blind; A=anonymized RomM home DOM + its published metadata docs — deep pages don't render headless, B=our /metadata + game detail after a real igir verify) | scrape run-history/deltas not visible post-run + no hash value displayed on detail (carry to P6) | commits `c94be34` (shared cache parser/CacheID/ApplyCacheFlags) `f01bcc3` `2663eb7` `ccb057f` (/metadata UI, serialized Driver) `449cd97` (module wiring) `bb465d5` (stubbed-Skyscraper smoke) + hardening `108beae`; reconciliation `0722aa7`…`c9241fc`; VM smoke: nes desc/cover 0→100 through the real driver→store→ApplyCacheFlags stack; `p5-ours-metadata.html`, `p5-ours-detail.html`, `p5-bar-romm-metadata-docs.html`; critic: "B renders a real per-system table… A's library DOM contains zero rendered content" |
-| P6 — Launcher DB generator | pending | 0 | — | — | — |
+| P6 — Launcher DB generator | **review** | 1 (VM bring-up: 1 root-caused igir-semantics regression + 3 smoke-side defects, 0 masked; 7 VM runs) | — | — | commits `2c6c70f` `ea841ac` `a3b20c7` `91b3dc6` `61e2ec0` `6ff8479`; two consecutive clean PASSes (runs 6+7) with the P6 block: launch line + relative paths + byte-stability + strict-parser validation + hidden exclusion both ways + pending split |
 | P7 — Curation | pending | 0 | — | — | — |
 | P8 — eXo integration + sprawl retirement | pending | 0 | — | — | — |
 
@@ -289,6 +290,51 @@ stays in `review` until the blind critic.
 | `make check` | **pass** (2026-08-22) | 29 flake evals green, exit 0 |
 | `make fmt` then `make fmt-check` | **pass** (2026-08-22) | fmt rewrote nothing; gofmt -l clean across pkgs/arcade-webapp |
 
+### Phase 6 (P6 — launcher DB generator)
+
+Builder loop 1 across six commits: `2c6c70f` strict self-validation parser
+(internal/pegasus) → `ea841ac` carry-ins (enrichment columns v6, scanner
+sha1 persistence, detail-page sha1 row) → `a3b20c7` the generator
+(seed_launchable_metadata + split_pending semantics per D-P5b, atomic
+write contract, golden/byte-stability/atomicity/pending tests) →
+`91b3dc6` web wiring (POST /generate, Regenerate section + generation
+log, post-verify trigger) → `61e2ec0` the igir launcher-DB-artifact
+classification (root-caused regression, below) → `6ff8479` smoke-side
+defects. VM runs: 1 FAIL (verify-all), 1 FAIL (same, retry-hardened),
+1 FAIL (409), 1 FAIL (verdict grep), 1 FAIL (missing rescan trigger),
+then runs 6+7 = two consecutive clean PASSes.
+
+| Command | Result | Notes |
+|---|---|---|
+| `go test -count=1 ./...` (in `pkgs/arcade-webapp`) | **pass** (2026-08-23) | 13 packages green incl. new `internal/generate` (golden bytes w/ enrichment+assets+pending split+hidden exclusion, emulator-launch mapping, byte stability, completeness-sniff units .chd/.zip/optimistic, atomic-rename keeps old file on aborted generation, dry-run writes nothing, relative-path-only, unlaunchable refusal, newline sanitization, missing-dir failure) and `internal/pegasus` (valid/invalid fixtures: dup file targets, missing launch, newline-in-value, misplaced collection properties); web suite grows generate endpoint (CSRF 403 / 503 unconfigured / 200 sync / busy 409 via held slot / run recorded / fragment renders button+log rows / detail humanized never raw JSON / post-verify trigger matrix); igir suite grows TestParseReportLauncherDBArtifacts; store suite grows TestMigrateV6DatabaseStepsToV7 |
+| `nix build .#arcade-webapp` | **pass** (2026-08-23) | no vendorHash change (all P6 edits stdlib-only — D-P1e rule held); binary present at result/bin/arcade-webapp |
+| `make test-arcade-webapp` | **pass** (2026-08-23, runs 6+7 consecutive) | full smoke incl. the new P6 block: Launcher-database section + Regenerate affordance render; CSRF 403 bare POST; slot-free wait then 200 synchronous generate; served nes metadata carries `collection: Nintendo Entertainment System`, `launch: jupiter-retroarch -L fceumm "{file.path}"`, explicit game/file entries, zero absolute paths (`/var/lib/` grep); regeneration byte-stable (sha256 equal across two runs); kind=generate run recorded with "validated" detail cell; hidden exclusion BOTH directions (games.hidden seeded/cleared via sqlite3 CLI — curation UI is P7); pending split live: zeroed 1 MiB .chd scans as segacd's 2nd game, lands AFTER the marker inside `collection: Sega Mega CD & Sega CD (Pending)` / `shortname: segacd-pending` with NO second launch line in the file while the complete cue stays playable before it |
+| `make fixture-arcade` | **pass** (2026-08-23) | igir gate still green: nes/snes/gb FOUND, **0 unmatched** |
+| `make fmt` then `make fmt-check` | **pass** (2026-08-23) | clean, no diff; gofmt -l clean |
+| `make check` | **pass** (2026-08-23) | every host evals incl. arcade-webapp-vm with the extended smoke |
+
+**Bring-up failure log (each root-caused, none masked):**
+
+1. **Runs 1–2 — verify-all amber everywhere:** after the first successful
+   verify triggered a generation, EVERY subsequent system flipped to
+   'extra'. Local probe against the pinned igir 5.3.0 proved it
+   inventories ANY unknown file in both scanned dirs as output-side
+   UNUSED — metadata.pegasus.txt and media/** included (it recurses;
+   there is NO output-side exclude option). The provenance ingest was
+   mapping those to Extra (amber). Fix `61e2ec0`: classify pipeline-owned
+   launcher-DB artifacts as their own benign counter at ingest (D-P6c),
+   schema v7 column, honest pill/run-detail naming.
+2. **Run 3 — POST /generate 409:** the P5 game re-scrape still held the
+   shared pipeline slot when the smoke generated (its stub-log marker
+   lands mid-batch). Fix: slot-free wait on in-flight-only fragment
+   markers before the block (the busy 409 itself is correct behavior).
+3. **Run 4 — validation-verdict grep blind:** `grep -A2 '<td>generate</td>'`
+   cannot reach a detail cell that sits five template-lines down a run
+   row. Test-side only; widened to -A6.
+4. **Run 5 — rescan assertion without a rescan:** the pending step
+   dropped the zeroed .chd but never triggered the scan it then polled
+   for. Added the POST /rescan.
+
 ## Decision log
 
 | Decision | Verdict | Status | Evidence |
@@ -314,6 +360,10 @@ stays in `review` until the blind critic.
 | D-P3e — aria2 `.torrent` metadata companions excluded at the igir argv | the pinned aria2 1.37.0 writes an infohash-named `.torrent` into every download dir **even via `aria2.addTorrent`** (its docs claim magnet-only; disproven with a local daemon+RPC reproduction — so europa's real incoming tree will hold these after every acquire). They are daemon bookkeeping, not staged ROM content, and no DAT can ever claim a `.torrent` ROM — so `runIgir` adds the ONE deliberate deviation from cartridge-verify.sh's flag set: `--input-exclude <input>/**/*.torrent`. The report then literally carries zero unmatched rows for them (pill and CSV agree). Two load-bearing details, both proven against real igir 5.3.0: the glob must be `**` (a bare `*.torrent` does not cross separators) and must be **anchored to the absolute input dir** (igir expands exclude globs against the filesystem from the process cwd — a bare `**/*.torrent` under cwd=/ crawled the whole nix store for minutes as root, exactly the run-2/5 VM hang) | decided | `internal/igir/runner.go` runIgir; `TestArgvMatchesCartridgeVerifyScript`; local repro transcripts; VM run 6+ green with the companion deliberately left in staging |
 | D-P5a — interrupted-unit disposition: KEEP, not revert | the session that produced `bb465d5` died leaving two files modified and uncommitted (`modules/services/arcade-webapp.nix`, `tests/hosts/arcade-webapp-vm.nix`). Fork analysis before keeping: the vm-test hunk cited "run-3"/"run-4" lessons ABSENT from committed history (`bb465d5` records only runs 1–2), i.e. post-push smoke iterations — follow-on hardening, not half-applied fragments of already-committed content. Marker claims verified against the template before trusting them: `hx-trigger="every 3s"` renders only under `{{if .State.Running}}`, and `>scraping` matches only the running pill/button while the heading's `&amp; scraping` never does. The module hunk was comment-only (11 lines losing a stray leading space — zero eval impact). Verdict: finish + commit as `108beae`, then re-verify fresh (all green above) | decided | `git diff` vs `git show bb465d5 --stat`; `templates/metadata.html` lines 27/34/37; verification log §Phase 5 |
 | D-P5b — script post-steps: two ported NOW, seed_launchable_metadata + split_pending DEFERRED to P6 | cartridge-scrape.sh runs four post-steps after its pegasus compose; the P5 driver omitted all four (ADV-P5-04). Disposition: the **absolute→relative path rewrite** and the **whitespace-only-line deletion** are ported now (`2fbe635`) — both are pure correctness fixes on what Skyscraper already writes, cheap to unit-test byte-exactly, and load-bearing for kiosk launchability (absolute /tank/… paths make Pegasus on a /mnt/europa-cartridges mount drop every game + asset). **seed_launchable_metadata** (minimal launchable fallback when compose leaves an empty/launch-less file) and **split_pending** ((Pending) collection for incomplete downloads) are DEFERRED to P6, which OWNS metadata generation — porting them into the scrape driver now would mean P6 immediately rips them back out when it takes over generation. Until P6 lands, the driver warns loudly when post-compose metadata is empty or lacks "launch: " ("collection unlaunchable until P6 seeding lands") so the gap is observable in the journal rather than silently broken | decided | `internal/scrape/scrape.go` postCompose/rewriteRelPathLine + warning log; `TestPostComposeRewritesAbsolutePathsAndDropsWhitespace`; `TestPostComposeWarnsWhenUnlaunchable`; ADV-P5-04 row above |
+| D-P6a — generator write surface: metadata.pegasus.txt only, roots reused, no new options | the generator writes EXACTLY each populated system dir's `metadata.pegasus.txt` plus dot-prefixed temp siblings in the same dir (temp+fsync+rename; kiosks never see a partial file). `media/` is REFERENCED relatively (assets.<key>: media/<base>/<file>) but never written by the webapp — Skyscraper's compose owns it, exactly as today. No new module options or env vars: the three bucket-root options P1 already declares ARE the served trees, and the generator shares them (main.go wires Generator over cfg's roots). Unlaunchable systems (no core AND no emulator mapped) refuse generation loudly instead of writing an unlaunchable collection | decided | `internal/generate/generate.go` writeAtomic/targetName; `modules/services/arcade-webapp.nix` comment; `TestMissingDirFailsLoudly`, `TestSkipsEmptyAndUnlaunchable`, `TestAtomicRenameKeepsOldFileOnAbortedGeneration` |
+| D-P6b — custom collections: seam declared now, loud rejection until P7 | `generate.Options.CustomCollections` is the P7 curation seam (named member lists → first-class Pegasus collection blocks). Passing any before P7 returns an error rather than being silently ignored — a silent drop would make P7's diff preview lie about what the kiosk will see. `Generate(dryRun bool)` is exported for P7's before/after diff flow | decided | `internal/generate/generate.go` Options/GenerateOptions; generate_test.go coverage |
+| D-P6c — igir inventories launcher-DB files; classify artifacts at ingest (schema v7) | root-caused in VM runs 1–2 with a local probe against pinned igir 5.3.0: igir emits output-side UNUSED for EVERY unknown file in the scanned trees — metadata.pegasus.txt and everything under media/ (recursion verified) — because it treats scanned dirs as ROM candidates regardless of extension. There is NO output-side exclude option (only --input-exclude; help verified), so the D-P3e argv-level fix is unavailable. Per D-P3c's own provenance principle (same raw status, different meaning by context), output-side UNUSED rows for `metadata.pegasus.txt` / `media/**` are classified as benign ARTIFACTS at ingest — counted in a new Report.Artifacts, persisted via verify_results.artifacts (schema v7), and NAMED in pill titles and run detail ("N launcher-DB artifact(s) ignored") so the operator sees why the served CSV carries the rows. Without this, every verify after every generation sits amber forever — on the VM and on europa alike. Input-side metadata files stay red junk (staging should never hold them) | decided | `61e2ec0`; probe transcript in P6 work log (`/tmp/opencode/igir-probe`, rep.csv showing UNUSED for both artifact paths); TestParseReportLauncherDBArtifacts; TestMigrateV6DatabaseStepsToV7 |
+| D-P6d — triggered regeneration is best-effort; busy-window retries are operator semantics | the post-verify trigger runs best-effort in the verify goroutine (never fails the verify that caused it; skipped for failed/empty batches) and claims the shared pipeline slot like any heavy job. Consequence: an action POSTed inside the post-verify generation window is rejected ErrBusy and swallowed (P3's documented handler semantics) — acceptable for humans (click again) and made deterministic in the smoke via bounded retry loops that model exactly that. The manual Regenerate button surfaces 409 honestly instead of queueing (one-at-a-time is the R5 contract) | decided | `91b3dc6`; VM smoke verify_until helper + run-3 root-cause note above |
 
 ## Gauntlet scoreboard
 
