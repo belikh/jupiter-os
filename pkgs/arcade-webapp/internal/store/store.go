@@ -47,7 +47,12 @@ import (
 // (the P3 critic's gap — the aggregate count alone can't answer "which
 // files?"), replaced per verify run, plus the runs detail JSON feeding
 // SystemVerifyHistory's per-system sparkline.
-const SchemaVersion = 4
+//
+// v5 (P5): games gains the metadata-engine columns — has_description /
+// has_cover (best-effort Skyscraper cache-presence flags, flipped by the
+// coverage recompute after scrape runs) and crc32 / sha1 (ingested from
+// igir report rows when the report carries hash columns).
+const SchemaVersion = 5
 
 // SystemRow is one catalogue system as persisted (Extensions is a JSON
 // array string — enough for P1's rendering needs).
@@ -266,6 +271,13 @@ func (s *Store) Migrate() error {
 			}
 		}
 	}
+	if version < 5 {
+		for _, stmt := range schemaV5 {
+			if _, err := tx.Exec(stmt); err != nil {
+				return fmt.Errorf("store: migrate v5: %w", err)
+			}
+		}
+	}
 	if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, SchemaVersion)); err != nil {
 		return err
 	}
@@ -372,6 +384,16 @@ var schemaV4 = []string{
 		filename   TEXT NOT NULL
 	)`,
 	`CREATE INDEX verify_unmatched_system_run ON verify_unmatched(system_key, run_id)`,
+}
+
+// schemaV5 adds the P5 metadata-engine columns to games (see
+// SchemaVersion). All four are nullable/defaulted so pre-P5 rows read as
+// "unscraped, unchecked" — rescans never clobber state.
+var schemaV5 = []string{
+	`ALTER TABLE games ADD COLUMN has_description INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE games ADD COLUMN has_cover INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE games ADD COLUMN crc32 TEXT`,
+	`ALTER TABLE games ADD COLUMN sha1 TEXT`,
 }
 
 // Close closes the database.
@@ -523,6 +545,71 @@ func (s *Store) SetScrapeCoverage(systemKey string, cacheEntries int64) error {
 		  cache_entries=excluded.cache_entries, computed_at=excluded.computed_at`,
 		systemKey, cacheEntries, nowUTC())
 	return err
+}
+
+// ---- P5: metadata-engine columns ------------------------------------------
+
+// GameScrapeFlag is one game's best-effort Skyscraper cache-presence
+// flags (the coverage tracker's per-game drill-down data).
+type GameScrapeFlag struct {
+	RelPath     string
+	Description bool
+	Cover       bool
+}
+
+// SetSystemScrapeFlags applies one system's per-game has_description /
+// has_cover flips in a single transaction with full-replace semantics
+// (mirroring SetSystemVerifyStates): every row of the system is zeroed
+// first, then the listed positives are set. Games absent from flags end
+// up unflagged — a recompute pass always describes the WHOLE system's
+// cache state, so stale flags cannot survive a cache wipe.
+func (s *Store) SetSystemScrapeFlags(systemKey string, flags []GameScrapeFlag) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after commit
+	if _, err := tx.Exec(`UPDATE games SET has_description=0, has_cover=0 WHERE system_key=?`, systemKey); err != nil {
+		return err
+	}
+	for _, f := range flags {
+		if _, err := tx.Exec(`UPDATE games SET has_description=?, has_cover=? WHERE system_key=? AND rel_path=?`,
+			boolInt(f.Description), boolInt(f.Cover), systemKey, f.RelPath); err != nil {
+			return fmt.Errorf("store: scrape flag %s/%s: %w", systemKey, f.RelPath, err)
+		}
+	}
+	return tx.Commit()
+}
+
+// GameChecksum is one game's checksums as ingested from a checksum-bearing
+// igir report's FOUND rows.
+type GameChecksum struct {
+	RelPath string
+	CRC32   string
+	SHA1    string
+}
+
+// SetGameChecksums persists per-game crc32/sha1 in one transaction.
+// SELECTIVE update: an empty field leaves the stored value untouched
+// (CASE WHEN ? != ''), because reports without hash columns must not
+// erase checksums a previous richer report recorded, and a partial row
+// (CRC only) must not clear a known SHA1. Callers wanting a true clear
+// can pass a literal sentinel — none exists today by design.
+func (s *Store) SetGameChecksums(systemKey string, cks []GameChecksum) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after commit
+	for _, c := range cks {
+		if _, err := tx.Exec(`UPDATE games SET
+			crc32 = CASE WHEN ?1 != '' THEN ?1 ELSE crc32 END,
+			sha1  = CASE WHEN ?2 != '' THEN ?2 ELSE sha1 END
+			WHERE system_key=?3 AND rel_path=?4`, c.CRC32, c.SHA1, systemKey, c.RelPath); err != nil {
+			return fmt.Errorf("store: game checksum %s/%s: %w", systemKey, c.RelPath, err)
+		}
+	}
+	return tx.Commit()
 }
 
 // ReplaceInventory swaps the imported legacy inventory rows in one go
@@ -937,9 +1024,17 @@ type GameSummary struct {
 }
 
 // GameDetail is GetGame's shape: one game joined with its owning system.
+// The P5 fields (HasDescription/HasCover, CRC32/SHA1) carry the metadata
+// engine's best-effort cache flags and the igir-ingested checksums —
+// zero-value ("unscraped") until a scrape run / checksum-bearing report
+// fills them.
 type GameDetail struct {
 	GameSummary
-	System SystemRow
+	System         SystemRow
+	HasDescription bool
+	HasCover       bool
+	CRC32          string
+	SHA1           string
 }
 
 // GameListOpts filters/sorts/paginates ListGames. Empty strings mean "no
@@ -1134,14 +1229,18 @@ func gameOrderBy(sort string) (string, error) {
 func (s *Store) GetGame(systemKey string, id int64) (*GameDetail, error) {
 	var d GameDetail
 	var hidden int
+	var desc, cover int
 	err := s.db.QueryRow(`
 		SELECT g.id, g.system_key, g.rel_path, g.size_bytes, g.first_seen_at, g.last_seen_at,
 		       g.hidden, g.verify_state,
+		       COALESCE(g.has_description, 0), COALESCE(g.has_cover, 0),
+		       COALESCE(g.crc32, ''), COALESCE(g.sha1, ''),
 		       s.key, s.collection, s.bucket, s.core, s.emulator, s.sky_handle, s.torrent, s.extensions, s.sort_order
 		FROM games g JOIN systems s ON s.key = g.system_key
 		WHERE g.system_key = ? AND g.id = ?`, systemKey, id).
 		Scan(&d.ID, &d.SystemKey, &d.RelPath, &d.SizeBytes, &d.FirstSeenAt, &d.LastSeenAt,
 			&hidden, &d.VerifyState,
+			&desc, &cover, &d.CRC32, &d.SHA1,
 			&d.System.Key, &d.System.Collection, &d.System.Bucket, &d.System.Core,
 			&d.System.Emulator, &d.System.SkyHandle, &d.System.Torrent,
 			&d.System.Extensions, &d.System.SortOrder)
@@ -1152,6 +1251,8 @@ func (s *Store) GetGame(systemKey string, id int64) (*GameDetail, error) {
 		return nil, fmt.Errorf("store: get game %s/%d: %w", systemKey, id, err)
 	}
 	d.Hidden = hidden != 0
+	d.HasDescription = desc != 0
+	d.HasCover = cover != 0
 	return &d, nil
 }
 
