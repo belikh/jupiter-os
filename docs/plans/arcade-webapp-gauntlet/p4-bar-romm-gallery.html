@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="en" class="r-v2 r-v2-dark" data-bp="sm-and-up sm-and-down md-and-down lg-and-down" data-input="mouse"><head>
+    <meta charset="UTF-8">
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="manifest" href="/site.webmanifest">
+    <link rel="mask-icon" href="/safari-pinned-tab.svg" color="#9205f2">
+    <meta name="msapplication-TileColor" content="#9205f2">
+    <meta name="theme-color" content="#2a0145">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Library</title>
+    <script type="module" crossorigin="" src="/assets/index-KzmtBjXn.js"></script>
+    <link rel="stylesheet" crossorigin="" href="/assets/index-C3oHOI13.css">
+  <link rel="manifest" href="/manifest.webmanifest"><style type="text/css">.medium-zoom-overlay{position:fixed;top:0;right:0;bottom:0;left:0;opacity:0;transition:opacity .3s;will-change:opacity}.medium-zoom--opened .medium-zoom-overlay{cursor:pointer;cursor:zoom-out;opacity:1}.medium-zoom-image{cursor:pointer;cursor:zoom-in;transition:transform .3s cubic-bezier(.2,0,.2,1)!important}.medium-zoom-image--hidden{visibility:hidden}.medium-zoom-image--opened{position:relative;cursor:pointer;cursor:zoom-out;will-change:transform}</style><style id="vuetify-theme-stylesheet" type="text/css">:root {
+      color-scheme: dark;
+    }
+    :root {
+      --v-theme-background: 13,17,23;
+      --v-theme-background-overlay-multiplier: 1;
+      --v-theme-surface: 22,27,34;
+      --v-theme-surface-overlay-multiplier: 1;
+      --v-theme-surface-bright: 204,191,214;
+      --v-theme-surface-bright-overlay-multiplier: 2;
+      --v-theme-surface-light: 66,66,66;
+      --v-theme-surface-light-overlay-multiplier: 1;
+      --v-theme-surface-variant: 200,200,200;
+      --v-theme-surface-variant-overlay-multiplier: 2;
+      --v-theme-on-surface-variant: 0,0,0;
+      --v-theme-primary: 139,116,232;
+      --v-theme-primary-overlay-multiplier: 2;
+      --v-theme-primary-darken-1: 39,124,193;
+      --v-theme-primary-darken-1-overlay-multiplier: 2;
+      --v-theme-secondary: 158,140,214;
+      --v-theme-secondary-overlay-multiplier: 2;
+      --v-theme-secondary-darken-1: 72,169,166;
+      --v-theme-secondary-darken-1-overlay-multiplier: 2;
+      --v-theme-error: 207,102,121;
+      --v-theme-error-overlay-multiplier: 2;
+      --v-theme-info: 33,150,243;
+      --v-theme-info-overlay-multiplier: 2;
+      --v-theme-success: 76,175,80;
+      --v-theme-success-overlay-multiplier: 2;
+      --v-theme-warning: 251,140,0;
+      --v-theme-warning-overlay-multiplier: 2;
+      --v-theme-accent: 225,163,141;
+      --v-theme-accent-overlay-multiplier: 2;
+      --v-theme-toplayer: 28,35,48;
+      --v-theme-toplayer-overlay-multiplier: 1;
+      --v-theme-primary-lighten: 161,143,255;
+      --v-theme-primary-lighten-overlay-multiplier: 2;
+      --v-theme-primary-darken: 96,67,200;
+      --v-theme-primary-darken-overlay-multiplier: 1;
+      --v-theme-secondary-lighten: 235,231,250;
+      --v-theme-secondary-lighten-overlay-multiplier: 2;
+      --v-theme-secondary-darken: 122,107,180;
+      --v-theme-secondary-darken-overlay-multiplier: 1;
+      --v-theme-APP-Y-red: 218,54,51;
+      --v-theme-APP-Y-red-overlay-multiplier: 1;
+      --v-theme-APP-Y-green: 63,185,80;
+      --v-theme-APP-Y-green-overlay-multiplier: 2;
+      --v-theme-APP-Y-blue: 0,112,243;
+      --v-theme-APP-Y-blue-overlay-multiplier: 2;
+      --v-theme-APP-Y-white: 254,253,254;
+      --v-theme-APP-Y-white-overlay-multiplier: 2;
+      --v-theme-APP-Y-gray: 93,93,93;
+      --v-theme-APP-Y-gray-overlay-multiplier: 1;
+      --v-theme-APP-Y-black: 0,0,0;
+      --v-theme-APP-Y-black-overlay-multiplier: 1;
+      --v-theme-APP-Y-gold: 255,215,0;
+      --v-theme-APP-Y-gold-overlay-multiplier: 2;
+      --v-theme-on-background: 255,255,255;
+      --v-theme-on-surface: 255,255,255;
+      --v-theme-on-surface-bright: 0,0,0;
+      --v-theme-on-surface-light: 255,255,255;
+      --v-theme-on-primary: 255,255,255;
+      --v-theme-on-primary-darken-1: 255,255,255;
+      --v-theme-on-secondary: 255,255,255;
+      --v-theme-on-secondary-darken-1: 255,255,255;
+      --v-theme-on-error: 255,255,255;
+      --v-theme-on-info: 255,255,255;
+      --v-theme-on-success: 255,255,255;
+      --v-theme-on-warning: 255,255,255;
+      --v-theme-on-accent: 0,0,0;
+      --v-theme-on-toplayer: 255,255,255;
+      --v-theme-on-primary-lighten: 255,255,255;
+      --v-theme-on-primary-darken: 255,255,255;
+      --v-theme-on-secondary-lighten: 0,0,0;
+      --v-theme-on-secondary-darken: 255,255,255;
+      --v-theme-on-APP-Y-red: 255,255,255;
+      --v-theme-on-APP-Y-green: 255,255,255;
+      --v-theme-on-APP-Y-blue: 255,255,255;
+      --v-theme-on-APP-Y-white: 0,0,0;
+      --v-theme-on-APP-Y-gray: 255,255,255;
+      --v-theme-on-APP-Y-black: 255,255,255;
+      --v-theme-on-APP-Y-gold: 0,0,0;
+      --v-border-color: 255, 255, 255;
+      --v-border-opacity: 0.12;
+      --v-high-emphasis-opacity: 1;
+      --v-medium-emphasis-opacity: 0.7;
+      --v-disabled-opacity: 0.5;
+      --v-idle-opacity: 0.1;
+      --v-hover-opacity: 0.04;
+      --v-focus-opacity: 0.12;
+      --v-selected-opacity: 0.08;
+      --v-activated-opacity: 0.12;
+      --v-pressed-opacity: 0.16;
+      --v-dragged-opacity: 0.08;
+      --v-theme-kbd: 66, 66, 66;
+      --v-theme-on-kbd: 255, 255, 255;
+      --v-theme-code: 52, 52, 52;
+      --v-theme-on-code: 204, 204, 204;
+    }
+    .v-theme--light {
+      color-scheme: normal;
+      --v-theme-background: 242,244,248;
+      --v-theme-background-overlay-multiplier: 1;
+      --v-theme-surface: 255,255,255;
+      --v-theme-surface-overlay-multiplier: 1;
+      --v-theme-surface-bright: 255,255,255;
+      --v-theme-surface-bright-overlay-multiplier: 1;
+      --v-theme-surface-light: 238,238,238;
+      --v-theme-surface-light-overlay-multiplier: 1;
+      --v-theme-surface-variant: 66,66,66;
+      --v-theme-surface-variant-overlay-multiplier: 2;
+      --v-theme-on-surface-variant: 238,238,238;
+      --v-theme-primary: 55,31,105;
+      --v-theme-primary-overlay-multiplier: 2;
+      --v-theme-primary-darken-1: 31,85,146;
+      --v-theme-primary-darken-1-overlay-multiplier: 2;
+      --v-theme-secondary: 85,62,152;
+      --v-theme-secondary-overlay-multiplier: 2;
+      --v-theme-secondary-darken-1: 1,135,134;
+      --v-theme-secondary-darken-1-overlay-multiplier: 1;
+      --v-theme-error: 176,0,32;
+      --v-theme-error-overlay-multiplier: 2;
+      --v-theme-info: 33,150,243;
+      --v-theme-info-overlay-multiplier: 1;
+      --v-theme-success: 76,175,80;
+      --v-theme-success-overlay-multiplier: 1;
+      --v-theme-warning: 251,140,0;
+      --v-theme-warning-overlay-multiplier: 1;
+      --v-theme-accent: 225,163,141;
+      --v-theme-accent-overlay-multiplier: 1;
+      --v-theme-toplayer: 228,233,240;
+      --v-theme-toplayer-overlay-multiplier: 1;
+      --v-theme-primary-lighten: 120,80,230;
+      --v-theme-primary-lighten-overlay-multiplier: 2;
+      --v-theme-primary-darken: 69,39,136;
+      --v-theme-primary-darken-overlay-multiplier: 2;
+      --v-theme-secondary-lighten: 240,235,250;
+      --v-theme-secondary-lighten-overlay-multiplier: 1;
+      --v-theme-secondary-darken: 155,139,208;
+      --v-theme-secondary-darken-overlay-multiplier: 1;
+      --v-theme-APP-Y-red: 218,54,51;
+      --v-theme-APP-Y-red-overlay-multiplier: 2;
+      --v-theme-APP-Y-green: 63,185,80;
+      --v-theme-APP-Y-green-overlay-multiplier: 1;
+      --v-theme-APP-Y-blue: 0,112,243;
+      --v-theme-APP-Y-blue-overlay-multiplier: 1;
+      --v-theme-APP-Y-white: 254,253,254;
+      --v-theme-APP-Y-white-overlay-multiplier: 1;
+      --v-theme-APP-Y-gray: 93,93,93;
+      --v-theme-APP-Y-gray-overlay-multiplier: 2;
+      --v-theme-APP-Y-black: 0,0,0;
+      --v-theme-APP-Y-black-overlay-multiplier: 2;
+      --v-theme-APP-Y-gold: 255,215,0;
+      --v-theme-APP-Y-gold-overlay-multiplier: 1;
+      --v-theme-on-background: 0,0,0;
+      --v-theme-on-surface: 0,0,0;
+      --v-theme-on-surface-bright: 0,0,0;
+      --v-theme-on-surface-light: 0,0,0;
+      --v-theme-on-primary: 255,255,255;
+      --v-theme-on-primary-darken-1: 255,255,255;
+      --v-theme-on-secondary: 255,255,255;
+      --v-theme-on-secondary-darken-1: 255,255,255;
+      --v-theme-on-error: 255,255,255;
+      --v-theme-on-info: 255,255,255;
+      --v-theme-on-success: 255,255,255;
+      --v-theme-on-warning: 255,255,255;
+      --v-theme-on-accent: 0,0,0;
+      --v-theme-on-toplayer: 0,0,0;
+      --v-theme-on-primary-lighten: 255,255,255;
+      --v-theme-on-primary-darken: 255,255,255;
+      --v-theme-on-secondary-lighten: 0,0,0;
+      --v-theme-on-secondary-darken: 255,255,255;
+      --v-theme-on-APP-Y-red: 255,255,255;
+      --v-theme-on-APP-Y-green: 255,255,255;
+      --v-theme-on-APP-Y-blue: 255,255,255;
+      --v-theme-on-APP-Y-white: 0,0,0;
+      --v-theme-on-APP-Y-gray: 255,255,255;
+      --v-theme-on-APP-Y-black: 255,255,255;
+      --v-theme-on-APP-Y-gold: 0,0,0;
+      --v-border-color: 0, 0, 0;
+      --v-border-opacity: 0.12;
+      --v-high-emphasis-opacity: 0.87;
+      --v-medium-emphasis-opacity: 0.6;
+      --v-disabled-opacity: 0.38;
+      --v-idle-opacity: 0.04;
+      --v-hover-opacity: 0.04;
+      --v-focus-opacity: 0.12;
+      --v-selected-opacity: 0.08;
+      --v-activated-opacity: 0.12;
+      --v-pressed-opacity: 0.12;
+      --v-dragged-opacity: 0.08;
+      --v-theme-kbd: 238, 238, 238;
+      --v-theme-on-kbd: 0, 0, 0;
+      --v-theme-code: 245, 245, 245;
+      --v-theme-on-code: 0, 0, 0;
+    }
+    .v-theme--dark {
+      color-scheme: dark;
+      --v-theme-background: 13,17,23;
+      --v-theme-background-overlay-multiplier: 1;
+      --v-theme-surface: 22,27,34;
+      --v-theme-surface-overlay-multiplier: 1;
+      --v-theme-surface-bright: 204,191,214;
+      --v-theme-surface-bright-overlay-multiplier: 2;
+      --v-theme-surface-light: 66,66,66;
+      --v-theme-surface-light-overlay-multiplier: 1;
+      --v-theme-surface-variant: 200,200,200;
+      --v-theme-surface-variant-overlay-multiplier: 2;
+      --v-theme-on-surface-variant: 0,0,0;
+      --v-theme-primary: 139,116,232;
+      --v-theme-primary-overlay-multiplier: 2;
+      --v-theme-primary-darken-1: 39,124,193;
+      --v-theme-primary-darken-1-overlay-multiplier: 2;
+      --v-theme-secondary: 158,140,214;
+      --v-theme-secondary-overlay-multiplier: 2;
+      --v-theme-secondary-darken-1: 72,169,166;
+      --v-theme-secondary-darken-1-overlay-multiplier: 2;
+      --v-theme-error: 207,102,121;
+      --v-theme-error-overlay-multiplier: 2;
+      --v-theme-info: 33,150,243;
+      --v-theme-info-overlay-multiplier: 2;
+      --v-theme-success: 76,175,80;
+      --v-theme-success-overlay-multiplier: 2;
+      --v-theme-warning: 251,140,0;
+      --v-theme-warning-overlay-multiplier: 2;
+      --v-theme-accent: 225,163,141;
+      --v-theme-accent-overlay-multiplier: 2;
+      --v-theme-toplayer: 28,35,48;
+      --v-theme-toplayer-overlay-multiplier: 1;
+      --v-theme-primary-lighten: 161,143,255;
+      --v-theme-primary-lighten-overlay-multiplier: 2;
+      --v-theme-primary-darken: 96,67,200;
+      --v-theme-primary-darken-overlay-multiplier: 1;
+      --v-theme-secondary-lighten: 235,231,250;
+      --v-theme-secondary-lighten-overlay-multiplier: 2;
+      --v-theme-secondary-darken: 122,107,180;
+      --v-theme-secondary-darken-overlay-multiplier: 1;
+      --v-theme-APP-Y-red: 218,54,51;
+      --v-theme-APP-Y-red-overlay-multiplier: 1;
+      --v-theme-APP-Y-green: 63,185,80;
+      --v-theme-APP-Y-green-overlay-multiplier: 2;
+      --v-theme-APP-Y-blue: 0,112,243;
+      --v-theme-APP-Y-blue-overlay-multiplier: 2;
+      --v-theme-APP-Y-white: 254,253,254;
+      --v-theme-APP-Y-white-overlay-multiplier: 2;
+      --v-theme-APP-Y-gray: 93,93,93;
+      --v-theme-APP-Y-gray-overlay-multiplier: 1;
+      --v-theme-APP-Y-black: 0,0,0;
+      --v-theme-APP-Y-black-overlay-multiplier: 1;
+      --v-theme-APP-Y-gold: 255,215,0;
+      --v-theme-APP-Y-gold-overlay-multiplier: 2;
+      --v-theme-on-background: 255,255,255;
+      --v-theme-on-surface: 255,255,255;
+      --v-theme-on-surface-bright: 0,0,0;
+      --v-theme-on-surface-light: 255,255,255;
+      --v-theme-on-primary: 255,255,255;
+      --v-theme-on-primary-darken-1: 255,255,255;
+      --v-theme-on-secondary: 255,255,255;
+      --v-theme-on-secondary-darken-1: 255,255,255;
+      --v-theme-on-error: 255,255,255;
+      --v-theme-on-info: 255,255,255;
+      --v-theme-on-success: 255,255,255;
+      --v-theme-on-warning: 255,255,255;
+      --v-theme-on-accent: 0,0,0;
+      --v-theme-on-toplayer: 255,255,255;
+      --v-theme-on-primary-lighten: 255,255,255;
+      --v-theme-on-primary-darken: 255,255,255;
+      --v-theme-on-secondary-lighten: 0,0,0;
+      --v-theme-on-secondary-darken: 255,255,255;
+      --v-theme-on-APP-Y-red: 255,255,255;
+      --v-theme-on-APP-Y-green: 255,255,255;
+      --v-theme-on-APP-Y-blue: 255,255,255;
+      --v-theme-on-APP-Y-white: 0,0,0;
+      --v-theme-on-APP-Y-gray: 255,255,255;
+      --v-theme-on-APP-Y-black: 255,255,255;
+      --v-theme-on-APP-Y-gold: 0,0,0;
+      --v-border-color: 255, 255, 255;
+      --v-border-opacity: 0.12;
+      --v-high-emphasis-opacity: 1;
+      --v-medium-emphasis-opacity: 0.7;
+      --v-disabled-opacity: 0.5;
+      --v-idle-opacity: 0.1;
+      --v-hover-opacity: 0.04;
+      --v-focus-opacity: 0.12;
+      --v-selected-opacity: 0.08;
+      --v-activated-opacity: 0.12;
+      --v-pressed-opacity: 0.16;
+      --v-dragged-opacity: 0.08;
+      --v-theme-kbd: 66, 66, 66;
+      --v-theme-on-kbd: 255, 255, 255;
+      --v-theme-code: 52, 52, 52;
+      --v-theme-on-code: 204, 204, 204;
+    }
+    .bg-background {
+      --v-theme-overlay-multiplier: var(--v-theme-background-overlay-multiplier);
+      background-color: rgb(var(--v-theme-background)) !important;
+      color: rgb(var(--v-theme-on-background)) !important;
+    }
+    .bg-surface {
+      --v-theme-overlay-multiplier: var(--v-theme-surface-overlay-multiplier);
+      background-color: rgb(var(--v-theme-surface)) !important;
+      color: rgb(var(--v-theme-on-surface)) !important;
+    }
+    .bg-surface-bright {
+      --v-theme-overlay-multiplier: var(--v-theme-surface-bright-overlay-multiplier);
+      background-color: rgb(var(--v-theme-surface-bright)) !important;
+      color: rgb(var(--v-theme-on-surface-bright)) !important;
+    }
+    .bg-surface-light {
+      --v-theme-overlay-multiplier: var(--v-theme-surface-light-overlay-multiplier);
+      background-color: rgb(var(--v-theme-surface-light)) !important;
+      color: rgb(var(--v-theme-on-surface-light)) !important;
+    }
+    .bg-surface-variant {
+      --v-theme-overlay-multiplier: var(--v-theme-surface-variant-overlay-multiplier);
+      background-color: rgb(var(--v-theme-surface-variant)) !important;
+      color: rgb(var(--v-theme-on-surface-variant)) !important;
+    }
+    .bg-primary {
+      --v-theme-overlay-multiplier: var(--v-theme-primary-overlay-multiplier);
+      background-color: rgb(var(--v-theme-primary)) !important;
+      color: rgb(var(--v-theme-on-primary)) !important;
+    }
+    .bg-primary-darken-1 {
+      --v-theme-overlay-multiplier: var(--v-theme-primary-darken-1-overlay-multiplier);
+      background-color: rgb(var(--v-theme-primary-darken-1)) !important;
+      color: rgb(var(--v-theme-on-primary-darken-1)) !important;
+    }
+    .bg-secondary {
+      --v-theme-overlay-multiplier: var(--v-theme-secondary-overlay-multiplier);
+      background-color: rgb(var(--v-theme-secondary)) !important;
+      color: rgb(var(--v-theme-on-secondary)) !important;
+    }
+    .bg-secondary-darken-1 {
+      --v-theme-overlay-multiplier: var(--v-theme-secondary-darken-1-overlay-multiplier);
+      background-color: rgb(var(--v-theme-secondary-darken-1)) !important;
+      color: rgb(var(--v-theme-on-secondary-darken-1)) !important;
+    }
+    .bg-error {
+      --v-theme-overlay-multiplier: var(--v-theme-error-overlay-multiplier);
+      background-color: rgb(var(--v-theme-error)) !important;
+      color: rgb(var(--v-theme-on-error)) !important;
+    }
+    .bg-info {
+      --v-theme-overlay-multiplier: var(--v-theme-info-overlay-multiplier);
+      background-color: rgb(var(--v-theme-info)) !important;
+      color: rgb(var(--v-theme-on-info)) !important;
+    }
+    .bg-success {
+      --v-theme-overlay-multiplier: var(--v-theme-success-overlay-multiplier);
+      background-color: rgb(var(--v-theme-success)) !important;
+      color: rgb(var(--v-theme-on-success)) !important;
+    }
+    .bg-warning {
+      --v-theme-overlay-multiplier: var(--v-theme-warning-overlay-multiplier);
+      background-color: rgb(var(--v-theme-warning)) !important;
+      color: rgb(var(--v-theme-on-warning)) !important;
+    }
+    .bg-accent {
+      --v-theme-overlay-multiplier: var(--v-theme-accent-overlay-multiplier);
+      background-color: rgb(var(--v-theme-accent)) !important;
+      color: rgb(var(--v-theme-on-accent)) !important;
+    }
+    .bg-toplayer {
+      --v-theme-overlay-multiplier: var(--v-theme-toplayer-overlay-multiplier);
+      background-color: rgb(var(--v-theme-toplayer)) !important;
+      color: rgb(var(--v-theme-on-toplayer)) !important;
+    }
+    .bg-primary-lighten {
+      --v-theme-overlay-multiplier: var(--v-theme-primary-lighten-overlay-multiplier);
+      background-color: rgb(var(--v-theme-primary-lighten)) !important;
+      color: rgb(var(--v-theme-on-primary-lighten)) !important;
+    }
+    .bg-primary-darken {
+      --v-theme-overlay-multiplier: var(--v-theme-primary-darken-overlay-multiplier);
+      background-color: rgb(var(--v-theme-primary-darken)) !important;
+      color: rgb(var(--v-theme-on-primary-darken)) !important;
+    }
+    .bg-secondary-lighten {
+      --v-theme-overlay-multiplier: var(--v-theme-secondary-lighten-overlay-multiplier);
+      background-color: rgb(var(--v-theme-secondary-lighten)) !important;
+      color: rgb(var(--v-theme-on-secondary-lighten)) !important;
+    }
+    .bg-secondary-darken {
+      --v-theme-overlay-multiplier: var(--v-theme-secondary-darken-overlay-multiplier);
+      background-color: rgb(var(--v-theme-secondary-darken)) !important;
+      color: rgb(var(--v-theme-on-secondary-darken)) !important;
+    }
+    .bg-APP-Y-red {
+      --v-theme-overlay-multiplier: var(--v-theme-APP-Y-red-overlay-multiplier);
+      background-color: rgb(var(--v-theme-APP-Y-red)) !important;
+      color: rgb(var(--v-theme-on-APP-Y-red)) !important;
+    }
+    .bg-APP-Y-green {
+      --v-theme-overlay-multiplier: var(--v-theme-APP-Y-green-overlay-multiplier);
+      background-color: rgb(var(--v-theme-APP-Y-green)) !important;
+      color: rgb(var(--v-theme-on-APP-Y-green)) !important;
+    }
+    .bg-APP-Y-blue {
+      --v-theme-overlay-multiplier: var(--v-theme-APP-Y-blue-overlay-multiplier);
+      background-color: rgb(var(--v-theme-APP-Y-blue)) !important;
+      color: rgb(var(--v-theme-on-APP-Y-blue)) !important;
+    }
+    .bg-APP-Y-white {
+      --v-theme-overlay-multiplier: var(--v-theme-APP-Y-white-overlay-multiplier);
+      background-color: rgb(var(--v-theme-APP-Y-white)) !important;
+      color: rgb(var(--v-theme-on-APP-Y-white)) !important;
+    }
+    .bg-APP-Y-gray {
+      --v-theme-overlay-multiplier: var(--v-theme-APP-Y-gray-overlay-multiplier);
+      background-color: rgb(var(--v-theme-APP-Y-gray)) !important;
+      color: rgb(var(--v-theme-on-APP-Y-gray)) !important;
+    }
+    .bg-APP-Y-black {
+      --v-theme-overlay-multiplier: var(--v-theme-APP-Y-black-overlay-multiplier);
+      background-color: rgb(var(--v-theme-APP-Y-black)) !important;
+      color: rgb(var(--v-theme-on-APP-Y-black)) !important;
+    }
+    .bg-APP-Y-gold {
+      --v-theme-overlay-multiplier: var(--v-theme-APP-Y-gold-overlay-multiplier);
+      background-color: rgb(var(--v-theme-APP-Y-gold)) !important;
+      color: rgb(var(--v-theme-on-APP-Y-gold)) !important;
+    }
+    .text-background {
+      color: rgb(var(--v-theme-background)) !important;
+    }
+    .border-background {
+      --v-border-color: var(--v-theme-background);
+    }
+    .text-surface {
+      color: rgb(var(--v-theme-surface)) !important;
+    }
+    .border-surface {
+      --v-border-color: var(--v-theme-surface);
+    }
+    .text-surface-bright {
+      color: rgb(var(--v-theme-surface-bright)) !important;
+    }
+    .border-surface-bright {
+      --v-border-color: var(--v-theme-surface-bright);
+    }
+    .text-surface-light {
+      color: rgb(var(--v-theme-surface-light)) !important;
+    }
+    .border-surface-light {
+      --v-border-color: var(--v-theme-surface-light);
+    }
+    .text-surface-variant {
+      color: rgb(var(--v-theme-surface-variant)) !important;
+    }
+    .border-surface-variant {
+      --v-border-color: var(--v-theme-surface-variant);
+    }
+    .on-surface-variant {
+      color: rgb(var(--v-theme-on-surface-variant)) !important;
+    }
+    .text-primary {
+      color: rgb(var(--v-theme-primary)) !important;
+    }
+    .border-primary {
+      --v-border-color: var(--v-theme-primary);
+    }
+    .text-primary-darken-1 {
+      color: rgb(var(--v-theme-primary-darken-1)) !important;
+    }
+    .border-primary-darken-1 {
+      --v-border-color: var(--v-theme-primary-darken-1);
+    }
+    .text-secondary {
+      color: rgb(var(--v-theme-secondary)) !important;
+    }
+    .border-secondary {
+      --v-border-color: var(--v-theme-secondary);
+    }
+    .text-secondary-darken-1 {
+      color: rgb(var(--v-theme-secondary-darken-1)) !important;
+    }
+    .border-secondary-darken-1 {
+      --v-border-color: var(--v-theme-secondary-darken-1);
+    }
+    .text-error {
+      color: rgb(var(--v-theme-error)) !important;
+    }
+    .border-error {
+      --v-border-color: var(--v-theme-error);
+    }
+    .text-info {
+      color: rgb(var(--v-theme-info)) !important;
+    }
+    .border-info {
+      --v-border-color: var(--v-theme-info);
+    }
+    .text-success {
+      color: rgb(var(--v-theme-success)) !important;
+    }
+    .border-success {
+      --v-border-color: var(--v-theme-success);
+    }
+    .text-warning {
+      color: rgb(var(--v-theme-warning)) !important;
+    }
+    .border-warning {
+      --v-border-color: var(--v-theme-warning);
+    }
+    .text-accent {
+      color: rgb(var(--v-theme-accent)) !important;
+    }
+    .border-accent {
+      --v-border-color: var(--v-theme-accent);
+    }
+    .text-toplayer {
+      color: rgb(var(--v-theme-toplayer)) !important;
+    }
+    .border-toplayer {
+      --v-border-color: var(--v-theme-toplayer);
+    }
+    .text-primary-lighten {
+      color: rgb(var(--v-theme-primary-lighten)) !important;
+    }
+    .border-primary-lighten {
+      --v-border-color: var(--v-theme-primary-lighten);
+    }
+    .text-primary-darken {
+      color: rgb(var(--v-theme-primary-darken)) !important;
+    }
+    .border-primary-darken {
+      --v-border-color: var(--v-theme-primary-darken);
+    }
+    .text-secondary-lighten {
+      color: rgb(var(--v-theme-secondary-lighten)) !important;
+    }
+    .border-secondary-lighten {
+      --v-border-color: var(--v-theme-secondary-lighten);
+    }
+    .text-secondary-darken {
+      color: rgb(var(--v-theme-secondary-darken)) !important;
+    }
+    .border-secondary-darken {
+      --v-border-color: var(--v-theme-secondary-darken);
+    }
+    .text-APP-Y-red {
+      color: rgb(var(--v-theme-APP-Y-red)) !important;
+    }
+    .border-APP-Y-red {
+      --v-border-color: var(--v-theme-APP-Y-red);
+    }
+    .text-APP-Y-green {
+      color: rgb(var(--v-theme-APP-Y-green)) !important;
+    }
+    .border-APP-Y-green {
+      --v-border-color: var(--v-theme-APP-Y-green);
+    }
+    .text-APP-Y-blue {
+      color: rgb(var(--v-theme-APP-Y-blue)) !important;
+    }
+    .border-APP-Y-blue {
+      --v-border-color: var(--v-theme-APP-Y-blue);
+    }
+    .text-APP-Y-white {
+      color: rgb(var(--v-theme-APP-Y-white)) !important;
+    }
+    .border-APP-Y-white {
+      --v-border-color: var(--v-theme-APP-Y-white);
+    }
+    .text-APP-Y-gray {
+      color: rgb(var(--v-theme-APP-Y-gray)) !important;
+    }
+    .border-APP-Y-gray {
+      --v-border-color: var(--v-theme-APP-Y-gray);
+    }
+    .text-APP-Y-black {
+      color: rgb(var(--v-theme-APP-Y-black)) !important;
+    }
+    .border-APP-Y-black {
+      --v-border-color: var(--v-theme-APP-Y-black);
+    }
+    .text-APP-Y-gold {
+      color: rgb(var(--v-theme-APP-Y-gold)) !important;
+    }
+    .border-APP-Y-gold {
+      --v-border-color: var(--v-theme-APP-Y-gold);
+    }
+    .on-background {
+      color: rgb(var(--v-theme-on-background)) !important;
+    }
+    .on-surface {
+      color: rgb(var(--v-theme-on-surface)) !important;
+    }
+    .on-surface-bright {
+      color: rgb(var(--v-theme-on-surface-bright)) !important;
+    }
+    .on-surface-light {
+      color: rgb(var(--v-theme-on-surface-light)) !important;
+    }
+    .on-primary {
+      color: rgb(var(--v-theme-on-primary)) !important;
+    }
+    .on-primary-darken-1 {
+      color: rgb(var(--v-theme-on-primary-darken-1)) !important;
+    }
+    .on-secondary {
+      color: rgb(var(--v-theme-on-secondary)) !important;
+    }
+    .on-secondary-darken-1 {
+      color: rgb(var(--v-theme-on-secondary-darken-1)) !important;
+    }
+    .on-error {
+      color: rgb(var(--v-theme-on-error)) !important;
+    }
+    .on-info {
+      color: rgb(var(--v-theme-on-info)) !important;
+    }
+    .on-success {
+      color: rgb(var(--v-theme-on-success)) !important;
+    }
+    .on-warning {
+      color: rgb(var(--v-theme-on-warning)) !important;
+    }
+    .on-accent {
+      color: rgb(var(--v-theme-on-accent)) !important;
+    }
+    .on-toplayer {
+      color: rgb(var(--v-theme-on-toplayer)) !important;
+    }
+    .on-primary-lighten {
+      color: rgb(var(--v-theme-on-primary-lighten)) !important;
+    }
+    .on-primary-darken {
+      color: rgb(var(--v-theme-on-primary-darken)) !important;
+    }
+    .on-secondary-lighten {
+      color: rgb(var(--v-theme-on-secondary-lighten)) !important;
+    }
+    .on-secondary-darken {
+      color: rgb(var(--v-theme-on-secondary-darken)) !important;
+    }
+    .on-APP-Y-red {
+      color: rgb(var(--v-theme-on-APP-Y-red)) !important;
+    }
+    .on-APP-Y-green {
+      color: rgb(var(--v-theme-on-APP-Y-green)) !important;
+    }
+    .on-APP-Y-blue {
+      color: rgb(var(--v-theme-on-APP-Y-blue)) !important;
+    }
+    .on-APP-Y-white {
+      color: rgb(var(--v-theme-on-APP-Y-white)) !important;
+    }
+    .on-APP-Y-gray {
+      color: rgb(var(--v-theme-on-APP-Y-gray)) !important;
+    }
+    .on-APP-Y-black {
+      color: rgb(var(--v-theme-on-APP-Y-black)) !important;
+    }
+    .on-APP-Y-gold {
+      color: rgb(var(--v-theme-on-APP-Y-gold)) !important;
+    }
+</style><link rel="modulepreload" as="script" crossorigin="" href="/assets/BackendStatusBanner-BAg4x7RB.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/lib-BMMR2RZu.js"><link rel="stylesheet" crossorigin="" href="/assets/lib-DwMguwho.css"><link rel="stylesheet" crossorigin="" href="/assets/BackendStatusBanner-_cKQqLx1.css"><link rel="modulepreload" as="script" crossorigin="" href="/assets/Main-FJO3Fj4t.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/PlatformIcon-CNZRaJ0H.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/flashpoint-BYmBEo2S.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/libretro-D0f-9NGh.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/browser-CMB99y2s.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/semver-C3OBEsAV.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/Base-DFRlej4_.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/miximage-ClYDeoQL.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/VListItem-CeZEqtre.js"><link rel="stylesheet" crossorigin="" href="/assets/VListItem-DccFkrV8.css"><link rel="modulepreload" as="script" crossorigin="" href="/assets/VCol-CZf9S8Ln.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/VRow-9iJxsCKo.js"><link rel="stylesheet" crossorigin="" href="/assets/VRow-Dd63ltWq.css"><link rel="modulepreload" as="script" crossorigin="" href="/assets/VHover-jOrdKMFW.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/VSkeletonLoader-Bv9t2K7c.js"><link rel="stylesheet" crossorigin="" href="/assets/VSkeletonLoader-BXt5jKLm.css"><link rel="modulepreload" as="script" crossorigin="" href="/assets/MissingFromFSIcon-B15s-Vt6.js"><link rel="stylesheet" crossorigin="" href="/assets/MissingFromFSIcon-BZ4ikF_u.css"><link rel="modulepreload" as="script" crossorigin="" href="/assets/RDialog-o5LqH5sp.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/VDialog-DbH0ZbrN.js"><link rel="stylesheet" crossorigin="" href="/assets/VDialog-BK-qqu9O.css"><link rel="modulepreload" as="script" crossorigin="" href="/assets/VEmptyState-B2KXchcR.js"><link rel="stylesheet" crossorigin="" href="/assets/VEmptyState-BfH0r5Tl.css"><link rel="modulepreload" as="script" crossorigin="" href="/assets/VToolbar-KosTWrm0.js"><link rel="stylesheet" crossorigin="" href="/assets/VToolbar-Bug5u8YR.css"><link rel="modulepreload" as="script" crossorigin="" href="/assets/RIsotipo-DmtVfW1m.js"><link rel="stylesheet" crossorigin="" href="/assets/RIsotipo-B5k4sJ1y.css"><link rel="modulepreload" as="script" crossorigin="" href="/assets/download-nCLoxPQ7.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/VList-DhoS9dNU.js"><link rel="stylesheet" crossorigin="" href="/assets/VList-B7SdKPdT.css"><link rel="modulepreload" as="script" crossorigin="" href="/assets/useFavoriteToggle-DCFCDlnm.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/useGameAnimation-B3sDMjA-.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/Skeleton-DyGONXCJ.js"><link rel="stylesheet" crossorigin="" href="/assets/Skeleton-Dc_UjzjP.css"><link rel="modulepreload" as="script" crossorigin="" href="/assets/covers-OZstqUHP.js"><link rel="stylesheet" crossorigin="" href="/assets/Base-CbibSUdk.css"><link rel="modulepreload" as="script" crossorigin="" href="/assets/VAppBar-BTfSf6S3.js"><link rel="stylesheet" crossorigin="" href="/assets/VAppBar-6mGKDcJ2.css"><link rel="modulepreload" as="script" crossorigin="" href="/assets/VCheckboxBtn-eKtoBr2D.js"><link rel="stylesheet" crossorigin="" href="/assets/VCheckboxBtn-CgKG0efP.css"><link rel="modulepreload" as="script" crossorigin="" href="/assets/VDataTableVirtual-XObnvmLz.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/VDataTable-DGzKygvg.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/VSelect-mUBAjGWW.js"><link rel="stylesheet" crossorigin="" href="/assets/VSelect-YOYgv_cE.css"><link rel="stylesheet" crossorigin="" href="/assets/VDataTable-Dx9BO9Ht.css"><link rel="modulepreload" as="script" crossorigin="" href="/assets/VExpansionPanels-atSikf5Y.js"><link rel="stylesheet" crossorigin="" href="/assets/VExpansionPanels-Brwft-8t.css"><link rel="modulepreload" as="script" crossorigin="" href="/assets/VFileInput-DKnns1jA.js"><link rel="stylesheet" crossorigin="" href="/assets/VFileInput-BG9pNfzF.css"><link rel="modulepreload" as="script" crossorigin="" href="/assets/VForm-C-FiCJ2C.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/Notification-BcA0riPj.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/notifications-ZIvLcp1E.js"><link rel="stylesheet" crossorigin="" href="/assets/Notification-B2poPorW.css"><link rel="modulepreload" as="script" crossorigin="" href="/assets/VSwitch-C8Op9RBN.js"><link rel="stylesheet" crossorigin="" href="/assets/VSwitch-Djsboh2v.css"><link rel="modulepreload" as="script" crossorigin="" href="/assets/MultiNoteManager-DyACz17t.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/RSection-BiWMZ9sA.js"><link rel="stylesheet" crossorigin="" href="/assets/MultiNoteManager-BBpN1tP1.css"><link rel="stylesheet" crossorigin="" href="/assets/style-Cyv6lCwm.css"><link rel="modulepreload" as="script" crossorigin="" href="/assets/Card-B8U8PEGh.js"><link rel="stylesheet" crossorigin="" href="/assets/Card-B44QEE2h.css"><link rel="modulepreload" as="script" crossorigin="" href="/assets/RAvatar-_Isk6Tag.js"><link rel="stylesheet" crossorigin="" href="/assets/RAvatar-BCZLxqQI.css"><link rel="modulepreload" as="script" crossorigin="" href="/assets/AssetCard-sSH9HIAL.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/ListItem-DrhXmV0a.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/RAvatar-DJa7bRMH.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/ListItem-B2Sq_yJm.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/config-8y2Lt4Gv.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/identity-D09QMFRH.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/save-f_yxeemf.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/state-D44c4iYA.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/scanning-DR0lCIIy.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/users-CYPuZExr.js"><link rel="stylesheet" crossorigin="" href="/assets/Main-BpEuvQ29.css"><link rel="modulepreload" as="script" crossorigin="" href="/assets/AppLayout-Dlv6AoE4.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/streaming-De9QgYgD.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/useCan-BFMIKBSq.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/permissions-CXYZBZmO.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/useSocketEvent-B98_b17M.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/playing-DlIEVCpp.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/collectionCovers-DZ6l8BWw.js"><link rel="stylesheet" crossorigin="" href="/assets/collectionCovers-h5C5gUgt.css"><link rel="modulepreload" as="script" crossorigin="" href="/assets/GameCard-D3nb4MzX.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/useUISettings-Csi0ZS3I.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/CoverArtPip-C0e9t0__.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/GameCover-Mzr0-mQP.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/useViewTransition-BPSvYCkA.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/useWebpSupport-CKvuHbDa.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/covers-CydFsyf-.js"><link rel="stylesheet" crossorigin="" href="/assets/GameCover-DjdmZ5eE.css"><link rel="stylesheet" crossorigin="" href="/assets/CoverArtPip-BSwNiOeA.css"><link rel="modulepreload" as="script" crossorigin="" href="/assets/useBackgroundArt-D3O4IcLB.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/useClipboard-CWNX06fu.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/useSnackbar-BOXZYcdL.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/useConfirm-CXhH53ap.js"><link rel="stylesheet" crossorigin="" href="/assets/GameCard-Ct9_-JL4.css"><link rel="modulepreload" as="script" crossorigin="" href="/assets/VolumeControl-Bss8UzdM.js"><link rel="stylesheet" crossorigin="" href="/assets/VolumeControl-BWE3tYH5.css"><link rel="modulepreload" as="script" crossorigin="" href="/assets/useCrtMode-CHbv_Ken.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/useDebugMode-C8I2VMV7.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/usePlatformIconCache-CvQ2RX2U.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/useThemeMode-CbflqfSJ.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/smartCollectionCriteria-DIBV0o7Z.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/userAvatar-CncW-n4d.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/validation-Bh4BcaJa.js"><link rel="stylesheet" crossorigin="" href="/assets/AppLayout-CzERJQzz.css"><link rel="modulepreload" as="script" crossorigin="" href="/assets/Home-BBSdl4ym.js"><link rel="stylesheet" crossorigin="" href="/assets/Home-BPt34C8U.css"><link rel="modulepreload" as="script" crossorigin="" href="/assets/Home-DhhPUJ8e.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/setup-CDK8-TjG.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/CollectionTile-BOq0JUBg.js"><link rel="stylesheet" crossorigin="" href="/assets/CollectionTile-LtGEJJQQ.css"><link rel="modulepreload" as="script" crossorigin="" href="/assets/GameCard-Dvl8i6aS.js"><link rel="stylesheet" crossorigin="" href="/assets/GameCard-uH8jmoJi.css"><link rel="modulepreload" as="script" crossorigin="" href="/assets/widgets-PZn7zqBo.js"><link rel="stylesheet" crossorigin="" href="/assets/widgets-BTksWO2L.css"><link rel="modulepreload" as="script" crossorigin="" href="/assets/PlatformTile-Djo7xiKp.js"><link rel="stylesheet" crossorigin="" href="/assets/PlatformTile-qkSLQGyP.css"><link rel="modulepreload" as="script" crossorigin="" href="/assets/useGridNav-DMTPT1gn.js"><link rel="modulepreload" as="script" crossorigin="" href="/assets/focusRestoration-DKGuVswe.js"><link rel="stylesheet" crossorigin="" href="/assets/Home-CAS6rR28.css"></head>
+
+  <body>
+    <div id="app" data-v-app=""><div data-v-141c0e46="" class="v-application v-theme--dark v-layout v-layout--full-height v-locale--is-ltr" id="application"><div class="v-application__wrap"><main data-v-141c0e46="" class="v-main no-transition" id="main" style="--v-layout-left: 0px; --v-layout-right: 0px; --v-layout-top: 0px; --v-layout-bottom: 0px;"><div data-v-16fbb841="" data-v-141c0e46="" class="r-v2-shell"><div data-v-145ab1e8="" class="r-v2-bg"><div data-v-145ab1e8="" class="r-v2-bg__layer r-v2-bg__layer--a r-v2-bg__layer--active"></div><div data-v-145ab1e8="" class="r-v2-bg__layer r-v2-bg__layer--b"></div></div><div data-v-145ab1e8="" class="r-v2-bg__overlay"></div><div data-v-16fbb841="" class="r-v2-shell__app"><header data-v-e35f8a7e="" data-v-16fbb841="" class="r-v2-nav-bar"><nav data-v-e35f8a7e="" class="r-v2-nav"><a data-v-e35f8a7e="" aria-current="page" href="/" class="router-link-active router-link-exact-active r-v2-nav__logo" aria-label="Home"><div data-v-30e235cb="" data-v-e35f8a7e="" aria-hidden="true" class="r-v2-nav__logo-mark r-img r-img--loaded" style="width: 32px;"><img data-v-30e235cb="" src="/assets/isotipo.svg" alt="APP-Y isotipo" class="r-img__image" decoding="async"><!----><!----><!----></div><div data-v-30e235cb="" data-v-e35f8a7e="" aria-hidden="true" class="r-v2-nav__logo-word r-img r-img--loaded" style="width: 70px;"><img data-v-30e235cb="" src="/assets/logotipo.svg" alt="APP-Y logotipo" class="r-img__image" decoding="async"><!----><!----><!----></div></a><div data-v-e35f8a7e="" class="r-v2-nav__center"><div data-v-1b4ab79d="" data-v-e35f8a7e="" class="r-slider-btn-group r-slider-btn-group--tab r-slider-btn-group--horizontal r-slider-btn-group--size-small" aria-label="Primary navigation" role="group"><span data-v-1b4ab79d="" class="r-slider-btn-group__indicator r-slider-btn-group__indicator--animate" aria-hidden="true" style="transform: translateX(0px); width: 0px; opacity: 1;"></span><a data-v-1b4ab79d="" aria-current="page" href="/" class="router-link-active router-link-exact-active r-slider-btn-group__btn r-slider-btn-group__btn--active" aria-label="Home"><!----><i data-v-7f0054f0="" data-v-1b4ab79d="" class="r-icon mdi mdi-home-outline" aria-hidden="true" style="font-size: 16px; width: 16px; height: 16px;"></i><span data-v-1b4ab79d="" class="r-slider-btn-group__label">Home</span><!----></a><a data-v-1b4ab79d="" href="/platforms" class="r-slider-btn-group__btn" aria-label="Platforms"><!----><i data-v-7f0054f0="" data-v-1b4ab79d="" class="r-icon mdi mdi-controller" aria-hidden="true" style="font-size: 16px; width: 16px; height: 16px;"></i><span data-v-1b4ab79d="" class="r-slider-btn-group__label">Platforms</span><!----></a><a data-v-1b4ab79d="" href="/collections" class="r-slider-btn-group__btn" aria-label="Collections"><!----><i data-v-7f0054f0="" data-v-1b4ab79d="" class="r-icon mdi mdi-bookmark-outline" aria-hidden="true" style="font-size: 16px; width: 16px; height: 16px;"></i><span data-v-1b4ab79d="" class="r-slider-btn-group__label">Collections</span><!----></a><a data-v-1b4ab79d="" href="/search" class="r-slider-btn-group__btn" aria-label="Search"><!----><i data-v-7f0054f0="" data-v-1b4ab79d="" class="r-icon mdi mdi-magnify" aria-hidden="true" style="font-size: 16px; width: 16px; height: 16px;"></i><span data-v-1b4ab79d="" class="r-slider-btn-group__label">Search</span><!----></a></div></div><div data-v-e35f8a7e="" class="r-v2-nav__right"><!----><span data-v-e56ddb39="" class="r-menu" style="display: contents;"><button data-v-3dd9d902="" data-v-e7197a39="" aria-haspopup="menu" aria-expanded="false" class="r-v2-user r-btn r-btn--text r-btn--default" data-user-menu-trigger="" aria-label="Account menu for kiosk" type="button" style="border-radius: 8px;"><span data-v-3dd9d902="" class="r-btn__ripples" aria-hidden="true"></span><!----><span data-v-3dd9d902="" class="r-btn__content"><!----><!----><span data-v-3dd9d902="" class="r-btn__label"><div data-v-c34c9071="" data-v-e7197a39="" class="r-avatar r-avatar--flat" style="width: 30px; height: 30px; border-radius: 50%; font-size: 12px;"><img data-v-c34c9071="" src="/assets/default/user.svg" alt="" class="r-avatar__image"></div><span data-v-e7197a39="" class="r-v2-user__name">kiosk</span><i data-v-7f0054f0="" data-v-e7197a39="" class="r-v2-user__chevron r-chevron-toggle r-icon mdi mdi-chevron-down" aria-hidden="true" style="font-size: 16px; width: 16px; height: 16px;"></i></span><!----></span><!----></button></span></div></nav></header><main data-v-16fbb841="" id="r-v2-main" class="r-v2-shell__main" tabindex="-1"><div data-v-5a931ea5="" data-v-16fbb841="" class="r-v2-home"><div data-v-407685ae="" data-v-5a931ea5="" class="r-v2-widget-bar"><div data-v-5e3db129="" data-v-9c3714a6="" data-v-407685ae="" class="r-v2-widget" style="width: 220px;"><div data-v-5e3db129="" class="r-v2-widget__title">Random pick</div><!----><div data-v-9c3714a6="" class="r-v2-widget-pick__body"><div data-v-e66d8287="" data-v-9c3714a6="" class="game-cover r-v2-widget-pick__cover" style="--r-cover-ratio: 0.7323529411764705;"><img data-v-e66d8287="" src="/assets/APP-Y/resources/roms/2/49/cover/big.png?ts=2026-07-05 12:17:24" alt="T:ME Salvo" class="game-cover__img" loading="lazy" decoding="async" style="object-fit: cover;"><!----><!----></div><div data-v-9c3714a6="" class="r-v2-widget-pick__info"><div data-v-9c3714a6="" class="r-v2-widget-pick__name">T:ME Salvo</div><div data-v-9c3714a6="" class="r-v2-widget-pick__actions"><button data-v-3dd9d902="" data-v-9c3714a6="" type="button" class="r-btn r-btn--outlined r-btn--x-small r-btn--surface" style="border-radius: 8px;"><span data-v-3dd9d902="" class="r-btn__ripples" aria-hidden="true"></span><!----><span data-v-3dd9d902="" class="r-btn__content"><span data-v-3dd9d902="" class="r-btn__prepend"><i data-v-7f0054f0="" data-v-3dd9d902="" class="r-icon mdi mdi-open-in-new" aria-hidden="true"></i></span><!----><span data-v-3dd9d902="" class="r-btn__label">Open</span><!----></span><!----></button><button data-v-3dd9d902="" data-v-9c3714a6="" aria-label="Reroll" type="button" class="r-btn r-btn--outlined r-btn--x-small r-btn--icon r-btn--surface" style="border-radius: 8px;"><span data-v-3dd9d902="" class="r-btn__ripples" aria-hidden="true"></span><!----><span data-v-3dd9d902="" class="r-btn__content"><!----><i data-v-7f0054f0="" data-v-3dd9d902="" class="r-btn__icon r-icon mdi mdi-dice-multiple-outline" aria-hidden="true"></i><!----><!----></span><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button></div></div></div></div><div data-v-5e3db129="" data-v-f7cabeef="" data-v-407685ae="" class="r-v2-widget" style="width: 220px;"><div data-v-5e3db129="" class="r-v2-widget__title">Library stats</div><!----><div data-v-f7cabeef="" class="r-v2-widget-lib__stats"><div data-v-f7cabeef="" class="r-v2-widget-lib__row"><span data-v-f7cabeef="" class="r-v2-widget-lib__label"><i data-v-7f0054f0="" data-v-f7cabeef="" class="r-icon mdi mdi-disc" aria-hidden="true" style="font-size: 12px; width: 12px; height: 12px;"></i> Games</span><span data-v-f7cabeef="" class="r-v2-widget-lib__val">167</span></div><div data-v-f7cabeef="" class="r-v2-widget-lib__row"><span data-v-f7cabeef="" class="r-v2-widget-lib__label"><i data-v-7f0054f0="" data-v-f7cabeef="" class="r-icon mdi mdi-controller" aria-hidden="true" style="font-size: 12px; width: 12px; height: 12px;"></i> Platforms</span><span data-v-f7cabeef="" class="r-v2-widget-lib__val">13</span></div><div data-v-f7cabeef="" class="r-v2-widget-lib__row"><span data-v-f7cabeef="" class="r-v2-widget-lib__label"><i data-v-7f0054f0="" data-v-f7cabeef="" class="r-icon mdi mdi-heart" aria-hidden="true" style="font-size: 12px; width: 12px; height: 12px;"></i> Favourites</span><span data-v-f7cabeef="" class="r-v2-widget-lib__val">0</span></div></div></div></div><!----><section data-v-399c2318="" data-v-5a931ea5="" class="card-row"><header data-v-399c2318="" class="card-row__head" style="gap: 10px; --card-row-title-size: 14.5px; --card-row-title-weight: var(--r-font-weight-semibold); --card-row-icon-opacity: 0.6;"><span data-v-399c2318="" class="card-row__icon"><i data-v-7f0054f0="" data-v-5a931ea5="" class="r-icon mdi mdi-shimmer" aria-hidden="true" style="font-size: 20px; width: 20px; height: 20px;"></i></span><h2 data-v-399c2318="" class="card-row__title">Recently added</h2><span data-v-46ad5df1="" data-v-399c2318="" class="r-tag r-tag--neutral r-tag--x-small"><!----><!----><span data-v-46ad5df1="" class="r-tag__text">15</span><!----></span></header><div data-v-399c2318="" class="card-row__wrap"><!----><button data-v-3dd9d902="" data-v-399c2318="" class="card-row__arrow card-row__arrow--right r-btn r-btn--translucent r-btn--default r-btn--icon" aria-label="Scroll right" type="button" style="border-radius: 8px;"><span data-v-3dd9d902="" class="r-btn__ripples" aria-hidden="true"></span><!----><span data-v-3dd9d902="" class="r-btn__content"><!----><i data-v-7f0054f0="" data-v-3dd9d902="" class="r-btn__icon r-icon mdi mdi-chevron-right" aria-hidden="true"></i><!----><!----></span><!----></button><div data-v-399c2318="" class="card-row__track r-v2-scroll-hidden" style="gap: 12px;"><a data-v-2cc96d8d="" data-v-5a931ea5="" href="/rom/187" class="r-v2-card-fade r-gc r-gc--has-platform-icon" aria-label="xyWords" data-rom-id="187" data-focus-key="rom-187" style="--card-fade-i: 0; --r-cover-ratio: 0.6666666666666666;"><div data-v-e66d8287="" data-v-2cc96d8d="" class="game-cover r-gc__art" style="--r-cover-ratio: 1.3333333333333333;"><img data-v-e66d8287="" src="/assets/APP-Y/resources/roms/14/187/cover/big.png?ts=2026-07-05 12:59:53" alt="xyWords" class="game-cover__img" loading="lazy" decoding="async" style="object-fit: cover;"><!----><!----><!----><!----><!----><!----><button data-v-3dd9d902="" data-v-2cc96d8d="" class="r-gc__platform-icon r-btn r-btn--text r-btn--x-small" aria-label="Browse DOS" type="button" style="border-radius: 8px;"><span data-v-3dd9d902="" class="r-btn__ripples" aria-hidden="true"></span><!----><span data-v-3dd9d902="" class="r-btn__content"><!----><!----><span data-v-3dd9d902="" class="r-btn__label"><span data-v-e1c948d2="" data-v-2cc96d8d="" class="r-platform-icon" style="width: 22px; height: 22px;"><img data-v-e1c948d2="" src="/assets/platforms/dos.ico" alt="DOS" class="r-platform-icon__img"><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></span></span><!----></span><!----></button><span data-v-e56ddb39="" class="r-menu" style="display: contents;"><button data-v-09011d30="" aria-haspopup="menu" aria-expanded="false" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-status r-v2-game-btn--orient-vertical" aria-label="Set status"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-progress-helper" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button></span><!----><div data-v-2cc96d8d="" class="r-gc__overlay"><div data-v-2cc96d8d="" class="r-gc__overlay-center"><!----></div><div data-v-2cc96d8d="" class="r-gc__overlay-bottom"><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-download" aria-label="Download"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-download-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-collection" aria-label="Manage collections"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-bookmark-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-favorite" aria-label="Favourite"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-heart-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><span data-v-e56ddb39="" class="r-menu" style="display: contents;"><button data-v-09011d30="" aria-haspopup="menu" aria-expanded="false" type="button" class="r-v2-game-btn r-v2-game-btn--action-more r-v2-game-btn--small r-v2-game-btn--glass" aria-label="More actions"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-dots-horizontal" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button></span></div></div></div><div data-v-2cc96d8d="" class="r-gc__label">xyWords</div><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></a><a data-v-2cc96d8d="" data-v-5a931ea5="" href="/rom/186" class="r-v2-card-fade r-gc r-gc--has-platform-icon" aria-label="Xump 2: Back to Space" data-rom-id="186" data-focus-key="rom-186" style="--card-fade-i: 1; --r-cover-ratio: 0.6666666666666666;"><div data-v-e66d8287="" data-v-2cc96d8d="" class="game-cover r-gc__art" style="--r-cover-ratio: 0.7038777908343126;"><img data-v-e66d8287="" src="/assets/APP-Y/resources/roms/13/186/cover/big.png?ts=2026-07-05 12:57:44" alt="Xump 2: Back to Space" class="game-cover__img" loading="lazy" decoding="async" style="object-fit: cover;"><!----><!----><!----><!----><!----><!----><button data-v-3dd9d902="" data-v-2cc96d8d="" class="r-gc__platform-icon r-btn r-btn--text r-btn--x-small" aria-label="Browse Sega Mega Drive/Genesis" type="button" style="border-radius: 8px;"><span data-v-3dd9d902="" class="r-btn__ripples" aria-hidden="true"></span><!----><span data-v-3dd9d902="" class="r-btn__content"><!----><!----><span data-v-3dd9d902="" class="r-btn__label"><span data-v-e1c948d2="" data-v-2cc96d8d="" class="r-platform-icon" style="width: 22px; height: 22px;"><img data-v-e1c948d2="" src="/assets/platforms/genesis.svg" alt="Sega Mega Drive/Genesis" class="r-platform-icon__img"><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></span></span><!----></span><!----></button><span data-v-e56ddb39="" class="r-menu" style="display: contents;"><button data-v-09011d30="" aria-haspopup="menu" aria-expanded="false" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-status r-v2-game-btn--orient-vertical" aria-label="Set status"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-progress-helper" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button></span><!----><div data-v-2cc96d8d="" class="r-gc__overlay"><div data-v-2cc96d8d="" class="r-gc__overlay-center"><!----></div><div data-v-2cc96d8d="" class="r-gc__overlay-bottom"><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-download" aria-label="Download"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-download-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-collection" aria-label="Manage collections"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-bookmark-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-favorite" aria-label="Favourite"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-heart-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><span data-v-e56ddb39="" class="r-menu" style="display: contents;"><button data-v-09011d30="" aria-haspopup="menu" aria-expanded="false" type="button" class="r-v2-game-btn r-v2-game-btn--action-more r-v2-game-btn--small r-v2-game-btn--glass" aria-label="More actions"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-dots-horizontal" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button></span></div></div></div><div data-v-2cc96d8d="" class="r-gc__label">Xump 2: Back to Space</div><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></a><a data-v-2cc96d8d="" data-v-5a931ea5="" href="/rom/185" class="r-v2-card-fade r-gc r-gc--has-platform-icon" aria-label="Star Chaser" data-rom-id="185" data-focus-key="rom-185" style="--card-fade-i: 2; --r-cover-ratio: 0.6666666666666666;"><div data-v-e66d8287="" data-v-2cc96d8d="" class="game-cover r-gc__art" style="--r-cover-ratio: 0.7102941176470589;"><img data-v-e66d8287="" src="/assets/APP-Y/resources/roms/13/185/cover/big.png?ts=2026-07-05 12:20:03" alt="Star Chaser" class="game-cover__img" loading="lazy" decoding="async" style="object-fit: cover;"><!----><!----><!----><!----><!----><!----><button data-v-3dd9d902="" data-v-2cc96d8d="" class="r-gc__platform-icon r-btn r-btn--text r-btn--x-small" aria-label="Browse Sega Mega Drive/Genesis" type="button" style="border-radius: 8px;"><span data-v-3dd9d902="" class="r-btn__ripples" aria-hidden="true"></span><!----><span data-v-3dd9d902="" class="r-btn__content"><!----><!----><span data-v-3dd9d902="" class="r-btn__label"><span data-v-e1c948d2="" data-v-2cc96d8d="" class="r-platform-icon" style="width: 22px; height: 22px;"><img data-v-e1c948d2="" src="/assets/platforms/genesis.svg" alt="Sega Mega Drive/Genesis" class="r-platform-icon__img"><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></span></span><!----></span><!----></button><span data-v-e56ddb39="" class="r-menu" style="display: contents;"><button data-v-09011d30="" aria-haspopup="menu" aria-expanded="false" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-status r-v2-game-btn--orient-vertical" aria-label="Set status"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-progress-helper" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button></span><!----><div data-v-2cc96d8d="" class="r-gc__overlay"><div data-v-2cc96d8d="" class="r-gc__overlay-center"><!----></div><div data-v-2cc96d8d="" class="r-gc__overlay-bottom"><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-download" aria-label="Download"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-download-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-collection" aria-label="Manage collections"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-bookmark-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-favorite" aria-label="Favourite"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-heart-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><span data-v-e56ddb39="" class="r-menu" style="display: contents;"><button data-v-09011d30="" aria-haspopup="menu" aria-expanded="false" type="button" class="r-v2-game-btn r-v2-game-btn--action-more r-v2-game-btn--small r-v2-game-btn--glass" aria-label="More actions"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-dots-horizontal" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button></span></div></div></div><div data-v-2cc96d8d="" class="r-gc__label">Star Chaser</div><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></a><a data-v-2cc96d8d="" data-v-5a931ea5="" href="/rom/184" class="r-v2-card-fade r-gc r-gc--has-platform-icon" aria-label="Rick Dangerous" data-rom-id="184" data-focus-key="rom-184" style="--card-fade-i: 3; --r-cover-ratio: 0.6666666666666666;"><div data-v-e66d8287="" data-v-2cc96d8d="" class="game-cover r-gc__art" style="--r-cover-ratio: 0.711764705882353;"><img data-v-e66d8287="" src="/assets/APP-Y/resources/roms/13/184/cover/big.png?ts=2026-07-05 12:20:05" alt="Rick Dangerous" class="game-cover__img" loading="lazy" decoding="async" style="object-fit: cover;"><!----><!----><!----><!----><!----><!----><button data-v-3dd9d902="" data-v-2cc96d8d="" class="r-gc__platform-icon r-btn r-btn--text r-btn--x-small" aria-label="Browse Sega Mega Drive/Genesis" type="button" style="border-radius: 8px;"><span data-v-3dd9d902="" class="r-btn__ripples" aria-hidden="true"></span><!----><span data-v-3dd9d902="" class="r-btn__content"><!----><!----><span data-v-3dd9d902="" class="r-btn__label"><span data-v-e1c948d2="" data-v-2cc96d8d="" class="r-platform-icon" style="width: 22px; height: 22px;"><img data-v-e1c948d2="" src="/assets/platforms/genesis.svg" alt="Sega Mega Drive/Genesis" class="r-platform-icon__img"><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></span></span><!----></span><!----></button><span data-v-e56ddb39="" class="r-menu" style="display: contents;"><button data-v-09011d30="" aria-haspopup="menu" aria-expanded="false" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-status r-v2-game-btn--orient-vertical" aria-label="Set status"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-progress-helper" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button></span><!----><div data-v-2cc96d8d="" class="r-gc__overlay"><div data-v-2cc96d8d="" class="r-gc__overlay-center"><!----></div><div data-v-2cc96d8d="" class="r-gc__overlay-bottom"><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-download" aria-label="Download"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-download-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-collection" aria-label="Manage collections"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-bookmark-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-favorite" aria-label="Favourite"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-heart-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><span data-v-e56ddb39="" class="r-menu" style="display: contents;"><button data-v-09011d30="" aria-haspopup="menu" aria-expanded="false" type="button" class="r-v2-game-btn r-v2-game-btn--action-more r-v2-game-btn--small r-v2-game-btn--glass" aria-label="More actions"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-dots-horizontal" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button></span></div></div></div><div data-v-2cc96d8d="" class="r-gc__label">Rick Dangerous</div><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></a><a data-v-2cc96d8d="" data-v-5a931ea5="" href="/rom/183" class="r-v2-card-fade r-gc r-gc--has-platform-icon" aria-label="Project MD" data-rom-id="183" data-focus-key="rom-183" style="--card-fade-i: 4; --r-cover-ratio: 0.6666666666666666;"><div data-v-e66d8287="" data-v-2cc96d8d="" class="game-cover r-gc__art" style="--r-cover-ratio: 1.4285714285714286;"><img data-v-e66d8287="" src="/assets/APP-Y/resources/roms/13/183/cover/big.png?ts=2026-07-05 12:19:49" alt="Project MD" class="game-cover__img" loading="lazy" decoding="async" style="object-fit: cover;"><!----><!----><!----><!----><!----><!----><button data-v-3dd9d902="" data-v-2cc96d8d="" class="r-gc__platform-icon r-btn r-btn--text r-btn--x-small" aria-label="Browse Sega Mega Drive/Genesis" type="button" style="border-radius: 8px;"><span data-v-3dd9d902="" class="r-btn__ripples" aria-hidden="true"></span><!----><span data-v-3dd9d902="" class="r-btn__content"><!----><!----><span data-v-3dd9d902="" class="r-btn__label"><span data-v-e1c948d2="" data-v-2cc96d8d="" class="r-platform-icon" style="width: 22px; height: 22px;"><img data-v-e1c948d2="" src="/assets/platforms/genesis.svg" alt="Sega Mega Drive/Genesis" class="r-platform-icon__img"><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></span></span><!----></span><!----></button><span data-v-e56ddb39="" class="r-menu" style="display: contents;"><button data-v-09011d30="" aria-haspopup="menu" aria-expanded="false" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-status r-v2-game-btn--orient-vertical" aria-label="Set status"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-progress-helper" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button></span><!----><div data-v-2cc96d8d="" class="r-gc__overlay"><div data-v-2cc96d8d="" class="r-gc__overlay-center"><!----></div><div data-v-2cc96d8d="" class="r-gc__overlay-bottom"><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-download" aria-label="Download"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-download-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-collection" aria-label="Manage collections"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-bookmark-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-favorite" aria-label="Favourite"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-heart-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><span data-v-e56ddb39="" class="r-menu" style="display: contents;"><button data-v-09011d30="" aria-haspopup="menu" aria-expanded="false" type="button" class="r-v2-game-btn r-v2-game-btn--action-more r-v2-game-btn--small r-v2-game-btn--glass" aria-label="More actions"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-dots-horizontal" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button></span></div></div></div><div data-v-2cc96d8d="" class="r-gc__label">Project MD</div><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></a><a data-v-2cc96d8d="" data-v-5a931ea5="" href="/rom/182" class="r-v2-card-fade r-gc r-gc--has-platform-icon" aria-label="Phantom Gear" data-rom-id="182" data-focus-key="rom-182" style="--card-fade-i: 5; --r-cover-ratio: 0.6666666666666666;"><div data-v-e66d8287="" data-v-2cc96d8d="" class="game-cover r-gc__art" style="--r-cover-ratio: 0.75;"><img data-v-e66d8287="" src="/assets/APP-Y/resources/roms/13/182/cover/big.png?ts=2026-07-05 12:19:32" alt="Phantom Gear" class="game-cover__img" loading="lazy" decoding="async" style="object-fit: cover;"><!----><!----><!----><!----><!----><!----><button data-v-3dd9d902="" data-v-2cc96d8d="" class="r-gc__platform-icon r-btn r-btn--text r-btn--x-small" aria-label="Browse Sega Mega Drive/Genesis" type="button" style="border-radius: 8px;"><span data-v-3dd9d902="" class="r-btn__ripples" aria-hidden="true"></span><!----><span data-v-3dd9d902="" class="r-btn__content"><!----><!----><span data-v-3dd9d902="" class="r-btn__label"><span data-v-e1c948d2="" data-v-2cc96d8d="" class="r-platform-icon" style="width: 22px; height: 22px;"><img data-v-e1c948d2="" src="/assets/platforms/genesis.svg" alt="Sega Mega Drive/Genesis" class="r-platform-icon__img"><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></span></span><!----></span><!----></button><span data-v-e56ddb39="" class="r-menu" style="display: contents;"><button data-v-09011d30="" aria-haspopup="menu" aria-expanded="false" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-status r-v2-game-btn--orient-vertical" aria-label="Set status"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-progress-helper" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button></span><!----><div data-v-2cc96d8d="" class="r-gc__overlay"><div data-v-2cc96d8d="" class="r-gc__overlay-center"><!----></div><div data-v-2cc96d8d="" class="r-gc__overlay-bottom"><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-download" aria-label="Download"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-download-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-collection" aria-label="Manage collections"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-bookmark-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-favorite" aria-label="Favourite"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-heart-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><span data-v-e56ddb39="" class="r-menu" style="display: contents;"><button data-v-09011d30="" aria-haspopup="menu" aria-expanded="false" type="button" class="r-v2-game-btn r-v2-game-btn--action-more r-v2-game-btn--small r-v2-game-btn--glass" aria-label="More actions"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-dots-horizontal" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button></span></div></div></div><div data-v-2cc96d8d="" class="r-gc__label">Phantom Gear</div><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></a><a data-v-2cc96d8d="" data-v-5a931ea5="" href="/rom/181" class="r-v2-card-fade r-gc r-gc--has-platform-icon" aria-label="Papi Commando" data-rom-id="181" data-focus-key="rom-181" style="--card-fade-i: 6; --r-cover-ratio: 0.6666666666666666;"><div data-v-e66d8287="" data-v-2cc96d8d="" class="game-cover r-gc__art" style="--r-cover-ratio: 0.711764705882353;"><img data-v-e66d8287="" src="/assets/APP-Y/resources/roms/13/181/cover/big.png?ts=2026-07-05 12:19:48" alt="Papi Commando" class="game-cover__img" loading="lazy" decoding="async" style="object-fit: cover;"><!----><!----><!----><!----><!----><!----><button data-v-3dd9d902="" data-v-2cc96d8d="" class="r-gc__platform-icon r-btn r-btn--text r-btn--x-small" aria-label="Browse Sega Mega Drive/Genesis" type="button" style="border-radius: 8px;"><span data-v-3dd9d902="" class="r-btn__ripples" aria-hidden="true"></span><!----><span data-v-3dd9d902="" class="r-btn__content"><!----><!----><span data-v-3dd9d902="" class="r-btn__label"><span data-v-e1c948d2="" data-v-2cc96d8d="" class="r-platform-icon" style="width: 22px; height: 22px;"><img data-v-e1c948d2="" src="/assets/platforms/genesis.svg" alt="Sega Mega Drive/Genesis" class="r-platform-icon__img"><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></span></span><!----></span><!----></button><span data-v-e56ddb39="" class="r-menu" style="display: contents;"><button data-v-09011d30="" aria-haspopup="menu" aria-expanded="false" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-status r-v2-game-btn--orient-vertical" aria-label="Set status"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-progress-helper" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button></span><!----><div data-v-2cc96d8d="" class="r-gc__overlay"><div data-v-2cc96d8d="" class="r-gc__overlay-center"><!----></div><div data-v-2cc96d8d="" class="r-gc__overlay-bottom"><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-download" aria-label="Download"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-download-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-collection" aria-label="Manage collections"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-bookmark-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-favorite" aria-label="Favourite"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-heart-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><span data-v-e56ddb39="" class="r-menu" style="display: contents;"><button data-v-09011d30="" aria-haspopup="menu" aria-expanded="false" type="button" class="r-v2-game-btn r-v2-game-btn--action-more r-v2-game-btn--small r-v2-game-btn--glass" aria-label="More actions"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-dots-horizontal" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button></span></div></div></div><div data-v-2cc96d8d="" class="r-gc__label">Papi Commando</div><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></a><a data-v-2cc96d8d="" data-v-5a931ea5="" href="/rom/180" class="r-v2-card-fade r-gc r-gc--has-platform-icon" aria-label="Omega Blast" data-rom-id="180" data-focus-key="rom-180" style="--card-fade-i: 7; --r-cover-ratio: 0.6666666666666666;"><div data-v-e66d8287="" data-v-2cc96d8d="" class="game-cover r-gc__art" style="--r-cover-ratio: 0.75;"><img data-v-e66d8287="" src="/assets/APP-Y/resources/roms/13/180/cover/big.png?ts=2026-07-05 12:19:46" alt="Omega Blast" class="game-cover__img" loading="lazy" decoding="async" style="object-fit: cover;"><!----><!----><!----><!----><!----><!----><button data-v-3dd9d902="" data-v-2cc96d8d="" class="r-gc__platform-icon r-btn r-btn--text r-btn--x-small" aria-label="Browse Sega Mega Drive/Genesis" type="button" style="border-radius: 8px;"><span data-v-3dd9d902="" class="r-btn__ripples" aria-hidden="true"></span><!----><span data-v-3dd9d902="" class="r-btn__content"><!----><!----><span data-v-3dd9d902="" class="r-btn__label"><span data-v-e1c948d2="" data-v-2cc96d8d="" class="r-platform-icon" style="width: 22px; height: 22px;"><img data-v-e1c948d2="" src="/assets/platforms/genesis.svg" alt="Sega Mega Drive/Genesis" class="r-platform-icon__img"><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></span></span><!----></span><!----></button><span data-v-e56ddb39="" class="r-menu" style="display: contents;"><button data-v-09011d30="" aria-haspopup="menu" aria-expanded="false" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-status r-v2-game-btn--orient-vertical" aria-label="Set status"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-progress-helper" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button></span><!----><div data-v-2cc96d8d="" class="r-gc__overlay"><div data-v-2cc96d8d="" class="r-gc__overlay-center"><!----></div><div data-v-2cc96d8d="" class="r-gc__overlay-bottom"><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-download" aria-label="Download"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-download-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-collection" aria-label="Manage collections"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-bookmark-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-favorite" aria-label="Favourite"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-heart-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><span data-v-e56ddb39="" class="r-menu" style="display: contents;"><button data-v-09011d30="" aria-haspopup="menu" aria-expanded="false" type="button" class="r-v2-game-btn r-v2-game-btn--action-more r-v2-game-btn--small r-v2-game-btn--glass" aria-label="More actions"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-dots-horizontal" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button></span></div></div></div><div data-v-2cc96d8d="" class="r-gc__label">Omega Blast</div><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></a><a data-v-2cc96d8d="" data-v-5a931ea5="" href="/rom/179" class="r-v2-card-fade r-gc r-gc--has-platform-icon" aria-label="Old Towers" data-rom-id="179" data-focus-key="rom-179" style="--card-fade-i: 8; --r-cover-ratio: 0.6666666666666666;"><div data-v-e66d8287="" data-v-2cc96d8d="" class="game-cover r-gc__art" style="--r-cover-ratio: 0.711764705882353;"><img data-v-e66d8287="" src="/assets/APP-Y/resources/roms/13/179/cover/big.png?ts=2026-07-05 12:19:45" alt="Old Towers" class="game-cover__img" loading="lazy" decoding="async" style="object-fit: cover;"><!----><!----><!----><!----><!----><!----><button data-v-3dd9d902="" data-v-2cc96d8d="" class="r-gc__platform-icon r-btn r-btn--text r-btn--x-small" aria-label="Browse Sega Mega Drive/Genesis" type="button" style="border-radius: 8px;"><span data-v-3dd9d902="" class="r-btn__ripples" aria-hidden="true"></span><!----><span data-v-3dd9d902="" class="r-btn__content"><!----><!----><span data-v-3dd9d902="" class="r-btn__label"><span data-v-e1c948d2="" data-v-2cc96d8d="" class="r-platform-icon" style="width: 22px; height: 22px;"><img data-v-e1c948d2="" src="/assets/platforms/genesis.svg" alt="Sega Mega Drive/Genesis" class="r-platform-icon__img"><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></span></span><!----></span><!----></button><span data-v-e56ddb39="" class="r-menu" style="display: contents;"><button data-v-09011d30="" aria-haspopup="menu" aria-expanded="false" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-status r-v2-game-btn--orient-vertical" aria-label="Set status"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-progress-helper" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button></span><!----><div data-v-2cc96d8d="" class="r-gc__overlay"><div data-v-2cc96d8d="" class="r-gc__overlay-center"><!----></div><div data-v-2cc96d8d="" class="r-gc__overlay-bottom"><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-download" aria-label="Download"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-download-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-collection" aria-label="Manage collections"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-bookmark-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-favorite" aria-label="Favourite"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-heart-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><span data-v-e56ddb39="" class="r-menu" style="display: contents;"><button data-v-09011d30="" aria-haspopup="menu" aria-expanded="false" type="button" class="r-v2-game-btn r-v2-game-btn--action-more r-v2-game-btn--small r-v2-game-btn--glass" aria-label="More actions"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-dots-horizontal" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button></span></div></div></div><div data-v-2cc96d8d="" class="r-gc__label">Old Towers</div><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></a><a data-v-2cc96d8d="" data-v-5a931ea5="" href="/rom/178" class="r-v2-card-fade r-gc r-gc--has-platform-icon" aria-label="Ixion" data-rom-id="178" data-focus-key="rom-178" style="--card-fade-i: 9; --r-cover-ratio: 0.6666666666666666;"><div data-v-e66d8287="" data-v-2cc96d8d="" class="game-cover r-gc__art" style="--r-cover-ratio: 0.75;"><img data-v-e66d8287="" src="/assets/APP-Y/resources/roms/13/178/cover/big.jpg?ts=2026-07-05 12:53:37" alt="Ixion" class="game-cover__img" loading="lazy" decoding="async" style="object-fit: cover;"><!----><!----><!----><!----><!----><!----><button data-v-3dd9d902="" data-v-2cc96d8d="" class="r-gc__platform-icon r-btn r-btn--text r-btn--x-small" aria-label="Browse Sega Mega Drive/Genesis" type="button" style="border-radius: 8px;"><span data-v-3dd9d902="" class="r-btn__ripples" aria-hidden="true"></span><!----><span data-v-3dd9d902="" class="r-btn__content"><!----><!----><span data-v-3dd9d902="" class="r-btn__label"><span data-v-e1c948d2="" data-v-2cc96d8d="" class="r-platform-icon" style="width: 22px; height: 22px;"><img data-v-e1c948d2="" src="/assets/platforms/genesis.svg" alt="Sega Mega Drive/Genesis" class="r-platform-icon__img"><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></span></span><!----></span><!----></button><span data-v-e56ddb39="" class="r-menu" style="display: contents;"><button data-v-09011d30="" aria-haspopup="menu" aria-expanded="false" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-status r-v2-game-btn--orient-vertical" aria-label="Set status"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-progress-helper" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button></span><!----><div data-v-2cc96d8d="" class="r-gc__overlay"><div data-v-2cc96d8d="" class="r-gc__overlay-center"><!----></div><div data-v-2cc96d8d="" class="r-gc__overlay-bottom"><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-download" aria-label="Download"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-download-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-collection" aria-label="Manage collections"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-bookmark-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-favorite" aria-label="Favourite"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-heart-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><span data-v-e56ddb39="" class="r-menu" style="display: contents;"><button data-v-09011d30="" aria-haspopup="menu" aria-expanded="false" type="button" class="r-v2-game-btn r-v2-game-btn--action-more r-v2-game-btn--small r-v2-game-btn--glass" aria-label="More actions"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-dots-horizontal" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button></span></div></div></div><div data-v-2cc96d8d="" class="r-gc__label">Ixion</div><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></a><a data-v-2cc96d8d="" data-v-5a931ea5="" href="/rom/177" class="r-v2-card-fade r-gc r-gc--has-platform-icon" aria-label="Irena Genesis Metal Fury" data-rom-id="177" data-focus-key="rom-177" style="--card-fade-i: 10; --r-cover-ratio: 0.6666666666666666;"><div data-v-e66d8287="" data-v-2cc96d8d="" class="game-cover r-gc__art" style="--r-cover-ratio: 0.711764705882353;"><img data-v-e66d8287="" src="/assets/APP-Y/resources/roms/13/177/cover/big.png?ts=2026-07-05 12:19:24" alt="Irena Genesis Metal Fury" class="game-cover__img" loading="lazy" decoding="async" style="object-fit: cover;"><!----><!----><!----><!----><!----><!----><button data-v-3dd9d902="" data-v-2cc96d8d="" class="r-gc__platform-icon r-btn r-btn--text r-btn--x-small" aria-label="Browse Sega Mega Drive/Genesis" type="button" style="border-radius: 8px;"><span data-v-3dd9d902="" class="r-btn__ripples" aria-hidden="true"></span><!----><span data-v-3dd9d902="" class="r-btn__content"><!----><!----><span data-v-3dd9d902="" class="r-btn__label"><span data-v-e1c948d2="" data-v-2cc96d8d="" class="r-platform-icon" style="width: 22px; height: 22px;"><img data-v-e1c948d2="" src="/assets/platforms/genesis.svg" alt="Sega Mega Drive/Genesis" class="r-platform-icon__img"><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></span></span><!----></span><!----></button><span data-v-e56ddb39="" class="r-menu" style="display: contents;"><button data-v-09011d30="" aria-haspopup="menu" aria-expanded="false" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-status r-v2-game-btn--orient-vertical" aria-label="Set status"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-progress-helper" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button></span><!----><div data-v-2cc96d8d="" class="r-gc__overlay"><div data-v-2cc96d8d="" class="r-gc__overlay-center"><!----></div><div data-v-2cc96d8d="" class="r-gc__overlay-bottom"><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-download" aria-label="Download"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-download-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-collection" aria-label="Manage collections"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-bookmark-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-favorite" aria-label="Favourite"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-heart-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><span data-v-e56ddb39="" class="r-menu" style="display: contents;"><button data-v-09011d30="" aria-haspopup="menu" aria-expanded="false" type="button" class="r-v2-game-btn r-v2-game-btn--action-more r-v2-game-btn--small r-v2-game-btn--glass" aria-label="More actions"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-dots-horizontal" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button></span></div></div></div><div data-v-2cc96d8d="" class="r-gc__label">Irena Genesis Metal Fury</div><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></a><a data-v-2cc96d8d="" data-v-5a931ea5="" href="/rom/176" class="r-v2-card-fade r-gc r-gc--has-platform-icon" aria-label="IK+ Deluxe" data-rom-id="176" data-focus-key="rom-176" style="--card-fade-i: 11; --r-cover-ratio: 0.6666666666666666;"><div data-v-e66d8287="" data-v-2cc96d8d="" class="game-cover r-gc__art" style="--r-cover-ratio: 1.4285714285714286;"><img data-v-e66d8287="" src="/assets/APP-Y/resources/roms/13/176/cover/big.png?ts=2026-07-05 12:54:22" alt="IK+ Deluxe" class="game-cover__img" loading="lazy" decoding="async" style="object-fit: cover;"><!----><!----><!----><!----><!----><!----><button data-v-3dd9d902="" data-v-2cc96d8d="" class="r-gc__platform-icon r-btn r-btn--text r-btn--x-small" aria-label="Browse Sega Mega Drive/Genesis" type="button" style="border-radius: 8px;"><span data-v-3dd9d902="" class="r-btn__ripples" aria-hidden="true"></span><!----><span data-v-3dd9d902="" class="r-btn__content"><!----><!----><span data-v-3dd9d902="" class="r-btn__label"><span data-v-e1c948d2="" data-v-2cc96d8d="" class="r-platform-icon" style="width: 22px; height: 22px;"><img data-v-e1c948d2="" src="/assets/platforms/genesis.svg" alt="Sega Mega Drive/Genesis" class="r-platform-icon__img"><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></span></span><!----></span><!----></button><span data-v-e56ddb39="" class="r-menu" style="display: contents;"><button data-v-09011d30="" aria-haspopup="menu" aria-expanded="false" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-status r-v2-game-btn--orient-vertical" aria-label="Set status"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-progress-helper" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button></span><!----><div data-v-2cc96d8d="" class="r-gc__overlay"><div data-v-2cc96d8d="" class="r-gc__overlay-center"><!----></div><div data-v-2cc96d8d="" class="r-gc__overlay-bottom"><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-download" aria-label="Download"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-download-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-collection" aria-label="Manage collections"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-bookmark-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-favorite" aria-label="Favourite"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-heart-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><span data-v-e56ddb39="" class="r-menu" style="display: contents;"><button data-v-09011d30="" aria-haspopup="menu" aria-expanded="false" type="button" class="r-v2-game-btn r-v2-game-btn--action-more r-v2-game-btn--small r-v2-game-btn--glass" aria-label="More actions"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-dots-horizontal" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button></span></div></div></div><div data-v-2cc96d8d="" class="r-gc__label">IK+ Deluxe</div><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></a><a data-v-2cc96d8d="" data-v-5a931ea5="" href="/rom/175" class="r-v2-card-fade r-gc r-gc--has-platform-icon" aria-label="Cave Story" data-rom-id="175" data-focus-key="rom-175" style="--card-fade-i: 12; --r-cover-ratio: 0.6666666666666666;"><div data-v-e66d8287="" data-v-2cc96d8d="" class="game-cover r-gc__art" style="--r-cover-ratio: 0.75;"><img data-v-e66d8287="" src="/assets/APP-Y/resources/roms/13/175/cover/big.png?ts=2026-07-05 12:19:39" alt="Cave Story" class="game-cover__img" loading="lazy" decoding="async" style="object-fit: cover;"><!----><!----><!----><!----><!----><!----><button data-v-3dd9d902="" data-v-2cc96d8d="" class="r-gc__platform-icon r-btn r-btn--text r-btn--x-small" aria-label="Browse Sega Mega Drive/Genesis" type="button" style="border-radius: 8px;"><span data-v-3dd9d902="" class="r-btn__ripples" aria-hidden="true"></span><!----><span data-v-3dd9d902="" class="r-btn__content"><!----><!----><span data-v-3dd9d902="" class="r-btn__label"><span data-v-e1c948d2="" data-v-2cc96d8d="" class="r-platform-icon" style="width: 22px; height: 22px;"><img data-v-e1c948d2="" src="/assets/platforms/genesis.svg" alt="Sega Mega Drive/Genesis" class="r-platform-icon__img"><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></span></span><!----></span><!----></button><span data-v-e56ddb39="" class="r-menu" style="display: contents;"><button data-v-09011d30="" aria-haspopup="menu" aria-expanded="false" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-status r-v2-game-btn--orient-vertical" aria-label="Set status"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-progress-helper" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button></span><!----><div data-v-2cc96d8d="" class="r-gc__overlay"><div data-v-2cc96d8d="" class="r-gc__overlay-center"><!----></div><div data-v-2cc96d8d="" class="r-gc__overlay-bottom"><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-download" aria-label="Download"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-download-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-collection" aria-label="Manage collections"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-bookmark-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-favorite" aria-label="Favourite"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-heart-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><span data-v-e56ddb39="" class="r-menu" style="display: contents;"><button data-v-09011d30="" aria-haspopup="menu" aria-expanded="false" type="button" class="r-v2-game-btn r-v2-game-btn--action-more r-v2-game-btn--small r-v2-game-btn--glass" aria-label="More actions"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-dots-horizontal" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button></span></div></div></div><div data-v-2cc96d8d="" class="r-gc__label">Cave Story</div><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></a><a data-v-2cc96d8d="" data-v-5a931ea5="" href="/rom/174" class="r-v2-card-fade r-gc r-gc--has-platform-icon" aria-label="Zero Tolerance" data-rom-id="174" data-focus-key="rom-174" style="--card-fade-i: 13; --r-cover-ratio: 0.6666666666666666;"><div data-v-e66d8287="" data-v-2cc96d8d="" class="game-cover r-gc__art" style="--r-cover-ratio: 0.711764705882353;"><img data-v-e66d8287="" src="/assets/APP-Y/resources/roms/13/174/cover/big.png?ts=2026-07-05 12:19:39" alt="Zero Tolerance" class="game-cover__img" loading="lazy" decoding="async" style="object-fit: cover;"><!----><!----><!----><!----><!----><!----><button data-v-3dd9d902="" data-v-2cc96d8d="" class="r-gc__platform-icon r-btn r-btn--text r-btn--x-small" aria-label="Browse Sega Mega Drive/Genesis" type="button" style="border-radius: 8px;"><span data-v-3dd9d902="" class="r-btn__ripples" aria-hidden="true"></span><!----><span data-v-3dd9d902="" class="r-btn__content"><!----><!----><span data-v-3dd9d902="" class="r-btn__label"><span data-v-e1c948d2="" data-v-2cc96d8d="" class="r-platform-icon" style="width: 22px; height: 22px;"><img data-v-e1c948d2="" src="/assets/platforms/genesis.svg" alt="Sega Mega Drive/Genesis" class="r-platform-icon__img"><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></span></span><!----></span><!----></button><span data-v-e56ddb39="" class="r-menu" style="display: contents;"><button data-v-09011d30="" aria-haspopup="menu" aria-expanded="false" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-status r-v2-game-btn--orient-vertical" aria-label="Set status"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-progress-helper" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button></span><!----><div data-v-2cc96d8d="" class="r-gc__overlay"><div data-v-2cc96d8d="" class="r-gc__overlay-center"><!----></div><div data-v-2cc96d8d="" class="r-gc__overlay-bottom"><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-download" aria-label="Download"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-download-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-collection" aria-label="Manage collections"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-bookmark-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-favorite" aria-label="Favourite"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-heart-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><span data-v-e56ddb39="" class="r-menu" style="display: contents;"><button data-v-09011d30="" aria-haspopup="menu" aria-expanded="false" type="button" class="r-v2-game-btn r-v2-game-btn--action-more r-v2-game-btn--small r-v2-game-btn--glass" aria-label="More actions"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-dots-horizontal" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button></span></div></div></div><div data-v-2cc96d8d="" class="r-gc__label">Zero Tolerance</div><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></a><a data-v-2cc96d8d="" data-v-5a931ea5="" href="/rom/173" class="r-v2-card-fade r-gc r-gc--has-platform-icon" aria-label="Tanglewood" data-rom-id="173" data-focus-key="rom-173" style="--card-fade-i: 14; --r-cover-ratio: 0.6666666666666666;"><div data-v-e66d8287="" data-v-2cc96d8d="" class="game-cover r-gc__art" style="--r-cover-ratio: 0.711764705882353;"><img data-v-e66d8287="" src="/assets/APP-Y/resources/roms/13/173/cover/big.png?ts=2026-07-05 12:19:35" alt="Tanglewood" class="game-cover__img" loading="lazy" decoding="async" style="object-fit: cover;"><!----><!----><!----><!----><!----><!----><button data-v-3dd9d902="" data-v-2cc96d8d="" class="r-gc__platform-icon r-btn r-btn--text r-btn--x-small" aria-label="Browse Sega Mega Drive/Genesis" type="button" style="border-radius: 8px;"><span data-v-3dd9d902="" class="r-btn__ripples" aria-hidden="true"></span><!----><span data-v-3dd9d902="" class="r-btn__content"><!----><!----><span data-v-3dd9d902="" class="r-btn__label"><span data-v-e1c948d2="" data-v-2cc96d8d="" class="r-platform-icon" style="width: 22px; height: 22px;"><img data-v-e1c948d2="" src="/assets/platforms/genesis.svg" alt="Sega Mega Drive/Genesis" class="r-platform-icon__img"><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></span></span><!----></span><!----></button><span data-v-e56ddb39="" class="r-menu" style="display: contents;"><button data-v-09011d30="" aria-haspopup="menu" aria-expanded="false" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-status r-v2-game-btn--orient-vertical" aria-label="Set status"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-progress-helper" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button></span><!----><div data-v-2cc96d8d="" class="r-gc__overlay"><div data-v-2cc96d8d="" class="r-gc__overlay-center"><!----></div><div data-v-2cc96d8d="" class="r-gc__overlay-bottom"><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-download" aria-label="Download"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-download-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-collection" aria-label="Manage collections"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-bookmark-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><button data-v-09011d30="" data-v-2cc96d8d="" type="button" class="r-v2-game-btn r-v2-game-btn--small r-v2-game-btn--glass r-v2-game-btn--action-favorite" aria-label="Favourite"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-heart-outline" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button><span data-v-e56ddb39="" class="r-menu" style="display: contents;"><button data-v-09011d30="" aria-haspopup="menu" aria-expanded="false" type="button" class="r-v2-game-btn r-v2-game-btn--action-more r-v2-game-btn--small r-v2-game-btn--glass" aria-label="More actions"><i data-v-7f0054f0="" data-v-09011d30="" class="r-icon mdi mdi-dots-horizontal" aria-hidden="true"></i><!----><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></button></span></div></div></div><div data-v-2cc96d8d="" class="r-gc__label">Tanglewood</div><span data-v-1ff777e9="" class="r-tooltip-anchor" aria-hidden="true" style="display: none;"></span></a></div></div></section><section data-v-399c2318="" data-v-5a931ea5="" class="card-row"><header data-v-399c2318="" class="card-row__head" style="gap: 10px; --card-row-title-size: 14.5px; --card-row-title-weight: var(--r-font-weight-semibold); --card-row-icon-opacity: 0.6;"><span data-v-399c2318="" class="card-row__icon"><i data-v-7f0054f0="" data-v-5a931ea5="" class="r-icon mdi mdi-controller" aria-hidden="true" style="font-size: 20px; width: 20px; height: 20px;"></i></span><h2 data-v-399c2318="" class="card-row__title">Platforms</h2><span data-v-46ad5df1="" data-v-399c2318="" class="r-tag r-tag--neutral r-tag--x-small"><!----><!----><span data-v-46ad5df1="" class="r-tag__text">13</span><!----></span></header><div data-v-399c2318="" class="card-row__wrap"><!----><button data-v-3dd9d902="" data-v-399c2318="" class="card-row__arrow card-row__arrow--right r-btn r-btn--translucent r-btn--default r-btn--icon" aria-label="Scroll right" type="button" style="border-radius: 8px;"><span data-v-3dd9d902="" class="r-btn__ripples" aria-hidden="true"></span><!----><span data-v-3dd9d902="" class="r-btn__content"><!----><i data-v-7f0054f0="" data-v-3dd9d902="" class="r-btn__icon r-icon mdi mdi-chevron-right" aria-hidden="true"></i><!----><!----></span><!----></button><div data-v-399c2318="" class="card-row__track r-v2-scroll-hidden" style="gap: 16px;"><a data-v-772a337e="" data-v-5a931ea5="" href="/platform/1" class="r-v2-card-fade plat-tile plat-tile--row" data-focus-key="platform-1" style="--card-fade-i: 0;"><div data-v-772a337e="" class="plat-tile__icon"><span data-v-e1c948d2="" data-v-772a337e="" class="r-platform-icon" style="width: 100%; height: 100%;"><img data-v-e1c948d2="" src="/assets/platforms/atari2600.svg" alt="Atari 2600" class="r-platform-icon__img"><!----></span></div><!----><div data-v-772a337e="" class="plat-tile__name">Atari 2600</div><div data-v-772a337e="" class="plat-tile__count">31 games</div></a><a data-v-772a337e="" data-v-5a931ea5="" href="/platform/2" class="r-v2-card-fade plat-tile plat-tile--row" data-focus-key="platform-2" style="--card-fade-i: 1;"><div data-v-772a337e="" class="plat-tile__icon"><span data-v-e1c948d2="" data-v-772a337e="" class="r-platform-icon" style="width: 100%; height: 100%;"><img data-v-e1c948d2="" src="/assets/platforms/atari7800.svg" alt="Atari 7800" class="r-platform-icon__img"><!----></span></div><!----><div data-v-772a337e="" class="plat-tile__name">Atari 7800</div><div data-v-772a337e="" class="plat-tile__count">21 games</div></a><a data-v-772a337e="" data-v-5a931ea5="" href="/platform/3" class="r-v2-card-fade plat-tile plat-tile--row" data-focus-key="platform-3" style="--card-fade-i: 2;"><div data-v-772a337e="" class="plat-tile__icon"><span data-v-e1c948d2="" data-v-772a337e="" class="r-platform-icon" style="width: 100%; height: 100%;"><img data-v-e1c948d2="" src="/assets/platforms/c64.ico" alt="Commodore C64/128/MAX" class="r-platform-icon__img"><!----></span></div><!----><div data-v-772a337e="" class="plat-tile__name">Commodore C64/128/MAX</div><div data-v-772a337e="" class="plat-tile__count">8 games</div></a><a data-v-772a337e="" data-v-5a931ea5="" href="/platform/14" class="r-v2-card-fade plat-tile plat-tile--row" data-focus-key="platform-14" style="--card-fade-i: 3;"><div data-v-772a337e="" class="plat-tile__icon"><span data-v-e1c948d2="" data-v-772a337e="" class="r-platform-icon" style="width: 100%; height: 100%;"><img data-v-e1c948d2="" src="/assets/platforms/dos.ico" alt="DOS" class="r-platform-icon__img"><!----></span></div><!----><div data-v-772a337e="" class="plat-tile__name">DOS</div><div data-v-772a337e="" class="plat-tile__count">1 game</div></a><a data-v-772a337e="" data-v-5a931ea5="" href="/platform/5" class="r-v2-card-fade plat-tile plat-tile--row" data-focus-key="platform-5" style="--card-fade-i: 4;"><div data-v-772a337e="" class="plat-tile__icon"><span data-v-e1c948d2="" data-v-772a337e="" class="r-platform-icon" style="width: 100%; height: 100%;"><img data-v-e1c948d2="" src="/assets/platforms/gb.svg" alt="Game Boy" class="r-platform-icon__img"><!----></span></div><!----><div data-v-772a337e="" class="plat-tile__name">Game Boy</div><div data-v-772a337e="" class="plat-tile__count">10 games</div></a><a data-v-772a337e="" data-v-5a931ea5="" href="/platform/6" class="r-v2-card-fade plat-tile plat-tile--row" data-focus-key="platform-6" style="--card-fade-i: 5;"><div data-v-772a337e="" class="plat-tile__icon"><span data-v-e1c948d2="" data-v-772a337e="" class="r-platform-icon" style="width: 100%; height: 100%;"><img data-v-e1c948d2="" src="/assets/platforms/gba.svg" alt="Game Boy Advance" class="r-platform-icon__img"><!----></span></div><!----><div data-v-772a337e="" class="plat-tile__name">Game Boy Advance</div><div data-v-772a337e="" class="plat-tile__count">15 games</div></a><a data-v-772a337e="" data-v-5a931ea5="" href="/platform/7" class="r-v2-card-fade plat-tile plat-tile--row" data-focus-key="platform-7" style="--card-fade-i: 6;"><div data-v-772a337e="" class="plat-tile__icon"><span data-v-e1c948d2="" data-v-772a337e="" class="r-platform-icon" style="width: 100%; height: 100%;"><img data-v-e1c948d2="" src="/assets/platforms/gbc.svg" alt="Game Boy Color" class="r-platform-icon__img"><!----></span></div><!----><div data-v-772a337e="" class="plat-tile__name">Game Boy Color</div><div data-v-772a337e="" class="plat-tile__count">7 games</div></a><a data-v-772a337e="" data-v-5a931ea5="" href="/platform/9" class="r-v2-card-fade plat-tile plat-tile--row" data-focus-key="platform-9" style="--card-fade-i: 7;"><div data-v-772a337e="" class="plat-tile__icon"><span data-v-e1c948d2="" data-v-772a337e="" class="r-platform-icon" style="width: 100%; height: 100%;"><img data-v-e1c948d2="" src="/assets/platforms/nes.svg" alt="Nintendo Entertainment System" class="r-platform-icon__img"><!----></span></div><!----><div data-v-772a337e="" class="plat-tile__name">Nintendo Entertainment System</div><div data-v-772a337e="" class="plat-tile__count">18 games</div></a><a data-v-772a337e="" data-v-5a931ea5="" href="/platform/10" class="r-v2-card-fade plat-tile plat-tile--row" data-focus-key="platform-10" style="--card-fade-i: 8;"><div data-v-772a337e="" class="plat-tile__icon"><span data-v-e1c948d2="" data-v-772a337e="" class="r-platform-icon" style="width: 100%; height: 100%;"><img data-v-e1c948d2="" src="/assets/platforms/scummvm.ico" alt="ScummVM" class="r-platform-icon__img"><!----></span></div><!----><div data-v-772a337e="" class="plat-tile__name">ScummVM</div><div data-v-772a337e="" class="plat-tile__count">8 games</div></a><a data-v-772a337e="" data-v-5a931ea5="" href="/platform/4" class="r-v2-card-fade plat-tile plat-tile--row" data-focus-key="platform-4" style="--card-fade-i: 9;"><div data-v-772a337e="" class="plat-tile__icon"><span data-v-e1c948d2="" data-v-772a337e="" class="r-platform-icon" style="width: 100%; height: 100%;"><img data-v-e1c948d2="" src="/assets/platforms/gamegear.svg" alt="Sega Game Gear" class="r-platform-icon__img"><!----></span></div><!----><div data-v-772a337e="" class="plat-tile__name">Sega Game Gear</div><div data-v-772a337e="" class="plat-tile__count">8 games</div></a><a data-v-772a337e="" data-v-5a931ea5="" href="/platform/11" class="r-v2-card-fade plat-tile plat-tile--row" data-focus-key="platform-11" style="--card-fade-i: 10;"><div data-v-772a337e="" class="plat-tile__icon"><span data-v-e1c948d2="" data-v-772a337e="" class="r-platform-icon" style="width: 100%; height: 100%;"><img data-v-e1c948d2="" src="/assets/platforms/sms.ico" alt="Sega Master System/Mark III" class="r-platform-icon__img"><!----></span></div><!----><div data-v-772a337e="" class="plat-tile__name">Sega Master System/Mark III</div><div data-v-772a337e="" class="plat-tile__count">12 games</div></a><a data-v-772a337e="" data-v-5a931ea5="" href="/platform/13" class="r-v2-card-fade plat-tile plat-tile--row" data-focus-key="platform-13" style="--card-fade-i: 11;"><div data-v-772a337e="" class="plat-tile__icon"><span data-v-e1c948d2="" data-v-772a337e="" class="r-platform-icon" style="width: 100%; height: 100%;"><img data-v-e1c948d2="" src="/assets/platforms/genesis.svg" alt="Sega Mega Drive/Genesis" class="r-platform-icon__img"><!----></span></div><!----><div data-v-772a337e="" class="plat-tile__name">Sega Mega Drive/Genesis</div><div data-v-772a337e="" class="plat-tile__count">20 games</div></a><a data-v-772a337e="" data-v-5a931ea5="" href="/platform/12" class="r-v2-card-fade plat-tile plat-tile--row" data-focus-key="platform-12" style="--card-fade-i: 12;"><div data-v-772a337e="" class="plat-tile__icon"><span data-v-e1c948d2="" data-v-772a337e="" class="r-platform-icon" style="width: 100%; height: 100%;"><img data-v-e1c948d2="" src="/assets/platforms/snes.svg" alt="Super Nintendo Entertainment System" class="r-platform-icon__img"><!----></span></div><!----><div data-v-772a337e="" class="plat-tile__name">Super Nintendo Entertainment System</div><div data-v-772a337e="" class="plat-tile__count">8 games</div></a></div></div></section><!----><!----><!----></div></main><div data-v-2c437815="" data-v-16fbb841="" class="r-v2-bottom-nav"><div data-v-1b4ab79d="" data-v-2c437815="" class="r-v2-bottom-nav__group r-slider-btn-group r-slider-btn-group--tab r-slider-btn-group--horizontal r-slider-btn-group--size-small" aria-label="Primary navigation" role="group"><span data-v-1b4ab79d="" class="r-slider-btn-group__indicator r-slider-btn-group__indicator--animate" aria-hidden="true" style="transform: translateX(4px); width: 116px; opacity: 1;"></span><a data-v-1b4ab79d="" aria-current="page" href="/" class="router-link-active router-link-exact-active r-slider-btn-group__btn r-slider-btn-group__btn--active" aria-label="Home"><!----><i data-v-7f0054f0="" data-v-1b4ab79d="" class="r-icon mdi mdi-home-outline" aria-hidden="true" style="font-size: 16px; width: 16px; height: 16px;"></i><span data-v-1b4ab79d="" class="r-slider-btn-group__label">Home</span><!----></a><a data-v-1b4ab79d="" href="/platforms" class="r-slider-btn-group__btn" aria-label="Platforms"><!----><i data-v-7f0054f0="" data-v-1b4ab79d="" class="r-icon mdi mdi-controller" aria-hidden="true" style="font-size: 16px; width: 16px; height: 16px;"></i><span data-v-1b4ab79d="" class="r-slider-btn-group__label">Platforms</span><!----></a><a data-v-1b4ab79d="" href="/collections" class="r-slider-btn-group__btn" aria-label="Collections"><!----><i data-v-7f0054f0="" data-v-1b4ab79d="" class="r-icon mdi mdi-bookmark-outline" aria-hidden="true" style="font-size: 16px; width: 16px; height: 16px;"></i><span data-v-1b4ab79d="" class="r-slider-btn-group__label">Collections</span><!----></a><a data-v-1b4ab79d="" href="/search" class="r-slider-btn-group__btn" aria-label="Search"><!----><i data-v-7f0054f0="" data-v-1b4ab79d="" class="r-icon mdi mdi-magnify" aria-hidden="true" style="font-size: 16px; width: 16px; height: 16px;"></i><span data-v-1b4ab79d="" class="r-slider-btn-group__label">Search</span><!----></a></div></div></div><div data-v-e1f0800c="" class="r-v2-toasts" role="status" aria-live="polite"></div><!----><div data-v-b910c6df="" class="r-v2-new-version" role="status"><div data-v-b910c6df="" class="r-v2-new-version__head"><i data-v-7f0054f0="" data-v-b910c6df="" class="r-v2-new-version__icon r-icon mdi mdi-rocket-launch-outline" aria-hidden="true" style="font-size: 18px; width: 18px; height: 18px;"></i><span data-v-b910c6df="" class="r-v2-new-version__text">New version available <span data-v-b910c6df="" class="r-v2-new-version__tag">5.2.0</span></span></div><div data-v-b910c6df="" class="r-v2-new-version__actions"><button data-v-3dd9d902="" data-v-b910c6df="" type="button" class="r-btn r-btn--translucent r-btn--small r-btn--has-color" style="border-radius: 8px; --r-btn-color: var(--r-color-brand-primary);"><span data-v-3dd9d902="" class="r-btn__ripples" aria-hidden="true"></span><!----><span data-v-3dd9d902="" class="r-btn__content"><span data-v-3dd9d902="" class="r-btn__prepend"><i data-v-7f0054f0="" data-v-3dd9d902="" class="r-icon mdi mdi-open-in-new" aria-hidden="true"></i></span><!----><span data-v-3dd9d902="" class="r-btn__label">See what's new</span><!----></span><!----></button><button data-v-3dd9d902="" data-v-b910c6df="" class="r-v2-new-version__dismiss r-btn r-btn--text r-btn--small" type="button" style="border-radius: 8px;"><span data-v-3dd9d902="" class="r-btn__ripples" aria-hidden="true"></span><!----><span data-v-3dd9d902="" class="r-btn__content"><!----><!----><span data-v-3dd9d902="" class="r-btn__label">Dismiss</span><!----></span><!----></button></div></div><!----><audio data-v-27a11bcd="" class="r-v2-mp__audio" preload="metadata" aria-hidden="true"></audio><!----><!----></div></main><!----><!----></div></div></div>
+
+    <style>
+      #app-loading-logo {
+        position: fixed;
+        top: 0;
+        left: 0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        width: 100vw;
+        height: 100vh;
+        z-index: 1020 !important;
+        background-color: rgba(242, 244, 248) !important;
+      }
+
+      #app-loading-logo img {
+        width: 30%;
+        height: 30%;
+        opacity: 0.1;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        html,
+        body {
+          background-color: rgba(13, 17, 23) !important;
+        }
+
+        #app-loading-logo {
+          background-color: rgba(13, 17, 23) !important;
+        }
+      }
+
+      @media (max-width: 960px) {
+        #app-loading-logo img {
+          width: 50%;
+          height: 50%;
+        }
+      }
+    </style>
+
+  
+
+<!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----><!----></body></html>
