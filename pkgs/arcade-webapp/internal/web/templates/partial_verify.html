@@ -86,7 +86,21 @@
           <td class="num">
             {{if .StagedFiles}}{{.StagedFiles}} files · {{.StagedBytes}}{{if .InFlight}} <span class="pill running" title="aria2 control files present at last scan">in flight</span>{{end}}{{else}}<span class="sub">—</span>{{end}}
           </td>
-          <td>{{verifyStateChip .State .Counts}}{{if .LastAttemptFailed}} <span class="pill error" title="{{if .CountsValid}}last attempt failed — showing last good report{{else}}last attempt failed — no report ingested yet{{end}}">last attempt failed</span>{{end}}{{if .CountsValid}} <span class="sub" title="last verify finished">{{.FinishedAgo}}</span>{{end}}</td>
+          <td>{{verifyStateChip .State .Counts}}{{if .LastAttemptFailed}} <span class="pill error" title="{{if .CountsValid}}last attempt failed — showing last good report{{else}}last attempt failed — no report ingested yet{{end}}">last attempt failed</span>{{end}}{{if .CountsValid}} <span class="sub" title="last verify finished">{{.FinishedAgo}}</span>{{end}}
+            {{if .OffenderFiles}}
+            {{/* P4 drill-down: the persisted per-file offenders (input-side
+                 junk + output-side extras) behind the unmatched/extra pill.
+                 html/template auto-escapes every filename. */}}
+            <details class="stage"><summary class="sub">{{len .OffenderFiles}} file{{if ne (len .OffenderFiles) 1}}s{{end}} to fix</summary>
+              <ul>{{range .OffenderFiles}}<li><code>{{.}}</code></li>{{end}}</ul>
+            </details>
+            {{end}}
+            {{if .History}}
+            <details class="stage"><summary class="sub">run history ({{len .History}})</summary>
+              <ul>{{range .History}}<li class="sub">{{.FinishedHuman}} — found={{.Found}} unmatched={{.Unmatched}}{{if .DeltaUnmatched}} (Δ{{.DeltaUnmatched}} unmatched){{end}}{{if .Extra}}, extra={{.Extra}}{{end}}</li>{{end}}</ul>
+            </details>
+            {{end}}
+          </td>
           <td class="num">{{if .Counts.PromotedBytes}}{{.PromotedHuman}}{{else if eq .State "unchecked"}}0 B re-run{{else}}<span class="sub">—</span>{{end}}</td>
           <td>{{if .HasReport}}<a href="/verify/reports/{{.Key}}.csv">csv</a>{{else}}<span class="sub">—</span>{{end}}</td>
           <td>

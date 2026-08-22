@@ -322,6 +322,93 @@ func TestVerifyLastAttemptFailedMarker(t *testing.T) {
 	}
 }
 
+// TestVerifyDrillDownRendersOffendersAndDeltas (P4): a system whose last
+// verify has unmatched/extra deviations must name the per-file offenders
+// (the persisted RecordVerifyUnmatched list) and show its recent-run
+// history with run-over-run deltas — the owner sees WHAT to fix without
+// opening the CSV. Clean systems render neither block.
+func TestVerifyDrillDownRendersOffendersAndDeltas(t *testing.T) {
+	srv, _ := newVerifyServer(t)
+	stamp := time.Now().UTC().Format(time.RFC3339)
+
+	finishVerifyRun := func(systems []igir.SystemOutcome) int64 {
+		t.Helper()
+		runID, err := srv.st.StartRun("verify")
+		if err != nil {
+			t.Fatal(err)
+		}
+		detail, err := json.Marshal(verifyRunDetail{Systems: systems})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := srv.st.FinishRun(runID, "ok", string(detail)); err != nil {
+			t.Fatal(err)
+		}
+		return runID
+	}
+
+	// Run 1 (older): one unmatched staged file.
+	run1 := finishVerifyRun([]igir.SystemOutcome{
+		{Sys: "nes", Outcome: igir.OutcomeVerified, DatGames: 5, Found: 5, Unmatched: 1},
+	})
+	if err := srv.st.RecordVerifyResult(store.VerifyResult{
+		SystemKey: "nes", RunID: run1, FinishedAt: stamp,
+		DatGames: 5, Found: 5, Unmatched: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	frag := get(t, srv.Handler(), "/partials/verify").Body.String()
+	if !strings.Contains(frag, `data-system="nes" data-verify="unmatched"`) {
+		t.Fatal("precondition: nes must classify red before the second run")
+	}
+
+	// Run 2 (newer): junk grew (+2 unmatched) and an extra tree file
+	// appeared; the runner persists this run's per-file offender list.
+	run2 := finishVerifyRun([]igir.SystemOutcome{
+		{Sys: "nes", Outcome: igir.OutcomeVerified, DatGames: 5, Found: 5, Unmatched: 3, Extra: 1},
+	})
+	if err := srv.st.RecordVerifyResult(store.VerifyResult{
+		SystemKey: "nes", RunID: run2, FinishedAt: stamp, ReportPath: "/reports/nes.csv",
+		DatGames: 5, Found: 5, Unmatched: 3, Extra: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.st.RecordVerifyUnmatched("nes", run2,
+		[]string{"junk.nes", "bad dump.nes", "operator drop.zip"}); err != nil {
+		t.Fatal(err)
+	}
+
+	frag = get(t, srv.Handler(), "/partials/verify").Body.String()
+	for _, marker := range []string{
+		"files to fix",
+		"<code>junk.nes</code>",
+		"<code>bad dump.nes</code>",
+		"<code>operator drop.zip</code>", // output-side extras are fixable too
+		"run history (2)",
+		// html/template escapes "+" (&#43;) in text nodes — the browser
+		// renders it back as "+2".
+		"found=5 unmatched=3 (Δ&#43;2 unmatched)", // newest vs previous run
+		", extra=1",
+		"found=5 unmatched=1", // oldest point, no delta suffix of its own
+	} {
+		if !strings.Contains(frag, marker) {
+			t.Errorf("verify fragment missing drill-down marker %q", marker)
+		}
+	}
+	// The oldest point has no older neighbour — no Δ there.
+	if strings.Contains(frag, "(Δ&#43;0 unmatched)") || strings.Count(frag, "(Δ&#43;") > 1 {
+		t.Errorf("exactly one delta line expected, got: %s", frag)
+	}
+	// The existing affordances survive: report CSV link + verify button.
+	if !strings.Contains(frag, `href="/verify/reports/nes.csv"`) {
+		t.Error("drill-down must not replace the report CSV link")
+	}
+	if !strings.Contains(frag, `hx-post="/systems/nes/verify"`) {
+		t.Error("drill-down must not replace the verify action")
+	}
+}
+
 // TestVerifyFlowEndToEnd: POST per-system verify → 202, the runner
 // (fake igir) promotes + ingests, the fragment flips to verified, the
 // report link serves the CSV, and the runs table records kind=verify.
