@@ -591,7 +591,7 @@ type GameChecksum struct {
 
 // SetGameChecksums persists per-game crc32/sha1 in one transaction.
 // SELECTIVE update: an empty field leaves the stored value untouched
-// (CASE WHEN ? != ''), because reports without hash columns must not
+// (CASE WHEN ? != ”), because reports without hash columns must not
 // erase checksums a previous richer report recorded, and a partial row
 // (CRC only) must not clear a known SHA1. Callers wanting a true clear
 // can pass a literal sentinel — none exists today by design.
