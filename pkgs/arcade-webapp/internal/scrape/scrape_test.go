@@ -411,6 +411,102 @@ func TestScrapeNotConfigured(t *testing.T) {
 	}
 }
 
+// TestPostComposeRewritesAbsolutePaths pins the ADV-P5-04 port of
+// cartridge-scrape.sh's two post-compose seds against an ABSOLUTE-path
+// fixture (what Skyscraper really writes): "<ROM_ROOT>/<sys>/" prefixes on
+// top-level file:/assets.* values become relative to the metadata dir;
+// whitespace-only intra-description lines are deleted while truly-empty
+// separators and indented continuations survive byte-for-byte.
+func TestPostComposeRewritesAbsolutePathsAndDropsWhitespace(t *testing.T) {
+	h := newHarness(t)
+	md := filepath.Join(h.dir, "metadata.pegasus.txt")
+	prefix := h.dir + string(filepath.Separator)
+
+	in := "collection: Famicom\n" +
+		"launch: jupiter-retroarch -L fceumm_libretro.so \\\"{file.path}\"\n" +
+		"\n" + // 0-char separator: SURVIVES
+		"game: Aladdin (USA)\n" +
+		"file: " + prefix + "Aladdin (USA).nes\n" +
+		"assets.box: " + prefix + "media/box2/Aladdin.png\n" +
+		"description: Paragraph one.\n" +
+		"   \n" + // whitespace-only paragraph separator: DELETED
+		"\tParagraph two, indented continuation: SURVIVES verbatim.\n" +
+		"game: Battle City (USA)\n" +
+		"file: already/relative.nes\n" // no prefix: untouched
+	if err := os.WriteFile(md, []byte(in), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := h.driver.postCompose(hSysKey, h.dir); err != nil {
+		t.Fatalf("postCompose: %v", err)
+	}
+
+	want := "collection: Famicom\n" +
+		"launch: jupiter-retroarch -L fceumm_libretro.so \\\"{file.path}\"\n" +
+		"\n" +
+		"game: Aladdin (USA)\n" +
+		"file: Aladdin (USA).nes\n" +
+		"assets.box: media/box2/Aladdin.png\n" +
+		"description: Paragraph one.\n" +
+		"\tParagraph two, indented continuation: SURVIVES verbatim.\n" +
+		"game: Battle City (USA)\n" +
+		"file: already/relative.nes\n" // trailing newline preserved too
+	got, err := os.ReadFile(md)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != want {
+		t.Errorf("rewritten metadata:\n%q\nwant:\n%q", string(got), want)
+	}
+}
+
+// TestPostComposeWarnsWhenUnlaunchable pins the D-P5b deferral warning: a
+// compose that leaves the metadata empty or without a launch line logs
+// that the collection stays unlaunchable until P6 seeding lands.
+func TestPostComposeWarnsWhenUnlaunchable(t *testing.T) {
+	var logs bytes.Buffer
+	log.SetOutput(&logs)
+	log.SetFlags(log.LstdFlags)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+
+	for _, tc := range []struct{ name, body string }{
+		{"empty-cache zero-byte compose", ""},
+		{"launch-less compose", "collection: Famicom\ngame: X\nfile: X.nes\n"},
+	} {
+		logs.Reset()
+		h := newHarness(t)
+		if err := os.WriteFile(filepath.Join(h.dir, "metadata.pegasus.txt"), []byte(tc.body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := h.driver.postCompose(hSysKey, h.dir); err != nil {
+			t.Fatalf("%s: postCompose: %v", tc.name, err)
+		}
+		if !strings.Contains(logs.String(), "unlaunchable until P6 seeding lands") {
+			t.Errorf("%s: no unlaunchable warning in logs:\n%s", tc.name, logs.String())
+		}
+	}
+
+	// A healthy file warns nothing.
+	logs.Reset()
+	h := newHarness(t)
+	if err := os.WriteFile(filepath.Join(h.dir, "metadata.pegasus.txt"),
+		[]byte("collection: Famicom\nlaunch: x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.driver.postCompose(hSysKey, h.dir); err != nil {
+		t.Fatalf("healthy postCompose: %v", err)
+	}
+	if strings.Contains(logs.String(), "unlaunchable") {
+		t.Errorf("healthy metadata warned unlaunchable:\n%s", logs.String())
+	}
+
+	// Missing file: tolerated silently-ish (skip note, never an error).
+	logs.Reset()
+	if err := newHarness(t).driver.postCompose(hSysKey, filepath.Join(t.TempDir(), "nope")); err != nil {
+		t.Errorf("missing-metadata postCompose = %v, want nil", err)
+	}
+}
+
 // waitIdle blocks until the driver's background job releases its slots
 // (bounded; a hung job fails the test instead of hanging it).
 func waitIdle(t *testing.T, h *harness) {
