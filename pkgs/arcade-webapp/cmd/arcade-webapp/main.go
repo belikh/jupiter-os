@@ -20,6 +20,7 @@ import (
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/aria2"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/dats"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/igir"
+	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/pipeline"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/scanner"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/scrape"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/store"
@@ -84,6 +85,14 @@ func main() {
 		log.Fatal("arcade-webapp: ARCADE_WEBAPP_CATALOGUE_TSV is required (the module passes a store copy of scripts/cartridge-catalogue.tsv)")
 	}
 
+	// The ONE heavy-job lock shared by verify + scrape (ADV-P5-03): the
+	// two runners each serialized only themselves, so a verify batch and
+	// a scrape batch could overlap — both CPU/IO-heavy on the 2-core box,
+	// both writing into the same games trees. Whoever grabs it second
+	// gets that runner's usual ErrBusy (409), so HTTP behavior is
+	// unchanged.
+	heavy := &pipeline.Mutex{}
+
 	st, err := store.Open(cfg.DBPath)
 	if err != nil {
 		log.Fatalf("arcade-webapp: open db %s: %v", cfg.DBPath, err)
@@ -137,7 +146,8 @@ func main() {
 		if nerr != nil {
 			log.Fatalf("arcade-webapp: verify runner misconfigured: %v", nerr)
 		}
-		log.Printf("arcade-webapp: verify runner wired (igir %s, reports %s)", igirBin, filepath.Join(scratchDir, "reports"))
+		runner.Pipeline = heavy
+		log.Printf("arcade-webapp: verify runner wired (igir %s, reports %s, shared pipeline slot)", igirBin, filepath.Join(scratchDir, "reports"))
 	} else {
 		log.Printf("arcade-webapp: verify not configured (ARCADE_WEBAPP_IGIR_BIN empty)")
 	}
@@ -179,11 +189,12 @@ func main() {
 			ScreenscraperCredsFile: secrets.ScreenScraper,
 			TGDBKeyFile:            secrets.TGDBAPIKey,
 			Store:                  st,
+			Pipeline:               heavy,
 			CartridgeRoot:          cfg.CartridgeRoot,
 			OpticalRoot:            cfg.OpticalRoot,
 			ModernRoot:             cfg.ModernRoot,
 		}
-		log.Printf("arcade-webapp: scrape driver wired (%s, cache %s)", skyBin, cfg.SkyscraperCacheDir)
+		log.Printf("arcade-webapp: scrape driver wired (%s, cache %s, shared pipeline slot)", skyBin, cfg.SkyscraperCacheDir)
 	} else {
 		log.Printf("arcade-webapp: scrape not configured (need ARCADE_WEBAPP_SKYSCRAPER_BIN + ARCADE_WEBAPP_SKYSCRAPER_CACHE_DIR)")
 	}

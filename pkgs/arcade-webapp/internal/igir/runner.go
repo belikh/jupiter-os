@@ -42,6 +42,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/pipeline"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/store"
 )
 
@@ -129,6 +130,13 @@ type Runner struct {
 	rescan func() error
 	log    *log.Logger
 
+	// Pipeline, when set, is the process-wide heavy-job lock shared with
+	// the scrape driver (ADV-P5-03): a verify refuses to start while a
+	// scrape runs and vice versa. Nil keeps the runner self-serializing
+	// only. Failure to acquire surfaces as this package's ErrBusy so the
+	// web layer's handling (409 / swallow-in-goroutine) is unchanged.
+	Pipeline *pipeline.Mutex
+
 	mu    sync.Mutex
 	state State
 }
@@ -196,8 +204,16 @@ func (r *Runner) VerifyAll() ([]SystemOutcome, error) {
 // Verify runs the cartridge-verify.sh flow for the named systems, in the
 // order given. One 'verify' run row records the whole batch; per-system
 // failures become failed outcomes (the script's subshell-per-system
-// isolation), never a batch abort.
+// isolation), never a batch abort. When Pipeline is set (ADV-P5-03) the
+// shared verify+scrape slot is claimed first — a scrape holding it
+// rejects this batch with ErrBusy before anything is recorded.
 func (r *Runner) Verify(systemKeys []string) ([]SystemOutcome, error) {
+	if r.Pipeline != nil {
+		if !r.Pipeline.TryAcquire() {
+			return nil, ErrBusy
+		}
+		defer r.Pipeline.Release()
+	}
 	r.mu.Lock()
 	if r.state.Running {
 		r.mu.Unlock()
