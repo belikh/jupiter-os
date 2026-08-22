@@ -761,19 +761,28 @@ let
     echo "smoke: run history drill-down live"
 
     # Scrape all: gb sat at 0% forever — flipping it proves the batch
-    # reached systems beyond the one clicked (and serialized cleanly
-    # after the two manual nes runs above).
+    # reached systems beyond the one clicked. GATE ON COMPLETION, not on
+    # the gb flip alone: catalogue order puts segacd AFTER gb, whose
+    # flags flip mid-batch — gating there raced the next POST into the
+    # driver's serialized slot (409; run-3 flake). In-flight-only
+    # markers: the 3s poll trigger + the running pill both render ONLY
+    # while a batch holds the driver (the bare word "scraping" is NOT a
+    # marker — the page heading carries it always; run-4 lesson).
     code=$(curl -s -o /dev/null -w '%{http_code}' -H "$HX" -X POST "$base/metadata/scrape")
     [ "$code" = 202 ] || fail "POST /metadata/scrape -> $code, want 202"
     ok=0
     for _ in $(seq 1 90); do
       frag=$(curl -sf "$base/partials/metadata" || true)
-      if grep -q 'data-system="gb" data-games="4" data-desc-pct="100"' <<<"$frag"; then ok=1; break; fi
+      if ! grep -q 'every 3s' <<<"$frag" && ! grep -q '>scraping' <<<"$frag" \
+         && grep -q 'data-system="gb" data-games="4" data-desc-pct="100"' <<<"$frag"; then ok=1; break; fi
       sleep 1
     done
     if [ "$ok" != 1 ]; then
+      echo "smoke: DEBUG scrape-all gate failed — metadata fragment rows:"
+      grep -o 'data-system="[a-z0-9]*"[^>]*' <<<"$frag" | head -6 || true
+      grep -o 'class="pill[^"]*">[a-z ]*' <<<"$frag" | head -4 || true
       journalctl -u jupiter-arcade-webapp --no-pager -n 20 || true
-      fail "scrape-all never flipped gb coverage"
+      fail "scrape-all never completed (gb unflipped or batch still in flight)"
     fi
     echo "smoke: scrape-all green across the corpus"
 
@@ -787,6 +796,15 @@ let
     done
     [ "$ok" = 1 ] || fail "dashboard nes card never flipped to coverage=100 after the scrape"
     echo "smoke: dashboard card agrees with the metadata engine (60->100)"
+
+    # Belt-and-braces before the game POST: the slot must be FREE (same
+    # in-flight-only markers as the gate above) — a 409 here would mean
+    # the smoke, not the serialization, misbehaved.
+    for _ in $(seq 1 60); do
+      frag=$(curl -sf "$base/partials/metadata" || true)
+      if ! grep -q 'every 3s' <<<"$frag" && ! grep -q '>scraping' <<<"$frag"; then break; fi
+      sleep 1
+    done
 
     # Game-detail re-scrape: windowed to ONE rom (--startat/--endat),
     # proven via the stub's argv journal (cleared first so earlier

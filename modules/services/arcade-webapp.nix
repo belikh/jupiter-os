@@ -23,17 +23,17 @@
 # runner exec'ing cartridge-verify.sh's flag set (+ the aria2-metadata
 # input exclusion, D-P3e: COPY promotion, .aria2 in-flight skip, per-bucket routing, promote-unchecked when the
 # DAT is missing), a Fresh1G1R McLean DAT manager (on demand + on a
- # schedule), report ingestion into SQLite, and the zero-unmatched
- # indicator — plus torrent staging (upload a .torrent / paste a
- # magnet-URL) closing the P2 critic's acquire dead-end. P5 adds the
- # metadata-engine control surface: a Skyscraper driver exec'ing
- # cartridge-scrape.sh's three-pass flow (ScreenScraper primary /
- # configured-source onlymissing gap-fill / Pegasus compose, offscreen,
- # credential FILES read at call time), a serialized scrape queue with
- # per-system + per-game actions on the /metadata page, run history with
- # coverage deltas, and an in-process schedule carrying the old
- # jupiter-rom-scrape daily timer's cadence.
- #
+# schedule), report ingestion into SQLite, and the zero-unmatched
+# indicator — plus torrent staging (upload a .torrent / paste a
+# magnet-URL) closing the P2 critic's acquire dead-end. P5 adds the
+# metadata-engine control surface: a Skyscraper driver exec'ing
+# cartridge-scrape.sh's three-pass flow (ScreenScraper primary /
+# configured-source onlymissing gap-fill / Pegasus compose, offscreen,
+# credential FILES read at call time), a serialized scrape queue with
+# per-system + per-game actions on the /metadata page, run history with
+# coverage deltas, and an in-process schedule carrying the old
+# jupiter-rom-scrape daily timer's cadence.
+#
 # LAN-only by design (like suno-web): no reverse-proxy exposure, no tunnel
 # wiring — flip <option>openFirewall</option> for trusted-LAN access.
 #
