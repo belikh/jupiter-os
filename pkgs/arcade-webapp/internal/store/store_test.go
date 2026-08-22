@@ -1046,3 +1046,32 @@ func TestMigrateV5DatabaseStepsToV6(t *testing.T) {
 		t.Fatalf("SetGameMeta on migrated db: %v", err)
 	}
 }
+
+// TestSetGameHidden pins the curation flag write (P6 generator contract:
+// hidden=true rows are excluded from generation; P7's UI flips it).
+func TestSetGameHidden(t *testing.T) {
+	s := seedP6Store(t)
+	if err := s.SetGameHidden("nes", "A First (USA).nes", true); err != nil {
+		t.Fatalf("SetGameHidden: %v", err)
+	}
+	rows, _ := s.SystemGamesWithMeta("nes")
+	if len(rows) != 1 || rows[0].RelPath != "B Second (USA).nes" {
+		t.Fatalf("hidden row still visible to generation: %+v", rows)
+	}
+	page, err := s.ListGames(GameListOpts{SystemKey: "nes", Hidden: func() *bool { b := false; return &b }()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = page
+	if err := s.SetGameHidden("nes", "A First (USA).nes", false); err != nil {
+		t.Fatalf("unhide: %v", err)
+	}
+	rows, _ = s.SystemGamesWithMeta("nes")
+	if len(rows) != 2 {
+		t.Fatalf("unhide did not restore visibility: %d rows", len(rows))
+	}
+	// Unknown rel path: a harmless no-op (idempotent curation), not an error.
+	if err := s.SetGameHidden("nes", "Nope.nes", true); err != nil {
+		t.Fatalf("unknown rel path must be a no-op, got %v", err)
+	}
+}
