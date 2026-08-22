@@ -43,6 +43,9 @@
             {{if .HasCover}}cover ✓{{else}}cover —{{end}}
             <span class="sub" title="best-effort flags from the Skyscraper resource cache; re-scrape to refresh">(cache flags)</span>
           </span>
+          <span class="k">sha1</span><span class="v">
+            {{if .SHA1}}<code>{{.SHA1}}</code>{{else}}<span class="sub" title="filled by the next scan (files over 512 MiB are skipped) or a checksum-bearing verify report">—</span>{{end}}
+          </span>
         </div>
         {{template "game-actions" .Actions}}
       </div>

@@ -191,6 +191,12 @@ func (s *Scanner) scanAll() Result {
 			if err := s.st.ReplaceSystemGames(sys.Key, games, seen); err != nil {
 				res.Errors++
 				res.Warnings = append(res.Warnings, fmt.Sprintf("%s: persist games: %v", sys.Key, err))
+			} else if len(games) > 0 {
+				// P6 carry-in: persist each game file's SHA1 (the
+				// scanner's own CacheID) so the launcher-DB/library
+				// surfaces can show it. Best-effort: hashing failures
+				// become warnings, never scan errors.
+				s.persistSHA1s(sys, filepath.Join(s.cfg.bucketRoot(sys.Bucket), sys.Key), &res)
 			}
 		} else {
 			// Any walk error (unmounted bucket, permission shift, a dir
@@ -376,6 +382,47 @@ func scanSystemDir(dir string, sys catalogue.System) ([]store.GameRow, error) {
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].RelPath < rows[j].RelPath })
 	return rows, nil
+}
+
+// persistSHA1s fills games.sha1 for the system's rows that lack one
+// (P6 carry-in), using CacheID — the same id the coverage matcher keys
+// on. Semantics:
+//
+//   - Fill-ONCE: only rows with sha1 IS NULL are hashed, so a repeat
+//     scan never re-walks bytes it already knows (europa's HDD budget,
+//     plan R5). A file whose CONTENT changes under an unchanged path
+//     keeps its recorded id until a checksum-bearing igir report
+//     overwrites it via SetGameChecksums — sha1 here is a display fact;
+//     verify ingest is the authority.
+//   - Files above romHashSizeLimit stay NULL (CacheID's own cap — same
+//     false-negative direction ApplyCacheFlags accepts).
+func (s *Scanner) persistSHA1s(sys catalogue.System, sysDir string, res *Result) {
+	missing, err := s.st.GamesMissingSHA1(sys.Key)
+	if err != nil || len(missing) == 0 {
+		if err != nil {
+			res.Warnings = append(res.Warnings, fmt.Sprintf("%s: sha1 lookup: %v", sys.Key, err))
+		}
+		return
+	}
+	cks := make([]store.GameChecksum, 0, len(missing))
+	skipped := 0
+	for _, rel := range missing {
+		id, err := CacheID(filepath.Join(sysDir, rel))
+		if err != nil {
+			skipped++ // oversized/unreadable: stays NULL (documented miss)
+			continue
+		}
+		cks = append(cks, store.GameChecksum{RelPath: rel, SHA1: id})
+	}
+	if len(cks) > 0 {
+		if err := s.st.SetGameChecksums(sys.Key, cks); err != nil {
+			res.Warnings = append(res.Warnings, fmt.Sprintf("%s: persist sha1: %v", sys.Key, err))
+			return
+		}
+	}
+	if skipped > 0 {
+		log.Printf("scanner: %s: %d game file(s) not hashed for sha1 (size/read limits)", sys.Key, skipped)
+	}
 }
 
 // logiqxHeader captures the Logiqx <datafile><header> fields the DAT

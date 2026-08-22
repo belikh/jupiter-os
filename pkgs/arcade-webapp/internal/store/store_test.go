@@ -907,3 +907,142 @@ func TestScrapeFlagsAndChecksums(t *testing.T) {
 		t.Fatalf("SetGameChecksums unknown rel: %v", err)
 	}
 }
+
+// ---- P6: enrichment columns + generation queries ---------------------------
+
+func seedP6Store(t *testing.T) *Store {
+	t.Helper()
+	s := openTemp(t)
+	if err := s.UpsertSystems([]SystemRow{
+		{Key: "nes", Collection: "Nintendo Entertainment System", Bucket: "cartridge", Core: "fceumm", SortOrder: 1, Extensions: `["nes"]`},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if err := s.ReplaceSystemGames("nes", []GameRow{
+		{RelPath: "B Second (USA).nes", SizeBytes: 2},
+		{RelPath: "A First (USA).nes", SizeBytes: 1},
+		{RelPath: "C Hidden (USA).nes", SizeBytes: 3},
+	}, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.Exec(`UPDATE games SET hidden=1 WHERE rel_path='C Hidden (USA).nes'`); err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+// TestGameMetaRoundTrip pins the generator's read side (hidden excluded,
+// catalogue-stable order) and the selective write side.
+func TestGameMetaRoundTrip(t *testing.T) {
+	s := seedP6Store(t)
+
+	rows, err := s.SystemGamesWithMeta("nes")
+	if err != nil {
+		t.Fatalf("SystemGamesWithMeta: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("rows = %d, want 2 (hidden row must be excluded)", len(rows))
+	}
+	if rows[0].RelPath != "A First (USA).nes" || rows[1].RelPath != "B Second (USA).nes" {
+		t.Fatalf("rows not rel_path-ordered: %q, %q", rows[0].RelPath, rows[1].RelPath)
+	}
+	if rows[0].Description != "" || rows[0].Rating != "" {
+		t.Fatalf("absent meta must read as empty strings, got %+v", rows[0])
+	}
+
+	// Selective set: one game fully enriched, the other untouched.
+	err = s.SetGameMeta("nes", []GameMeta{
+		{RelPath: "A First (USA).nes", Description: "First!", Release: "1987", Developer: "D", Publisher: "P", Genre: "Platform", Rating: "E"},
+	})
+	if err != nil {
+		t.Fatalf("SetGameMeta: %v", err)
+	}
+	rows, _ = s.SystemGamesWithMeta("nes")
+	got := map[string]GameMetaRow{}
+	for _, r := range rows {
+		got[r.RelPath] = r
+	}
+	a := got["A First (USA).nes"]
+	if a.Description != "First!" || a.Release != "1987" || a.Developer != "D" || a.Publisher != "P" || a.Genre != "Platform" || a.Rating != "E" {
+		t.Fatalf("enrichment lost: %+v", a)
+	}
+	b := got["B Second (USA).nes"]
+	if b.Description != "" {
+		t.Fatalf("untouched game gained description %q", b.Description)
+	}
+
+	// Partial update keeps stored values (empty leaves untouched), like
+	// SetGameChecksums — an ingest that only knows the genre cannot wipe
+	// the description.
+	if err := s.SetGameMeta("nes", []GameMeta{{RelPath: "A First (USA).nes", Genre: "Puzzle"}}); err != nil {
+		t.Fatalf("SetGameMeta partial: %v", err)
+	}
+	rows, _ = s.SystemGamesWithMeta("nes")
+	if rows[0].Description != "First!" || rows[0].Genre != "Puzzle" {
+		t.Fatalf("partial update clobbered fields: %+v", rows[0])
+	}
+}
+
+// TestRunsByKind backs the generation log section: kind-filtered runs,
+// newest first, other kinds invisible.
+func TestRunsByKind(t *testing.T) {
+	s := openTemp(t)
+	id1, _ := s.StartRun("scan")
+	_ = s.FinishRun(id1, "ok", "")
+	id2, _ := s.StartRun("generate")
+	_ = s.FinishRun(id2, "ok", `{"Systems":[]}`)
+	id3, _ := s.StartRun("generate")
+	_ = s.FinishRun(id3, "error", "boom")
+
+	runs, err := s.RunsByKind("generate", 10)
+	if err != nil {
+		t.Fatalf("RunsByKind: %v", err)
+	}
+	if len(runs) != 2 {
+		t.Fatalf("runs = %d, want 2 generate-only rows", len(runs))
+	}
+	if runs[0].Status != "error" || runs[1].Status != "ok" {
+		t.Fatalf("runs not newest-first or wrong kinds: %+v", runs)
+	}
+}
+
+// TestMigrateV5DatabaseStepsToV6 proves an existing P5 database gains the
+// enrichment columns in place (the VM's surviving state dirs).
+func TestMigrateV5DatabaseStepsToV6(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "v5.db")
+	db, err := sql.Open("sqlite", "file:"+p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, stmt := range append(append([]string{}, schemaV1...), append(append(append(schemaV2, schemaV3...), schemaV4...), schemaV5...)...) {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("seed v5 schema: %v", err)
+		}
+	}
+	if _, err := db.Exec(`PRAGMA user_version = 5`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := Open(p)
+	if err != nil {
+		t.Fatalf("Open v5 database: %v", err)
+	}
+	defer s.Close() //nolint:errcheck // test
+	if got := s.SchemaVersion(); got != SchemaVersion {
+		t.Fatalf("migrated user_version = %d, want %d", got, SchemaVersion)
+	}
+	// The new columns are usable post-migration.
+	if err := s.UpsertSystems([]SystemRow{{Key: "nes", Collection: "NES", Bucket: "cartridge", SortOrder: 1}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ReplaceSystemGames("nes", []GameRow{{RelPath: "A.nes", SizeBytes: 1}}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetGameMeta("nes", []GameMeta{{RelPath: "A.nes", Description: "post-migration"}}); err != nil {
+		t.Fatalf("SetGameMeta on migrated db: %v", err)
+	}
+}

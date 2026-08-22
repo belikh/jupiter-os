@@ -160,6 +160,18 @@ func TestGameDetail(t *testing.T) {
 		t.Error("detail page missing the igir report link after ingest")
 	}
 
+	// P6 carry-in: the sha1 fact renders once persisted (and shows its
+	// honest "—" placeholder before that).
+	if strings.Contains(body, "<code>deadbeefcafe</code>") {
+		t.Error("sha1 rendered before any scan/ingest filled it")
+	}
+	if err := srv.st.SetGameChecksums(g.SystemKey, []store.GameChecksum{{RelPath: g.RelPath, SHA1: "deadbeefcafe"}}); err != nil {
+		t.Fatal(err)
+	}
+	if body = detail(); !strings.Contains(body, "<code>deadbeefcafe</code>") {
+		t.Error("detail page missing the sha1 fact after ingest")
+	}
+
 	for _, bogus := range []string{
 		fmt.Sprintf("/systems/%s/games/999999", g.SystemKey), // well-formed but absent id
 		"/systems/nes/games/not-a-number",                    // non-numeric id

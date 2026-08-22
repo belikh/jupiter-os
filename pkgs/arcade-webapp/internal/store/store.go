@@ -52,7 +52,13 @@ import (
 // has_cover (best-effort Skyscraper cache-presence flags, flipped by the
 // coverage recompute after scrape runs) and crc32 / sha1 (ingested from
 // igir report rows when the report carries hash columns).
-const SchemaVersion = 5
+//
+// v6 (P6): games gains the launcher-DB enrichment columns — description /
+// release / developer / publisher / genre / rating (nullable TEXT). The
+// generator emits them into metadata.pegasus.txt when present; until an
+// ingest fills them they read as absent and generated files carry
+// title+file only. All nullable so pre-P6 rows need no backfill.
+const SchemaVersion = 6
 
 // SystemRow is one catalogue system as persisted (Extensions is a JSON
 // array string — enough for P1's rendering needs).
@@ -278,6 +284,13 @@ func (s *Store) Migrate() error {
 			}
 		}
 	}
+	if version < 6 {
+		for _, stmt := range schemaV6 {
+			if _, err := tx.Exec(stmt); err != nil {
+				return fmt.Errorf("store: migrate v6: %w", err)
+			}
+		}
+	}
 	if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, SchemaVersion)); err != nil {
 		return err
 	}
@@ -394,6 +407,18 @@ var schemaV5 = []string{
 	`ALTER TABLE games ADD COLUMN has_cover INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE games ADD COLUMN crc32 TEXT`,
 	`ALTER TABLE games ADD COLUMN sha1 TEXT`,
+}
+
+// schemaV6 adds the P6 launcher-DB enrichment columns to games (see
+// SchemaVersion). Nullable TEXTs: absent enrichment reads as NULL → ""
+// at the generator's query.
+var schemaV6 = []string{
+	`ALTER TABLE games ADD COLUMN description TEXT`,
+	`ALTER TABLE games ADD COLUMN release TEXT`,
+	`ALTER TABLE games ADD COLUMN developer TEXT`,
+	`ALTER TABLE games ADD COLUMN publisher TEXT`,
+	`ALTER TABLE games ADD COLUMN genre TEXT`,
+	`ALTER TABLE games ADD COLUMN rating TEXT`,
 }
 
 // Close closes the database.
@@ -1114,6 +1139,125 @@ func (s *Store) GetMeta(key string) string {
 	var v string
 	_ = s.db.QueryRow(`SELECT value FROM meta WHERE key=?`, key).Scan(&v)
 	return v
+}
+
+// ---- P6: launcher-DB enrichment + generation reads -------------------------
+
+// GameMeta is one game's enrichment fields as WRITTEN (SetGameMeta).
+// Empty fields leave the stored value untouched — an ingest that knows
+// only the genre must not wipe a stored description.
+type GameMeta struct {
+	RelPath     string
+	Description string
+	Release     string
+	Developer   string
+	Publisher   string
+	Genre       string
+	Rating      string
+}
+
+// GameMetaRow is one row of SystemGamesWithMeta: the generator's view of
+// a system's visible games. Absent enrichment reads as "".
+type GameMetaRow struct {
+	ID      int64
+	RelPath string
+	GameMeta
+}
+
+// SetGameMeta persists enrichment fields for one system's games in one
+// transaction, SELECTIVELY (empty field = keep stored value), mirroring
+// SetGameChecksums' contract.
+func (s *Store) SetGameMeta(systemKey string, metas []GameMeta) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after commit
+	for _, m := range metas {
+		_, err := tx.Exec(`UPDATE games SET
+			description = CASE WHEN ?1 != '' THEN ?1 ELSE description END,
+			release     = CASE WHEN ?2 != '' THEN ?2 ELSE release END,
+			developer   = CASE WHEN ?3 != '' THEN ?3 ELSE developer END,
+			publisher   = CASE WHEN ?4 != '' THEN ?4 ELSE publisher END,
+			genre       = CASE WHEN ?5 != '' THEN ?5 ELSE genre END,
+			rating      = CASE WHEN ?6 != '' THEN ?6 ELSE rating END
+			WHERE system_key=?7 AND rel_path=?8`,
+			m.Description, m.Release, m.Developer, m.Publisher, m.Genre, m.Rating,
+			systemKey, m.RelPath)
+		if err != nil {
+			return fmt.Errorf("store: game meta %s/%s: %w", systemKey, m.RelPath, err)
+		}
+	}
+	return tx.Commit()
+}
+
+// SystemGamesWithMeta returns one system's VISIBLE (hidden=0) games with
+// their enrichment fields, rel_path-ordered — the generator's input for
+// the main collection. Curation (hidden) is excluded here by contract:
+// hidden games never reach generation.
+func (s *Store) SystemGamesWithMeta(systemKey string) ([]GameMetaRow, error) {
+	rows, err := s.db.Query(`
+		SELECT id, rel_path,
+		       COALESCE(description, ''), COALESCE(release, ''),
+		       COALESCE(developer, ''),  COALESCE(publisher, ''),
+		       COALESCE(genre, ''),      COALESCE(rating, '')
+		FROM games WHERE system_key=? AND hidden=0
+		ORDER BY rel_path`, systemKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	var out []GameMetaRow
+	for rows.Next() {
+		var r GameMetaRow
+		if err := rows.Scan(&r.ID, &r.RelPath,
+			&r.Description, &r.Release, &r.Developer,
+			&r.Publisher, &r.Genre, &r.Rating); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// GamesMissingSHA1 returns the rel paths of one system's games whose
+// sha1 column is still NULL — the scanner hashes exactly these
+// (fill-once; repeat scans never re-hash unchanged paths).
+func (s *Store) GamesMissingSHA1(systemKey string) ([]string, error) {
+	rows, err := s.db.Query(`SELECT rel_path FROM games WHERE system_key=? AND sha1 IS NULL ORDER BY rel_path`, systemKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	var out []string
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// RunsByKind returns up to n finished runs of one kind, newest first —
+// the generation log section's source.
+func (s *Store) RunsByKind(kind string, n int) ([]Run, error) {
+	rows, err := s.db.Query(`SELECT id, kind, started_at, finished_at, status, detail
+		FROM runs WHERE kind=? AND finished_at != '' ORDER BY id DESC LIMIT ?`, kind, n)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	var out []Run
+	for rows.Next() {
+		var r Run
+		if err := rows.Scan(&r.ID, &r.Kind, &r.StartedAt, &r.FinishedAt, &r.Status, &r.Detail); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }
 
 // ---- P4: library browsing (ListGames / GetGame) ---------------------------
