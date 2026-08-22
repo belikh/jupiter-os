@@ -21,7 +21,7 @@ name: CI (distributed builders) — callisto
 # once. An earlier attempt at the combined form hit store issues traced to
 # the kiosks (shared cross-host derivations confusing one evaluation's
 # GC-root/output bookkeeping) — see the "Build + push each host closure
-# sequentially" step below. Cross-host derivation sharing (e.g. the skylake
+# sequentially" step below. Cross-host derivation sharing (e.g. the shared
 # kiosk base every kiosk shares) still substitutes from Harmonia after the
 # first kiosk pushes it, it just isn't deduped within a single evaluation.
 #
@@ -68,7 +68,7 @@ name: CI (distributed builders) — callisto
 #   rather than trusting that here).
 # - No per-builder resource tuning: every builder advertises maxJobs=1,
 #   speedFactor=4, and the same feature set (kvm, benchmark, big-parallel,
-#   gccarch-bdver4, gccarch-skylake). maxJobs=1 matches the builder's own
+#   gccarch-x86-64-v3). maxJobs=1 matches the builder's own
 #   nix.conf (max-jobs=1, cores=4 — one derivation at a time on all 4 cores,
 #   the callisto/kiosk large-package shape, not pallene's cores=1
 #   many-small-packages shape); declaring more would lie to the coordinator,
@@ -213,7 +213,7 @@ jobs:
             http2 = false
             max-substitution-jobs = 1
             http-connections = 1
-            system-features = kvm benchmark big-parallel gccarch-bdver4 gccarch-skylake
+            system-features = kvm benchmark big-parallel gccarch-x86-64-v3
             extra-platforms = i686-linux x86_64-linux
             cores = 4
             max-jobs = 1
@@ -442,7 +442,7 @@ jobs:
             http2 = false
             fallback = true
             # Coordinator builds i686 locally via qemu-user, dispatches x86_64 to builders
-            system-features = kvm benchmark big-parallel gccarch-bdver4 gccarch-skylake
+            system-features = kvm benchmark big-parallel gccarch-x86-64-v3
             extra-platforms = i686-linux x86_64-linux
             max-jobs = 2
             cores = 4
@@ -794,7 +794,7 @@ jobs:
 
           : > /tmp/machines
           for ip in "${ready[@]}"; do
-            echo "ssh-ng://runner@${ip} x86_64-linux,i686-linux $HOME/.ssh/ci_builder_key 1 4 kvm,benchmark,big-parallel,gccarch-bdver4,gccarch-skylake -" \
+            echo "ssh-ng://runner@${ip} x86_64-linux,i686-linux $HOME/.ssh/ci_builder_key 1 4 kvm,benchmark,big-parallel,gccarch-x86-64-v3 -" \
               >> /tmp/machines
           done
 
@@ -894,7 +894,7 @@ jobs:
           # kernel/initrd are being built anyway, so the final push below lands
           # them on europa: europa's `systemctl start jupiter-pxe-assets` then
           # substitutes from its own store instead of compiling a
-          # skylake-tagged kernel on a 2-core Opteron. Also the only place this
+          # v3-tagged kernel on a 2-core Opteron. Also the only place this
           # package is ever built — `nix flake check` is eval-only, so a broken
           # linkFarm here would otherwise first surface at publish time.
           INSTALLABLES+=(".#pxe-netboot-assets")

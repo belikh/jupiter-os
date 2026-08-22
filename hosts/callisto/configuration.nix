@@ -137,20 +137,20 @@
   nix.settings.cores = 4;
   nix.settings.max-jobs = 1;
 
-  # Advertise capability to BUILD other hosts' microarch-tuned derivations.
-  # callisto's own closure is ALSO skylake-tuned now (jupiter.build.microarch
-  # = "skylake" below), so this advert matches its own tag. Without the
+  # Advertise capability to BUILD other hosts' tuned derivations.
+  # callisto's own closure is ALSO x86-64-v3-tuned now (jupiter.build.microarch
+  # = "x86-64-v3" below), so this advert matches its own tag. Without the
   # matching gccarch-<arch> feature, Nix refuses to even attempt a tagged
   # derivation here regardless of whether the CPU could run it.
   #
-  # CPU confirmed 2026-07-20: i5-8500T is Coffee Lake, a strict ISA superset
-  # of Skylake — so the gccarch-skylake advert is safe both ways (callisto
-  # can compile skylake-tagged code AND run it in any checkPhase). This is
-  # what makes the kiosk tuning (also skylake, i5-6300U) safe to dispatch
-  # here.
+  # CPU confirmed 2026-07-20: i5-8500T is Coffee Lake — far above the v3
+  # floor, so the gccarch-x86-64-v3 advert is safe both ways (callisto can
+  # compile v3-tagged code AND run it in any checkPhase). Same is true of
+  # every kiosk (i5-6300U) and europa itself (CPUID-proven 2026-08-22), so
+  # one shared level serves the whole fleet; the old per-host bdver4/skylake
+  # tag matrix died with CI run 32540930884's SIGILL cascade.
   nix.settings.system-features = lib.mkAfter [
-    "gccarch-bdver4"
-    "gccarch-skylake"
+    "gccarch-x86-64-v3"
     "big-parallel"
   ];
 
@@ -162,7 +162,7 @@
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILv1nEsuHqlA1ykn1p8wZmhhv1Y77cBxhgu2tAO3DhlP jupiter-fleet-nix-build"
   ];
 
-  jupiter.build.microarch = "skylake";
+  jupiter.build.microarch = "x86-64-v3";
 
   # Symmetric peer-to-peer build pool: callisto + 4 kiosks
   jupiter.core.buildMachines = {
@@ -575,8 +575,8 @@
   #     (2026-08-22): stock postgresql-18.4.drv
   #     lsjbscjwnssxa39c9n4xbcwlvspak1l7 (and postgresql_17.10 equally) is
   #     absent from BOTH places this host could get it — cache.nixos.org
-  #     never has skylake-tagged paths anyway (this host's closure is
-  #     jupiter.build.microarch = "skylake"), and Harmonia holds no postgres
+  #     never has microarch-tagged paths anyway (this host's closure is
+  #     jupiter.build.microarch = "x86-64-v3"), and Harmonia holds no postgres
   #     build because no fleet closure ever contained one (`curl …/<hash>.
   #     narinfo` → 404 both; `nix build --dry-run` of the callisto toplevel
   #     lists the drv under "will be built"). So enabling the service forces
@@ -590,7 +590,7 @@
   #     observation after switch (systemctl + psql roundtrip), not by the
   #     package's own harness. The override can be dropped if Harmonia ever
   #     carries this host's postgres build (the only plausible carrier —
-  #     cache.nixos.org can't serve skylake-tagged paths); until then the
+  #     cache.nixos.org can't serve v3-tagged paths); until then the
   #     local build is unconditional.
   jupiter.services.postgres.package = pkgs.postgresql_18.overrideAttrs {
     doCheck = false;

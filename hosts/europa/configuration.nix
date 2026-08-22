@@ -11,15 +11,19 @@
 # cores, no SMT; family 21 model 96, so bdver4), 8GB ECC,
 # Crucial MX500 500GB SSD (OS), 2× WD 18TB (tank pool / file transfer).
 #
-# Phase 1: untuned NixOS from cache.nixos.org (stock kernel, no microarch
-# flags). Gets the machine running with ZFS, Samba, NFS, Harmonia, Syncthing,
-# and SMART monitoring.
-#
-# Phase 2 (inactive since 2026-08-16): jupiter.build.microarch = "bdver4"
-# tunes the closure for this exact CPU — but no CI pipeline is delivering a
-# tuned closure (last push f58fc16/2026-08-06 was untuned), and untuned
-# europa substitutes its whole closure from cache.nixos.org + its own
-# Harmonia. See the note at the microarch setting below before re-enabling.
+# Tuning history:
+#   Phase 1 (→2026-08-16): untuned NixOS straight from cache.nixos.org.
+#   Phase 2 (2026-08-16→08-13-era re-enable): jupiter.build.microarch =
+#   "bdver4" — abandoned after CI run 32540930884 (2026-08-22): bdver4 is a
+#   vendor -march that implies XOP/FMA4/TBM/LWP/SSE4A and RDRND (gcc bug
+#   116854; this CPU lacks RDRAND entirely, per /proc/cpuinfo). zlib/gmp
+#   checkPhases SIGILLed on the GH runners executing that code.
+#   Phase 3 (now): "x86-64-v3". CPUID on THIS chip confirms every v3
+#   requirement (avx avx2 bmi1 bmi2 fma f16c movbe popcnt cx16 sse4_2), and
+#   v3 carries none of the vintage extensions or RDRND. One level fleet-wide
+#   = one shared closure family: europa, callisto and all kiosks substitute
+#   identical paths from Harmonia, and CI builders can compile AND run-check
+#   everything natively.
 {
   imports = [
     ../../modules/common.nix
@@ -89,7 +93,7 @@
   # Disable Lix (needs >8GB RAM to build); use standard Nix instead
   jupiter.core.lix.enable = false;
   nix.settings.system-features = lib.mkAfter [
-    "gccarch-bdver4"
+    "gccarch-x86-64-v3"
     "big-parallel"
   ];
   # Retain build-time outputs alongside the rooted runtime closures.
@@ -101,24 +105,21 @@
   # the full build closure of the retained builds.
   nix.settings.keep-outputs = true;
 
-  # ---- Remote builder: callisto --------------------------------------------
-  # Delegate eligible builds to callisto (fleet address in
-  # modules/network/fleet.nix): 6c/6t i5-8500T vs this 2c/2t Opteron —
-  # several times faster per core. Formerly inlined here; now the shared
-  # modules/core/build-machines.nix with its two europa-specific deviations
-  # as explicit flags — behavior identical to the old inline slice:
-  #   * includeKiosks=false — europa delegates to callisto ALONE (the module
-  #     defaults to also wiring the 4 kiosks).
-  #   * advertiseBdver4=false — supportedFeatures deliberately OMITS
-  #     gccarch-bdver4: callisto is Coffee Lake/Skylake with no XOP/TBM/FMA4
-  #     (Excavator-only extensions bdver4 code may emit). Advertising it
-  #     (pre-08fd609) made perl's miniperl bootstrap SIGILL while "building
-  #     on europa" — actually mis-executing on callisto. Delegation is safe
-  #     again NOW precisely because europa is untuned: its derivations carry
-  #     no gccarch-* tag. If microarch is ever re-enabled, revisit this
-  #     matrix first (build bdver4 locally or on CI only).
-  # Europa (bdver4/Excavator) uses all Skylake hosts (callisto + 4 kiosks) as builders.
-  # Not part of the symmetric pool (different microarch).
+  # ---- Remote builders: callisto + kiosks ------------------------------------
+  # Inline delegation (NOT modules/core/build-machines.nix — that module's
+  # enable flag is off here): callisto (6c/6t i5-8500T) plus the four kiosk
+  # i5-6300Us, each several times faster per core than this 2c/2t Opteron.
+  #
+  # Every listed builder is x86_64-v3-capable (callisto/kiosks are
+  # Skylake-class; the level was chosen fleet-wide as the lowest common
+  # floor, CPUID-proven on THIS Excavator chip 2026-08-22), so one
+  # gccarch-x86-64-v3 feature tag is honest everywhere: they can compile
+  # AND run-check every tagged derivation in any fleet closure, including
+  # europa's own. History: under per-host vendor tags (bdver4/skylake) this
+  # matrix needed per-CPU exclusions — advertising bdver4 toward callisto
+  # made perl's miniperl bootstrap SIGILL mid-build (pre-08fd609) because
+  # Coffee Lake lacks XOP/TBM/FMA4. The shared level retires that whole
+  # class of bug.
   nix.distributedBuilds = true;
   nix.buildMachines = [
     {
@@ -131,8 +132,7 @@
 
       speedFactor = 2;
       supportedFeatures = [
-        "gccarch-skylake"
-        "gccarch-bdver4"
+        "gccarch-x86-64-v3"
         "big-parallel"
       ];
       mandatoryFeatures = [ ];
@@ -147,8 +147,7 @@
 
       speedFactor = 1;
       supportedFeatures = [
-        "gccarch-skylake"
-        "gccarch-bdver4"
+        "gccarch-x86-64-v3"
         "big-parallel"
       ];
       mandatoryFeatures = [ ];
@@ -163,8 +162,7 @@
 
       speedFactor = 1;
       supportedFeatures = [
-        "gccarch-skylake"
-        "gccarch-bdver4"
+        "gccarch-x86-64-v3"
         "big-parallel"
       ];
       mandatoryFeatures = [ ];
@@ -179,8 +177,7 @@
 
       speedFactor = 1;
       supportedFeatures = [
-        "gccarch-skylake"
-        "gccarch-bdver4"
+        "gccarch-x86-64-v3"
         "big-parallel"
       ];
       mandatoryFeatures = [ ];
@@ -195,8 +192,7 @@
 
       speedFactor = 1;
       supportedFeatures = [
-        "gccarch-skylake"
-        "gccarch-bdver4"
+        "gccarch-x86-64-v3"
         "big-parallel"
       ];
       mandatoryFeatures = [ ];
@@ -252,8 +248,8 @@
   # ---- ZFS NAS layer -------------------------------------------------------
   jupiter.nas.enable = true;
 
-  # ---- Phase 2: CPU-tuned closure ------------------------------------------
-  jupiter.build.microarch = "bdver4"; # CI builds this host's closure with -march=bdver4
+  # ---- Tuned closure (fleet-shared x86-64-v3 level) -------------------------
+  jupiter.build.microarch = "x86-64-v3"; # lowest common ISA floor of every fleet CPU + CI builder
 
   # ---- nixpkgs overlays ----------------------------------------------------
   # bmake's `deptgt-interrupt` unit test is timing-sensitive (it asserts a
@@ -305,14 +301,15 @@
     # stdenv-wide doCheck=false overlay: REMOVED 2026-08-16. 7efc8c4
     # re-introduced it (europa-only) for the bdver4 local-build era, when
     # gmp/libmpc `make check` SIGILLed on this RDRAND-less Excavator CPU
-    # under -march=bdver4 (gcc bug 116854). With microarch disabled nothing
-    # builds locally anymore, and the overlay rewrites the output hash of
-    # EVERY doCheck=true derivation (zlib and friends) all the way down —
-    # measured 2026-08-16: 2308 unsubstitutable local builds vs ~70 without
-    # it. That is exactly the buildability rule in CLAUDE.md: override the
-    # one package that misbehaves (bmake/postgresql_18 above), never the
-    # stdenv. If bdver4 local builds return, the fix is -mno-rdrnd in the
-    # bootstrap gcc-wrapper, not silencing checkPhase fleet-wide.
+    # under -march=bdver4 (gcc bug 116854). The overlay rewrites the output
+    # hash of EVERY doCheck=true derivation (zlib and friends) all the way
+    # down — measured 2026-08-16: 2308 unsubstitutable local builds vs ~70
+    # without it. That is exactly the buildability rule in CLAUDE.md:
+    # override the one package that misbehaves (bmake/postgresql_18 above),
+    # never the stdenv. The underlying RDRND hazard is gone for good under
+    # x86-64-v3: level baselines never imply RDRND, so gmp/libmpc checks run
+    # clean both on CI builders and on this CPU. Keep the lesson: if a
+    # single package's self-test misbehaves, override that package only.
   ];
 
   # ---- Networking ----------------------------------------------------------

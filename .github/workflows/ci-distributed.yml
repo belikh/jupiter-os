@@ -21,7 +21,7 @@ name: CI (distributed builders)
 # once. An earlier attempt at the combined form hit store issues traced to
 # the kiosks (shared cross-host derivations confusing one evaluation's
 # GC-root/output bookkeeping) — see the "Build + push each host closure
-# sequentially" step below. Cross-host derivation sharing (e.g. the skylake
+# sequentially" step below. Cross-host derivation sharing (e.g. the shared
 # kiosk base every kiosk shares) still substitutes from Harmonia after the
 # first kiosk pushes it, it just isn't deduped within a single evaluation.
 #
@@ -68,7 +68,7 @@ name: CI (distributed builders)
 #   rather than trusting that here).
 # - No per-builder resource tuning: every builder advertises maxJobs=1,
 #   speedFactor=4, and the same feature set (kvm, benchmark, big-parallel,
-#   gccarch-bdver4, gccarch-skylake). maxJobs=1 matches the builder's own
+#   gccarch-x86-64-v3). maxJobs=1 matches the builder's own
 #   nix.conf (max-jobs=1, cores=4 — one derivation at a time on all 4 cores,
 #   the callisto/kiosk large-package shape, not pallene's cores=1
 #   many-small-packages shape); declaring more would lie to the coordinator,
@@ -213,7 +213,7 @@ jobs:
             http2 = false
             max-substitution-jobs = 1
             http-connections = 1
-            system-features = kvm benchmark big-parallel gccarch-bdver4 gccarch-skylake
+            system-features = kvm benchmark big-parallel gccarch-x86-64-v3
             # i686 REQUIRED: 32-bit closures build here via qemu-user binfmt.
             extra-platforms = i686-linux x86_64-linux
             cores = 4
@@ -443,7 +443,7 @@ jobs:
             http2 = false
             fallback = true
             # Coordinator builds i686 locally via qemu-user, dispatches x86_64 to builders
-            system-features = kvm benchmark big-parallel gccarch-bdver4 gccarch-skylake
+            system-features = kvm benchmark big-parallel gccarch-x86-64-v3
             extra-platforms = i686-linux x86_64-linux
             max-jobs = 2
             cores = 4
@@ -798,7 +798,7 @@ jobs:
 
           : > /tmp/machines
           for ip in "${ready[@]}"; do
-            echo "ssh-ng://runner@${ip} x86_64-linux,i686-linux $HOME/.ssh/ci_builder_key 1 4 kvm,benchmark,big-parallel,gccarch-bdver4,gccarch-skylake -" \
+            echo "ssh-ng://runner@${ip} x86_64-linux,i686-linux $HOME/.ssh/ci_builder_key 1 4 kvm,benchmark,big-parallel,gccarch-x86-64-v3 -" \
               >> /tmp/machines
           done
 
@@ -825,21 +825,21 @@ jobs:
       # picture instead of stopping at the first broken host.
       #
       # TWO PASSES, europa as LAST RESORT ONLY: pass 1 always dispatches to
-      # the 19 disposable GH builders. GitHub's ubuntu-latest pool is a
-      # heterogeneous grab-bag of Azure CPU generations, so anything that
-      # compiles a binary and immediately *executes* it as a normal part of
-      # its own build (autotools configure probes, perl's miniperl bootstrap,
-      # cargo build.rs, ...) can hit "Illegal instruction" when that binary
-      # was built gccarch-bdver4/skylake-tuned but the runner it landed on
-      # doesn't actually support the tuned instruction set. See
-      # docs/ci-harmonia-push-runbook.md-adjacent history: the zlib/gmp/perl
-      # incidents that motivated this.
+      # the 19 disposable GH builders. All closures are built against the
+      # single x86-64-v3 psABI level (lowest common fleet floor), whose
+      # instructions EVERY plausible Azure CPU executes natively — including
+      # the autotools configure probes, perl miniperl bootstraps and cargo
+      # build.rs steps that SIGILLed CI run 32540930884 back when closures
+      # carried vendor tags (bdver4 emits XOP/FMA4/TBM/LWP/SSE4A/RDRND that
+      # runners lack; see hosts/europa/configuration.nix tuning history).
+      # A straggler runner below v3 would refuse the gccarch tag at dispatch
+      # time ("missing system features") instead of mis-executing — visible
+      # failure, no silent corruption.
       #
       # Only if pass 1 leaves failures behind do we retry on europa — real,
-      # always-on bdver4 hardware, not a disposable runner, but also the
-      # fleet's NAS/PXE/Harmonia box, so it's deliberately excluded from the
-      # main pool and only touched when the free ephemeral builders couldn't
-      # finish everything. `nix build` is idempotent: everything pass 1 built
+      # always-on hardware kept out of the main pool because it's also the
+      # fleet's NAS/PXE/Harmonia box; touched only when the free ephemeral
+      # builders couldn't finish everything. `nix build` is idempotent: everything pass 1 built
       # is already valid in the coordinator's local store (remote builds copy
       # their outputs back here as they complete), so pass 2's `nix build`
       # only actually attempts whatever's still missing.
@@ -917,7 +917,7 @@ jobs:
           # modules/network/pxe-server.nix). Build them explicitly so the final
           # push lands them on europa: europa's `systemctl start
           # jupiter-pxe-assets` then substitutes from its own store instead of
-          # compiling a skylake-tagged kernel on a 2-core Opteron. Also the only
+          # compiling a v3-tagged kernel on a 2-core Opteron. Also the only
           # place this package is ever built — `nix flake check` is eval-only,
           # so a broken linkFarm here would first surface at publish time.
           INSTALLABLES+=(".#pxe-netboot-assets")
@@ -1038,21 +1038,32 @@ jobs:
           # Pass 2, LAST RESORT ONLY: pass 1 left something unbuilt. Retry on
           # europa instead of the GH pool.
           #
-          # supportedFeatures is deliberately gccarch-bdver4 ONLY, not
-          # -skylake too: europa's own CPU is bdver4-tuned, so a
-          # skylake-tagged derivation (callisto/kiosks) would hit the exact
-          # same build/target CPU mismatch here that sent it to pass 2 in the
-          # first place. Leaving -skylake off means Nix won't even try to
-          # dispatch those to europa — they stay correctly FAILed rather than
-          # silently mis-built on the wrong CPU. (callisto is the real
-          # skylake box; wiring it up as a second last-resort fallback is
-          # follow-up work, not done here.) maxJobs=1 so this doesn't hammer
+          # With the fleet-wide v3 level there are no per-host tag mismatches
+          # left: europa advertises gccarch-x86-64-v3 itself once switched to
+          # this generation, so any tagged drv that failed on the pool for a
+          # transient reason can rebuild here safely. Ordering caveat: until
+          # europa has been redeployed onto a v3 generation its daemon won't
+          # advertise the tag and these dispatches would be refused — deploy
+          # europa before trusting pass 2. maxJobs=1 so this doesn't hammer
           # a box with other fleet duties (NAS, PXE, Harmonia).
           if [ $BUILD_EXIT -ne 0 ]; then
+            # Guard the retry: the nix-daemon opens builder SSH itself from
+            # ROOT's context, where no staged ssh_config stanza covers the
+            # bare hostname "europa" (only Host 100.* exists). Without a
+            # pre-flight probe that failure surfaces as nix's opaque
+            # "failed to start SSH connection to 'europa'" AFTER pass 1 —
+            # exactly how run 32540930884 lost its safety net (sshd logged a
+            # preauth close; zero drvs dispatched). Probe first; if it can't
+            # connect, say so loudly and skip pass 2 instead of burning the
+            # window on a guaranteed-empty retry.
+            if ! sudo -H ssh -o BatchMode=yes -o ConnectTimeout=10 \
+                 -i "$HOME/.ssh/europa_ci" root@europa true; then
+              echo "::error::pass 2 unavailable: nix-daemon-context SSH to root@europa failed (see diagnosis of run 32540930884)"
+            else
             echo "========================================"
             echo "Pass 1 (19 GH builders) left failures behind -- retrying on europa (last resort)"
             echo "========================================"
-            echo "ssh-ng://root@europa x86_64-linux $HOME/.ssh/europa_ci 1 1 kvm,benchmark,big-parallel,gccarch-bdver4 -" \
+            echo "ssh-ng://root@europa x86_64-linux $HOME/.ssh/europa_ci 1 1 kvm,benchmark,big-parallel,gccarch-x86-64-v3 -" \
               > /tmp/machines-europa
 
             printf '@nix {"action":"msg","level":2,"msg":"=== jupiter-ci %s: pass 2, retrying failures on europa (last resort) ==="}\n' \
@@ -1071,7 +1082,8 @@ jobs:
 
             echo "Out paths after europa retry:"
             cat "$OUT_PATHS"
-          fi
+            fi  # pass-2 SSH guard (probe)
+          fi    # if [ $BUILD_EXIT -ne 0 ]
 
           # --keep-going means a host that failed doesn't take its siblings
           # down with it, but the single combined exit code can't say which

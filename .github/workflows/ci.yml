@@ -93,7 +93,7 @@ jobs:
             # transfers that would otherwise complete.
             stalled-download-timeout = 900
             post-build-hook = /opt/ci/post-build-hook.sh
-            system-features = gccarch-bdver4 gccarch-skylake big-parallel
+            system-features = gccarch-x86-64-v3 big-parallel
             extra-platforms = i686-linux x86_64-linux
             cores = 1
             max-jobs = 4

@@ -238,7 +238,7 @@
       # iSCSI root. See docs/callisto-iscsi-root-provisioning.md.
       #
       # Built with the PLAIN untuned nixpkgs.legacyPackages, not europa's own
-      # (gccarch-bdver4-tuned) `pkgs` — see modules/network/pxe-server.nix's
+      # (gccarch-x86-64-v3-tuned) `pkgs` — see modules/network/pxe-server.nix's
       # comment for why that distinction is load-bearing here.
       untunedPkgs = nixpkgs.legacyPackages.x86_64-linux;
 
@@ -401,7 +401,7 @@
       # The TFTP half of the netboot chain (ipxe.efi + undionly.kpxe) — the
       # part that lives in europa's closure. Exposed standalone (built with
       # the untuned nixpkgs, see pxeModule above) so it's independently
-      # checkable without pulling in europa's whole (gccarch-bdver4-tuned)
+      # checkable without pulling in europa's whole (gccarch-x86-64-v3-tuned)
       # system closure. Contains NO callisto build products since the split;
       # those are pxe-netboot-assets below.
       packages.x86_64-linux.pxe-tftproot = pxeTftpRoot;
@@ -413,8 +413,8 @@
       # (jupiter.pxe.assetsFlakeRef points at this attr) — run that AFTER
       # callisto has switched to the generation being served, since boot.ipxe
       # pins `init=` to that toplevel and the path has to exist on callisto's
-      # own iSCSI root. Skylake-tagged: only substitutes/builds where
-      # gccarch-skylake is available.
+      # own iSCSI root. v3-tagged: only substitutes/builds where
+      # gccarch-x86-64-v3 is available.
       packages.x86_64-linux.pxe-netboot-assets = pxeNetbootAssets;
 
       packages.x86_64-linux.aeon-dashboard = aeonPackages.aeon-dashboard;

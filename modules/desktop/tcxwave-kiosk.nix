@@ -355,44 +355,44 @@ in
     };
 
     # ---- Own closure: tuned for the CPU --------------------------------------
-    # Skylake-class i5-6300U. CI (.github/workflows/ci.yml, main-only) builds
-    # and pushes this to Harmonia — the kiosk itself only ever substitutes the
-    # result, so the ~7.6GiB RAM caveat below (about ACCEPTING remote build
-    # jobs FROM other hosts) doesn't apply to tuning its own closure.
+    # Skylake-class i5-6300U — comfortably above the fleet-wide x86-64-v3
+    # floor. CI (.github/workflows/ci.yml, main-only) builds and pushes this
+    # to Harmonia — the kiosk itself only ever substitutes the result, so the
+    # ~7.6GiB RAM caveat below (about ACCEPTING remote build jobs FROM other
+    # hosts) doesn't apply to tuning its own closure.
     # Verify Harmonia has it before switching: `nix path-info --substituters
     # http://10.1.1.2:5000 <toplevel>`.
-    jupiter.build.microarch = "skylake";
+    jupiter.build.microarch = "x86-64-v3";
 
     # ---- Idle-time distributed build server ---------------------------------
     # A kiosk spends ~99.9999% of its life displaying a static dashboard and
-    # idling — let the rest of the fleet borrow its Skylake CPU for builds.
-    # Advertising gccarch-skylake lets it BUILD any other host's
-    # skylake-tagged closure (now callisto's and its own too); today the
-    # practical value is generic x86_64-linux build capacity for any host's
-    # closure. Same "can build it without being it" pattern as callisto
-    # (hosts/callisto/configuration.nix) for OTHER hosts' derivations. This
-    # kiosk's own closure is tuned above (skylake); callisto's is too now.
+    # idling — let the rest of the fleet borrow its CPU for builds.
     #
-    # gccarch-bdver4 (matching modules/core/build-machines.nix's
-    # kioskBuilders supportedFeatures): makes kiosks eligible to help build
-    # europa's bdver4-tuned (Excavator) closure too — Skylake is an ISA
-    # superset of Excavator's standard extensions (AVX2/FMA/BMI/F16C), so a
-    # Skylake kiosk can safely compile and run-check europa's bdver4 code.
-    # This is the REMOTE side of that eligibility — nix's own
-    # daemon here enforces system-features against what a dispatcher
-    # requests, independent of what the dispatcher's --builders string
-    # claims, so both sides need this tag or the remote refuses the job
-    # ("missing system features", confirmed hitting this in practice before
-    # this was added here). Caveat carried over from build-machines.nix: each
-    # kiosk only has ~7.6GiB RAM vs callisto's 64GB — a large tuned
-    # derivation (clang/llvm) landing here instead of callisto risks
-    # swap-thrashing or OOM. Acceptable per that module's reasoning.
+    # The single gccarch-x86-64-v3 tag is honest here by construction: v3 was
+    # chosen fleet-wide as the LOWEST common ISA floor, so this kiosk (like
+    # callisto and europa itself) can compile AND run-check every tagged
+    # derivation in any fleet closure. History: under per-host vendor tags
+    # the kiosks advertised "gccarch-skylake + gccarch-bdver4" on the theory
+    # that Skylake ⊇ Excavator's standard extensions — true for
+    # AVX2/FMA/BMI/F16C, but bdver4 also permits XOP/TBM/FMA4/LWP/SSE4A and
+    # RDRND (gcc bug 116854), none of which Skylake or any modern runner
+    # has; CI run 32540930884 died exactly there (zlib/gmp SIGILL in their
+    # checkPhases). The psABI level retires that reasoning entirely.
+    #
+    # This is the REMOTE side of build eligibility — nix's own daemon here
+    # enforces system-features against what a dispatcher requests,
+    # independent of what the dispatcher's --builders string claims, so both
+    # sides need this tag or the remote refuses the job ("missing system
+    # features", confirmed hitting this in practice before this was added
+    # here). Caveat carried over from build-machines.nix: each kiosk only
+    # has ~7.6GiB RAM vs callisto's 64GB — a large tuned derivation
+    # (clang/llvm) landing here instead of callisto risks swap-thrashing or
+    # OOM. Acceptable per that module's reasoning.
     #
     # The pubkey matches the private half deployed as nix_build_ssh_key sops
     # secret fleet-wide via modules/core/build-machines.nix.
     nix.settings.system-features = lib.mkAfter [
-      "gccarch-skylake"
-      "gccarch-bdver4"
+      "gccarch-x86-64-v3"
       "big-parallel"
     ];
 

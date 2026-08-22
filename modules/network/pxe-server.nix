@@ -25,7 +25,7 @@
 #
 # `root` is built entirely in flake.nix using an UNTUNED nixpkgs instance
 # (nixpkgs.legacyPackages.x86_64-linux), not this host's own `pkgs` — on
-# europa, `pkgs` is gccarch-bdver4-tuned (jupiter.build.microarch), and
+# europa, `pkgs` is gccarch-x86-64-v3-tuned (jupiter.build.microarch), and
 # building ipxe/syslinux/mtools under that tag means rebuilding that whole
 # toolchain from source (nothing that unrelated is in Harmonia, and
 # cache.nixos.org only has the portable build). Confirmed: plain
@@ -145,10 +145,9 @@ in
         pkgs.gnutar
         pkgs.xz.bin
         pkgs.gzip
-        # openssh: europa stopped being skylake-tuned on 2026-08-13, so
-        # building callisto's gccarch-skylake closure means delegating to
-        # callisto over ssh-ng://root@10.1.1.3 (europa's only machine in
-        # /etc/nix/machines that advertises gccarch-skylake). nix shells out
+        # openssh: building callisto's gccarch-x86-64-v3 closure means delegating
+        # to callisto over ssh-ng://root@10.1.1.3 (europa's only machine in
+        # /etc/nix/machines, advertising gccarch-x86-64-v3). nix shells out
         # to `ssh` from PATH for that delegation, so without openssh here the
         # publish dies "Could not find executable 'ssh' / Cannot build
         # system-path.drv: missing system features". Confirmed 2026-08-14.

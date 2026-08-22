@@ -23,7 +23,7 @@ in
     # `nixos-version` and os-release for cache/support decisions, while the
     # "jupiter" tag marks the closure as ours. Buildability-safe: this only
     # reassembles the toplevel (os-release + label); it does not touch the
-    # bdver4-tuned package set, so a tuned closure substitutes unchanged.
+    # microarch-tuned package set, so a tuned closure substitutes unchanged.
     system.nixos.tags = [ "jupiter" ];
   };
 }

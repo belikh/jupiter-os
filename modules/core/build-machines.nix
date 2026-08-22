@@ -7,8 +7,10 @@
 # Symmetric peer-to-peer build pool across all Skylake hosts in the fleet:
 # callisto (i5-8500T, 6c/6t, 64GB) + 4 dashboard kiosks (i5-6300U, 2c/4t, 7.6GB).
 #
-# All 5 hosts advertise gccarch-skylake (their own microarch) AND gccarch-bdver4
-# (ISA superset: Skylake can safely compile/run Excavator code for europa).
+# All 5 hosts advertise gccarch-x86-64-v3 — the single fleet-wide psABI level
+# (lowest common floor: europa's Excavator CPUID-proves v3-complete; these
+# Skylake-class hosts are strictly above it), so every host can compile and
+# run-check any other host's tagged derivations.
 # Each host runs maxJobs=1 with cores=4, leaving headroom for its own workload
 # (callisto leaves 2 cores free; kiosks leave the dashboard session responsive).
 #
@@ -70,8 +72,7 @@ let
       maxJobs = 1;
       speedFactor = if isKiosk then 1 else 2; # callisto 2x faster than kiosks
       supportedFeatures = [
-        "gccarch-skylake"
-        "gccarch-bdver4"
+        "gccarch-x86-64-v3"
         "big-parallel"
       ];
       mandatoryFeatures = [ ];

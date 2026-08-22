@@ -36,7 +36,7 @@ let
   inherit (import ../lib.nix { inherit config lib pkgs; }) commonServiceHardening;
 
   # Built from in-tree source alongside this module. Stdlib-only, so it
-  # substitutes clean on europa's bdver4-tuned closure (Go ignores gccarch) and
+  # substitutes clean on europa's x86-64-v3-tuned closure (Go ignores gccarch) and
   # needs no new flake input. Exposed standalone as `.#suno-backup` in flake.nix
   # for vendorHash recompute / local iteration.
   pkg = pkgs.callPackage ../../pkgs/suno-backup { };
