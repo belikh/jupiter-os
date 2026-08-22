@@ -488,6 +488,73 @@ func TestMigrateV2DatabaseStepsToV3(t *testing.T) {
 	}
 }
 
+// TestMigrateV6DatabaseStepsToV7 pins the P6 artifact column: a pre-v7
+// verify_results row (no artifacts column) migrates cleanly and reads as
+// "0 artifacts"; a fresh RecordVerifyResult roundtrips the count through
+// the summary join.
+func TestMigrateV6DatabaseStepsToV7(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "v6.db")
+	db, err := sql.Open("sqlite", "file:"+p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	steps := []string{}
+	steps = append(steps, schemaV1...)
+	steps = append(steps, schemaV2...)
+	steps = append(steps, schemaV3...)
+	steps = append(steps, schemaV4...)
+	steps = append(steps, schemaV5...)
+	steps = append(steps, schemaV6...)
+	for _, stmt := range steps {
+		if _, err := db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "already exists") {
+			t.Fatalf("seed schema: %v", err)
+		}
+	}
+	if _, err := db.Exec(`INSERT INTO systems (key, collection, bucket, sort_order) VALUES ('nes', 'NES', 'cartridge', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	// A v6-shaped row: extra exists (v3), artifacts does not (v7).
+	if _, err := db.Exec(`INSERT INTO verify_results
+		(system_key, run_id, finished_at, dat_games, found, missing, unmatched, duplicate, other, extra, promoted_bytes, unchecked, report_path)
+		VALUES ('nes', 9, '2026-08-22T00:00:00Z', 4, 4, 0, 0, 4, 0, 2, 0, 0, '/r/nes.csv')`); err != nil {
+		t.Fatalf("seed v6 row: %v", err)
+	}
+	if _, err := db.Exec(`PRAGMA user_version = 6`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := Open(p)
+	if err != nil {
+		t.Fatalf("Open v6 database: %v", err)
+	}
+	defer s.Close() //nolint:errcheck // test
+	if got := s.SchemaVersion(); got != SchemaVersion {
+		t.Fatalf("migrated user_version = %d, want %d", got, SchemaVersion)
+	}
+	rows, err := s.SystemSummary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].Verify.Extra != 2 || rows[0].Verify.Artifacts != 0 {
+		t.Errorf("pre-v7 row lost/mangled by migration: %+v", rows)
+	}
+
+	// Roundtrip: the artifact counter persists through the upsert + join.
+	if err := s.RecordVerifyResult(VerifyResult{
+		SystemKey: "nes", RunID: 10, FinishedAt: "2026-08-23T00:00:00Z",
+		DatGames: 4, Found: 4, Artifacts: 3,
+	}); err != nil {
+		t.Fatalf("RecordVerifyResult: %v", err)
+	}
+	rows, _ = s.SystemSummary()
+	if len(rows) != 1 || rows[0].Verify.Artifacts != 3 {
+		t.Errorf("artifacts not persisted/read: %+v", rows)
+	}
+}
+
 // ---- P4: library browsing (ListGames / GetGame) ---------------------------
 
 func TestGameQueries(t *testing.T) {

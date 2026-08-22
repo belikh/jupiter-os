@@ -17,11 +17,11 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 HOST="arcade-webapp-vm"
 OUT_LINK="result-vm-${HOST}"
-# 480s (raised from 300 for P3): the smoke now runs the REAL igir (node
-# startup ~1-3s per invocation, ~7 invocations across verify steps) plus
-# its polls — healthy runs finish in ~2-3 min, the slack absorbs a loaded
-# host without flaking the verdict.
-TIMEOUT_SECS="${TIMEOUT_SECS:-480}"
+# 600s (raised from 480 for P6): the smoke's verify gates now retry
+# bounded (the post-verify launcher-DB regeneration can hold the shared
+# slot when the next verify POST lands), and the P6 block adds ~8
+# generate round-trips on top of the P3 real-igir invocations.
+TIMEOUT_SECS="${TIMEOUT_SECS:-600}"
 
 echo ">> Building VM for ${HOST}..."
 nix build ".#nixosConfigurations.${HOST}.config.system.build.vm" \

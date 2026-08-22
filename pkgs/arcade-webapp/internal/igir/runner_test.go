@@ -781,6 +781,52 @@ NES,Game B,MISSING,
 	}
 }
 
+// TestParseReportLauncherDBArtifacts pins the P6 classification: output-side
+// UNUSED rows for the launcher-DB files the pipeline itself writes
+// (metadata.pegasus.txt, anything under media/) are ARTIFACTS, not extras.
+// Proven against real igir 5.3.0 (P6 VM bring-up + a local probe): igir
+// inventories every unknown file in both scanned dirs — it recurses into
+// media/ and has no output-side exclude — so without this split every
+// verify after a generation would go amber forever. A genuine operator
+// drop in the same tree must still count as Extra.
+func TestParseReportLauncherDBArtifacts(t *testing.T) {
+	csvText := `DAT Name,Game Name,Status,ROM Files
+NES,Game A,FOUND,/out/nes/Game A.nes
+,,UNUSED,/out/nes/metadata.pegasus.txt
+,,UNUSED,/out/nes/media/Game A/cover.png
+,,UNUSED,/out/nes/media/screenshot.png
+,,UNUSED,/out/nes/operator drop.zip
+`
+	rep, err := ParseReport(strings.NewReader(csvText), "/in/nes", "/out/nes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Artifacts != 3 {
+		t.Errorf("Artifacts = %d, want 3 (metadata file + two media depths)", rep.Artifacts)
+	}
+	if rep.Extra != 1 {
+		t.Errorf("Extra = %d, want 1 (a real operator drop is still amber)", rep.Extra)
+	}
+	for _, f := range rep.ArtifactFiles {
+		if strings.Contains(f, "operator drop") {
+			t.Errorf("real extra misclassified as artifact: %v", rep.ArtifactFiles)
+		}
+	}
+	if len(rep.ExtraFiles) != 1 || !strings.Contains(rep.ExtraFiles[0], "operator drop") {
+		t.Errorf("ExtraFiles = %v, want the operator drop only", rep.ExtraFiles)
+	}
+	// The input side is never artifact-classified: a metadata file staged
+	// in incoming/ is junk exactly as before (red).
+	csvText = "DAT Name,Game Name,Status,ROM Files\n,,UNUSED,/in/nes/metadata.pegasus.txt\n"
+	rep, err = ParseReport(strings.NewReader(csvText), "/in/nes", "/out/nes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rep.Unmatched != 1 || rep.Artifacts != 0 {
+		t.Errorf("input-side metadata file: Unmatched=%d Artifacts=%d, want 1/0", rep.Unmatched, rep.Artifacts)
+	}
+}
+
 // ---- copyTree quick-check --------------------------------------------------
 
 func TestCopyTreeQuickCheckSemantics(t *testing.T) {

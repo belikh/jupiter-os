@@ -58,7 +58,14 @@ import (
 // generator emits them into metadata.pegasus.txt when present; until an
 // ingest fills them they read as absent and generated files carry
 // title+file only. All nullable so pre-P6 rows need no backfill.
-const SchemaVersion = 6
+//
+// v7 (P6, VM bring-up): verify_results.artifacts — igir inventories the
+// launcher-DB files the generator/Skyscraper own (metadata.pegasus.txt,
+// media/**) as output-side UNUSED rows; they are pipeline artifacts, not
+// ROM-set deviations, and get their own benign counter instead of
+// poisoning the amber 'extra' signal forever (the P6 generation trigger
+// makes every post-verify verify see them).
+const SchemaVersion = 7
 
 // SystemRow is one catalogue system as persisted (Extensions is a JSON
 // array string — enough for P1's rendering needs).
@@ -131,6 +138,7 @@ type VerifyResult struct {
 	Duplicate     int // output-side re-verify echoes (benign)
 	Extra         int // output-side files the DAT doesn't claim (amber)
 	Other         int // unknown statuses/provenance (red)
+	Artifacts     int // launcher-DB files ignored (metadata.pegasus.txt, media/**)
 	PromotedBytes int64
 	Unchecked     int // 1 = promoted as-is (no DAT)
 	ReportPath    string
@@ -291,6 +299,13 @@ func (s *Store) Migrate() error {
 			}
 		}
 	}
+	if version < 7 {
+		for _, stmt := range schemaV7 {
+			if _, err := tx.Exec(stmt); err != nil {
+				return fmt.Errorf("store: migrate v7: %w", err)
+			}
+		}
+	}
 	if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, SchemaVersion)); err != nil {
 		return err
 	}
@@ -419,6 +434,12 @@ var schemaV6 = []string{
 	`ALTER TABLE games ADD COLUMN publisher TEXT`,
 	`ALTER TABLE games ADD COLUMN genre TEXT`,
 	`ALTER TABLE games ADD COLUMN rating TEXT`,
+}
+
+// schemaV7 separates launcher-DB artifacts from real output-side extras
+// (see SchemaVersion). Defaulted 0: pre-v7 rows read as "no artifacts".
+var schemaV7 = []string{
+	`ALTER TABLE verify_results ADD COLUMN artifacts INTEGER NOT NULL DEFAULT 0`,
 }
 
 // Close closes the database.
@@ -741,7 +762,7 @@ func (s *Store) SystemSummary() ([]SystemSummary, error) {
 		       COALESCE(v.run_id, 0), COALESCE(v.finished_at, ''),
 		       COALESCE(v.dat_games, 0), COALESCE(v.found, 0), COALESCE(v.missing, 0),
 		       COALESCE(v.unmatched, 0), COALESCE(v.duplicate, 0), COALESCE(v.other, 0),
-		       COALESCE(v.extra, 0),
+		       COALESCE(v.extra, 0), COALESCE(v.artifacts, 0),
 		       COALESCE(v.promoted_bytes, 0), COALESCE(v.unchecked, 0), COALESCE(v.report_path, ''),
 		       CASE WHEN v.system_key IS NULL THEN 0 ELSE 1 END
 		FROM systems s
@@ -767,7 +788,7 @@ func (s *Store) SystemSummary() ([]SystemSummary, error) {
 			&r.Verify.RunID, &r.Verify.FinishedAt,
 			&r.Verify.DatGames, &r.Verify.Found, &r.Verify.Missing,
 			&r.Verify.Unmatched, &r.Verify.Duplicate, &r.Verify.Other,
-			&r.Verify.Extra,
+			&r.Verify.Extra, &r.Verify.Artifacts,
 			&r.Verify.PromotedBytes, &r.Verify.Unchecked, &r.Verify.ReportPath,
 			&r.VerifyPresent); err != nil {
 			return nil, err
@@ -782,16 +803,17 @@ func (s *Store) SystemSummary() ([]SystemSummary, error) {
 // report).
 func (s *Store) RecordVerifyResult(r VerifyResult) error {
 	_, err := s.db.Exec(`INSERT INTO verify_results
-		(system_key, run_id, finished_at, dat_games, found, missing, unmatched, duplicate, other, extra, promoted_bytes, unchecked, report_path)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+		(system_key, run_id, finished_at, dat_games, found, missing, unmatched, duplicate, other, extra, artifacts, promoted_bytes, unchecked, report_path)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(system_key) DO UPDATE SET
 		  run_id=excluded.run_id, finished_at=excluded.finished_at,
 		  dat_games=excluded.dat_games, found=excluded.found, missing=excluded.missing,
 		  unmatched=excluded.unmatched, duplicate=excluded.duplicate, other=excluded.other,
-		  extra=excluded.extra, promoted_bytes=excluded.promoted_bytes,
+		  extra=excluded.extra, artifacts=excluded.artifacts,
+		  promoted_bytes=excluded.promoted_bytes,
 		  unchecked=excluded.unchecked, report_path=excluded.report_path`,
 		r.SystemKey, r.RunID, r.FinishedAt, r.DatGames, r.Found, r.Missing,
-		r.Unmatched, r.Duplicate, r.Other, r.Extra, r.PromotedBytes, r.Unchecked, r.ReportPath)
+		r.Unmatched, r.Duplicate, r.Other, r.Extra, r.Artifacts, r.PromotedBytes, r.Unchecked, r.ReportPath)
 	return err
 }
 

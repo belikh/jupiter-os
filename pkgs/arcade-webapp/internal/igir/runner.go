@@ -115,6 +115,7 @@ type SystemOutcome struct {
 	Duplicate     int    `json:"Duplicate"` // output-side re-verify echoes (benign)
 	Extra         int    `json:"Extra"`     // output-side files the DAT doesn't claim (amber)
 	Other         int    `json:"Other"`
+	Artifacts     int    `json:"Artifacts"` // launcher-DB artifacts ignored (benign)
 	PromotedBytes int64  `json:"PromotedBytes"`
 	CopiedFiles   int    `json:"CopiedFiles"` // unchecked-promote path
 	ReportPath    string `json:"ReportPath,omitempty"`
@@ -384,6 +385,7 @@ func (r *Runner) processSystem(sys store.SystemRow, runID int64) SystemOutcome {
 	oc.DatGames, oc.Found = rep.DatGames, rep.Found
 	oc.Missing, oc.Unmatched = rep.Missing, rep.Unmatched
 	oc.Duplicate, oc.Other, oc.Extra = rep.Duplicate, rep.Other, rep.Extra
+	oc.Artifacts = rep.Artifacts
 	oc.ReportPath = report
 	oc.PromotedBytes = promotedBytes(rep.FoundPaths)
 
@@ -396,6 +398,7 @@ func (r *Runner) processSystem(sys store.SystemRow, runID int64) SystemOutcome {
 		DatGames:   rep.DatGames, Found: rep.Found, Missing: rep.Missing,
 		Unmatched: rep.Unmatched, Duplicate: rep.Duplicate, Other: rep.Other,
 		Extra:         rep.Extra,
+		Artifacts:     rep.Artifacts,
 		PromotedBytes: oc.PromotedBytes, ReportPath: report,
 	})
 	if err := r.st.SetSystemVerifyStates(sys.Key, rep.FoundRels); err != nil {
@@ -430,8 +433,13 @@ func (r *Runner) processSystem(sys store.SystemRow, runID int64) SystemOutcome {
 	// Replace semantics clear the list on a clean re-verify (empty slice).
 	_ = r.st.RecordVerifyUnmatched(sys.Key, runID,
 		append(append([]string{}, rep.UnmatchedFiles...), rep.ExtraFiles...))
-	r.logf("%s: %s — %d/%d found, %d unmatched, %d missing (report: %s)",
-		sys.Key, oc.Outcome, rep.Found, rep.DatGames, rep.Unmatched, rep.Missing, report)
+	artifactsNote := ""
+	if rep.Artifacts > 0 {
+		artifactsNote = fmt.Sprintf(", %d launcher-DB artifact(s) ignored", rep.Artifacts)
+	}
+	r.logf("%s: %s — %d/%d found, %d unmatched, %d missing%s (report: %s)",
+		sys.Key, oc.Outcome, rep.Found, rep.DatGames, rep.Unmatched, rep.Missing,
+		artifactsNote, report)
 	return oc
 }
 
@@ -534,8 +542,19 @@ type Report struct {
 	// Per-file drill-down, in report order:
 	UnmatchedFiles []string // input-side UNUSED/DUPLICATE basenames (red)
 	ExtraFiles     []string // output-side UNUSED basenames (amber)
-	FoundPaths     []string
-	FoundRels      []string // FoundPaths relative to the igir --output dir
+	// Launcher-DB artifacts: output-side files the PIPELINE itself owns —
+	// metadata.pegasus.txt and everything under media/ — which igir 5.3.0
+	// inventories as UNUSED like any unknown file (proven empirically,
+	// P6 VM bring-up: it recurses into media/ too). They are not ROM-set
+	// deviations; counting them amber would flip every post-generation
+	// verify amber forever. igir has NO output-side exclude (only
+	// --input-exclude exists), so the classification happens here at
+	// ingest — the same provenance logic D-P3c applies to DUPLICATE
+	// echoes.
+	Artifacts     int
+	ArtifactFiles []string
+	FoundPaths    []string
+	FoundRels     []string // FoundPaths relative to the igir --output dir
 	// Checksum columns from the report's FOUND rows, aligned BY INDEX with
 	// FoundPaths/FoundRels (empty string = column absent or cell empty —
 	// older igir reports carry no hash columns at all). P5 persists these
@@ -648,6 +667,12 @@ func ParseReport(rd io.Reader, inputDir, outputDir string) (*Report, error) {
 			case underDir(inputDir, romPath):
 				rep.Unmatched++
 				rep.UnmatchedFiles = append(rep.UnmatchedFiles, filepath.Base(romPath))
+			case underDir(outputDir, romPath) && launcherDBArtifact(outputDir, romPath):
+				// Pipeline-owned launcher-DB artifact (metadata.pegasus.txt,
+				// media/**): benign by ownership, never amber — see the
+				// Report.Artifacts doc.
+				rep.Artifacts++
+				rep.ArtifactFiles = append(rep.ArtifactFiles, filepath.Base(romPath))
 			case underDir(outputDir, romPath):
 				rep.Extra++
 				rep.ExtraFiles = append(rep.ExtraFiles, filepath.Base(romPath))
@@ -670,6 +695,24 @@ func ParseReport(rd io.Reader, inputDir, outputDir string) (*Report, error) {
 	}
 	rep.DatGames = rep.Found + rep.Missing
 	return rep, nil
+}
+
+// launcherDBArtifact reports whether a path inside the igir output dir is
+// one of the launcher-DB files this pipeline itself generates/manages:
+// the per-system metadata.pegasus.txt and anything under its media/
+// subtree (Skyscraper's composited artwork layout). The first element of
+// a slash-separated relative path decides — case-exact on Linux.
+func launcherDBArtifact(outputDir, path string) bool {
+	rel, err := filepath.Rel(outputDir, path)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return false
+	}
+	rel = filepath.ToSlash(rel)
+	if rel == "metadata.pegasus.txt" {
+		return true
+	}
+	head, _, _ := strings.Cut(rel, "/")
+	return head == "media"
 }
 
 // promotedBytes sums the on-disk sizes of the FOUND output paths — what

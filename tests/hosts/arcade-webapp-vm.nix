@@ -37,9 +37,14 @@
 # the partials, then run the P2 download cycle and the P3 verify cycle
 # (DAT refresh via stub -> .aria2 skip -> real igir verify (amber
 # extra -> clean -> green) -> promote-unchecked -> verify-all ->
-# stage-torrent/stage-uri), print the PASS marker and power off. The
-# driver (scripts/test-arcade-webapp.sh) greps the serial log for the
-# marker.
+# stage-torrent/stage-uri), print the PASS marker and power off. P6 adds
+# the launcher-DB block: Regenerate renders each populated system dir's
+# metadata.pegasus.txt from the store — launch lines, relative paths,
+# byte stability across two runs, hidden exclusion both directions
+# (games.hidden seeded via the sqlite3 CLI; the curation UI is P7), and
+# a zeroed .chd landing in the "(Pending)" not-launchable collection.
+# The driver (scripts/test-arcade-webapp.sh) greps the serial log for
+# the marker.
 #
 # Deliberately NOT importing modules/common.nix — this is a test fixture,
 # not a fleet host: no sops, no impermanence, no branding, just the
@@ -319,6 +324,28 @@ let
     # P3 bring-up when the daemon stalled mid-startup).
     curl() { command curl --max-time 10 "$@"; }
 
+    # POST-and-wait-for-a-pill with bounded retry. Since P6, every
+    # SUCCESSFUL verify triggers a launcher-DB regeneration that claims
+    # the shared pipeline slot right after the runner releases it — a
+    # verify POST landing inside that window is rejected ErrBusy and
+    # swallowed by design (P3 semantics: the page already shows state),
+    # so the action must be RETRIED — exactly what an operator's second
+    # click does. Three attempts, 30s poll each; the callers fail loudly
+    # with their DEBUG blocks when even that never lands.
+    verify_until() { # $1 endpoint $2 system $3 expected state
+      local ep="$1" sys="$2" want="$3" attempt frag
+      for attempt in 1 2 3; do
+        curl -s -o /dev/null -H "$HX" -X POST "$base$ep"
+        for _ in $(seq 1 30); do
+          frag=$(curl -sf "$base/partials/verify" || true)
+          if grep -q "data-system=\"$sys\" data-verify=\"$want\"" <<<"$frag"; then return 0; fi
+          sleep 1
+        done
+        echo "smoke: $sys never reached '$want' (attempt $attempt) — retrying"
+      done
+      return 1
+    }
+
     echo "smoke: waiting for the webapp to reach the aria2 daemon"
     ok=0
     misses=0
@@ -552,15 +579,11 @@ let
     #    materializer). Staged corpus vs refreshed DAT -> every game
     #    FOUND, zero unmatched, zero extra -> GREEN.
     rm -f "${gamesRoot}/cartridge/nes/"*
-    code=$(curl -s -o /dev/null -w '%{http_code}' -H "$HX" -X POST "$base/systems/nes/verify")
-    [ "$code" = 202 ] || fail "POST /systems/nes/verify (2nd) -> $code, want 202"
-    ok=0
-    for _ in $(seq 1 60); do
-      frag=$(curl -sf "$base/partials/verify" || true)
-      if grep -q 'data-system="nes" data-verify="verified"' <<<"$frag"; then ok=1; break; fi
-      sleep 1
-    done
-    [ "$ok" = 1 ] || fail "real-igir nes verify never reached green (zero unmatched)"
+    if ! verify_until /systems/nes/verify nes verified; then
+      echo "smoke: DEBUG webapp journal tail:"
+      journalctl -u jupiter-arcade-webapp --no-pager -n 40 || true
+      fail "real-igir nes verify never reached green (zero unmatched)"
+    fi
     echo "smoke: REAL igir verified nes (zero unmatched, green)"
     [ -f "${gamesRoot}/cartridge/nes/Starlit Vault (USA).nes" ] \
       || fail "igir COPY-promoted ROM missing in the games tree (fresh output — this was a REAL promotion)"
@@ -578,31 +601,39 @@ let
     # not red), and the promoted file lands in the games tree.
     mkdir -p "${incoming}/a2600"
     head -c 512 /dev/zero | tr '\0' 'A' > "${incoming}/a2600/Fake Game (USA).a26"
-    code=$(curl -s -o /dev/null -w '%{http_code}' -H "$HX" -X POST "$base/systems/a2600/verify")
-    [ "$code" = 202 ] || fail "POST /systems/a2600/verify -> $code, want 202"
-    ok=0
-    for _ in $(seq 1 30); do
-      frag=$(curl -sf "$base/partials/verify" || true)
-      if grep -q 'data-system="a2600" data-verify="unchecked"' <<<"$frag"; then ok=1; break; fi
-      sleep 1
-    done
-    [ "$ok" = 1 ] || fail "a2600 never reached the unchecked state"
+    if ! verify_until /systems/a2600/verify a2600 unchecked; then
+      echo "smoke: DEBUG webapp journal tail:"
+      journalctl -u jupiter-arcade-webapp --no-pager -n 40 || true
+      fail "a2600 never reached the unchecked state"
+    fi
     [ -f "${gamesRoot}/cartridge/a2600/Fake Game (USA).a26" ] \
       || fail "promote-unchecked did not copy the staged file"
     echo "smoke: missing-DAT degradation promotes unchecked (grey)"
 
     # Verify-all: the whole catalogue in one batch — the empty systems
     # skip instantly, snes+gb run igir, nes re-verifies idempotently.
-    code=$(curl -s -o /dev/null -w '%{http_code}' -H "$HX" -X POST "$base/verify")
-    [ "$code" = 202 ] || fail "POST /verify -> $code, want 202"
+    # Bounded retry: the POST can land inside the previous verify's
+    # post-promotion regeneration window (P6 trigger + shared slot) and
+    # be swallowed ErrBusy — retrying is the operator semantics.
     ok=0
-    for _ in $(seq 1 90); do
-      frag=$(curl -sf "$base/partials/verify" || true)
-      if grep -q 'data-system="snes" data-verify="verified"' <<<"$frag" \
-         && grep -q 'data-system="gb" data-verify="verified"' <<<"$frag"; then ok=1; break; fi
-      sleep 1
+    for attempt in 1 2 3; do
+      curl -s -o /dev/null -H "$HX" -X POST "$base/verify"
+      for _ in $(seq 1 40); do
+        frag=$(curl -sf "$base/partials/verify" || true)
+        if grep -q 'data-system="snes" data-verify="verified"' <<<"$frag" \
+           && grep -q 'data-system="gb" data-verify="verified"' <<<"$frag"; then ok=1; break; fi
+        sleep 1
+      done
+      [ "$ok" = 1 ] && break
+      echo "smoke: verify-all gate not reached (attempt $attempt) — retrying"
     done
-    [ "$ok" = 1 ] || fail "verify-all never turned snes+gb green"
+    if [ "$ok" != 1 ]; then
+      echo "smoke: DEBUG verify fragment rows:"
+      grep -o 'data-system="[a-z0-9]*" data-verify="[a-z]*"' <<<"$frag" | head -8 || true
+      echo "smoke: DEBUG webapp journal tail:"
+      journalctl -u jupiter-arcade-webapp --no-pager -n 40 || true
+      fail "verify-all never turned snes+gb green"
+    fi
     echo "smoke: verify-all green across the staged corpus"
 
     # The runs table carries the verify kind with human detail (the
@@ -828,6 +859,100 @@ let
       || fail "game re-scrape windowed to the wrong ROM"
     echo "smoke: game re-scrape wired (--startat/--endat at the one ROM)"
 
+    # ---- P6: launcher-DB generation ----
+    #
+    # The store becomes the source of truth and Regenerate renders each
+    # populated system dir's metadata.pegasus.txt. Deterministic: the
+    # corpus is fixed bytes, the DB state at this point is known (nes =
+    # the 5 DAT-promoted ROMs), and generation itself is byte-stable by
+    # construction (asserted below by hashing two consecutive runs).
+    echo "smoke: P6 launcher-database section renders"
+    page=$(curl -sf "$base/metadata" || fail "GET /metadata")
+    grep -q 'hx-post="/generate"' <<<"$page" || fail "Regenerate action missing"
+    code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$base/generate")
+    [ "$code" = 403 ] || fail "POST /generate without X-HX-Request -> $code, want 403"
+
+    # First generation answers 200 synchronously (bounded local job).
+    code=$(curl -s -o /dev/null -w '%{http_code}' -H "$HX" -X POST "$base/generate")
+    [ "$code" = 200 ] || fail "POST /generate -> $code, want 200"
+    md="${gamesRoot}/cartridge/nes/metadata.pegasus.txt"
+    [ -f "$md" ] || fail "generation wrote nothing into the served tree"
+    grep -q '^collection: Nintendo Entertainment System$' "$md" \
+      || fail "nes metadata lacks the catalogue collection title"
+    grep -q '^shortname: nes$' "$md" || fail "nes metadata lacks its shortname"
+    grep -q '^launch: jupiter-retroarch -L fceumm "{file.path}"$' "$md" \
+      || fail "nes metadata lacks the catalogue launch line"
+    grep -q '^file: Starlit Vault (USA).nes$' "$md" \
+      || fail "nes metadata lacks an explicit game file entry"
+    if grep -q '/var/lib/' "$md"; then fail "absolute path leaked into the launcher DB"; fi
+    echo "smoke: generated nes metadata carries catalogue launch line + relative files"
+
+    # Byte stability: regenerating over unchanged state must reproduce
+    # identical bytes (kiosk re-reads stay cheap; AC-5).
+    h1=$(sha256sum "$md" | cut -d' ' -f1)
+    curl -s -o /dev/null -H "$HX" -X POST "$base/generate"
+    h2=$(sha256sum "$md" | cut -d' ' -f1)
+    [ -n "$h1" ] && [ "$h1" = "$h2" ] || fail "generation not byte-stable ($h1 vs $h2)"
+    echo "smoke: regeneration byte-stable (sha256 unchanged)"
+
+    # The run is recorded and self-validated (the strict parser gate ran
+    # before anything was renamed).
+    status=$(curl -sf "$base/partials/status" || true)
+    grep -q '<td>generate</td>' <<<"$status" || fail "generate run not recorded in the audit trail"
+    grep -A2 '<td>generate</td>' <<<"$status" | grep -q 'validated' \
+      || fail "generate run detail does not show the validation verdict"
+    echo "smoke: generate run recorded + strict-parser validated"
+
+    # Curation semantics: a hidden game is EXCLUDED from generation.
+    # There is no hide endpoint yet (P7 owns curation UI), so the smoke
+    # seeds the flag directly the way the DB-of-truth contract promises:
+    # whatever holds games.hidden drives the next generation.
+    sqlite3 /var/lib/arcade-webapp-state/arcade-webapp.db \
+      "UPDATE games SET hidden=1 WHERE system_key='nes' AND rel_path='Mecha Garden (Japan).nes';" \
+      || fail "could not seed the hidden flag"
+    curl -s -o /dev/null -H "$HX" -X POST "$base/generate"
+    grep -q 'Mecha Garden' "$md" && fail "hidden game leaked into the generated file"
+    sqlite3 /var/lib/arcade-webapp-state/arcade-webapp.db \
+      "UPDATE games SET hidden=0 WHERE system_key='nes' AND rel_path='Mecha Garden (Japan).nes';" \
+      || fail "could not clear the hidden flag"
+    curl -s -o /dev/null -H "$HX" -X POST "$base/generate"
+    grep -q 'file: Mecha Garden (Japan).nes' "$md" \
+      || fail "unhidden game never returned to the generated file"
+    echo "smoke: hidden exclusion works both directions"
+
+    # Pending split: a zeroed .chd models aria2's preallocated in-flight
+    # download (the rom_complete sniff's whole reason). It must scan as a
+    # game, then land in a trailing "(Pending)" collection — listed but
+    # NOT launchable — while the complete cue stays playable.
+    head -c 1048576 /dev/zero > "${gamesRoot}/optical/segacd/Pending Planet (USA).chd"
+    ok=0
+    for _ in $(seq 1 60); do
+      page=$(curl -sf "$base/" || true)
+      if grep -q 'data-system="segacd" data-games="2"' <<<"$page"; then ok=1; break; fi
+      sleep 1
+    done
+    [ "$ok" = 1 ] || fail "rescan never picked up the zeroed .chd as a segacd game"
+    curl -s -o /dev/null -H "$HX" -X POST "$base/generate"
+    sd="${gamesRoot}/optical/segacd/metadata.pegasus.txt"
+    [ -f "$sd" ] || fail "segacd metadata missing after regeneration"
+    grep -q '^launch: jupiter-retroarch -L genesis-plus-gx "{file.path}"$' "$sd" \
+      || fail "segacd metadata lacks its launch line"
+    n=$(grep -c '^launch: ' "$sd")
+    [ "$n" = "1" ] || fail "pending collection must carry NO launch line (found $n)"
+    grep -q '# jupiter-pending-section' "$sd" || fail "pending marker missing"
+    grep -q '^collection: Sega Mega CD & Sega CD (Pending)$' "$sd" \
+      || fail "(Pending) collection title missing"
+    grep -q '^shortname: segacd-pending$' "$sd" || fail "pending shortname missing"
+    awk '/# jupiter-pending-section/{m=NR}
+         /^file: Pending Planet \(USA\).chd$/{c=NR}
+         END { exit !(m && c && c > m) }' "$sd" \
+      || fail "zeroed .chd not listed INSIDE the pending section"
+    awk '/# jupiter-pending-section/{m=NR}
+         /^file: Turbo Disc \(USA\).cue$/{t=NR}
+         END { exit !(m && t && t < m) }' "$sd" \
+      || fail "complete cue must stay OUTSIDE (before) the pending section"
+    echo "smoke: pending split live (zeroed .chd listed-not-launchable, cue still playable)"
+
     pass
   '';
 in
@@ -1047,7 +1172,8 @@ in
       curl
       gnugrep
       gnused
-      gawk # P4: pair each library card's href with its title
+      gawk # P4: pair each library card's href with its title; P6: pending-section line-order checks
+      sqlite # P6: seed/clear games.hidden directly (curation UI lands in P7)
       systemd
       coreutils
       procps # ps: the P3 verify DEBUG hang-check

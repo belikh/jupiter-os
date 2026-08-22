@@ -91,20 +91,27 @@ func classifyVerify(v store.VerifyResult, present bool) string {
 // Shared by the card wall, the downloads system table, and the verify
 // page — one indicator, one implementation.
 func verifyStateChip(state string, v store.VerifyResult) template.HTML {
+	// Launcher-DB artifacts (P6) are named wherever the raw counts are:
+	// an operator seeing "0 extra" should also see WHY the CSV carries
+	// UNUSED rows for metadata.pegasus.txt/media files.
+	art := ""
+	if v.Artifacts > 0 {
+		art = fmt.Sprintf("; %d launcher-DB artifact(s) ignored", v.Artifacts)
+	}
 	switch state {
 	case VerifyStateVerified:
-		title := fmt.Sprintf("%d of %d DAT games found, 0 unmatched", v.Found, v.DatGames)
+		title := fmt.Sprintf("%d of %d DAT games found, 0 unmatched%s", v.Found, v.DatGames, art)
 		if v.Duplicate > 0 {
 			title += fmt.Sprintf(" (%d already-promoted echo)", v.Duplicate)
 		}
 		return template.HTML(fmt.Sprintf(`<span class="pill ok" title="%s">verified</span>`, title))
 	case VerifyStateUnmatched:
 		n := v.Unmatched + v.Other
-		return template.HTML(fmt.Sprintf(`<span class="pill stale" title="%d found / %d missing / %d unmatched">%d unmatched</span>`, v.Found, v.Missing, n, n))
+		return template.HTML(fmt.Sprintf(`<span class="pill stale" title="%d found / %d missing / %d unmatched%s">%d unmatched</span>`, v.Found, v.Missing, n, art, n))
 	case VerifyStateMissing:
-		return template.HTML(fmt.Sprintf(`<span class="pill warn" title="%d of %d DAT games found">%d missing</span>`, v.Found, v.DatGames, v.Missing))
+		return template.HTML(fmt.Sprintf(`<span class="pill warn" title="%d of %d DAT games found%s">%d missing</span>`, v.Found, v.DatGames, art, v.Missing))
 	case VerifyStateExtra:
-		return template.HTML(fmt.Sprintf(`<span class="pill warn" title="all %d DAT games found; %d games-tree file(s) the DAT doesn't claim">%d extra</span>`, v.DatGames, v.Extra, v.Extra))
+		return template.HTML(fmt.Sprintf(`<span class="pill warn" title="all %d DAT games found; %d games-tree file(s) the DAT doesn't claim%s">%d extra</span>`, v.DatGames, v.Extra, art, v.Extra))
 	case VerifyStateUnchecked:
 		return template.HTML(fmt.Sprintf(`<span class="pill unknown" title="no DAT — promoted unchecked (%s)">unchecked</span>`, HumanBytes(v.PromotedBytes)))
 	default:
@@ -590,6 +597,9 @@ func runDetailForKind(r store.Run) (template.HTML, bool) {
 				}
 				if oc.Duplicate > 0 {
 					line += fmt.Sprintf(" · %d echo", oc.Duplicate)
+				}
+				if oc.Artifacts > 0 {
+					line += fmt.Sprintf(" · %d launcher-DB artifacts", oc.Artifacts)
 				}
 			}
 			if oc.Err != "" {
