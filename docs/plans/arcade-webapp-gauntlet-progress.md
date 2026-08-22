@@ -5,11 +5,11 @@ The live heartbeat of the builder/critic loop driving
 every critic verdict. Screenshots (when they exist) land under
 `arcade-webapp-gauntlet/` next to this file.
 
-- **Phase:** 2-3 complete — **P1–P4 won** (blind critics) · P5 next
+- **Phase:** 2-3 complete — **P1–P4 won** (blind critics) · P5 in review
 - **Branch:** `arcade/webapp-gauntlet`
 - **ADR:** [ADR-0002 — custom, not RomM](../adr/0002-arcade-webapp-custom-vs-romm.md)
   (D1 research-confirmed 2026-08-21; D2–D4 accepted)
-- **Last update:** 2026-08-22 06:10 AEST
+- **Last update:** 2026-08-22 20:09 AEST
 
 ## Piece table
 
@@ -19,7 +19,7 @@ every critic verdict. Screenshots (when they exist) land under
 | P2 — Download control | **won** | 1 (0 rebuilds) + adversarial reconciliation | **ours** (blind, labels stripped; A=AriaNg's literal list-view template extracted from its shipped JS bundle, B=ours rendering a live aria2d queue: 2 active 64 MiB, 1 paused, 3 completed) | acquire column is a dead end when the torrent is missing — no stage/paste/trigger control on-page (carried to P3) | `p2-ours-downloads.html`, `p2-bar-ariang-list-template.html`, `p2-ours-{desktop,mobile}.png`; critic: "B understands the job is a collection pipeline, not a file list… A manages the daemon, not the collection"; implementation commits `f883582`/`ad361c2`/`b8f8315`/`f0b29b2`, review fixes `4be90e9`/`dfa680b` |
 | P3 — Verify & organize | **won** — 1 loop + adversarial reconciliation | 1 (real-igir bring-up: 3 root-caused VM failures, 0 masked) + adversarial review pending | **ours** (blind; A=RomM demo DOM, B=our /verify page with a real igir run — snes/gb green, nes red-unmatched, segacd unknown) | unmatched files not drillable in-page + no run history w/ deltas (carry to P4) | commits `ca09507` (Go half) + `b1809bc`/`ce84fde` (real-igir refinements + wiring); VM smoke 27 steps green ×2 consecutive incl. REAL igir amber-extra → green zero-unmatched on a fresh promotion (log excerpt in the Phase 3 verification section); `p3-ours-verify.html`, `p3-ours-verify.png` |
 | P4 — Library browsing | **won** — 1 loop + adversarial micro-audits | 1 (2 VM bring-up failures, both root-caused: pagination + missing awk) | **ours** (blind; A=anonymized RomM gallery home DOM, B=our /library grid + detail over the fixture store w/ generated SVG posters) | detail lacks CRC/SHA1 checksum rows + persistent report link (carry to P5) | `p4-ours-library.html`, `p4-ours-detail.html`, `p4-ours-library.png`, `p4-bar-romm-gallery.html`; critic: "findability exists only in B — A's home has zero input/select elements… B puts verification state on every card" |
-| P5 — Metadata engine control | pending | 0 | — | — | — |
+| P5 — Metadata engine control | **review** | 1 (VM bring-up runs 1–2 clean after the stub argv-journal fix, per `bb465d5`; post-push runs 3–4 flaked TEST-side races → completion-gated + slot-free wait in `108beae`, final PASS fresh below) | — | — | commits `c94be34` (shared cache parser/CacheID/ApplyCacheFlags) `f01bcc3` `2663eb7` `ccb057f` (/metadata UI, serialized Driver) `449cd97` (module wiring) `bb465d5` (stubbed-Skyscraper smoke) + hardening `108beae`; VM smoke: nes desc/cover 0→100 through the real driver→store→ApplyCacheFlags stack |
 | P6 — Launcher DB generator | pending | 0 | — | — | — |
 | P7 — Curation | pending | 0 | — | — | — |
 | P8 — eXo integration + sprawl retirement | pending | 0 | — | — | — |
@@ -237,6 +237,33 @@ clean PASS:
 | `make check` | **pass** (2026-08-22) | every host evals incl. the VM host with the new option wired (unset — null default branch) |
 | `make fmt` then `make fmt-check` | **pass** (2026-08-22) | clean, only the two touched files modified |
 
+### Phase 5 (P5 — metadata engine control)
+
+Builder loop 1 across seven commits: `c94be34` shared cache parser +
+CacheID + ApplyCacheFlags → `f01bcc3` igir ingest crc32/sha1 →
+`2663eb7` cartridge-scrape.sh two-phase port → `ccb057f` /metadata UI +
+Driver-owned serialization → `449cd97` module wiring (skyscraperPackage,
+scrapeIntervalHours, writable cache) → `bb465d5` stubbed-Skyscraper VM
+smoke → `108beae` post-push flake hardening (the interrupted unit,
+finished and committed — see D-P5a). Smoke runs 1–2 passed after the
+stub argv-journal fix; runs 3–4 flaked on TEST-side races only, fixed
+in `108beae`, then a fresh clean PASS on the final tree:
+
+| Command | Result | Notes |
+|---|---|---|
+| `go build ./... && go vet ./... && go test -count=1 ./...` (in `pkgs/arcade-webapp`) | **pass** (2026-08-22, on the hardening tree) | 9 packages green incl. `internal/scrape` (Driver-owned mutex serialization, ErrBusy, outcome-classifying scrape) and the web metadata suite (render/CSRF/503-unconfigured/409-busy/gated-batch coverage-flip/game-windowing/history-delta over a gated fake Skyscraper) |
+| `make test-arcade-webapp` | **pass** (2026-08-22) | full smoke incl. the P5 block: worklist + fragment shape + pre-scrape 0% truth, CSRF matrix over 3 new endpoints, per-system scrape → nes desc/cover 0→100 via the stub writing sha1-keyed db.xml, scrape run asserted at its own step, run-history drill-down, scrape-all gated on batch COMPLETION AND gb flip, dashboard card agrees, game re-scrape proven windowed via the stub argv journal |
+| `make check` | **pass** (2026-08-22) | every host evals incl. `arcade-webapp-vm` with skyscraperPackage=stub, writable materialized cache dir, scrapeIntervalHours=null |
+| `make fmt` then `make fmt-check` | **pass** (2026-08-22) | fmt rewrote nothing beyond the two intended files; fmt-check silent |
+
+Runs 3–4 flake anatomy (test-side; none masked; recorded in `108beae`):
+run 3 — the scrape-all gate accepted gb's flip while segacd's flags were
+still flipping mid-batch, so the very next game POST raced into the
+driver's serialized slot and took a deterministic 409; fix gates on batch
+completion via in-flight-only markers. Run 4 lesson — bare "scraping"
+matches the always-present page heading ("Metadata & scraping"), so the
+marker anchors on `>scraping`, which only the running pill/button emit.
+
 ## Decision log
 
 | Decision | Verdict | Status | Evidence |
@@ -260,6 +287,7 @@ clean PASS:
 | D-P3c — igir CSV provenance semantics (input-side vs output-side) | igir scans BOTH `--input` and `--output`, so the same Status means different things per side — proven by running the real 5.3.0 over the fixture corpus with a pre-populated output tree. Adopted mapping: input-side UNUSED/DUPLICATE → **unmatched** (red — staged set deviates from 1G1R); output-side UNUSED → **extra** (amber — games-tree files the DAT doesn't claim; new schema v3 column); output-side DUPLICATE → **echo** (benign/informational — COPY keeps the staged input, so every re-verify after the first promotion emits these; counting them red would flip every green system red on its second verify); neither side → other (red, conservative). Alternative rejected: discounting the rows at parse time only — the served CSV would then literally show UNUSED rows against a green pill (a lying indicator) | decided | `internal/igir/runner.go` Report docs; `TestParseReportProvenance`; VM amber→green sequence |
 | D-P3d — VM writable trees + hermetic disk | the games trees/DAT dir are materialized as WRITABLE copies by a oneshot ordered before the webapp unit (ReadWritePaths must exist at namespace-build time, D-P1f — and igir COPY-promotes into them; read-only store paths fail both), with the ROM corpus staged under `incoming/<sys>` (the .zip scanner shapes stay games-tree-only: staged zips would model junk-arrived-in-staging). The driver also takes a **fresh qcow2 per run** under a mktemp dir: the stock build-vm runner reuses `./<host>.qcow2` resolved against the invoking cwd, and surviving SQLite state once made fresh-tree assertions lie (nes already 'unmatched' before any verify) | decided | `tests/hosts/arcade-webapp-vm.nix` materialize service; `scripts/test-arcade-webapp.sh` hermetic-disk block |
 | D-P3e — aria2 `.torrent` metadata companions excluded at the igir argv | the pinned aria2 1.37.0 writes an infohash-named `.torrent` into every download dir **even via `aria2.addTorrent`** (its docs claim magnet-only; disproven with a local daemon+RPC reproduction — so europa's real incoming tree will hold these after every acquire). They are daemon bookkeeping, not staged ROM content, and no DAT can ever claim a `.torrent` ROM — so `runIgir` adds the ONE deliberate deviation from cartridge-verify.sh's flag set: `--input-exclude <input>/**/*.torrent`. The report then literally carries zero unmatched rows for them (pill and CSV agree). Two load-bearing details, both proven against real igir 5.3.0: the glob must be `**` (a bare `*.torrent` does not cross separators) and must be **anchored to the absolute input dir** (igir expands exclude globs against the filesystem from the process cwd — a bare `**/*.torrent` under cwd=/ crawled the whole nix store for minutes as root, exactly the run-2/5 VM hang) | decided | `internal/igir/runner.go` runIgir; `TestArgvMatchesCartridgeVerifyScript`; local repro transcripts; VM run 6+ green with the companion deliberately left in staging |
+| D-P5a — interrupted-unit disposition: KEEP, not revert | the session that produced `bb465d5` died leaving two files modified and uncommitted (`modules/services/arcade-webapp.nix`, `tests/hosts/arcade-webapp-vm.nix`). Fork analysis before keeping: the vm-test hunk cited "run-3"/"run-4" lessons ABSENT from committed history (`bb465d5` records only runs 1–2), i.e. post-push smoke iterations — follow-on hardening, not half-applied fragments of already-committed content. Marker claims verified against the template before trusting them: `hx-trigger="every 3s"` renders only under `{{if .State.Running}}`, and `>scraping` matches only the running pill/button while the heading's `&amp; scraping` never does. The module hunk was comment-only (11 lines losing a stray leading space — zero eval impact). Verdict: finish + commit as `108beae`, then re-verify fresh (all green above) | decided | `git diff` vs `git show bb465d5 --stat`; `templates/metadata.html` lines 27/34/37; verification log §Phase 5 |
 
 ## Gauntlet scoreboard
 
