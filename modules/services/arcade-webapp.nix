@@ -32,7 +32,13 @@
 # credential FILES read at call time), a serialized scrape queue with
 # per-system + per-game actions on the /metadata page, run history with
 # coverage deltas, and an in-process schedule carrying the old
-# jupiter-rom-scrape daily timer's cadence.
+# jupiter-rom-scrape daily timer's cadence. P6 adds the launcher-DB
+# generator: the SQLite store becomes the source of truth and the app
+# renders each populated system dir's metadata.pegasus.txt into the
+# served trees (catalogue launch lines, relative paths, hidden-game
+# exclusion, pending split for incomplete downloads) — temp+fsync+rename
+# only, strict-parser validated before any swap, byte-stable for
+# unchanged state, serialized through the shared pipeline lock.
 #
 # LAN-only by design (like suno-web): no reverse-proxy exposure, no tunnel
 # wiring — flip <option>openFirewall</option> for trusted-LAN access.
@@ -484,7 +490,10 @@ in
         #   - the three bucket roots — igir COPY-promotes verified ROMs
         #     into them (the pipeline's whole point; on europa they are
         #     on-pool datasets, writable by design); the P5 Pegasus
-        #     compose additionally drops metadata/media next to ROMs (-g)
+        #     compose additionally drops metadata/media next to ROMs (-g);
+        #     the P6 launcher-DB generator writes each populated system
+        #     dir's metadata.pegasus.txt (+ temp siblings only, atomic
+        #     rename) into the same trees
         # Everything else stays read-only: the incoming staging tree is
         # the daemon's to write. Common stanza shared with
         # nom-web/suno-web/suno-backup (modules/lib.nix:

@@ -134,5 +134,53 @@
     <p class="sub">no systems with ROMs to cover.</p>
     {{end}}
   </section>
+
+  {{if .GenLog.Configured}}
+  <section>
+    <h2>Launcher database
+      {{if .GenLog.Last}}
+        {{if eq .GenLog.Last.Status "error"}}
+        <span class="pill error">last generation failed</span>
+        {{else}}
+        <span class="pill ok">last generation {{age $.Now .GenLog.Last.FinishedAt}}</span>
+        {{end}}
+      {{else}}
+        <span class="pill unknown">never generated</span>
+      {{end}}
+    </h2>
+
+    <p class="sub">The database is the source of truth: one metadata.pegasus.txt per system dir
+      in the served trees — catalogue collection header + launch line, game/file blocks with
+      relative paths, enrichment and media refs when present. Hidden games are excluded;
+      incomplete downloads land in a trailing "(Pending)" collection that lists but never
+      launches. Every candidate file is validated by a strict parser before an atomic rename —
+      kiosks never see a half-written tree.</p>
+
+    <div class="actions">
+      <button class="primary" hx-post="/generate" hx-target="#metadata-panel" hx-swap="outerHTML"
+              title="regenerate every populated system's metadata.pegasus.txt now">
+        Regenerate</button>
+    </div>
+
+    {{if .GenLog.Runs}}
+    <table class="dl systems">
+      <thead><tr>
+        <th scope="col">when</th><th scope="col">status</th><th scope="col">detail</th>
+      </tr></thead>
+      <tbody>
+        {{range .GenLog.Runs}}
+        <tr data-generate-run="{{.ID}}">
+          <td><span class="sub">{{age $.Now .StartedAt}}</span></td>
+          <td>{{runPill .Status}}</td>
+          <td>{{runDetail .}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <p class="sub">no generation runs yet — regenerate to build the served launcher DB.</p>
+    {{end}}
+  </section>
+  {{end}}
 </div>
 {{end}}

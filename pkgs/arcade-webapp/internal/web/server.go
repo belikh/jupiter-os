@@ -26,6 +26,7 @@ import (
 
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/aria2"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/dats"
+	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/generate"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/igir"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/scanner"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/scrape"
@@ -53,6 +54,8 @@ type Server struct {
 	artDir string
 	// Metadata engine (P5): nil = not configured. See metadata.go.
 	sc *scrape.Driver
+	// Launcher-DB generator (P6): nil = not configured. See generate.go.
+	gen *generate.Generator
 }
 
 // New builds the webapp's HTTP handler over an opened store and scanner,
@@ -114,6 +117,8 @@ func New(st *store.Store, scan *scanner.Scanner, opts ...Option) (*Server, error
 	mux.HandleFunc("POST /systems/{systemKey}/games/{id}/scrape", s.handleScrapeGame)
 	mux.HandleFunc("POST /systems/{system}/stage-torrent", s.handleStageTorrent)
 	mux.HandleFunc("POST /systems/{system}/stage-uri", s.handleStageURI)
+	// P6: launcher-DB generation — the manual Regenerate action.
+	mux.HandleFunc("POST /generate", s.handleGenerate)
 	mux.HandleFunc("POST /rescan", s.handleRescan)
 	mux.HandleFunc("GET /", s.handleIndex)
 	s.handler = mux

@@ -19,6 +19,7 @@ import (
 
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/aria2"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/dats"
+	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/generate"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/igir"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/pipeline"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/scanner"
@@ -199,6 +200,25 @@ func main() {
 		log.Printf("arcade-webapp: scrape not configured (need ARCADE_WEBAPP_SKYSCRAPER_BIN + ARCADE_WEBAPP_SKYSCRAPER_CACHE_DIR)")
 	}
 	opts = append(opts, web.WithScrape(scraper))
+
+	// Launcher-DB generation (P6): the store is the source of truth and
+	// the generator renders metadata.pegasus.txt per populated system dir
+	// into the SAME bucket roots the scanner walks — atomically, strictly
+	// self-validated, byte-stable. It shares the heavy-job lock so a
+	// generation never overlaps a verify or scrape (ADV-P5-03 family);
+	// triggers are the post-verify hook and the metadata page's manual
+	// Regenerate button. No new configuration: the roots above are the
+	// served trees.
+	generator := &generate.Generator{
+		St:            st,
+		CartridgeRoot: cfg.CartridgeRoot,
+		OpticalRoot:   cfg.OpticalRoot,
+		ModernRoot:    cfg.ModernRoot,
+		Pipeline:      heavy,
+	}
+	opts = append(opts, web.WithGenerator(generator))
+	log.Printf("arcade-webapp: launcher-DB generator wired (%s, shared pipeline slot)",
+		filepath.Join(cfg.CartridgeRoot, "<sys>", "metadata.pegasus.txt"))
 
 	// Metadata schedule: every interval hours (default 24 — the old
 	// jupiter-rom-scrape daily timer's cadence; 0 disables). Deliberately

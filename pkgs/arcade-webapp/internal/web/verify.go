@@ -388,6 +388,9 @@ func (s *Server) handleVerifyAll(w http.ResponseWriter, r *http.Request) {
 	}
 	go func() {
 		outcomes, err := s.ig.VerifyAll()
+		// P6 trigger point: promotions changed the served trees, so the
+		// launcher DB follows (best-effort, logged — see generate.go).
+		s.maybeGenerateAfterVerify(outcomes, err)
 		if err != nil && !errors.Is(err, igir.ErrBusy) {
 			log.Printf("web: verify-all: %v", err)
 			return
@@ -414,7 +417,9 @@ func (s *Server) handleVerifySystem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	go func() {
-		if _, err := s.ig.Verify([]string{sys}); err != nil && !errors.Is(err, igir.ErrBusy) {
+		outcomes, err := s.ig.Verify([]string{sys})
+		s.maybeGenerateAfterVerify(outcomes, err)
+		if err != nil && !errors.Is(err, igir.ErrBusy) {
 			log.Printf("web: verify %s: %v", sys, err)
 		}
 	}()
@@ -609,6 +614,8 @@ func runDetailForKind(r store.Run) (template.HTML, bool) {
 		return template.HTML(out), true
 	case "scrape":
 		return scrapeRunDetailHTML(r.Detail)
+	case "generate":
+		return generateRunDetailHTML(r.Detail)
 	default:
 		return "", false
 	}

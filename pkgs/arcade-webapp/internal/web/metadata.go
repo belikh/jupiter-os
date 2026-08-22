@@ -82,8 +82,12 @@ type metadataVM struct {
 	// Aggregate chips over systems WITH games: fully covered (desc and
 	// cover at 100%), partially covered, cold (nothing scraped yet).
 	NFull, NPartial, NCold int
-	Meta                   pageMeta
-	Now                    time.Time
+	// Launcher-DB section (P6): the Regenerate affordance + the
+	// kind=generate run history. Lives here because regeneration is
+	// metadata-tree news and the fragment is the shared swap target.
+	GenLog genLogVM
+	Meta   pageMeta
+	Now    time.Time
 }
 
 // metaCoveragePct renders covered*100/total, -1 when nothing can be
@@ -109,6 +113,7 @@ func (s *Server) fetchMetadata() metadataVM {
 		vm.State = s.sc.State()
 	}
 	vm.Meta = pageMeta{Title: "metadata", Sub: "metadata & scraping", ActiveMeta: true}
+	vm.GenLog = s.fetchGenLog()
 
 	rows, err := s.st.ScrapeSummary()
 	if err != nil {
