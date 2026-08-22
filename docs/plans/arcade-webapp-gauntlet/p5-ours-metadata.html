@@ -1,0 +1,219 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>jupiterOS Arcade — metadata</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js"></script>
+</head>
+<body>
+  
+<div class="topbar">
+  <div class="wrap">
+    <h1>jupiterOS <span class="accent">Arcade</span></h1>
+    <span class="sub">metadata &amp; scraping</span>
+    <span class="spacer"></span>
+    <nav class="nav" aria-label="pages">
+      <a href="/" >Dashboard</a>
+      <a href="/library" >Library</a>
+      <a href="/downloads" >Downloads</a>
+      <a href="/verify" >Verify</a>
+      <a href="/metadata" class="active" aria-current="page">Metadata</a>
+    </nav>
+    <span class="pill "></span>
+  </div>
+</div>
+
+  <main class="wrap">
+    
+<div id="metadata-panel"
+     hx-swap="outerHTML"
+     role="region" aria-label="metadata coverage and scraping" aria-live="polite"
+     data-scrape="unconfigured">
+
+  
+
+  <section>
+    <h2>Metadata &amp; scraping
+      
+        <span class="pill unknown">Skyscraper not configured</span>
+      
+      <span class="chip" title="systems whose every game has description AND cover flags">0 full</span>
+      <span class="chip" title="systems with some scraped games but gaps remaining">0 partial</span>
+      <span class="chip" title="systems with ROMs but no coverage yet — the gap worklist">4 cold</span>
+    </h2>
+
+    
+
+    <p class="sub">Skyscraper per system in three passes — ScreenScraper primary (checksum-exact,
+      free-tier thread cap), the configured source as an onlymissing gap-fill, then the Pegasus
+      compose — all into the shared resource cache; the coverage refresh lands after any
+      successful pass. One job at a time: a second submit while one runs is refused.</p>
+
+    <div class="actions">
+      <button class="primary" hx-post="/metadata/scrape" hx-target="#metadata-panel" hx-swap="outerHTML"
+              disabled>
+        Scrape all</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Coverage <span class="chip">57 idle</span></h2>
+    
+    <table class="dl systems metadata">
+      <thead><tr>
+        <th scope="col">system</th><th scope="col">description</th><th scope="col">cover art</th>
+        <th scope="col">cache ids</th><th scope="col">last scrape</th>
+        <th scope="col"><span class="visually-hidden">actions</span></th>
+      </tr></thead>
+      <tbody>
+        
+        <tr data-system="nes" data-games="7" data-desc-pct="0" data-cover-pct="0">
+          <td>Nintendo Entertainment System <span class="chip">nes</span></td>
+          <td>
+            
+            <div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+                 aria-valuenow="0" aria-label="description coverage Nintendo Entertainment System"
+                 title="description coverage 0% (0 of 7)">
+              <span style="width: 0%"></span>
+            </div>
+            
+          </td>
+          <td>
+            
+            <div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+                 aria-valuenow="0" aria-label="cover coverage Nintendo Entertainment System"
+                 title="cover-art coverage 0% (0 of 7)">
+              <span style="width: 0%"></span>
+            </div>
+            
+          </td>
+          <td class="num">3 <span class="sub" title="coverage last recomputed">3m0s ago</span></td>
+          <td>
+            <span class="sub">never</span>
+            
+          </td>
+          <td>
+            <button class="mini primary" hx-post="/systems/nes/scrape"
+              hx-target="#metadata-panel" hx-swap="outerHTML"
+              disabled
+              title="run the three-pass Skyscraper flow for this system now">scrape</button>
+          </td>
+        </tr>
+        
+        <tr data-system="snes" data-games="4" data-desc-pct="0" data-cover-pct="0">
+          <td>Super Nintendo Entertainment System <span class="chip">snes</span></td>
+          <td>
+            
+            <div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+                 aria-valuenow="0" aria-label="description coverage Super Nintendo Entertainment System"
+                 title="description coverage 0% (0 of 4)">
+              <span style="width: 0%"></span>
+            </div>
+            
+          </td>
+          <td>
+            
+            <div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+                 aria-valuenow="0" aria-label="cover coverage Super Nintendo Entertainment System"
+                 title="cover-art coverage 0% (0 of 4)">
+              <span style="width: 0%"></span>
+            </div>
+            
+          </td>
+          <td class="num">4 <span class="sub" title="coverage last recomputed">3m0s ago</span></td>
+          <td>
+            <span class="sub">never</span>
+            
+          </td>
+          <td>
+            <button class="mini primary" hx-post="/systems/snes/scrape"
+              hx-target="#metadata-panel" hx-swap="outerHTML"
+              disabled
+              title="run the three-pass Skyscraper flow for this system now">scrape</button>
+          </td>
+        </tr>
+        
+        <tr data-system="gb" data-games="4" data-desc-pct="0" data-cover-pct="0">
+          <td>Nintendo Game Boy <span class="chip">gb</span></td>
+          <td>
+            
+            <div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+                 aria-valuenow="0" aria-label="description coverage Nintendo Game Boy"
+                 title="description coverage 0% (0 of 4)">
+              <span style="width: 0%"></span>
+            </div>
+            
+          </td>
+          <td>
+            
+            <div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+                 aria-valuenow="0" aria-label="cover coverage Nintendo Game Boy"
+                 title="cover-art coverage 0% (0 of 4)">
+              <span style="width: 0%"></span>
+            </div>
+            
+          </td>
+          <td class="num">0 <span class="sub" title="coverage last recomputed">3m0s ago</span></td>
+          <td>
+            <span class="sub">never</span>
+            
+          </td>
+          <td>
+            <button class="mini primary" hx-post="/systems/gb/scrape"
+              hx-target="#metadata-panel" hx-swap="outerHTML"
+              disabled
+              title="run the three-pass Skyscraper flow for this system now">scrape</button>
+          </td>
+        </tr>
+        
+        <tr data-system="segacd" data-games="1" data-desc-pct="0" data-cover-pct="0">
+          <td>Sega Mega CD &amp; Sega CD <span class="chip">segacd</span></td>
+          <td>
+            
+            <div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+                 aria-valuenow="0" aria-label="description coverage Sega Mega CD &amp; Sega CD"
+                 title="description coverage 0% (0 of 1)">
+              <span style="width: 0%"></span>
+            </div>
+            
+          </td>
+          <td>
+            
+            <div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+                 aria-valuenow="0" aria-label="cover coverage Sega Mega CD &amp; Sega CD"
+                 title="cover-art coverage 0% (0 of 1)">
+              <span style="width: 0%"></span>
+            </div>
+            
+          </td>
+          <td class="num">0 <span class="sub" title="coverage last recomputed">3m0s ago</span></td>
+          <td>
+            <span class="sub">never</span>
+            
+          </td>
+          <td>
+            <button class="mini primary" hx-post="/systems/segacd/scrape"
+              hx-target="#metadata-panel" hx-swap="outerHTML"
+              disabled
+              title="run the three-pass Skyscraper flow for this system now">scrape</button>
+          </td>
+        </tr>
+        
+      </tbody>
+    </table>
+    
+  </section>
+</div>
+
+    
+<footer>
+  jupiterOS Arcade webapp — <a href="https://github.com/belikh/jupiter-os/blob/main/docs/plans/arcade-webapp-gauntlet.md">gauntlet plan</a>
+  · fragments auto-refresh via htmx (dashboard 10s, download queue 2s)
+</footer>
+
+  </main>
+</body>
+</html>
