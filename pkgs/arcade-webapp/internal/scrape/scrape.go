@@ -449,10 +449,23 @@ func (d *Driver) scrapeOutcome(systemKey, startAt string) (string, error) {
 		"--flags", "unattend",
 	}
 	attempted++
+	pegasusOK := false
 	if err := d.runPass(systemKey, "pegasus", args, sec); err != nil {
 		logf("%s: %v (continuing)", systemKey, err)
 	} else {
 		anyOK = true
+		pegasusOK = true
+	}
+
+	// Post-compose fixes after a compose that wrote metadata (ADV-P5-04):
+	// the absolute→relative path rewrite and the whitespace-only-line
+	// deletion. seed_launchable_metadata + split_pending stay DEFERRED to
+	// P6, which owns metadata generation (D-P5b) — postCompose warns when
+	// a collection is left unlaunchable in the meantime.
+	if pegasusOK {
+		if err := d.postCompose(systemKey, dir); err != nil {
+			logf("%s: post-compose: %v", systemKey, err)
+		}
 	}
 
 	if !anyOK {
@@ -523,6 +536,80 @@ func addWindow(args []string, startAt string) []string {
 		return args
 	}
 	return append(args, "--startat", startAt, "--endat", startAt)
+}
+
+// postCompose applies cartridge-scrape.sh's two post-compose seds to
+// <dir>/metadata.pegasus.txt (ADV-P5-04), then checks launchability:
+//
+//   - absolute→relative rewrite — strip the "<ROM_ROOT>/<sys>/" prefix
+//     from the values of top-level "file:" and "assets.<key>:" entries.
+//     The kiosks mount the tree at /mnt/europa-cartridges, not /tank/…,
+//     so Skyscraper's absolute paths would make Pegasus drop every game
+//     and asset there; relative paths resolve against the collection root
+//     on whichever host mounts the tree (no Skyscraper option exists for
+//     this on the pegasus frontend).
+//   - whitespace-only-line deletion — Skyscraper emits intra-description
+//     paragraph separators of bare spaces/tabs; Pegasus treats them as
+//     entry-ending blank lines and rejects the next indented continuation.
+//     Truly-empty (0-char) separators survive.
+//
+// seed_launchable_metadata + split_pending are deliberately NOT ported
+// here — P6 owns metadata generation and inherits them (D-P5b). Until it
+// lands, an empty or launch-less file is reported as a warning: the
+// collection stays unlaunchable rather than silently broken.
+func (d *Driver) postCompose(systemKey, dir string) error {
+	md := filepath.Join(dir, "metadata.pegasus.txt")
+	b, err := os.ReadFile(md)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			logf("%s: no post-compose metadata at %s; skipping post-steps", systemKey, md)
+			return nil
+		}
+		return err
+	}
+
+	prefix := dir + string(filepath.Separator) // "<ROM_ROOT>/<sys>/"
+	lines := strings.Split(string(b), "\n")
+	out := make([]string, 0, len(lines))
+	hasLaunch := false
+	for _, line := range lines {
+		// Whitespace-only lines are DELETED; truly-empty ones survive
+		// (the script's /^[[:space:]][[:space:]]*$/d).
+		if line != "" && strings.TrimSpace(line) == "" {
+			continue
+		}
+		line = rewriteRelPathLine(line, prefix)
+		if strings.HasPrefix(line, "launch: ") {
+			hasLaunch = true
+		}
+		out = append(out, line)
+	}
+	if err := os.WriteFile(md, []byte(strings.Join(out, "\n")), 0o644); err != nil {
+		return fmt.Errorf("rewrite %s: %w", md, err)
+	}
+
+	if len(out) == 0 || !hasLaunch {
+		logf("%s: post-compose metadata is empty or lacks a launch line — collection unlaunchable until P6 seeding lands", systemKey)
+	}
+	return nil
+}
+
+// rewriteRelPathLine strips an absolute "<ROM_ROOT>/<sys>/" prefix from
+// one metadata line's value when the line opens a top-level "file:" or
+// "assets.<key>:" entry — the Go equivalent of cartridge-scrape.sh's two
+// sed substitutions. Indented continuation lines never match (they don't
+// start with the entry keys) and pass through untouched.
+func rewriteRelPathLine(line, absPrefix string) string {
+	switch {
+	case strings.HasPrefix(line, "file: "):
+		return "file: " + strings.TrimPrefix(line[len("file: "):], absPrefix)
+	case strings.HasPrefix(line, "assets."):
+		i := strings.Index(line, ": ")
+		if i >= 0 {
+			return line[:i+2] + strings.TrimPrefix(line[i+2:], absPrefix)
+		}
+	}
+	return line
 }
 
 // runPass execs BinPath with the given args, mirroring runner.go: combined
