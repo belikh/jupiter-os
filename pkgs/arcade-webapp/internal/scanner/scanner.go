@@ -218,8 +218,11 @@ func (s *Scanner) scanAll() Result {
 			res.Warnings = append(res.Warnings, fmt.Sprintf("%s: dat: %v", sys.Key, err))
 		}
 
-		// 4. Skyscraper cache coverage: <cacheDir>/<skyPlatform>/db.xml.
-		entries, err := countCacheGames(filepath.Join(s.cfg.SkyscraperCacheDir, sys.SkyPlatform()))
+		// 4. Skyscraper cache coverage: <cacheDir>/<sys.Key>/db.xml —
+		// keyed on the catalogue key (cartridge-scrape.sh's
+		// $CACHE_DIR/$platform; the -p SkyHandle is NOT the cache key,
+		// ADV-P5-01).
+		entries, err := countCacheGames(filepath.Join(s.cfg.SkyscraperCacheDir, sys.Key))
 		if err != nil {
 			res.Warnings = append(res.Warnings, fmt.Sprintf("%s: cache: %v", sys.Key, err))
 		} else if err := s.st.SetScrapeCoverage(sys.Key, entries); err != nil {
@@ -600,15 +603,14 @@ func CacheID(path string) (string, error) {
 }
 
 // CacheDirFor maps a persisted system row onto its Skyscraper platform
-// cache directory: <cacheRoot>/<sky handle>, the same mapping
-// catalogue.System.SkyPlatform applies on the parsed side (ps1→psx,
-// gamecube→gc, …).
+// cache directory: <cacheRoot>/<sys.Key> — the CATALOGUE key, matching
+// cartridge-scrape.sh's platform_cache="$CACHE_DIR/$platform" and the live
+// europa caches (ps1, gamecube, pokemonmini, dsi, new3ds, sms, sg1000,
+// a2600). The SkyHandle is only the -p handle; keying the dir on it made
+// every diverging system miss its cache and collided 3ds/new3ds on the
+// shared "3ds" handle (ADV-P5-01).
 func CacheDirFor(cacheRoot string, sys store.SystemRow) string {
-	key := sys.Key
-	if sys.SkyHandle != "" {
-		key = sys.SkyHandle
-	}
-	return filepath.Join(cacheRoot, key)
+	return filepath.Join(cacheRoot, sys.Key)
 }
 
 // ApplyCacheFlags recomputes one system's scrape coverage after a run

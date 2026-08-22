@@ -87,6 +87,26 @@ func TestCountCacheGamesUnchanged(t *testing.T) {
 	}
 }
 
+// TestCacheDirForKeysOnCatalogueKey pins the ADV-P5-01 semantics: the
+// cache dir is <cacheRoot>/<sys.Key> even when a SkyHandle differs (the
+// handle is only the -p value), so the live europa caches under catalogue
+// keys are found — and new3ds/3ds, which share SkyHandle "3ds", get
+// distinct dirs instead of colliding on one shared cache.
+func TestCacheDirForKeysOnCatalogueKey(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "cache")
+	new3ds := CacheDirFor(root, store.SystemRow{Key: "new3ds", SkyHandle: "3ds"})
+	threeDS := CacheDirFor(root, store.SystemRow{Key: "3ds", SkyHandle: "3ds"})
+	if want := filepath.Join(root, "new3ds"); new3ds != want {
+		t.Errorf("new3ds cache dir = %s, want %s (catalogue key, not the shared %q handle)", new3ds, want, "3ds")
+	}
+	if want := filepath.Join(root, "3ds"); threeDS != want {
+		t.Errorf("3ds cache dir = %s, want %s", threeDS, want)
+	}
+	if new3ds == threeDS {
+		t.Error("3ds and new3ds collide on one cache dir; handles must not key caches")
+	}
+}
+
 func TestCacheID(t *testing.T) {
 	dir := t.TempDir()
 

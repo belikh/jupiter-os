@@ -125,9 +125,11 @@ func (s System) HasROMExtension(name string) bool {
 	return false
 }
 
-// SkyPlatform returns the Skyscraper -p handle for the system: the
-// skyHandle column when set (ps1→psx, pokemonmini→pokemini, …), else the
-// system key. The resource cache lives at <cacheDir>/<SkyPlatform>/.
+// SkyPlatform returns the Skyscraper -p platform handle for the system:
+// the skyHandle column when set (ps1→psx, pokemonmini→pokemini, …), else
+// the system key. It is ONLY the -p handle: cache directories are keyed
+// on Key (cartridge-scrape.sh's $CACHE_DIR/$platform), not here
+// (ADV-P5-01).
 func (s System) SkyPlatform() string {
 	if s.SkyHandle != "" {
 		return s.SkyHandle
