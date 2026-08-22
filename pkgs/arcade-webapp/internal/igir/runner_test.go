@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/fixture"
+	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/pipeline"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/store"
 )
 
@@ -486,6 +487,35 @@ func TestMissingReportFailsSystem(t *testing.T) {
 	}
 	if v := r.verifyResult("nes"); v != nil {
 		t.Error("no report → no verify_results row")
+	}
+}
+
+// TestPipelineMutexBlocksVerify pins the igir half of ADV-P5-03: with
+// the shared verify+scrape slot held (a scrape running), Verify refuses
+// with exactly ErrBusy — nothing recorded, no exec — and runs normally
+// once the slot frees.
+func TestPipelineMutexBlocksVerify(t *testing.T) {
+	r := newRig(t)
+	r.stage("nes", "A (USA).nes")
+	r.stageDAT("nes")
+
+	var lock pipeline.Mutex
+	if !lock.TryAcquire() {
+		t.Fatal("could not claim a fresh pipeline lock")
+	}
+	r.runner.Pipeline = &lock
+
+	argsBefore := len(r.argv())
+	if _, err := r.runner.Verify([]string{"nes"}); err != ErrBusy {
+		t.Errorf("Verify while scrape holds the pipeline = %v, want ErrBusy", err)
+	}
+	if got := len(r.argv()); got != argsBefore {
+		t.Errorf("igir exec'd %d arg lines while pipeline-busy, want none", got-argsBefore)
+	}
+
+	lock.Release()
+	if _, err := r.runner.Verify([]string{"nes"}); err != nil {
+		t.Errorf("Verify after release: %v, want nil", err)
 	}
 }
 

@@ -28,6 +28,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/pipeline"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/scanner"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/store"
 )
@@ -64,7 +65,10 @@ const defaultSource = "thegamesdb"
 // The driver also OWNS scrape serialization: one job at a time (mutex-
 // guarded State, mirroring igir.Runner), because concurrent Skyscraper
 // invocations would race on the same platform db.xml and on the shared
-// per-system config ini.
+// per-system config ini. Pipeline, when set, is the process-wide heavy-job
+// lock shared with the igir runner (ADV-P5-03) — a scrape refuses to start
+// while a verify runs and vice versa; nil keeps the driver self-serializing
+// only.
 type Driver struct {
 	BinPath                string // Skyscraper executable ("" = not configured)
 	CacheDir               string // Skyscraper resource-cache root
@@ -72,6 +76,7 @@ type Driver struct {
 	ScreenscraperCredsFile string // optional path to user:password creds
 	TGDBKeyFile            string // optional path to TheGamesDB apikey
 	Store                  *store.Store
+	Pipeline               *pipeline.Mutex // shared verify+scrape slot (optional)
 	// Bucket roots: the games tree is <root>/<sys>, routed by the
 	// catalogue row's Bucket column (igir's bucketRoot mapping).
 	CartridgeRoot string
@@ -216,6 +221,9 @@ func (d *Driver) StartGame(systemKey, relPath string) error {
 // start claims the busy slot, opens the run row and launches job in the
 // background. The claim is deliberately synchronous: callers can reject
 // double-submits deterministically instead of racing goroutine starts.
+// When Pipeline is set it is claimed here too (ADV-P5-03) and released
+// when the background job finishes — a verify holding the shared slot
+// rejects this scrape with ErrBusy, keeping HTTP surfacing (409) identical.
 func (d *Driver) start(total int, job func(runID int64, record func(SystemOutcome))) error {
 	if !d.Configured() {
 		return errors.New("scrape: driver not configured")
@@ -228,12 +236,27 @@ func (d *Driver) start(total int, job func(runID int64, record func(SystemOutcom
 	d.state = State{Running: true, StartedAt: time.Now().UTC().Format(time.RFC3339), Total: total}
 	d.mu.Unlock()
 
+	if d.Pipeline != nil && !d.Pipeline.TryAcquire() {
+		// A verify (or another scrape via a second driver instance)
+		// holds the pipeline; surface the same busy contract as our own
+		// slot so callers cannot tell the two locks apart.
+		d.setState(func(s *State) { s.Running = false })
+		return ErrBusy
+	}
+	release := func() {
+		if d.Pipeline != nil {
+			d.Pipeline.Release()
+		}
+	}
+
 	runID, err := d.Store.StartRun("scrape")
 	if err != nil {
 		d.setState(func(s *State) { s.Running = false })
+		release()
 		return fmt.Errorf("scrape: record run: %w", err)
 	}
 	go func() {
+		defer release()
 		defer d.setState(func(s *State) { s.Running = false; s.CurrentSystem = "" })
 
 		outcomes := make([]SystemOutcome, 0, total)

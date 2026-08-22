@@ -9,7 +9,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/igir"
+	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/pipeline"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/store"
 )
 
@@ -406,4 +409,98 @@ func TestScrapeNotConfigured(t *testing.T) {
 	if err := d.ScrapeGame(hSysKey, "x.nes"); err == nil {
 		t.Error("zero-value Driver ScrapeGame = nil, want error")
 	}
+}
+
+// waitIdle blocks until the driver's background job releases its slots
+// (bounded; a hung job fails the test instead of hanging it).
+func waitIdle(t *testing.T, h *harness) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if !h.driver.State().Running {
+			return
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Fatal("scrape still running after 5s")
+}
+
+// TestScrapeRespectsSharedPipelineLock pins the scrape half of ADV-P5-03:
+// with the shared verify+scrape slot held by another runner, StartOne is
+// rejected with exactly ErrBusy (the same sentinel the HTTP layer maps to
+// 409) BEFORE recording anything — and the claim is released once the
+// background batch finishes, so verify can run again.
+func TestScrapeRespectsSharedPipelineLock(t *testing.T) {
+	h := newHarness(t)
+	var lock pipeline.Mutex
+	h.driver.Pipeline = &lock
+
+	if !lock.TryAcquire() {
+		t.Fatal("could not claim a fresh pipeline lock")
+	}
+
+	runsBefore := runsCount(t, h)
+	if err := h.driver.StartOne(hSysKey); !errors.Is(err, ErrBusy) {
+		t.Fatalf("StartOne while pipeline busy = %v, want ErrBusy", err)
+	}
+	if got := runsCount(t, h); got != runsBefore {
+		t.Errorf("%d run row(s) recorded despite pipeline-busy rejection", got-runsBefore)
+	}
+
+	lock.Release()
+	if err := h.driver.StartOne(hSysKey); err != nil {
+		t.Fatalf("StartOne after release: %v", err)
+	}
+	waitIdle(t, h)
+
+	// The background goroutine must have released the shared slot.
+	if !lock.TryAcquire() {
+		t.Error("pipeline slot still held after scrape finished (release leaked)")
+		return
+	}
+	lock.Release()
+}
+
+func TestScrapeAndVerifyMutuallyExclusiveOverSharedLock(t *testing.T) {
+	h := newHarness(t)
+	var lock pipeline.Mutex
+	h.driver.Pipeline = &lock
+
+	// A real igir Runner over throwaway roots, sharing the SAME slot.
+	root := t.TempDir()
+	runner, err := igir.New(igir.Config{
+		Binary:        "/bin/true",
+		IncomingDir:   filepath.Join(root, "incoming"),
+		DATDir:        filepath.Join(root, "dats"),
+		CartridgeRoot: filepath.Join(root, "cart"),
+		OpticalRoot:   filepath.Join(root, "optical"),
+		ModernRoot:    filepath.Join(root, "modern"),
+		ReportDir:     filepath.Join(root, "reports"),
+	}, h.driver.Store, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner.Pipeline = &lock
+
+	// Scrape claims the slot synchronously inside StartOne.
+	if err := h.driver.StartOne(hSysKey); err != nil {
+		t.Fatalf("StartOne: %v", err)
+	}
+	if _, err := runner.Verify([]string{hSysKey}); err != igir.ErrBusy {
+		t.Errorf("Verify while scrape holds the shared slot = %v, want igir.ErrBusy", err)
+	}
+	waitIdle(t, h)
+	if _, err := runner.Verify([]string{hSysKey}); err != nil {
+		t.Errorf("Verify after scrape finished = %v, want nil", err)
+	}
+}
+
+// runsCount reads the runs table size through the store.
+func runsCount(t *testing.T, h *harness) int {
+	t.Helper()
+	runs, err := h.driver.Store.RecentRuns(100)
+	if err != nil {
+		t.Fatalf("RecentRuns: %v", err)
+	}
+	return len(runs)
 }
