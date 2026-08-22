@@ -28,6 +28,7 @@ import (
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/dats"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/igir"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/scanner"
+	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/scrape"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/store"
 )
 
@@ -50,6 +51,8 @@ type Server struct {
 	// Game art root (P4): Skyscraper-cache media dir, "" = SVG posters
 	// only. See art.go.
 	artDir string
+	// Metadata engine (P5): nil = not configured. See metadata.go.
+	sc *scrape.Driver
 }
 
 // New builds the webapp's HTTP handler over an opened store and scanner,
@@ -103,6 +106,12 @@ func New(st *store.Store, scan *scanner.Scanner, opts ...Option) (*Server, error
 	mux.HandleFunc("GET /partials/library", s.handlePartialLibrary)
 	mux.HandleFunc("GET /systems/{systemKey}/games/{id}", s.handleGameDetail)
 	mux.HandleFunc("GET /art/{systemKey}/{gameID}", s.handleArt)
+	// P5: metadata engine control — coverage page + scrape actions.
+	mux.HandleFunc("GET /metadata", s.handleMetadataPage)
+	mux.HandleFunc("GET /partials/metadata", s.handlePartialMetadata)
+	mux.HandleFunc("POST /metadata/scrape", s.handleScrapeAll)
+	mux.HandleFunc("POST /systems/{system}/scrape", s.handleScrapeSystem)
+	mux.HandleFunc("POST /systems/{systemKey}/games/{id}/scrape", s.handleScrapeGame)
 	mux.HandleFunc("POST /systems/{system}/stage-torrent", s.handleStageTorrent)
 	mux.HandleFunc("POST /systems/{system}/stage-uri", s.handleStageURI)
 	mux.HandleFunc("POST /rescan", s.handleRescan)
@@ -150,14 +159,15 @@ type totalsVM struct {
 // pageMeta is what the shared topbar partial needs from any page's view
 // model (title, the contextual health chip, which nav item is active).
 type pageMeta struct {
-	Title          string
-	Sub            string
-	HealthLabel    string
-	HealthClass    string
-	ActiveDash     bool
-	ActiveLibrary  bool
-	ActiveDloads   bool
-	ActiveVerify   bool
+	Title         string
+	Sub           string
+	HealthLabel   string
+	HealthClass   string
+	ActiveDash    bool
+	ActiveLibrary bool
+	ActiveDloads  bool
+	ActiveVerify  bool
+	ActiveMeta    bool
 }
 
 type incomingVM struct {

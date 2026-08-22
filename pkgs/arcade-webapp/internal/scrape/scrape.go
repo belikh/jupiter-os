@@ -16,6 +16,7 @@ package scrape
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -24,6 +25,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/scanner"
@@ -32,6 +34,18 @@ import (
 
 // passTimeout caps every Skyscraper invocation (each phase, not the batch).
 const passTimeout = 30 * time.Minute
+
+// ErrBusy is returned when a scrape is requested while one is running
+// (the webapp serializes pipeline jobs — plan R5), mirroring igir.ErrBusy.
+var ErrBusy = errors.New("scrape: a scrape is already running")
+
+// Outcome labels for one system's scrape step (the run detail's JSON
+// values — same vocabulary as the igir runner's outcomes).
+const (
+	OutcomeScraped      = "scraped"       // ≥1 pass ok (+ coverage refresh)
+	OutcomeSkippedEmpty = "skipped-empty" // no games dir / zero ROM files
+	OutcomeFailed       = "failed"        // setup error or every pass failed
+)
 
 // romSuffixes is the ROM-count filter (cartridge-scrape.sh's $ROM_RE,
 // case-insensitive, matched against file suffixes recursively).
@@ -46,6 +60,11 @@ const defaultSource = "thegamesdb"
 // Driver anchors scraping at the binaries, trees and credential files it
 // needs. Credential fields hold PATHS, never values (read at call time —
 // activation-time sops secrets).
+//
+// The driver also OWNS scrape serialization: one job at a time (mutex-
+// guarded State, mirroring igir.Runner), because concurrent Skyscraper
+// invocations would race on the same platform db.xml and on the shared
+// per-system config ini.
 type Driver struct {
 	BinPath                string // Skyscraper executable ("" = not configured)
 	CacheDir               string // Skyscraper resource-cache root
@@ -58,6 +77,46 @@ type Driver struct {
 	CartridgeRoot string
 	OpticalRoot   string
 	ModernRoot    string
+
+	mu    sync.Mutex
+	state State
+}
+
+// State is the in-memory scrape status the UI polls (the runs table is
+// the durable record — kind=scrape, one row per batch).
+type State struct {
+	Running       bool
+	StartedAt     string
+	CurrentSystem string
+	Done, Total   int
+	LastOKAt      string
+	LastError     string
+}
+
+// SystemOutcome is one system's result — the run detail's JSON shape and
+// the metadata page's per-system history point. Games/Desc/Cover are the
+// post-scrape coverage counts (games rows / has_description / has_cover),
+// recorded so run-over-run deltas need no cache re-parse at render time.
+type SystemOutcome struct {
+	Sys     string `json:"Sys"`
+	Outcome string `json:"Outcome"`
+	Err     string `json:"Err,omitempty"`
+	Games   int64  `json:"Games"`
+	Desc    int64  `json:"Desc"`
+	Cover   int64  `json:"Cover"`
+}
+
+// State returns the current in-memory scrape status.
+func (d *Driver) State() State {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.state
+}
+
+func (d *Driver) setState(mutate func(*State)) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	mutate(&d.state)
 }
 
 // Configured reports whether the driver has everything it must have.
@@ -76,9 +135,15 @@ func (d *Driver) bucketRoot(bucket string) string {
 	}
 }
 
-// ScrapeSystem runs the full three-pass flow for one system.
+// ScrapeSystem runs the full three-pass flow for one system. Skips
+// (missing dir / no ROMs) are nil errors, like the script — use StartOne
+// when the scraped-vs-skipped distinction matters.
 func (d *Driver) ScrapeSystem(systemKey string) error {
-	return d.scrape(systemKey, "")
+	oc, err := d.scrapeOutcome(systemKey, "")
+	if oc != OutcomeFailed {
+		return nil
+	}
+	return err
 }
 
 // ScrapeGame runs the same flow restricted to one ROM (--startat/--endat on
@@ -88,27 +153,160 @@ func (d *Driver) ScrapeGame(systemKey, relPath string) error {
 	if relPath == "" {
 		return errors.New("scrape: empty game path")
 	}
-	return d.scrape(systemKey, relPath)
+	oc, err := d.scrapeOutcome(systemKey, relPath)
+	if oc != OutcomeFailed {
+		return nil
+	}
+	return err
 }
 
-func (d *Driver) scrape(systemKey, startAt string) error {
+// ---- serialized execution (P5 web control) ---------------------------------
+
+// StartBatch claims the driver's single scrape slot SYNCHRONOUSLY (so a
+// second concurrent request gets ErrBusy back before anything spawns —
+// the HTTP layer surfaces that as 409) and then scrapes the named systems
+// in order in the background, recording one kind=scrape run row for the
+// batch. Per-system failures become failed outcomes, never an abort.
+func (d *Driver) StartBatch(systemKeys []string) error {
+	return d.start(len(systemKeys), func(runID int64, record func(SystemOutcome)) {
+		for _, key := range systemKeys {
+			d.setState(func(s *State) { s.CurrentSystem = key })
+			record(d.scrapeAndCount(key, ""))
+			d.setState(func(s *State) { s.Done++ })
+		}
+	})
+}
+
+// StartOne is StartBatch for a single system.
+func (d *Driver) StartOne(systemKey string) error {
+	return d.StartBatch([]string{systemKey})
+}
+
+// StartAll scrapes every catalogue system whose games tree holds ROM
+// files ("Scrape all" on the metadata page), in catalogue order. Empty
+// trees are filtered here so a batch records real work, not a wall of
+// skipped-empty outcomes; a tree emptied between filter and run still
+// skips idempotently.
+func (d *Driver) StartAll() error {
+	systems, err := d.Store.Systems()
+	if err != nil {
+		return fmt.Errorf("scrape: systems: %w", err)
+	}
+	keys := make([]string, 0, len(systems))
+	for _, sys := range systems {
+		dir := filepath.Join(d.bucketRoot(sys.Bucket), sys.Key)
+		if fi, serr := os.Stat(dir); serr == nil && fi.IsDir() && romCount(dir) > 0 {
+			keys = append(keys, sys.Key)
+		}
+	}
+	return d.StartBatch(keys)
+}
+
+// StartGame runs one ROM's re-scrape through the same serialized slot.
+func (d *Driver) StartGame(systemKey, relPath string) error {
+	if relPath == "" {
+		return errors.New("scrape: empty game path")
+	}
+	return d.start(1, func(_ int64, record func(SystemOutcome)) {
+		d.setState(func(s *State) { s.CurrentSystem = systemKey })
+		record(d.scrapeAndCount(systemKey, relPath))
+	})
+}
+
+// start claims the busy slot, opens the run row and launches job in the
+// background. The claim is deliberately synchronous: callers can reject
+// double-submits deterministically instead of racing goroutine starts.
+func (d *Driver) start(total int, job func(runID int64, record func(SystemOutcome))) error {
 	if !d.Configured() {
 		return errors.New("scrape: driver not configured")
 	}
+	d.mu.Lock()
+	if d.state.Running {
+		d.mu.Unlock()
+		return ErrBusy
+	}
+	d.state = State{Running: true, StartedAt: time.Now().UTC().Format(time.RFC3339), Total: total}
+	d.mu.Unlock()
+
+	runID, err := d.Store.StartRun("scrape")
+	if err != nil {
+		d.setState(func(s *State) { s.Running = false })
+		return fmt.Errorf("scrape: record run: %w", err)
+	}
+	go func() {
+		defer d.setState(func(s *State) { s.Running = false; s.CurrentSystem = "" })
+
+		outcomes := make([]SystemOutcome, 0, total)
+		job(runID, func(oc SystemOutcome) { outcomes = append(outcomes, oc) })
+
+		status := "ok"
+		failed := 0
+		for _, oc := range outcomes {
+			if oc.Outcome == OutcomeFailed {
+				failed++
+				status = "error"
+			}
+		}
+		detail, _ := json.Marshal(struct {
+			Systems []SystemOutcome `json:"Systems"`
+		}{Systems: outcomes})
+		if err := d.Store.FinishRun(runID, status, string(detail)); err != nil {
+			logf("finish run: %v", err)
+		}
+		d.setState(func(s *State) {
+			if status == "ok" {
+				s.LastOKAt = time.Now().UTC().Format(time.RFC3339)
+				s.LastError = ""
+			} else {
+				s.LastError = fmt.Sprintf("%d failed system(s)", failed)
+			}
+		})
+	}()
+	return nil
+}
+
+// scrapeAndCount scrapes one system and folds the post-scrape coverage
+// counts into its outcome — the history drill-down's delta data, recorded
+// once per run instead of re-derived from caches at render time.
+func (d *Driver) scrapeAndCount(systemKey, relPath string) SystemOutcome {
+	out := SystemOutcome{Sys: systemKey}
+	oc, serr := d.scrapeOutcome(systemKey, relPath)
+	out.Outcome = oc
+	if serr != nil {
+		out.Err = serr.Error()
+		logf("%s: %v", systemKey, serr)
+	} else if oc == OutcomeScraped {
+		logf("%s: scraped ok", systemKey)
+	}
+	if games, desc, cover, cerr := d.Store.SystemScrapeCounts(systemKey); cerr == nil {
+		out.Games, out.Desc, out.Cover = games, desc, cover
+	}
+	return out
+}
+
+// scrapeOutcome runs cartridge-scrape.sh's three-pass body for one system
+// and classifies the result: scraped (≥1 pass ok), skipped-empty (the
+// script's idempotent guards) or failed (setup error or EVERY pass
+// failed — per-pass failures are still logged-and-continued, never an
+// abort; a batch where nothing succeeded is reported, not swallowed).
+func (d *Driver) scrapeOutcome(systemKey, startAt string) (string, error) {
+	if !d.Configured() {
+		return OutcomeFailed, errors.New("scrape: driver not configured")
+	}
 	sys, err := d.lookupSystem(systemKey)
 	if err != nil {
-		return err
+		return OutcomeFailed, err
 	}
 	dir := filepath.Join(d.bucketRoot(sys.Bucket), sys.Key)
 
 	// Idempotent skips (the script's first two guards).
 	if fi, serr := os.Stat(dir); serr != nil || !fi.IsDir() {
 		logf("%s: games dir missing (%s); skipping", systemKey, dir)
-		return nil
+		return OutcomeSkippedEmpty, nil
 	}
 	if romCount(dir) == 0 {
 		logf("%s: no ROM files in %s; skipping to protect Skyscraper cache", systemKey, dir)
-		return nil
+		return OutcomeSkippedEmpty, nil
 	}
 
 	// Launch line: retroarch+core wins, else the dedicated emulator, else
@@ -120,7 +318,7 @@ func (d *Driver) scrape(systemKey, startAt string) error {
 	case sys.Emulator != "":
 		launch = "jupiter-" + sys.Emulator
 	default:
-		return fmt.Errorf("scrape: %s: no core or emulator mapped; cannot build launch line", systemKey)
+		return OutcomeFailed, fmt.Errorf("scrape: %s: no core or emulator mapped; cannot build launch line", systemKey)
 	}
 
 	skyPlatform := sys.Key
@@ -129,7 +327,7 @@ func (d *Driver) scrape(systemKey, startAt string) error {
 	}
 	cache := filepath.Join(d.CacheDir, skyPlatform)
 	if err := os.MkdirAll(cache, 0o755); err != nil {
-		return fmt.Errorf("scrape: %s: cache dir: %w", systemKey, err)
+		return OutcomeFailed, fmt.Errorf("scrape: %s: cache dir: %w", systemKey, err)
 	}
 
 	// Per-system Skyscraper config. The [pegasus] launch line becomes the
@@ -141,7 +339,7 @@ func (d *Driver) scrape(systemKey, startAt string) error {
 	iniPath := filepath.Join(d.CacheDir, "config-"+systemKey+".ini")
 	ini := fmt.Sprintf("[pegasus]\nlaunch=%s \\\"{file.path}\"\n", launch)
 	if err := os.WriteFile(iniPath, []byte(ini), 0o644); err != nil {
-		return fmt.Errorf("scrape: %s: write config: %w", systemKey, err)
+		return OutcomeFailed, fmt.Errorf("scrape: %s: write config: %w", systemKey, err)
 	}
 
 	source := d.Source
@@ -150,6 +348,7 @@ func (d *Driver) scrape(systemKey, startAt string) error {
 	}
 
 	anyOK := false
+	attempted := 0
 	haveSS := false
 
 	// Pass A: ScreenScraper primary — CRC-exact for zips via unpack, -t 1
@@ -167,6 +366,7 @@ func (d *Driver) scrape(systemKey, startAt string) error {
 			"--flags", "unattend,unpack",
 		}
 		args = addWindow(args, startAt)
+		attempted++
 		if err := d.runPass(systemKey, "screenscraper", args); err != nil {
 			logf("%s: %v (continuing)", systemKey, err)
 		} else {
@@ -195,6 +395,7 @@ func (d *Driver) scrape(systemKey, startAt string) error {
 	}
 	args = append(args, "--flags", flags)
 	args = addWindow(args, startAt)
+	attempted++
 	if err := d.runPass(systemKey, source, args); err != nil {
 		logf("%s: %v (continuing)", systemKey, err)
 	} else {
@@ -214,20 +415,23 @@ func (d *Driver) scrape(systemKey, startAt string) error {
 		"-c", iniPath,
 		"--flags", "unattend",
 	}
+	attempted++
 	if err := d.runPass(systemKey, "pegasus", args); err != nil {
 		logf("%s: %v (continuing)", systemKey, err)
 	} else {
 		anyOK = true
 	}
 
+	if !anyOK {
+		return OutcomeFailed, fmt.Errorf("scrape: %s: all %d pass(es) failed", systemKey, attempted)
+	}
+
 	// Coverage refresh after ANY successful pass — best effort; a scanner
 	// hiccup must not fail an otherwise-successful scrape.
-	if anyOK {
-		if err := scanner.ApplyCacheFlags(d.Store, sys, dir, cache); err != nil {
-			logf("%s: coverage refresh: %v", systemKey, err)
-		}
+	if err := scanner.ApplyCacheFlags(d.Store, sys, dir, cache); err != nil {
+		logf("%s: coverage refresh: %v", systemKey, err)
 	}
-	return nil
+	return OutcomeScraped, nil
 }
 
 // lookupSystem resolves one catalogue row (Systems() is the store's only

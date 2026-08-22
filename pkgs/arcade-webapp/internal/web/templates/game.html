@@ -38,14 +38,33 @@
             {{if .HasReport}}<a href="/verify/reports/{{.SystemKey}}.csv">last igir report (csv)</a>
             {{else}}<span class="sub">no report yet — run Verify</span>{{end}}
           </span>
+          <span class="k">metadata</span><span class="v">
+            {{if .HasDescription}}description ✓{{else}}description —{{end}} ·
+            {{if .HasCover}}cover ✓{{else}}cover —{{end}}
+            <span class="sub" title="best-effort flags from the Skyscraper resource cache; re-scrape to refresh">(cache flags)</span>
+          </span>
         </div>
-        <div class="actions">
-          <button type="button" disabled title="curation lands in P7">{{if .Hidden}}Show{{else}}Hide{{end}}</button>
-        </div>
+        {{template "game-actions" .Actions}}
       </div>
     </div>
     {{template "foot"}}
   </main>
 </body>
 </html>
+{{end}}
+
+{{/* Game-detail actions region (P5): the plan's per-game re-scrape
+      action, wired to Driver.ScrapeGame; swaps itself so a kicked job
+      flips the row into its in-flight state without a reload. Hide/show
+      stays disabled — curation lands in P7. */ -}}
+{{define "game-actions"}}
+<div id="game-actions" class="actions">
+  <button type="button" disabled title="curation lands in P7">{{if .Hidden}}Show{{else}}Hide{{end}}</button>
+  <button class="mini primary" hx-post="/systems/{{.SystemKey}}/games/{{.GameID}}/scrape"
+    hx-target="#game-actions" hx-swap="outerHTML"
+    {{if not .CanScrape}}disabled{{end}}
+    title="re-run Skyscraper for this ROM now (gather passes windowed to it)">
+    {{if .Running}}scraping…{{else if .CanScrape}}re-scrape{{else}}re-scrape (unconfigured){{end}}</button>
+  {{if .Running}}<span class="pill running">a scrape is running — this page reflects results on reload</span>{{end}}
+</div>
 {{end}}

@@ -908,6 +908,140 @@ func (s *Store) SystemVerifyHistory(systemKey string, n int) ([]VerifyRunPoint, 
 	return out, rows.Err()
 }
 
+// ---- P5: metadata-engine reads ---------------------------------------------
+
+// ScrapeRow is one system's metadata-coverage line for the /metadata
+// page: the games-table scrape flags (has_description/has_cover — set by
+// the driver's post-scrape ApplyCacheFlags refresh) joined with the
+// scrape_coverage aggregate the scanner and the driver both maintain.
+type ScrapeRow struct {
+	Key          string
+	Collection   string
+	Bucket       string
+	Games        int64
+	Desc         int64  // games with has_description=1
+	Cover        int64  // games with has_cover=1
+	CacheEntries int64  // distinct ids in the platform db.xml
+	ComputedAt   string // when coverage was last recomputed ("" never)
+}
+
+// ScrapeSummary returns every catalogue system in catalogue order with
+// its metadata-coverage aggregates. Systems without games read as zeros
+// (the page collapses them into an idle count, like the card wall).
+func (s *Store) ScrapeSummary() ([]ScrapeRow, error) {
+	rows, err := s.db.Query(`
+		SELECT s.key, s.collection, s.bucket,
+		       COALESCE(g.cnt, 0), COALESCE(g.desc_n, 0), COALESCE(g.cover_n, 0),
+		       COALESCE(c.cache_entries, 0), COALESCE(c.computed_at, '')
+		FROM systems s
+		LEFT JOIN (SELECT system_key, COUNT(*) cnt,
+		                  SUM(has_description) desc_n,
+		                  SUM(has_cover) cover_n
+		           FROM games GROUP BY system_key) g ON g.system_key = s.key
+		LEFT JOIN scrape_coverage c ON c.system_key = s.key
+		ORDER BY s.sort_order, s.key`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	var out []ScrapeRow
+	for rows.Next() {
+		var r ScrapeRow
+		if err := rows.Scan(&r.Key, &r.Collection, &r.Bucket,
+			&r.Games, &r.Desc, &r.Cover, &r.CacheEntries, &r.ComputedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// SystemScrapeCounts is one system's ScrapeSummary slice — what the
+// runner folds into each run-detail outcome so the history can show
+// coverage deltas without re-parsing caches at render time.
+func (s *Store) SystemScrapeCounts(systemKey string) (games, desc, cover int64, err error) {
+	err = s.db.QueryRow(`
+		SELECT COUNT(*),
+		       COALESCE(SUM(has_description), 0),
+		       COALESCE(SUM(has_cover), 0)
+		FROM games WHERE system_key = ?`, systemKey).Scan(&games, &desc, &cover)
+	return games, desc, cover, err
+}
+
+// ScrapeRunPoint is one kind=scrape run's recorded outcome for one
+// system — the drill-down's history points (newest first).
+type ScrapeRunPoint struct {
+	RunID      int64
+	FinishedAt string
+	Status     string
+	Outcome    string
+	Err        string
+	Games      int64
+	Desc       int64
+	Cover      int64
+}
+
+// scrapeRunDetail mirrors the runner's runs.detail JSON.
+type scrapeRunDetail struct {
+	Systems []ScrapeOutcome `json:"Systems"`
+}
+
+// ScrapeOutcome is the store-side mirror of scrape.SystemOutcome (the
+// JSON round-trip shape; defined here to avoid a store→scrape import).
+type ScrapeOutcome struct {
+	Sys     string `json:"Sys"`
+	Outcome string `json:"Outcome"`
+	Err     string `json:"Err,omitempty"`
+	Games   int64  `json:"Games"`
+	Desc    int64  `json:"Desc"`
+	Cover   int64  `json:"Cover"`
+}
+
+// scrapeHistoryScanBound bounds the runs-table walk behind the history
+// query (well past any realistic batch frequency; one indexed scan).
+const scrapeHistoryScanBound = 100
+
+// SystemScrapeHistory walks the newest finished runs of kind='scrape'
+// and extracts one system's outcome from each run's detail payload,
+// newest first — the verify drill-down's pattern applied to scrape runs.
+func (s *Store) SystemScrapeHistory(systemKey string, n int) ([]ScrapeRunPoint, error) {
+	if n <= 0 {
+		return nil, nil
+	}
+	rows, err := s.db.Query(`SELECT id, finished_at, status, detail FROM runs
+		WHERE kind='scrape' AND finished_at != '' ORDER BY id DESC LIMIT ?`,
+		scrapeHistoryScanBound)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	var out []ScrapeRunPoint
+	for rows.Next() {
+		var p ScrapeRunPoint
+		var detail string
+		if err := rows.Scan(&p.RunID, &p.FinishedAt, &p.Status, &detail); err != nil {
+			return nil, err
+		}
+		var d scrapeRunDetail
+		if err := json.Unmarshal([]byte(detail), &d); err != nil {
+			continue // error-text detail: nothing plottable in this run
+		}
+		for _, sys := range d.Systems {
+			if sys.Sys != systemKey {
+				continue
+			}
+			p.Outcome, p.Err = sys.Outcome, sys.Err
+			p.Games, p.Desc, p.Cover = sys.Games, sys.Desc, sys.Cover
+			out = append(out, p)
+			break
+		}
+		if len(out) >= n {
+			break
+		}
+	}
+	return out, rows.Err()
+}
+
 // ReplaceStaging upserts the scan-time incoming staging summary rows.
 // Rows for systems absent from the batch are cleared (a scan that found
 // no incoming dir reports zeros, keeping the table in step with disk).

@@ -552,10 +552,11 @@ type datFetchRunDetail struct {
 	Warnings []string `json:"Warnings"`
 }
 
-// runDetailForKind renders the human-facing detail cell for the P3 run
-// kinds (called from runDetail in server.go; keeps that dispatcher
+// runDetailForKind renders the human-facing detail cell for the P3/P5
+// run kinds (called from runDetail in server.go; keeps that dispatcher
 // boring). Verify runs: one line per system, capped, with report links.
-// DAT fetches: the batch counts + up to three warnings.
+// DAT fetches: the batch counts + up to three warnings. Scrapes: one
+// outcome+coverage line per system (see metadata.go).
 func runDetailForKind(r store.Run) (template.HTML, bool) {
 	switch r.Kind {
 	case "verify":
@@ -606,6 +607,8 @@ func runDetailForKind(r store.Run) (template.HTML, bool) {
 			out += "<br>⚠ " + template.HTMLEscapeString(truncate(warn, 120))
 		}
 		return template.HTML(out), true
+	case "scrape":
+		return scrapeRunDetailHTML(r.Detail)
 	default:
 		return "", false
 	}
