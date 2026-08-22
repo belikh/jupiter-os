@@ -175,6 +175,52 @@ let
   datDir = "/var/lib/arcade-dats";
   scratch = "/var/lib/arcade-scratch";
   torrents = "/var/lib/arcade-torrents";
+  skyCache = "/var/lib/arcade-skycache";
+
+  # ---- P5: metadata-engine fixture ----------------------------------
+  #
+  # A stubbed Skyscraper: deterministic, no network. Every invocation
+  # rewrites <cachedir>/db.xml with description+cover resources keyed by
+  # the sha1 of each ROM file under the input dir — exactly the id shape
+  # CacheID/ReadCacheCoverage key on — so a scrape moves REAL coverage
+  # numbers through the real driver→store→ApplyCacheFlags→template stack.
+  # When ARCADE_SKYSCRAPER_STUB_LOG is set it journals its argv, giving
+  # the smoke a direct probe that the game-detail re-scrape windowed its
+  # gather passes to ONE ROM (--startat/--endat).
+  skyscraperStub = pkgs.writeShellScriptBin "skyscraper" ''
+    set -eu
+    export PATH="${pkgs.coreutils}/bin:${pkgs.findutils}/bin:$PATH"
+    # Journal the RAW argv FIRST — the parse loop below shifts $@ away,
+    # and a journal taken after it would be empty (run-1 root cause).
+    if [ -n "''${ARCADE_SKYSCRAPER_STUB_LOG:-}" ]; then
+      { echo '---'; printf '%s\n' "$@"; } >> "''${ARCADE_SKYSCRAPER_STUB_LOG}"
+    fi
+    p=""; i=""; d=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        -p) p="$2"; shift 2 ;;
+        -i) i="$2"; shift 2 ;;
+        -d) d="$2"; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    [ -n "$d" ] || exit 1
+    mkdir -p "$d"
+    {
+      echo '<?xml version="1.0" encoding="UTF-8"?>'
+      echo '<db>'
+      find "$i" -type f 2>/dev/null | LC_ALL=C sort | while read -r f; do
+        case "''${f##*.}" in
+          nes|sfc|smc|gb|gbc|gba|n64|zip|cue|bin|chd|iso) ;;
+          *) continue ;;
+        esac
+        id="$(sha1sum "$f" | cut -d' ' -f1)"
+        echo "  <resource id=\"$id\" type=\"description\" source=\"stub\" timestamp=\"1\">stub</resource>"
+        echo "  <resource id=\"$id\" type=\"cover\" source=\"stub\" timestamp=\"1\">covers/stub.png</resource>"
+      done
+      echo '</db>'
+    } > "$d/db.xml"
+  '';
 
   # In-VM assertions. Failures print FAIL lines (the driver shows the log
   # tail); success prints the marker and powers the VM off. All output is
@@ -645,6 +691,125 @@ let
     curl -sf "$base/art/nes/$gid" | grep -q '<svg' || fail "/art body is not SVG"
     echo "smoke: P4 library + filtered grid + detail rel_path + svg art ok"
 
+    # ---- P5: metadata engine control (stubbed Skyscraper) ----
+    #
+    # Coverage must CHANGE after a scrape through the REAL driver →
+    # store → ApplyCacheFlags → template stack, driven by a stub binary
+    # that keys canned resources off each ROM's actual sha1 — fully
+    # deterministic, no network. nes's games tree holds exactly the 5
+    # DAT-promoted ROMs at this point (P3 removed the zips), so a scrape
+    # must move its description/cover coverage 0% → 100%.
+    echo "smoke: P5 metadata page renders the worklist"
+    page=$(curl -sf "$base/metadata" || fail "GET /metadata")
+    grep -q 'id="metadata-panel"' <<<"$page" || fail "metadata page missing its panel"
+    grep -q 'hx-post="/metadata/scrape"' <<<"$page" || fail "scrape-all action missing"
+    grep -q 'hx-post="/systems/nes/scrape"' <<<"$page" || fail "per-system scrape action missing"
+    frag=$(curl -sf "$base/partials/metadata" || fail "GET /partials/metadata")
+    grep -q '<html' <<<"$frag" && fail "metadata partial rendered the full layout"
+    # Pre-scrape truth: nothing flagged yet (the fixture db.xml carries
+    # synthetic ids that never match real sha1s — flags all zero).
+    grep -q 'data-system="nes" data-games="5" data-desc-pct="0" data-cover-pct="0"' <<<"$frag" \
+      || fail "nes row must start unflagged (desc/cover 0%)"
+    echo "smoke: metadata worklist renders fragment-shaped with unscraped rows"
+
+    # CSRF posture on every new mutating endpoint (game route needs the
+    # id the P4 step parsed from its card href).
+    [ -n "$gid" ] || fail "P5 lost the game id from the P4 detail step"
+    for ep in "/metadata/scrape" "/systems/nes/scrape" "/systems/nes/games/$gid/scrape"; do
+      code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$base$ep")
+      [ "$code" = 403 ] || fail "POST $ep without X-HX-Request -> $code, want 403"
+    done
+    echo "smoke: P5 mutating endpoints are htmx-only"
+
+    # Per-system scrape: coverage flips 0 → 100 on BOTH columns once the
+    # stub's sha1-keyed db.xml lands and the driver refreshes flags.
+    code=$(curl -s -o /dev/null -w '%{http_code}' -H "$HX" -X POST "$base/systems/nes/scrape")
+    [ "$code" = 202 ] || fail "POST /systems/nes/scrape -> $code, want 202"
+    ok=0
+    for _ in $(seq 1 60); do
+      frag=$(curl -sf "$base/partials/metadata" || true)
+      if grep -q 'data-system="nes" data-games="5" data-desc-pct="100" data-cover-pct="100"' <<<"$frag"; then ok=1; break; fi
+      sleep 1
+    done
+    if [ "$ok" != 1 ]; then
+      echo "smoke: DEBUG nes scrape poll failed — metadata fragment rows:"
+      grep -o 'data-system="[a-z0-9]*"[^>]*' <<<"$frag" | head -6 || true
+      echo "smoke: DEBUG sky cache:"; ls -la ${skyCache}/nes 2>/dev/null || true
+      echo "smoke: DEBUG webapp journal tail:"
+      journalctl -u jupiter-arcade-webapp --no-pager -n 30 || true
+      fail "stubbed nes scrape never moved coverage 0->100%"
+    fi
+    echo "smoke: stubbed scrape flipped nes coverage to desc=100 cover=100"
+
+    # Audit trail: assert the scrape run HERE — the status partial shows
+    # only the newest 8 runs and later steps would push it out (the
+    # dat-fetch lesson from P3).
+    status=$(curl -sf "$base/partials/status" || true)
+    grep -q '<td>scrape</td>' <<<"$status" || fail "scrape run not recorded in the runs table"
+    echo "smoke: scrape run recorded in the audit trail"
+
+    # Second run → the history drill-down renders two points with a delta.
+    code=$(curl -s -o /dev/null -w '%{http_code}' -H "$HX" -X POST "$base/systems/nes/scrape")
+    [ "$code" = 202 ] || fail "second nes scrape -> $code, want 202"
+    ok=0
+    for _ in $(seq 1 60); do
+      frag=$(curl -sf "$base/partials/metadata" || true)
+      if grep -q 'run history (2)' <<<"$frag"; then ok=1; break; fi
+      sleep 1
+    done
+    [ "$ok" = 1 ] || fail "run-history drill-down never showed two points"
+    echo "smoke: run history drill-down live"
+
+    # Scrape all: gb sat at 0% forever — flipping it proves the batch
+    # reached systems beyond the one clicked (and serialized cleanly
+    # after the two manual nes runs above).
+    code=$(curl -s -o /dev/null -w '%{http_code}' -H "$HX" -X POST "$base/metadata/scrape")
+    [ "$code" = 202 ] || fail "POST /metadata/scrape -> $code, want 202"
+    ok=0
+    for _ in $(seq 1 90); do
+      frag=$(curl -sf "$base/partials/metadata" || true)
+      if grep -q 'data-system="gb" data-games="4" data-desc-pct="100"' <<<"$frag"; then ok=1; break; fi
+      sleep 1
+    done
+    if [ "$ok" != 1 ]; then
+      journalctl -u jupiter-arcade-webapp --no-pager -n 20 || true
+      fail "scrape-all never flipped gb coverage"
+    fi
+    echo "smoke: scrape-all green across the corpus"
+
+    # Cross-page consistency: the dashboard card wall reads the SAME
+    # scrape_coverage aggregate the driver just refreshed.
+    ok=0
+    for _ in $(seq 1 30); do
+      page=$(curl -sf "$base/" || true)
+      if grep -q 'data-system="nes" data-games="5" data-coverage="100"' <<<"$page"; then ok=1; break; fi
+      sleep 1
+    done
+    [ "$ok" = 1 ] || fail "dashboard nes card never flipped to coverage=100 after the scrape"
+    echo "smoke: dashboard card agrees with the metadata engine (60->100)"
+
+    # Game-detail re-scrape: windowed to ONE rom (--startat/--endat),
+    # proven via the stub's argv journal (cleared first so earlier
+    # scrapes cannot satisfy the grep).
+    rm -f "${scratch}/skyscraper-stub.log"
+    code=$(curl -s -o /tmp/gscrape.out -w '%{http_code}' -H "$HX" \
+      -X POST "$base/systems/nes/games/$gid/scrape")
+    [ "$code" = 202 ] || fail "game re-scrape -> $code, want 202"
+    grep -q 'id="game-actions"' /tmp/gscrape.out \
+      || fail "game re-scrape did not answer with the actions region"
+    ok=0
+    for _ in $(seq 1 60); do
+      if [ -f "${scratch}/skyscraper-stub.log" ] && grep -q -e '--startat' "${scratch}/skyscraper-stub.log"; then ok=1; break; fi
+      sleep 1
+    done
+    if [ "$ok" != 1 ]; then
+      journalctl -u jupiter-arcade-webapp --no-pager -n 20 || true
+      fail "game re-scrape never invoked the stub windowed (--startat missing)"
+    fi
+    grep -q 'Starlit Vault (USA).nes' "${scratch}/skyscraper-stub.log" \
+      || fail "game re-scrape windowed to the wrong ROM"
+    echo "smoke: game re-scrape wired (--startat/--endat at the one ROM)"
+
     pass
   '';
 in
@@ -678,7 +843,10 @@ in
     opticalRoot = "${gamesRoot}/optical";
     modernRoot = "${gamesRoot}/modern";
     datDir = datDir;
-    skyscraperCacheDir = "${fixture}/metadata/skyscraper-cache";
+    # P5: a WRITABLE copy of the fixture cache (materialized below) —
+    # the stubbed Skyscraper writes db.xml into it, so a read-only store
+    # path would fail exactly like D-P1f's ReadWritePaths lesson.
+    skyscraperCacheDir = skyCache;
     # Writable incoming root (NOT the read-only store fixture): the aria2
     # daemon writes real downloads here, and the webapp's P2 attribution
     # reads them. The scanner's "incoming" stat counts live staging
@@ -691,6 +859,15 @@ in
     # igirPackage keeps its default (pkgs.igir from the pinned nixpkgs —
     # 5.3.0, the same binary the fixture gate pins): the REAL igir runs
     # in-VM against the REAL fixture tree.
+    #
+    # P5: skyscraperPackage is the STUB (deterministic coverage flips,
+    # no network — see the fixture note above); the scheduled scrape
+    # stays OFF for determinism, the on-demand endpoints are what the
+    # smoke drives. Screenscraper/TGDB point at /dev/null: the driver
+    # reads empty creds and runs every pass, exercising the full
+    # three-pass flow.
+    skyscraperPackage = skyscraperStub;
+    scrapeIntervalHours = null;
     # DAT manager against the in-VM stub host — tests never touch
     # GitHub (the stub serves a re-dated nes DAT so the refresh is
     # observable). Scheduled refresh stays OFF for determinism; the
@@ -711,10 +888,17 @@ in
     stateDir = "/var/lib/arcade-webapp-state";
     # No legacy inventory in the fixture — absence is tolerated by design.
     inventoryFile = null;
-    # Screenscraper/TGDB stay unconfigured (P5's consumers).
+    # Screenscraper/TGDB: /dev/null = empty creds read at scrape call
+    # time (paths-only discipline intact; the stub ignores them anyway).
     screenscraperCredsFile = "/dev/null";
     tgdbApikeyFile = "/dev/null";
   };
+
+  # P5 probe: the stub journals its argv here, and the smoke greps it
+  # for the game-scrape windowing proof. scratch/ exists via the
+  # module's tmpfiles rule + materialize's mkdir.
+  systemd.services.jupiter-arcade-webapp.environment.ARCADE_SKYSCRAPER_STUB_LOG =
+    "${scratch}/skyscraper-stub.log";
 
   # The incoming dir must exist before the webapp unit's mount namespace
   # is built (D-P1f lesson applies to ReadWritePaths on the aria2 side;
@@ -740,9 +924,14 @@ in
     };
     script = ''
       set -eu
-      mkdir -p ${gamesRoot} ${datDir} ${scratch}/reports ${torrents}
+      mkdir -p ${gamesRoot} ${datDir} ${scratch}/reports ${torrents} ${skyCache}
       cp -r ${fixture}/games/. ${gamesRoot}/
       cp ${fixture}/metadata/no-intro-dats/*.dat ${datDir}/
+      # P5: the Skyscraper cache starts as a copy of the fixture's
+      # synthetic db.xml files (nes 60% / snes 100% / gb 0% — the P1
+      # dashboard assertions hold), then the stubbed Skyscraper rewrites
+      # nes/gb/etc. with REAL sha1-keyed resources during the smoke.
+      cp -r ${fixture}/metadata/skyscraper-cache/. ${skyCache}/
       cp ${torrentFixture}/minerva-torrents/*.torrent ${torrents}/
       # Stage the DAT corpus under incoming — the verify runner's input
       # (the same deterministic bytes the committed DATs describe). The
