@@ -314,6 +314,10 @@ func (r *Runner) processSystem(sys store.SystemRow, runID int64) SystemOutcome {
 			PromotedBytes: bytes,
 			FinishedAt:    time.Now().UTC().Format(time.RFC3339),
 		})
+		// No DAT ran, so there is no report to name offenders from —
+		// clear any stale drill-down rows from a previous DAT'd verify
+		// (nil = replace-with-empty in RecordVerifyUnmatched).
+		_ = r.st.RecordVerifyUnmatched(sys.Key, runID, nil)
 		r.logf("%s: no DAT — promoted %d file(s) unchecked (%d bytes)", sys.Key, files, bytes)
 		return oc
 	}
@@ -381,6 +385,11 @@ func (r *Runner) processSystem(sys store.SystemRow, runID int64) SystemOutcome {
 	if err := r.st.SetSystemVerifyStates(sys.Key, rep.FoundRels); err != nil {
 		r.logf("%s: verify states: %v", sys.Key, err)
 	}
+	// P4 drill-down: persist this run's per-file offenders (input-side
+	// junk + output-side extras) under the run that produced them.
+	// Replace semantics clear the list on a clean re-verify (empty slice).
+	_ = r.st.RecordVerifyUnmatched(sys.Key, runID,
+		append(append([]string{}, rep.UnmatchedFiles...), rep.ExtraFiles...))
 	r.logf("%s: %s — %d/%d found, %d unmatched, %d missing (report: %s)",
 		sys.Key, oc.Outcome, rep.Found, rep.DatGames, rep.Unmatched, rep.Missing, report)
 	return oc
@@ -470,16 +479,23 @@ func (r *Runner) runIgir(dat, input, output, report string) error {
 //   - FOUND rows are game-attributed and point into the output dir;
 //   - anything else (or a row on neither side) -> Other, red, counted —
 //     never silently dropped.
+//
+// The per-row FILENAMES behind Unmatched/Extra are carried too
+// (UnmatchedFiles / ExtraFiles, filepath.Base of each row's path) so the
+// verify page can name exactly WHAT to fix without opening the CSV.
 type Report struct {
-	DatGames   int // Found + Missing (games the DAT claims)
-	Found      int // matched + written + checksum-retested
-	Missing    int // DAT games no staged input matched
-	Unmatched  int // INPUT-side deviations: UNUSED + DUPLICATE (red)
-	Duplicate  int // OUTPUT-side re-verify echoes (benign, informational)
-	Extra      int // OUTPUT-side files no DAT claims (amber)
-	Other      int // unknown statuses / unknown provenance (red)
-	FoundPaths []string
-	FoundRels  []string // FoundPaths relative to the igir --output dir
+	DatGames  int // Found + Missing (games the DAT claims)
+	Found     int // matched + written + checksum-retested
+	Missing   int // DAT games no staged input matched
+	Unmatched int // INPUT-side deviations: UNUSED + DUPLICATE (red)
+	Duplicate int // OUTPUT-side re-verify echoes (benign, informational)
+	Extra     int // OUTPUT-side files no DAT claims (amber)
+	Other     int // unknown statuses / unknown provenance (red)
+	// Per-file drill-down, in report order:
+	UnmatchedFiles []string // input-side UNUSED/DUPLICATE basenames (red)
+	ExtraFiles     []string // output-side UNUSED basenames (amber)
+	FoundPaths     []string
+	FoundRels      []string // FoundPaths relative to the igir --output dir
 }
 
 // parseReportFile reads + parses the CSV at path.
@@ -572,8 +588,10 @@ func ParseReport(rd io.Reader, inputDir, outputDir string) (*Report, error) {
 			switch {
 			case underDir(inputDir, romPath):
 				rep.Unmatched++
+				rep.UnmatchedFiles = append(rep.UnmatchedFiles, filepath.Base(romPath))
 			case underDir(outputDir, romPath):
 				rep.Extra++
+				rep.ExtraFiles = append(rep.ExtraFiles, filepath.Base(romPath))
 			default:
 				rep.Other++
 			}
@@ -581,6 +599,7 @@ func ParseReport(rd io.Reader, inputDir, outputDir string) (*Report, error) {
 			switch {
 			case underDir(inputDir, romPath):
 				rep.Unmatched++ // staged duplicate: the set deviates from 1G1R
+				rep.UnmatchedFiles = append(rep.UnmatchedFiles, filepath.Base(romPath))
 			case underDir(outputDir, romPath):
 				rep.Duplicate++ // already-promoted echo: idempotent re-verify
 			default:

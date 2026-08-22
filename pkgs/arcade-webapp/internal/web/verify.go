@@ -140,8 +140,28 @@ type verifyRowVM struct {
 	// report, and the marker says so instead of implying all is well
 	// (ADV-P3-02).
 	LastAttemptFailed bool
+	// P4 drill-down, loaded only for offending systems (last verify has
+	// unmatched>0 or extra>0): the persisted per-file offender list and
+	// the recent-run history with run-over-run deltas.
+	OffenderFiles []string
+	History       []verifyPointVM
 	// Button affordances.
 	CanVerify bool
+}
+
+// verifyDrillDownPoints caps the history block (bounded store scan; a
+// sparkline, not a ledger).
+const verifyDrillDownPoints = 5
+
+// verifyPointVM is one history line in the drill-down: a run's outcome
+// plus its delta against the next-older point ("Δ+2 unmatched" = two
+// more unmatched files than the previous run).
+type verifyPointVM struct {
+	FinishedHuman string // relative age, like the rest of the page
+	Found         int
+	Unmatched     int
+	Extra         int // shown only when non-zero
+	DeltaUnmatched string // "" on the oldest point (no prior run to diff)
 }
 
 type verifyVM struct {
@@ -226,6 +246,33 @@ func (s *Server) fetchVerify() verifyVM {
 		}
 		if sys.Verify.FinishedAt != "" {
 			row.FinishedAgo = relTime(vm.Now, sys.Verify.FinishedAt)
+		}
+		// P4 drill-down: offending systems (red/amber deviations) get
+		// their persisted per-file list + a bounded run history with
+		// deltas. Read failures degrade to "no drill-down", never a
+		// broken page (same policy as the staging map above).
+		if sys.VerifyPresent && (sys.Verify.Unmatched > 0 || sys.Verify.Extra > 0) {
+			if files, err := s.st.VerifyUnmatched(sys.Verify.RunID, sys.Key); err == nil {
+				row.OffenderFiles = files
+			} else {
+				log.Printf("web: verify: unmatched files %s: %v", sys.Key, err)
+			}
+			if hist, err := s.st.SystemVerifyHistory(sys.Key, verifyDrillDownPoints); err == nil {
+				for i, p := range hist {
+					vp := verifyPointVM{
+						FinishedHuman: relTime(vm.Now, p.FinishedAt),
+						Found:         p.Found,
+						Unmatched:     p.Unmatched,
+						Extra:         p.Extra,
+					}
+					if i+1 < len(hist) { // hist is newest-first; [i+1] is the previous run
+						vp.DeltaUnmatched = fmt.Sprintf("%+d", p.Unmatched-hist[i+1].Unmatched)
+					}
+					row.History = append(row.History, vp)
+				}
+			} else {
+				log.Printf("web: verify: history %s: %v", sys.Key, err)
+			}
 		}
 		switch row.State {
 		case VerifyStateVerified:

@@ -548,6 +548,22 @@ func TestParseReportEdgeShapes(t *testing.T) {
 	if !reflect.DeepEqual(rep.FoundRels, wantRels) {
 		t.Errorf("FoundRels = %v, want %v", rep.FoundRels, wantRels)
 	}
+	// P4 drill-down: the per-file offenders behind Unmatched/Extra —
+	// input-side UNUSED/DUPLICATE basenames (red) and output-side UNUSED
+	// basenames (amber), in report order. The output-side DUPLICATE echo
+	// is benign and must NOT be listed.
+	wantUnmatchedFiles := []string{
+		"Starlit Vault (USA) [1].nes",
+		"readme.txt",
+		"bad dump.nes",
+	}
+	if !reflect.DeepEqual(rep.UnmatchedFiles, wantUnmatchedFiles) {
+		t.Errorf("UnmatchedFiles = %v, want %v", rep.UnmatchedFiles, wantUnmatchedFiles)
+	}
+	wantExtraFiles := []string{"Bonza Box (USA).zip"}
+	if !reflect.DeepEqual(rep.ExtraFiles, wantExtraFiles) {
+		t.Errorf("ExtraFiles = %v, want %v", rep.ExtraFiles, wantExtraFiles)
+	}
 }
 
 func TestParseReportQuotedCommas(t *testing.T) {
