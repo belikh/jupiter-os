@@ -1240,6 +1240,15 @@ func (s *Store) GamesMissingSHA1(systemKey string) ([]string, error) {
 	return out, rows.Err()
 }
 
+// SetGameHidden flips one game's curation flag (the P6 generator
+// excludes hidden rows; the P7 UI owns the affordance). Unknown rel
+// paths are a no-op — curation is idempotent, never an error.
+func (s *Store) SetGameHidden(systemKey, relPath string, hidden bool) error {
+	_, err := s.db.Exec(`UPDATE games SET hidden=? WHERE system_key=? AND rel_path=?`,
+		boolInt(hidden), systemKey, relPath)
+	return err
+}
+
 // RunsByKind returns up to n finished runs of one kind, newest first —
 // the generation log section's source.
 func (s *Store) RunsByKind(kind string, n int) ([]Run, error) {
