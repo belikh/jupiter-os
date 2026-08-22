@@ -5,11 +5,11 @@ The live heartbeat of the builder/critic loop driving
 every critic verdict. Screenshots (when they exist) land under
 `arcade-webapp-gauntlet/` next to this file.
 
-- **Phase:** 1-2 complete — **P1, P2, P3 won** (blind critics) · P4 next
+- **Phase:** 1-2 complete — **P1, P2, P3 won** (blind critics) · **P4 in review**
 - **Branch:** `arcade/webapp-gauntlet`
 - **ADR:** [ADR-0002 — custom, not RomM](../adr/0002-arcade-webapp-custom-vs-romm.md)
   (D1 research-confirmed 2026-08-21; D2–D4 accepted)
-- **Last update:** 2026-08-22 04:35 AEST
+- **Last update:** 2026-08-22 06:10 AEST
 
 ## Piece table
 
@@ -18,7 +18,7 @@ every critic verdict. Screenshots (when they exist) land under
 | P1 — Pipeline dashboard | **won** | 1 (0 rebuilds) | **ours** (blind, labels stripped; DOM A/B, data-scale asymmetry disclosed+discounted) | download stage has no surface (queue depth/active/errored/throughput) — folds into P2; meters lack `role="progressbar"`/`aria-valuenow`, polling regions lack `aria-live` (carry to P2) | `p1-ours-desktop.png`, `p1-ours-mobile.png`, `p1-bar-desktop.png`; critic: "B answers the 5-second question in one strip… A contains zero pipeline vocabulary — verify 0, torrent 0, scan 0, coverage 0" |
 | P2 — Download control | **won** | 1 (0 rebuilds) + adversarial reconciliation | **ours** (blind, labels stripped; A=AriaNg's literal list-view template extracted from its shipped JS bundle, B=ours rendering a live aria2d queue: 2 active 64 MiB, 1 paused, 3 completed) | acquire column is a dead end when the torrent is missing — no stage/paste/trigger control on-page (carried to P3) | `p2-ours-downloads.html`, `p2-bar-ariang-list-template.html`, `p2-ours-{desktop,mobile}.png`; critic: "B understands the job is a collection pipeline, not a file list… A manages the daemon, not the collection"; implementation commits `f883582`/`ad361c2`/`b8f8315`/`f0b29b2`, review fixes `4be90e9`/`dfa680b` |
 | P3 — Verify & organize | **won** — 1 loop + adversarial reconciliation | 1 (real-igir bring-up: 3 root-caused VM failures, 0 masked) + adversarial review pending | **ours** (blind; A=RomM demo DOM, B=our /verify page with a real igir run — snes/gb green, nes red-unmatched, segacd unknown) | unmatched files not drillable in-page + no run history w/ deltas (carry to P4) | commits `ca09507` (Go half) + `b1809bc`/`ce84fde` (real-igir refinements + wiring); VM smoke 27 steps green ×2 consecutive incl. REAL igir amber-extra → green zero-unmatched on a fresh promotion (log excerpt in the Phase 3 verification section); `p3-ours-verify.html`, `p3-ours-verify.png` |
-| P4 — Library browsing | pending | 0 | — | — | — |
+| P4 — Library browsing | **review** | 1 (2 VM bring-up failures, both root-caused: pagination + missing awk) | — | — | module `artDir` option + `/library`·`/partials/library`·`/art` smoke green; commit `7a39e86` |
 | P5 — Metadata engine control | pending | 0 | — | — | — |
 | P6 — Launcher DB generator | pending | 0 | — | — | — |
 | P7 — Curation | pending | 0 | — | — | — |
@@ -207,6 +207,35 @@ against. Full detail:
    rescans pushed the early dat-fetch row out of the window before the
    grep. Fix: assert each run kind at the step that records it (the
     assertion moved into the DAT-refresh block; documented in the smoke).
+
+### Phase 4 (P4 — library browsing: module wiring + VM smoke)
+
+Builder loop 1 on the committed Go half (`/library`, `/partials/library`,
+`GET /systems/<sys>/games/<id>`, `GET /art/<sys>/<id>` with SVG-poster
+fallback): the fleet-module wiring (`artDir` option →
+`ARCADE_WEBAPP_ART_DIR` when set, RequiresMountsFor + ReadOnlyPaths join)
+and the VM smoke steps. 2 VM bring-up failures, both root-caused, then
+clean PASS:
+
+1. **Run 1 — "library page missing Starlit Vault":** assumed the fixture
+   title renders on page 1 — the gallery paginates at `libPageSize`=10
+   and the 16-game corpus sorts it onto page 2. Assertions retargeted to
+   what page 1 honestly carries (early titles + `rel="next"` pager);
+   Starlit Vault is reached through its own `?q=` filter step.
+2. **Run 2 — `awk: command not found`:** the card-href↔title pairing
+   needs awk; the smoke unit's `path` didn't carry it (silent empty
+   capture). Fix: `gawk` added to the unit path.
+3. **Run 3 latent bug caught by the same failure:** the title anchor
+   pattern expected `title="Starlit Vault"` — rendered titles keep their
+   region tags (`Starlit Vault (USA)`, extension stripped only), so the
+   closing quote never matched. Pattern loosened; run 3 green.
+
+| Command | Result | Notes |
+|---|---|---|
+| `go build ./... && go vet ./... && go test -count=1 ./...` (in `pkgs/arcade-webapp`) | **pass** (2026-08-22) | no Go changes this piece — all suites green on the tree as found |
+| `make test-arcade-webapp` | **pass** (2026-08-22, 3 runs incl. final) | new smoke steps: `/library` 200 with page-1 fixture card + `rel="next"` pager + cards wired to `/art`; filtered `?q=Starlit` keeps its match and excludes Mecha Garden; detail page via the card's OWN href (autoincrement id never assumed) → 200 + `<code>rel_path</code>` fact (`Starlit Vault (USA).nes`); `/art/nes/<id>` serves `image/svg+xml` (artDir unset = fallback path under test) with an `<svg>` body |
+| `make check` | **pass** (2026-08-22) | every host evals incl. the VM host with the new option wired (unset — null default branch) |
+| `make fmt` then `make fmt-check` | **pass** (2026-08-22) | clean, only the two touched files modified |
 
 ## Decision log
 
