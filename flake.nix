@@ -61,12 +61,6 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # Aeon autonomous agent framework — source for dashboard package (not a flake)
-    aeon = {
-      url = "github:aeonfun/aeon/main";
-      flake = false;
-    };
-
     # suno-web — browser UI over the Suno archive europa mirrors (search,
     # metadata filters, persona browsing, the clip derivation graph,
     # playlists, playback). Justified by a registered host that uses it:
@@ -92,7 +86,6 @@
       sops-nix,
       ha-linux-agent,
       jovian,
-      aeon,
       suno-web,
       ...
     }:
@@ -325,29 +318,6 @@
         jupiter.services.sunoWeb.package = suno-web.packages.x86_64-linux.suno-web;
       };
 
-      # Same lexical-closure pattern for aeon: hand callisto the PINNED aeon
-      # input (flake.lock rev) so the dashboard builds from exactly what the
-      # lock says — not from pkgs/aeon's internal fetchFromGitHub of a
-      # floating "main" whose hash pins a different snapshot (the two
-      # diverged silently until 2026-08-17).
-      aeonModule = { ... }: {
-        jupiter.services.aeon.source = aeon;
-      };
-
-      # Aeon dashboard, built from the PINN aeon input (flake.lock rev) —
-      # not the floating fetchFromGitHub inside pkgs/aeon (the two diverged
-      # silently until 2026-08-17). let-bound so packages.x86_64-linux can
-      # reference it (attrsets are not recursive).
-      aeonPackages = import ./pkgs/aeon/default.nix {
-        lib = nixpkgs.lib;
-        pkgs = untunedPkgs;
-        fetchFromGitHub = untunedPkgs.fetchFromGitHub;
-        stdenv = untunedPkgs.stdenv;
-        buildNpmPackage = untunedPkgs.buildNpmPackage;
-        nodejs = untunedPkgs.nodejs;
-        makeWrapper = untunedPkgs.makeWrapper;
-        src = aeon;
-      };
     in
     {
       nixosConfigurations = {
@@ -379,9 +349,7 @@
         # hosts/callisto/configuration.nix and
         # docs/callisto-iscsi-root-provisioning.md (live at 10.1.1.3, root
         # over ext4-iSCSI on europa's zvol).
-        # aeonModule injects the pinned aeon input for the dashboard
-        # service callisto runs (see its definition above).
-        callisto = mkHost ./hosts/callisto/configuration.nix [ aeonModule ];
+        callisto = mkHost ./hosts/callisto/configuration.nix [ ];
 
         # Kamatera VPS (persistent, disk-booted; not a fleet member — built
         # standalone, not via mkHost). The raw disk image is built with nixpkgs'
@@ -417,11 +385,9 @@
       # gccarch-x86-64-v3 is available.
       packages.x86_64-linux.pxe-netboot-assets = pxeNetbootAssets;
 
-      packages.x86_64-linux.aeon-dashboard = aeonPackages.aeon-dashboard;
-
       # dsh — DeepSeek Harness CLI + web UI (see pkgs/dsh). Built from the
       # published npm tarball with a generated prod-only lockfile; exposed
-      # standalone (untuned legacyPackages, like aeon/nom-web) so the npm
+      # standalone (untuned legacyPackages, like nom-web) so the npm
       # lock hash can be recomputed via `nix build .#dsh` without pulling
       # callisto's whole skylake-tuned closure. Consumed by the host via
       # modules/services/dsh.nix's pkgs.callPackage.

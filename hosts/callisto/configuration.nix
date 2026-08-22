@@ -31,7 +31,6 @@
     # Tailscale client for Jupiter tailnet
     ../../modules/services/tailscale.nix
     # Aeon autonomous agent framework dashboard
-    ../../modules/services/aeon.nix
     # nom-web: browser UI for jupiter-ci build logs
     ../../modules/services/nom-web.nix
     # DeepSeek Harness (dsh): agent harness web UI on :3080
@@ -237,56 +236,23 @@
   # Vulkan / Mesa diagnostics (vulkaninfo) — same tool modules/gaming/console.nix
   # installs for the same reason, kept independent here since that module is
   # gamescope-specific and not something callisto should pull in.
-  # `gh` is on aeon.service's own PATH (modules/services/aeon.nix) — it's here
-  # too so the CLI is available interactively for checking what the dashboard
-  # sees (`sudo -u aeon gh auth status`, `gh secret list`) without digging a
-  # store path out of the unit.
+  # `gh` for interactive admin (`gh run list`, `gh secret list`) without
+  # digging a store path out of whichever unit bundles it.
   environment.systemPackages = [
     pkgs.vulkan-tools
     pkgs.gh
   ];
 
-  # ---- Aeon autonomous agent framework --------------------------------------
-  # Runs the aeon dashboard (Next.js on port 5555, loopback + tunnel for
-  # Tailscale access). The dashboard manages belikh/agent (a public fork of
-  # aeonfun/aeon) via the `gh` CLI — all config (skills, schedules,
-  # STRATEGY.md, SOUL.md, API keys, notifications) is done through the web UI.
-  # GitHub Actions runs skills on cron in the fork's repo (public = unlimited
-  # free Actions minutes). See modules/services/aeon.nix.
-  # The dashboard runs as the unprivileged `aeon` user and reads this token in
-  # ExecStartPre (`gh auth login --with-token < …`), so it must be readable by
-  # that user — the sops default (0400 root:root) fails the unit outright.
+  # ---- GitHub token (dsh) ----------------------------------------------------
+  # One shared repo-scope GitHub PAT, historically provisioned for the Aeon
+  # dashboard (removed 2026-08-22); dsh still uses it for authenticated
+  # `git push` from the agent shell (jupiter.services.dsh.ghTokenFile).
+  # Owner/group follow the only remaining reader; rename the sops key in a
+  # dedicated secrets-edit change if the historical name ever bothers you.
   sops.secrets.aeon_gh_token = {
-    owner = "aeon";
-    group = "aeon";
-    # 0440 (group-readable) so the dsh user — a member of the aeon group,
-    # below — can also read it for `git push`. Both agent harnesses on this
-    # host share the one GitHub token.
+    owner = "dsh";
+    group = "dsh";
     mode = "0440";
-  };
-
-  # dsh shares aeon's GitHub token for git push (see jupiter.services.dsh.
-  # ghTokenFile) — membership here is what lets the dsh user read the 0440
-  # secret above.
-  users.users.dsh.extraGroups = [ "aeon" ];
-
-  jupiter.services.aeon = {
-    enable = true;
-    repoUrl = "github:belikh/aeon";
-    ghTokenFile = config.sops.secrets.aeon_gh_token.path;
-    # Loopback + the Cloudflare tunnel below (aeon.jupiter.au ingress), NOT a
-    # LAN bind: the dashboard wields a repo-scope GitHub PAT (workflow
-    # dispatch, secrets writes) — 0.0.0.0 + an open LAN port made that
-    # reachable from every device on 10.1.1.0/24 (P0, fixed 2026-08-17).
-    # dsh.jupiter.au uses the same loopback+tunnel shape.
-    #
-    # ONE manual step completes the cutover (run once, from anywhere with
-    # the cloudflare cert — same command that routed dsh.jupiter.au):
-    #   cloudflared tunnel route dns jupiter-callisto aeon.jupiter.au
-    # Until then the tunnel 502s for that name; `ssh -L 5555:localhost:5555`
-    # bridges the gap.
-    host = "127.0.0.1";
-    exposeLan = false;
   };
 
   # ---- nom-web: browser UI for ci-distributed.yml's build logs -------------
@@ -364,8 +330,8 @@
     enable = true;
     trustedHosts = [ "dsh.jupiter.au" ];
     environmentFile = config.sops.secrets.dsh_env.path;
-    # GitHub token for `git push` from the agent shell — reuses aeon's token
-    # (same value, already in sops); see modules/services/dsh.nix ghTokenFile.
+    # GitHub token for `git push` from the agent shell (key name is
+    # historical — it was provisioned for the removed Aeon dashboard).
     ghTokenFile = config.sops.secrets.aeon_gh_token.path;
     settingsFile =
       (pkgs.writeText "dsh-settings.yaml" ''
@@ -618,13 +584,6 @@
         # cloudflared runs here; dsh is loopback-only. host defaults to
         # localhost, which is exactly right.
         port = 3080;
-      }
-      {
-        # Loopback-bound aeon dashboard (see the aeon block above) — needs
-        # `cloudflared tunnel route dns jupiter-callisto aeon.jupiter.au`
-        # once, same as dsh.
-        hostname = "aeon.jupiter.au";
-        port = 5555;
       }
     ];
   };

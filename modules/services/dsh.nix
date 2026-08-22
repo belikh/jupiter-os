@@ -12,7 +12,7 @@
 # (base + web-app bundles, no pnpm needed for the shipped stack) and
 # serves the browser UI used to drive the agent.
 #
-# Deliberate deviation from the aeon/nom-web "0.0.0.0 + firewall" pattern,
+# Deliberate deviation from the nom-web "0.0.0.0 + firewall" pattern,
 # measured against 0.1.0-rc.6 (guard re-checked at 0.1.0-rc.8): the web
 # app's config schema only accepts host "127.0.0.1" | "0.0.0.0", and the
 # CLI additionally rejects 0.0.0.0 with "intentionally not supported yet

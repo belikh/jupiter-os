@@ -440,9 +440,9 @@
       }
       {
         # Home Assistant MCP server (mcp-ha-connect) on the HA box at 10.1.1.72.
-        # Exposed so Aeon — running on GitHub Actions — can reach it; the
-        # /private_<token> path is the shared secret and is NOT stored here
-        # (it lives as the MCP_HA_URL secret in the Aeon repo).
+        # Was exposed for the Aeon agent's GitHub-Actions skills (removed
+        # 2026-08-22); left routing pending a use-or-delete decision. The
+        # /private_<token> path is the shared secret and is NOT stored here.
         hostname = "ha-mcp.jupiter.au";
         host = config.jupiter.fleet.addresses.homeassistant;
         port = 9583;

@@ -47,7 +47,7 @@ Hard rules:
 - **NEVER** echo a token/password/key value into chat, a command line, or any
   committed file. Prefer referencing a secret by its sops name
   (`config.sops.secrets.<name>.path`) and reading it at activation/runtime —
-  the way `aria2`/`aeon`/`dsh` modules already do — never inlining a literal.
+  the way `aria2`/`dsh` modules already do — never inlining a literal.
 - **NEVER** commit a decrypted secret or a value copied out of `secrets.yaml`.
 - If a task needs a credential, ask before pulling the value.
 
@@ -125,7 +125,7 @@ without changing stack-guide first.
   category subdirs (`boot/`, `core/`, `desktop/`, `gaming/`, `network/`,
   `services/`, `storage/`). `common.nix` at the `modules/` root is the base
   layer.
-- `pkgs/` — flake packages: `aeon`, `ariang` (vendored third-party UI),
+- `pkgs/` — flake packages: `ariang` (vendored third-party UI),
   `dsh`, `nom-web`, `suno-backup`.
 - **jupiterOS Arcade** (partial, in-tree) — cartridge-ROM pipeline
   (`modules/services/rom-acquire.nix`, `rom-scraper.nix`,
