@@ -142,7 +142,7 @@
 
     <form class="filter-bar" method="get" action="/collections/{{.Collection.ID}}" aria-label="add games by search"
           hx-get="/collections/{{.Collection.ID}}" hx-target="#collection-panel" hx-swap="outerHTML"
-          hx-trigger="input changed delay:300ms from:find input[type='search'], change delay:300ms from:find select">
+          hx-trigger="input changed delay:300ms, change delay:300ms">
       <input type="search" name="q" value="{{.Q}}" placeholder="search titles to add…" aria-label="search titles to add">
       <noscript><button type="submit">search</button></noscript>
     </form>
