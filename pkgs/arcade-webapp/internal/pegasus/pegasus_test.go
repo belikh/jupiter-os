@@ -182,3 +182,119 @@ func TestParseEmptyFileErrors(t *testing.T) {
 		t.Fatal("empty file parsed into something")
 	}
 }
+
+// ---- P7: multi-collection validation ---------------------------------------
+
+// TestValidateAllowsCrossCollectionFileDupes pins the P7 relaxation: the
+// same file under a DIFFERENT collection within one file is legal —
+// Pegasus expresses multi-collection membership by repeating the game
+// block (the custom-collection emission depends on it). The duplicate
+// WITHIN one collection stays rejected.
+func TestValidateAllowsCrossCollectionFileDupes(t *testing.T) {
+	multi := `collection: Nintendo Entertainment System
+shortname: nes
+launch: jupiter-retroarch -L fceumm "{file.path}"
+
+game: Starlit Vault (USA)
+file: Starlit Vault (USA).nes
+
+game: Mecha Garden (Japan)
+file: Mecha Garden (Japan).nes
+
+collection: Kitchen Quick-Play
+shortname: kitchen-quick-play
+launch: jupiter-retroarch -L fceumm "{file.path}"
+summary: pick up and play
+
+game: Starlit Vault (USA)
+file: Starlit Vault (USA).nes
+`
+	f, err := Parse(strings.NewReader(multi))
+	if err != nil {
+		t.Fatalf("parse multi-collection fixture: %v", err)
+	}
+	if err := f.Validate(); err != nil {
+		t.Fatalf("cross-collection repeat rejected: %v", err)
+	}
+	if got := len(f.Collections); got != 2 {
+		t.Fatalf("collections = %d, want 2", got)
+	}
+	if n := len(f.Collections[1].Games); n != 1 || f.Collections[1].Games[0].File != "Starlit Vault (USA).nes" {
+		t.Fatalf("custom collection games wrong: %+v", f.Collections[1].Games)
+	}
+
+	within := strings.Replace(multi,
+		"game: Mecha Garden (Japan)\nfile: Mecha Garden (Japan).nes",
+		"game: Starlit Again\nfile: Starlit Vault (USA).nes", 1)
+	f2, err := Parse(strings.NewReader(within))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = f2.Validate()
+	if err == nil || !strings.Contains(err.Error(), "duplicate file target") {
+		t.Fatalf("same-file dupe INSIDE one collection must still fail, got %v", err)
+	}
+}
+
+// TestValidateRejectsDuplicateShortnameInOneFile: the same shortname
+// twice in ONE file is an ambiguous merge; recurring across files is the
+// documented cross-file collection merge and needs no in-file check.
+func TestValidateRejectsDuplicateShortnameInOneFile(t *testing.T) {
+	dup := `collection: Main
+shortname: nes
+launch: w "{file.path}"
+
+game: One
+file: One.nes
+
+collection: Kitchen Quick-Play
+shortname: kitchen-quick-play
+launch: w "{file.path}"
+
+game: One
+file: One.nes
+
+collection: Kitchen Quick-Play Again
+shortname: kitchen-quick-play
+launch: w "{file.path}"
+
+game: One
+file: One.nes
+`
+	f, err := Parse(strings.NewReader(dup))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = f.Validate()
+	if err == nil || !strings.Contains(err.Error(), "duplicate collection shortname") {
+		t.Fatalf("want duplicate-shortname error, got %v", err)
+	}
+}
+
+// TestParseThreeCollectionsKeepsOrder: parse must not merge or reorder
+// blocks sharing a name across positions — emission byte-stability and
+// the pending/custom section ordering depend on file order surviving.
+func TestParseThreeCollectionsKeepsOrder(t *testing.T) {
+	three := validFixture + `
+# jupiter-custom-collection (managed by arcade-webapp)
+collection: Kitchen Quick-Play
+shortname: kitchen-quick-play
+launch: jupiter-retroarch -L fceumm "{file.path}"
+
+game: Starlit Vault (USA)
+file: Starlit Vault (USA).nes
+`
+	f, err := Parse(strings.NewReader(three))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(f.Collections) != 3 {
+		t.Fatalf("collections = %d, want 3", len(f.Collections))
+	}
+	want := []string{"nes", "nes-pending", "kitchen-quick-play"}
+	for i, sn := range want {
+		if f.Collections[i].Shortname != sn {
+			t.Errorf("collection[%d].shortname = %q, want %q", i, f.Collections[i].Shortname, sn)
+		}
+	}
+}

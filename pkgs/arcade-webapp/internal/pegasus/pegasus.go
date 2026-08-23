@@ -168,25 +168,39 @@ func Parse(r io.Reader) (*File, error) {
 
 // Validate enforces the generator's invariants on top of syntax:
 //   - every game block names a file;
-//   - no two game blocks share one file: target (Pegasus would list the
-//     ROM twice);
+//   - no two game blocks share one file: target WITHIN one collection
+//     (Pegasus would list the ROM twice in the same grid). The SAME file
+//     under a DIFFERENT collection in this file is legal and is exactly
+//     how Pegasus expresses multi-collection membership — P7 custom
+//     collections repeat member blocks after the main collection, so
+//     whole-file uniqueness was deliberately relaxed to per-collection;
+//   - no two collections share one shortname within one file (the same
+//     collection name recurring across FILES is the documented cross-file
+//     merge and is fine — each Parse sees one file);
 //   - every PLAYABLE collection carries a launch line — the main
 //     collection above all (a launch-less main collection is exactly the
 //     unlaunchable state seed_launchable_metadata existed to repair).
 //     Pending sections are exempt by design ("listed, not yet playable").
 func (f *File) Validate() error {
-	seen := map[string]string{} // file target → game title
+	seenShort := map[string]string{} // shortname → collection title
 	for ci := range f.Collections {
 		col := &f.Collections[ci]
+		if col.Shortname != "" {
+			if prev, dup := seenShort[col.Shortname]; dup {
+				return fmt.Errorf("pegasus: duplicate collection shortname %q (%s and %s)", col.Shortname, prev, col.Title)
+			}
+			seenShort[col.Shortname] = col.Title
+		}
 		if col.Launch == "" && !IsPending(col.Shortname) && len(col.Games) > 0 {
 			return fmt.Errorf("pegasus: collection %q (%s) has no launch line", col.Title, col.Shortname)
 		}
+		seen := map[string]string{} // file target → game title, within THIS collection
 		for _, g := range col.Games {
 			if g.File == "" {
 				return fmt.Errorf("pegasus: game %q has no file entry", g.Title)
 			}
 			if prev, dup := seen[g.File]; dup {
-				return fmt.Errorf("pegasus: duplicate file target %q (games %q and %q)", g.File, prev, g.Title)
+				return fmt.Errorf("pegasus: duplicate file target %q in collection %q (games %q and %q)", g.File, col.Title, prev, g.Title)
 			}
 			seen[g.File] = g.Title
 		}
