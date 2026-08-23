@@ -724,14 +724,25 @@ func ApplyCacheFlags(st *store.Store, sys store.SystemRow, sysDir, cacheDir stri
 	return st.SetSystemScrapeFlags(sys.Key, flags)
 }
 
+// maxIngestDescription bounds ONE cache-ingested description (ADV-P7-04):
+// a pathological db.xml resource would otherwise persist multi-MB prose
+// that rides into every generated launcher-DB line. Generous for real
+// metadata (the longest legitimate game blurb is a few hundred chars);
+// rune-bounded so the cut never splits a codepoint.
+const maxIngestDescription = 4000
+
 // ApplyCacheEnrichment fills games.description from the platform cache
 // after a scrape run (P7 / P6-critic carry-in: enrichment demonstrated
 // END TO END — cache → store → generated metadata). Each visible game's
 // CacheID is looked up among the db.xml description resources; the
 // resource TEXT is persisted verbatim via SetGameMeta (selective write:
 // only non-empty values land, so an id-less pass can never wipe a stored
-// description). Honesty contract: the generator emits exactly what this
-// ingested — no placeholder prose, no synthesis from titles.
+// description), bounded by maxIngestDescription chars (ADV-P7-04 — a
+// pathological cache entry would otherwise ride into every launcher-DB
+// line as multi-MB prose; the bound truncates at a rune boundary and is
+// logged ONCE per run, not per game). Honesty contract: the generator
+// emits exactly what this ingested — no placeholder prose, no synthesis
+// from titles.
 //
 // Returns the number of games whose description was set/refreshed.
 func ApplyCacheEnrichment(st *store.Store, sys store.SystemRow, sysDir, cacheDir string) (int, error) {
@@ -747,14 +758,24 @@ func ApplyCacheEnrichment(st *store.Store, sys store.SystemRow, sysDir, cacheDir
 		return 0, fmt.Errorf("scanner: enrichment games %s: %w", sys.Key, err)
 	}
 	metas := make([]store.GameMeta, 0, len(page.Games))
+	truncated := 0
 	for _, g := range page.Games {
 		id, err := CacheID(filepath.Join(sysDir, g.RelPath))
 		if err != nil {
 			continue // oversized/unreadable: stays unenriched (documented miss)
 		}
 		if text, ok := cc.DescriptionsIDs[id]; ok {
-			metas = append(metas, store.GameMeta{RelPath: g.RelPath, Description: strings.TrimSpace(text)})
+			text = strings.TrimSpace(text)
+			if r := []rune(text); len(r) > maxIngestDescription {
+				text = string(r[:maxIngestDescription])
+				truncated++
+			}
+			metas = append(metas, store.GameMeta{RelPath: g.RelPath, Description: text})
 		}
+	}
+	if truncated > 0 {
+		log.Printf("scanner: %s: %d description(s) exceeded %d chars — truncated at ingest",
+			sys.Key, truncated, maxIngestDescription)
 	}
 	if len(metas) == 0 {
 		return 0, nil

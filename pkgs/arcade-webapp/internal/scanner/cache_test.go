@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -468,5 +469,74 @@ func TestApplyCacheEnrichmentIngestsText(t *testing.T) {
 		if r.RelPath == "Starlit Vault (USA).nes" && r.Description == "" {
 			t.Fatal("empty cache pass wiped a previously stored description")
 		}
+	}
+}
+
+// TestApplyCacheEnrichmentTruncatesHugeDescriptions pins ADV-P7-04: a
+// pathological cache description is bounded at ingest (rune-safe cut at
+// maxIngestDescription) instead of riding multi-MB prose into the store
+// and every generated launcher-DB line; normal-size text stays verbatim.
+func TestApplyCacheEnrichmentTruncatesHugeDescriptions(t *testing.T) {
+	root := t.TempDir()
+	st, err := store.Open(filepath.Join(root, "arcade.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close() //nolint:errcheck // test
+	sys := store.SystemRow{Key: "nes", Collection: "NES", Bucket: "cartridge",
+		SortOrder: 1, Extensions: `["nes"]`}
+	if err := st.UpsertSystems([]store.SystemRow{sys}); err != nil {
+		t.Fatal(err)
+	}
+	sysDir := filepath.Join(root, "games", "nes")
+	if err := os.MkdirAll(sysDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	huge := bytes.Repeat([]byte("z"), 8)
+	normal := bytes.Repeat([]byte("n"), 8)
+	for name, body := range map[string][]byte{
+		"Huge Blurb (USA).nes":   huge,
+		"Normal Blurb (USA).nes": normal,
+	} {
+		if err := os.WriteFile(filepath.Join(sysDir, name), body, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := st.ReplaceSystemGames("nes", []store.GameRow{
+		{RelPath: "Huge Blurb (USA).nes", SizeBytes: int64(len(huge))},
+		{RelPath: "Normal Blurb (USA).nes", SizeBytes: int64(len(normal))},
+	}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	cacheDir := CacheDirFor(filepath.Join(root, "cache"), sys)
+	writeCacheDB(t, cacheDir, `<db>
+  <resource id="`+sha1Hex(t, huge)+`" type="description" source="s">`+strings.Repeat("prose ", maxIngestDescription)+`TAIL-NEVER-SERVED</resource>
+  <resource id="`+sha1Hex(t, normal)+`" type="description" source="s">A perfectly ordinary blurb.</resource>
+</db>`)
+
+	n, err := ApplyCacheEnrichment(st, sys, sysDir, cacheDir)
+	if err != nil {
+		t.Fatalf("ApplyCacheEnrichment: %v", err)
+	}
+	if n != 2 {
+		t.Fatalf("ingested %d descriptions, want 2", n)
+	}
+	rows, err := st.SystemGamesWithMeta("nes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, r := range rows {
+		got[r.RelPath] = r.Description
+	}
+	if l := len([]rune(got["Huge Blurb (USA).nes"])); l != maxIngestDescription {
+		t.Fatalf("huge description stored at %d chars, want exactly %d", l, maxIngestDescription)
+	}
+	if strings.Contains(got["Huge Blurb (USA).nes"], "TAIL-NEVER-SERVED") {
+		t.Fatal("truncation did not cut the tail — the bound is decorative")
+	}
+	if got["Normal Blurb (USA).nes"] != "A perfectly ordinary blurb." {
+		t.Fatalf("normal description must stay verbatim: %q", got["Normal Blurb (USA).nes"])
 	}
 }
