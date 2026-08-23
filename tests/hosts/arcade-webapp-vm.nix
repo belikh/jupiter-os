@@ -48,7 +48,14 @@
 # lands in BOTH member systems' generated files (hidden members
 # excluded), plus the P6-critic carry-in: the stubbed Skyscraper cache
 # now carries real description TEXT, so scrape → generate must emit
-# description: lines into the served file.
+# description: lines into the served file. P8 adds the eXo block: the
+# curated-collection import (source=exo) browsable in the library,
+# an exo card on the dashboard, the /inventory.json parity document
+# (exo games/art/coverage_pct + console buckets + unit name), the
+# generator PROVEN not to touch the kiosk-owned file even when an exo
+# game sits in a custom collection, and the P7-critic carry-in chips
+# ("N tracked / M playable" + the hidden member chip) visible in the
+# collection editor.
 # The driver (scripts/test-arcade-webapp.sh) greps the serial log for
 # the marker.
 #
@@ -77,7 +84,14 @@ let
         $out/games/modern \
         $out/metadata/no-intro-dats \
         $out/metadata/skyscraper-cache/nes \
-        $out/metadata/skyscraper-cache/snes
+        $out/metadata/skyscraper-cache/snes \
+        $out/exo/exo-dos
+
+      # P8: the committed sample metadata mirroring real exo-to-pegasus.py
+      # output (header comments, exo-launch line, per-game enrichment,
+      # assets.box_front) — imported read-only by the webapp scan.
+      cp ${../../pkgs/arcade-webapp/testdata/exo-dos-sample.pegasus.txt} \
+        $out/exo/exo-dos/metadata.pegasus.txt
 
       # Deterministic dummy ROM tree: nes (5), snes (4), gb (4) — the
       # committed DATs' hashes match these bytes (internal/fixture).
@@ -1079,6 +1093,84 @@ let
       || fail "complete cue must stay OUTSIDE (before) the pending section"
     echo "smoke: pending split live (zeroed .chd listed-not-launchable, cue still playable)"
 
+    # ---- P8: eXo curated collections + inventory parity + editor chips ----
+    #
+    # The scan imported the staged exo-dos sample (6 games, 5 with
+    # box_front art) as a source=exo system. Coverage on the card is the
+    # box-art percentage: int(5*100/6) = 83.
+    echo "smoke: P8 eXo card + library browse"
+    ok=0
+    for _ in $(seq 1 30); do
+      page=$(curl -sf "$base/" || true)
+      if grep -q 'data-system="dos" data-games="6" data-coverage="83"' <<<"$page"; then ok=1; break; fi
+      sleep 1
+    done
+    [ "$ok" = 1 ] || fail "dashboard never rendered the eXo dos card (6 games / 83% box-art)"
+    page=$(curl -sf "$base/library?q=Lighthouse" || fail "GET exo title search")
+    grep -q 'Lighthouse Keeper' <<<"$page" \
+      || fail "library search missed the eXo game (stored-title search broken)"
+    grep -q 'class="chip">dos</span>' <<<"$page" \
+      || fail "eXo card missing its system chip"
+    grep -q 'data-system="dos" data-verify="unknown"' <<<"$page" \
+      || fail "eXo library card missing (the >dos< option in the filter select would match weakly otherwise)"
+    echo "smoke: eXo collection browsable (card wall + stored-title search)"
+
+    # Inventory parity endpoint: same document make status-arcade used to
+    # read from the retired unit's state file.
+    echo "smoke: P8 /inventory.json parity"
+    inv=$(curl -sf --max-time 10 "$base/inventory.json" || fail "GET /inventory.json")
+    jq -e '
+      has("generated_at") and has("cartridge") and has("optical") and has("modern")
+        and has("exo") and has("rom_acquire")
+      and (.generated_at | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"))
+      and .cartridge.nes.count == 5
+      and (.cartridge.nes.size_bytes > 0)
+      and .exo.dos.games == 6 and .exo.dos.art == 5 and .exo.dos.coverage_pct == 83.3
+      and .rom_acquire.unit == "jupiter-rom-acquire.service"
+      and (.rom_acquire.active_state | type == "string")
+    ' <<<"$inv" >/dev/null || fail "inventory document failed the legacy-shape assertions"
+    # The VM has no jupiter-rom-acquire unit: the probe must degrade to
+    # unknown, never omit the field (parity contract).
+    grep -q '"active_state":"unknown"' <<<"$inv" \
+      || fail "active_state must read unknown where the unit does not exist"
+    echo "smoke: inventory JSON matches the legacy shape (unit name constant, unknown degradation)"
+
+    # Generator skip PROVEN at runtime: an eXo game joins a custom
+    # collection; a regeneration must not rewrite one byte of the
+    # kiosk-owned file nor leak any webapp block into it.
+    echo "smoke: P8 generator skips eXo-sourced systems"
+    exomd="/var/lib/arcade-exo/exo-dos/metadata.pegasus.txt"
+    h0=$(sha256sum "$exomd" | cut -d' ' -f1)
+    page=$(curl -sf "$base/collections/$cid?q=Lighthouse" || fail "editor search for the eXo game")
+    # html/template leaves the bare & raw in this attribute context (the
+    # candidate's game id is never assumed).
+    addline=$(grep -o "hx-post=\"/collections/$cid/add?system=dos&game=[0-9]*\"" <<<"$page" | head -1)
+    [ -n "$addline" ] || fail "eXo game not offered as a collection candidate"
+    addpath=''${addline#hx-post=\"}; addpath=''${addpath%\"}
+    code=$(curl -s -o /dev/null -w '%{http_code}' -H "$HX" -X POST "$base$addpath")
+    [ "$code" = 200 ] || fail "adding the eXo member -> $code, want 200"
+    gen_now
+    h1=$(sha256sum "$exomd" | cut -d' ' -f1)
+    [ -n "$h0" ] && [ "$h0" = "$h1" ] || fail "generation rewrote the kiosk-owned eXo metadata ($h0 vs $h1)"
+    grep -q '# jupiter-custom-collection' "$exomd" \
+      && fail "webapp block leaked into the kiosk-owned eXo file"
+    n=$(grep -c '^file: Lighthouse Keeper' "$md" || true)
+    [ "$n" = "0" ] || fail "exo conf path emitted into a console launcher DB"
+    echo "smoke: generation left the eXo tree byte-identical (kiosk-side contract)"
+
+    # P7-critic carry-in, VM-visible: honest counts + the hidden chip.
+    echo "smoke: P8 editor status chips (tracked/playable honesty)"
+    curl -s -o /dev/null -H "$HX" -X POST "$base/systems/nes/games/$gid/hide"
+    page=$(curl -sf "$base/collections/$cid" || fail "GET collection editor after hide")
+    grep -q '3 tracked / 2 playable' <<<"$page" \
+      || fail "editor counts not honest (want 3 tracked / 2 playable with Starlit hidden)"
+    grep -q 'hidden-chip' <<<"$page" || fail "hidden member rendered without its chip"
+    grep -qF 'Lighthouse Keeper' <<<"$page" \
+      || fail "eXo member missing its real title in the editor"
+    curl -s -o /dev/null -H "$HX" -X POST "$base/systems/nes/unhide-all"
+    gen_now
+    echo "smoke: editor chips + honest counts visible through the REAL UI"
+
     pass
   '';
 in
@@ -1155,6 +1247,8 @@ in
     # ADR-0002 D3's on-pool rule is a europa concern; the schema + WAL
     # behaviour are what's under test here.
     stateDir = "/var/lib/arcade-webapp-state";
+    # P8: the imported eXo curated collections (exo-dos staged above).
+    exoRoot = "/var/lib/arcade-exo";
     # No legacy inventory in the fixture — absence is tolerated by design.
     inventoryFile = null;
     # Screenscraper/TGDB: /dev/null = empty creds read at scrape call
@@ -1193,8 +1287,11 @@ in
     };
     script = ''
       set -eu
-      mkdir -p ${gamesRoot} ${datDir} ${scratch}/reports ${torrents} ${skyCache}
+      mkdir -p ${gamesRoot} ${datDir} ${scratch}/reports ${torrents} ${skyCache} /var/lib/arcade-exo
       cp -r ${fixture}/games/. ${gamesRoot}/
+      # P8: the eXo curated root (read-only to the webapp — it only parses
+      # the metadata files; generation for these systems stays kiosk-side).
+      cp -r ${fixture}/exo/. /var/lib/arcade-exo/
       cp ${fixture}/metadata/no-intro-dats/*.dat ${datDir}/
       # P5: the Skyscraper cache starts as a copy of the fixture's
       # synthetic db.xml files (nes 60% / snes 100% / gb 0% — the P1
@@ -1299,6 +1396,7 @@ in
       gnugrep
       gnused
       gawk # P4: pair each library card's href with its title; P6/P7: pending-section + collection line-order checks
+      jq # P8: /inventory.json legacy-shape assertions
       systemd
       coreutils
       procps # ps: the P3 verify DEBUG hang-check

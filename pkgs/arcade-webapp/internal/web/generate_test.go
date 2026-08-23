@@ -174,9 +174,9 @@ func TestPostVerifyTriggersGeneration(t *testing.T) {
 // frees (no more per-click rows, no more single AfterFunc).
 func TestPostVerifyGenerationBusyRecordsSkipAndRetries(t *testing.T) {
 	h := newGenServer(t)
-	old := regenBusyBackoff
-	regenBusyBackoff = 50 * time.Millisecond
-	t.Cleanup(func() { regenBusyBackoff = old })
+	old := regenBusyBackoff()
+	setRegenBusyBackoff(50 * time.Millisecond)
+	t.Cleanup(func() { setRegenBusyBackoff(old) })
 
 	// Hold the shared pipeline slot exactly like a running scrape would.
 	if !h.gen.Pipeline.TryAcquire() {
@@ -442,9 +442,9 @@ func TestRegenBurstCoalescing(t *testing.T) {
 // frees, exactly one more generation lands.
 func TestRegenDeferralCoalescedPerEpisode(t *testing.T) {
 	h := newGenServer(t)
-	old := regenBusyBackoff
-	regenBusyBackoff = 20 * time.Millisecond
-	t.Cleanup(func() { regenBusyBackoff = old })
+	old := regenBusyBackoff()
+	setRegenBusyBackoff(20 * time.Millisecond)
+	t.Cleanup(func() { setRegenBusyBackoff(old) })
 
 	if !h.gen.Pipeline.TryAcquire() {
 		t.Fatal("could not hold the idle pipeline mutex")

@@ -5,11 +5,11 @@ The live heartbeat of the builder/critic loop driving
 every critic verdict. Screenshots (when they exist) land under
 `arcade-webapp-gauntlet/` next to this file.
 
-- **Phase:** 2-4 complete — **P1–P7 won** (blind critics) · P8 in progress
+- **Phase:** 2-4 complete — **P1–P7 won** (blind critics) · P8 built + verified, in review
 - **Branch:** `arcade/webapp-gauntlet`
 - **ADR:** [ADR-0002 — custom, not RomM](../adr/0002-arcade-webapp-custom-vs-romm.md)
   (D1 research-confirmed 2026-08-21; D2–D4 accepted)
-- **Last update:** 2026-08-23 17:55 AEST
+- **Last update:** 2026-08-23 21:30 AEST
 
 ## Piece table
 
@@ -22,7 +22,7 @@ every critic verdict. Screenshots (when they exist) land under
 | P5 — Metadata engine control | **won** — 1 loop + adversarial reconciliation (2 HIGH fixed incl cache-key drift + secret-tail redaction) | 1 (VM bring-up runs 1–2 clean after the stub argv-journal fix, per `bb465d5`; post-push runs 3–4 flaked TEST-side races → completion-gated + slot-free wait in `108beae`, final PASS fresh below) | **ours** (blind; A=anonymized RomM home DOM + its published metadata docs — deep pages don't render headless, B=our /metadata + game detail after a real igir verify) | scrape run-history/deltas not visible post-run + no hash value displayed on detail (carry to P6) | commits `c94be34` (shared cache parser/CacheID/ApplyCacheFlags) `f01bcc3` `2663eb7` `ccb057f` (/metadata UI, serialized Driver) `449cd97` (module wiring) `bb465d5` (stubbed-Skyscraper smoke) + hardening `108beae`; reconciliation `0722aa7`…`c9241fc`; VM smoke: nes desc/cover 0→100 through the real driver→store→ApplyCacheFlags stack; `p5-ours-metadata.html`, `p5-ours-detail.html`, `p5-bar-romm-metadata-docs.html`; critic: "B renders a real per-system table… A's library DOM contains zero rendered content" |
 | P6 — Launcher DB generator | **won** — 1 loop + adversarial reconciliation (2 MED fixed: second-truncation test flake root-caused to store pruning precision; crash-window temp residue sweep) | 1 (VM bring-up: 1 root-caused igir-semantics regression + 3 smoke-side defects, 0 masked; 7 VM runs) + adversarial reconciliation | **ours** (blind; A=anonymized RomM pegasus_exporter.py source, B=our real generated metadata files for nes+snes) | enrichment not demonstrated end-to-end (no description/assets lines from scraped data in evidence) — carry to P7/P8 e2e | commits `2c6c70f` `ea841ac` `a3b20c7` `91b3dc6` `61e2ec0` `6ff8479`; two consecutive clean PASSes (runs 6+7) with the P6 block: launch line + relative paths + byte-stability + strict-parser validation + hidden exclusion both ways + pending split; reconciliation `2d62bdd` `1a2f4b0` `92f4a50` `545cee4`, fresh `-count=5 -race` all-green (below); `p6-ours-generated/`, `p6-bar-exporter-source.py`; critic: "only B has it: launch: … A's exporter never emits a launch: field anywhere… every entry is unbootable shelf decoration" |
 | P7 — Curation | **won** — 1 loop + adversarial reconciliation (2 HIGH fixed: derived-shortname collision could brick a system's regeneration while UI said success — now probed at create/rename with visible 409; regen options snapshot raced the lock and could overwrite fresh bytes with stale — snapshot moved inside GenerateFresh(provider)) | 1 (5 VM runs: 2 smoke-side assertion defects root-caused incl. a grep-BRE trap, then 3 consecutive clean PASSes) + adversarial reconciliation | **ours** (blind; A=anonymized RomM collections model+endpoints source, B=our real /collections+editor DOM + generated nes/snes files carrying the cross-system "Kitchen quick-play" block per-console cores) | no hidden/pending status chip on collection member rows; count honesty ("3 tracked / 2 playable") — carry to P8 | `p7-ours-curation/`, `p7-romm-model.py`, `p7-romm-endpoints.py`; critic: "A curates only an authenticated web API — nothing in its model or endpoints emits a launcher file" |
-| P8 — eXo integration + sprawl retirement | pending | 0 | — | — | — |
+| P8 — eXo integration + sprawl retirement | **review** | 1 (VM runs: 2 FAILs — one smoke-side escaping defect + one latent -race data race, both root-caused below — then runs 3+4 = two consecutive clean PASSes) + the P7 critic carry-in landed first (`3add958`) | — (blind critic pending; Phase 5 owns the final audit) | — | commits `3add958` `cd74023` `d95e1a1` `7a44717`(+repair `9a36787`) + this commit; eXo import read-only via internal/exo, /inventory.json parity pinned vs legacy fixture, repo-side sprawl retirement (5 units removed from flake, 3 scripts → scripts/deprecated/) |
 
 States: `pending` → `building` → `review` → `critic-loop` → `won` / `blocked`.
 A piece is **won** only on a recorded fresh-context critic verdict "ours"
@@ -423,6 +423,46 @@ rejected.
 | `make check` | **pass** (2026-08-23) | all flake evals green incl. arcade-webapp-vm |
 | `make fmt` then `make fmt-check` | **pass** (2026-08-23) | fmt rewrote nothing (no tracked-file diff); fmt-check silent |
 
+### Phase 8 (P8 — eXo integration + sprawl retirement)
+
+Builder loop 1 across five commits: `3add958` P7-critic carry-in (member
+status chips + honest "N tracked / M playable" counts) → `cd74023` eXo
+import (schema v9+v10, internal/exo, generator skip, pipeline guards,
+stored titles) → `d95e1a1` inventory subsumption (/inventory.json parity +
+status script) → `7a44717` sprawl retirement repo-side (+ repair
+`9a36787` untracking accidentally swept unrelated WIP files — see the
+commit body; no secrets audited) → this commit (VM smoke + race fix).
+VM runs: 1 FAIL (smoke grepped `&amp;` where html/template emits raw `&`
+— assertion defect, pipeline correct), 1 latent `-race` DATA RACE exposed
+(regenBusyBackoff package var written by tests while a long-lived regen
+worker reads it — fixed with atomic access, 4/4 clean after), then runs
+3+4 = two consecutive clean PASSes.
+
+| Command | Result | Notes |
+|---|---|---|
+| `go build ./... && go vet ./... && gofmt -l .` (in pkgs/arcade-webapp) | **pass** (2026-08-23) | clean across all 14 packages incl. new internal/exo + internal/inventory |
+| `go test -count=1 -race -timeout 30m ./...` | **pass** (2026-08-23) | ALL 14 packages ok under -race: aria2 3.1s · catalogue 1.0s · dats 2.5s · exo 2.4s · fixture 2.8s · generate 9.8s · igir 7.3s · inventory 1.6s · pegasus 1.0s · pipeline 1.0s · scanner 9.8s · scrape 6.5s · store 43.5s · web 87.5s. New suites: store migration v9 rebuild preservation (games survive the FK-off window; cascade still enforced; garbage bucket rejected), rescan-keeps-exo-rows, cover-flag full-replace + ExoStatsBySystem; exo end-to-end import of the committed sample (source=exo rows, verbatim enrichment, genre joining, curation preserved across re-import, absent/corrupt roots); pegasus Multi accumulation; generate skips exo systems (no outcome row, no file written); web TestExoSystemsBrowseButNotPipeline (card wall art coverage + stored-title search + named 400s on verify/dat-refresh/scrape/stage-torrent + worklist exclusions), TestCollectionMemberStatusChipsAndCounts (RED→GREEN carry-in), TestInventoryEndpointParityShape; inventory TestLegacyShapeParity (recursive key/type/value comparison against testdata/inventory-legacy.json built in the exact jq shape) + CoveragePct formula pins |
+| `nix build .#arcade-webapp` | **pass** (2026-08-23) | rebuilt from source (new packages); binary at result/bin/arcade-webapp |
+| `make test-arcade-webapp` | **pass** (2026-08-23, runs 3+4 consecutive) | extended smoke P8 block: dos card renders 6 games / 83% box-art coverage; library ?q=Lighthouse finds the eXo game via its STORED title (conf basenames would render "dosbox"); /inventory.json passes jq legacy-shape assertions (five sections, generated_at format, nes count 5, exo.dos 6/5/83.3, unit constant, active_state→"unknown" without systemd); adding an eXo member to the custom collection leaves the kiosk-owned metadata BYTE-IDENTICAL across gen_now with no webapp block leaking in; editor shows "3 tracked / 2 playable" + hidden-chip through the REAL UI |
+| `make fixture-arcade` | **pass** (2026-08-23) | igir gate green: nes/snes/gb FOUND, **0 unmatched** |
+| `make fmt` then fmt-check | **pass** (2026-08-23) | nixfmt --check silent tree-wide; gofmt clean |
+| `nix flake check --no-build` (`make check`) | **pass** (2026-08-23) | all hosts eval incl. europa WITHOUT the retired modules and arcade-webapp-vm with exoRoot wired; one environmental evaluator OOM kill on the first attempt (same class as the P6 note), clean re-run |
+
+**Bring-up failure log (each root-caused, none masked):**
+
+1. **Run 1 — "eXo game not offered as a collection candidate":** the
+   smoke grepped the editor fragment for `&amp;game=` but html/template
+   renders that attribute's bare `&` RAW (`add?system=dos&game=14`) —
+   reproduced locally with a probe test before touching the VM again.
+   Smoke-side only; the add endpoint itself worked.
+2. **`-race` DATA RACE (latent, exposed by P8):** `regenBusyBackoff`
+   was a plain package var written by tests while the process-lifetime
+   regen worker goroutine read it in waitForRegenSlot. Pre-existing
+   since ADV-P7-03, but P8's added tests kept workers alive across more
+   of the suite and made it reproduce ~2/5 full-package race runs.
+   Fixed properly: atomic storage + setRegenBusyBackoff() test seam;
+   4/4 consecutive clean package runs, then the full-suite pass above.
+
 ## Decision log
 
 | Decision | Verdict | Status | Evidence |
@@ -455,6 +495,9 @@ rejected.
 | D-P6e — quote byte-shapes coexist between Skyscraper compose and our generator; reconcile empirically at the AC-8c launch probe, NOT by unifying early | bare-quote values and backslash-escaped-quote values coexist across launcher-DB sources: Skyscraper's compose output and our generator (renderSystem's `launch:` line uses literal `"` bytes) can carry different BYTE shapes for the same quoting intent. Both tokenize identically per Pegasus CommandTokenizer semantics, so there is NO behavioral difference today and no served-file churn is justified — changing the generator's quote shape now would rewrite every metadata file byte-wise for zero functional gain and invalidate the golden fixtures (ADV-P6-05: informational only, no code change). The reconciliation is EMPIRICAL and deferred to the AC-8c launch probe: prove on a real kiosk that both shapes launch identically BEFORE europa cutover; only a observed divergence justifies touching the generator then | decided (deferred evidence gate) | `internal/generate/generate.go` renderSystem header/launch line + golden fixtures; plan §AC-8c CommandTokenizer reference; ADV-P6-05 reconciliation row above |
 | D-P7a — parser dupe semantics: whole-file file:-uniqueness relaxed to PER-COLLECTION; repeated shortnames within one file rejected | the P7 emission spec (member game blocks repeated under a custom-collection header in the SAME system file) is Pegasus's documented multi-membership idiom and requires the same `file:` target to appear under two collections in one file. The real hazard the P6 rule guarded — a ROM listed twice in ONE grid — is preserved as a per-collection invariant; cross-collection repeats within a file are allowed, and the same collection name recurring across FILES stays the documented cross-file merge (each Parse sees one file, nothing to enforce). A duplicate shortname within one file remains rejected (ambiguous merge target). The plan text ("cross-collection dupes allowed across FILES but rejected within one file") is ambiguous between these readings; both stable interpretations are pinned by tests | decided | `internal/pegasus/pegasus.go` Validate + `TestValidateAllowsCrossCollectionFileDupes` / `TestValidateRejectsDuplicateShortnameInOneFile`; generator goldens `TestGenerateCustomCollectionCrossSystem` |
 | D-P7b — curation surface choices: bulk unhide on the VERIFY worklist; creation skips the regeneration trigger; v6 description column reused not re-added | three scope-letter ambiguities resolved deliberately: (1) "show all hidden on the verify/metadata pages" lands on the VERIFY worklist rows (verify & organize IS the organize home), rendered only when hidden>0 — the library keeps the ?hidden= filter for discovery; (2) creating an EMPTY collection does not fire the async regeneration (provably output-neutral — no members, no block) while every membership/identity edit does; (3) the scope's "new description TEXT column via migration" already existed since schema v6 (games.description, nullable) — it is REUSED with a new ingest path (ApplyCacheEnrichment) rather than duplicated; only the collections tables are genuinely new (v8) | decided | verify worklist template + `handleSystemUnhideAll`; `handleCollectionCreate`; store.go SchemaVersion comment; VM smoke enrichment assertions |
+| D-P8a — europa cutover postponed to post-merge, coordinator-gated | the flake-side retirement is COMPLETE in this branch (rom-acquire/rom-scraper/arcade-inventory modules deleted; aria2+AriaNg untouched per plan §2 P8), but europa keeps running the old units until the live `nixos-rebuild switch --flake github:belikh/jupiter-os#europa` runs ON the host (house deploy rule). The plan's before/after `systemctl list-units` evidence is therefore deferred WITH the cutover; the repo-side half is verified by eval (europa evaluates without the modules). During the window both pipelines coexist harmlessly — the old units write the same trees/JSON the webapp already owns | decided | hosts/europa/configuration.nix arcade comment; piece-table P8 row |
+| D-P8b — status-arcade dual-source transition | scripts/arcade-status.sh prefers the webapp's /inventory.json (parity pinned by TestLegacyShapeParity against testdata/inventory-legacy.json in the exact legacy jq shape) and falls back to SSH-reading the retired unit's state file during the transition window; the header names which source answered | decided | `d95e1a1`; internal/inventory package doc |
+| D-P8c — eXo schema: shared tables + source column + nullable games.title | eXo collections become real systems/games rows (bucket 'exo' via an FK-safe v9 systems rebuild; source 'catalogue'\|'exo') so browse/curation/coverage reuse every existing surface instead of forking parallel paths; generation/verify/scrape/downloads skip or refuse them by contract. v10 adds nullable games.title: eXo file: targets are per-game emulator confs whose basename ("dosbox.conf") would render every imported game identically and break title search; catalogue rows stay NULL (filename-derived) and both search backends gain title matching | decided | `cd74023`; store.go SchemaVersion docs; internal/exo package doc |
 
 ## Gauntlet scoreboard
 

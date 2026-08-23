@@ -30,6 +30,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/generate"
@@ -117,9 +118,20 @@ const (
 )
 
 // regenBusyBackoff is how long the worker waits between attempts while
-// the pipeline slot is held by a verify/scrape/manual job. A var so
-// tests can shrink it.
-var regenBusyBackoff = 30 * time.Second
+// the pipeline slot is held by a verify/scrape/manual job. Atomic, not a
+// plain var: tests shrink it from the test goroutine while long-lived
+// regen workers read it concurrently (a plain write raced waitForRegenSlot
+// under -race once enough tests kept a worker alive past its own test).
+var regenBusyBackoffNano atomic.Int64
+
+const regenBusyBackoffDefault = 30 * time.Second
+
+func init() { regenBusyBackoffNano.Store(int64(regenBusyBackoffDefault)) }
+
+// setRegenBusyBackoff is the test seam for shrinking the busy backoff.
+func setRegenBusyBackoff(d time.Duration) { regenBusyBackoffNano.Store(int64(d)) }
+
+func regenBusyBackoff() time.Duration { return time.Duration(regenBusyBackoffNano.Load()) }
 
 // regenCoalesceWindow is the quiet period the worker lets elapse after
 // the latest request before running a pass: a rapid burst (holding a
@@ -262,7 +274,7 @@ func (s *Server) requeueRegen(origins []string) {
 // new request arrives.
 func (s *Server) waitForRegenSlot() {
 	select {
-	case <-time.After(regenBusyBackoff):
+	case <-time.After(regenBusyBackoff()):
 	case <-s.regen.wake:
 	}
 }
