@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 # aria2-rpc.sh — submit downloads to a running aria2 JSON-RPC daemon.
 #
-# The jupiterOS Arcade's ROM acquisition (modules/services/rom-acquire.nix)
-# requests its torrent downloads through the fleet aria2 daemon's JSON-RPC
-# endpoint (:6800, modules/services/aria2.nix) instead of running a private
-# aria2 process. This script is that thin client.
+# The jupiterOS Arcade's ROM acquisition submits its torrent downloads
+# through the fleet aria2 daemon's JSON-RPC endpoint (:6800,
+# modules/services/aria2.nix) instead of running a private aria2 process.
+# This script is that thin client, kept as the standalone/manual path;
+# the arcade webapp's acquire action ports these exact semantics in Go
+# (pkgs/arcade-webapp/internal/aria2). Its original caller,
+# modules/services/rom-acquire.nix, was retired in the P8 sprawl removal
+# (that era's scripts preserved under scripts/deprecated/).
 #
 # Commands:
 #   submit-torrent <torrent> <dir>   add a BitTorrent download; prints the GID

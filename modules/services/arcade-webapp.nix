@@ -367,11 +367,12 @@ in
       description = ''
         File PATH holding the aria2 JSON-RPC secret. Set this to
         <literal>config.sops.secrets.jupiter_aria2_rpc_secret.path</literal>
-        — the SAME existing sops secret the aria2 daemon and the acquire
-        oneshot read (declared by
-        <option>jupiter.services.aria2</option>/<option>jupiter.services.romAcquire</option>
-        when enabled on the host); never the value itself, never a new
-        secret. The webapp reads the file at RUNTIME, once per RPC call,
+        — the SAME existing sops secret the aria2 daemon reads at startup
+        (declared by <option>jupiter.services.aria2</option> when enabled
+        on the host; per D-P2b this option is a pure pointer — the webapp
+        module declares no sops secrets of its own); never the value
+        itself, never a new secret. The webapp reads the file at RUNTIME,
+        once per RPC call,
         and sends it as the JSON-RPC <literal>token:</literal> parameter
         per the aria2 spec — the value never enters the nix store, the
         unit environment, or any log (grep-proven by unit tests).
