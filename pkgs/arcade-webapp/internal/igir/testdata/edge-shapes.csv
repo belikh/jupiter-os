@@ -1,0 +1,10 @@
+DAT Name,Game Name,Status,ROM Files,Patched,BIOS,Retail Release,Unlicensed,Debug,Demo,Beta,Sample,Prototype,Program,Aftermarket,Homebrew,Bad
+Nintendo Entertainment System (jupiter fixture),Starlit Vault (USA),FOUND,/out/nes/Starlit Vault (USA).nes,false,false,true,false,false,false,false,false,false,false,false,false,false
+Nintendo Entertainment System (jupiter fixture),Mecha Garden (Japan),FOUND,/out/nes/Mecha Garden (Japan).nes,false,false,true,false,false,false,false,false,false,false,false,false,false
+Nintendo Entertainment System (jupiter fixture),Unreleased Prototype (Japan),MISSING,,false,false,false,false,false,false,false,true,false,false,false,false,false
+Nintendo Entertainment System (jupiter fixture),Starlit Vault (USA),DUPLICATE,/incoming/nes/Starlit Vault (USA) [1].nes,false,false,true,false,false,false,false,false,false,false,false,false,false
+Nintendo Entertainment System (jupiter fixture),Bootleg Multi (World),FOUND,/out/nes/Bootleg Multi (World).nes,false,false,true,false,false,false,false,false,false,false,false,false,false
+,incoming/nes/readme.txt,UNUSED,/incoming/nes/readme.txt,false,false,false,false,false,false,false,false,false,false,false,false,false,false
+,incoming/nes/bad dump.nes,UNUSED,/incoming/nes/bad dump.nes,false,false,false,false,false,false,false,false,false,false,false,false,false,false
+,,DUPLICATE,/out/nes/Starlit Vault (USA).nes,false,false,false,false,false,false,false,false,false,false,false,false,false,false
+,,UNUSED,/out/nes/Bonza Box (USA).zip,false,false,false,false,false,false,false,false,false,false,false,false,false,false,false

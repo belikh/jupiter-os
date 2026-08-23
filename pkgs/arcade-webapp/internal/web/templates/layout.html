@@ -1,0 +1,51 @@
+{{/* Layout: the html skeleton + shared chrome (topbar/footer partials).
+      Fragments (partial-*) render standalone for htmx. Two full pages
+      exist: the dashboard ("layout", templates "content" from
+      dashboard.html) and downloads ("layout-downloads" in
+      downloads.html) — each page keeps uniquely-named defines so the
+      single template set never silently replaces a block. */ -}}
+{{define "topbar"}}
+<div class="topbar">
+  <div class="wrap">
+    <h1>jupiterOS <span class="accent">Arcade</span></h1>
+    <span class="sub">{{.Sub}}</span>
+    <span class="spacer"></span>
+    <nav class="nav" aria-label="pages">
+      <a href="/" {{if .ActiveDash}}class="active" aria-current="page"{{end}}>Dashboard</a>
+      <a href="/library" {{if .ActiveLibrary}}class="active" aria-current="page"{{end}}>Library</a>
+      <a href="/collections" {{if .ActiveCollections}}class="active" aria-current="page"{{end}}>Collections</a>
+      <a href="/downloads" {{if .ActiveDloads}}class="active" aria-current="page"{{end}}>Downloads</a>
+      <a href="/verify" {{if .ActiveVerify}}class="active" aria-current="page"{{end}}>Verify</a>
+      <a href="/metadata" {{if .ActiveMeta}}class="active" aria-current="page"{{end}}>Metadata</a>
+    </nav>
+    <span class="pill {{.HealthClass}}">{{.HealthLabel}}</span>
+  </div>
+</div>
+{{end}}
+
+{{define "foot"}}
+<footer>
+  jupiterOS Arcade webapp — <a href="https://github.com/belikh/jupiter-os/blob/main/docs/plans/arcade-webapp-gauntlet.md">gauntlet plan</a>
+  · fragments auto-refresh via htmx (dashboard 10s, download queue 2s)
+</footer>
+{{end}}
+
+{{define "layout"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>jupiterOS Arcade — {{.Meta.Title}}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js"></script>
+</head>
+<body>
+  {{template "topbar" .Meta}}
+  <main class="wrap">
+    {{template "content" .}}
+    {{template "foot"}}
+  </main>
+</body>
+</html>
+{{end}}

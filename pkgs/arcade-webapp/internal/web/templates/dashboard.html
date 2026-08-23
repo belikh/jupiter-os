@@ -1,0 +1,16 @@
+{{/* Dashboard page: status strip + recent runs (polled), the downloads
+      summary strip (its own htmx-fetched fragment — the P1 critic's
+      named gap: the download stage must have a surface; it polls
+      independently so the dashboard render never waits on the daemon),
+      then the per-system card wall (polled). */ -}}
+{{define "content"}}
+{{template "partial-status" .}}
+<div id="downloads-summary" hx-get="/partials/downloads-summary" hx-trigger="load, every 5s" hx-swap="outerHTML"
+     role="region" aria-label="download queue summary" aria-live="polite">
+  <div class="status-strip"><div class="stat"><span class="k">downloads</span><span class="v">…</span></div></div>
+</div>
+<section>
+  <h2>Systems</h2>
+  {{template "partial-systems" .}}
+</section>
+{{end}}

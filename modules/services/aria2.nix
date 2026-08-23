@@ -93,7 +93,7 @@ in
       description = ''
         Additional directories the daemon may write to besides
         <option>downloadDir</option>. The arcade's per-system torrent
-        downloads land under the rom-acquire incoming root (submitted via the
+        downloads land under the arcade-webapp's incoming root (submitted via the
         RPC <literal>dir=</literal> option), which is outside the default
         download dir — list that root here so <literal>ProtectSystem=strict</literal>
         doesn't block the daemon's writes. Each entry gets a tmpfiles rule

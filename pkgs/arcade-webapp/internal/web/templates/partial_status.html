@@ -1,0 +1,53 @@
+{{/* Status fragment: scan state, rescan button, totals, incoming staging,
+     recent runs. Polled every 10s; the rescan POST returns this same
+     fragment refreshed. id="status-panel" is the hx target. */ -}}
+{{define "partial-status"}}
+<div id="status-panel" hx-get="/partials/status" hx-trigger="every 10s" hx-swap="outerHTML"
+     role="region" aria-label="pipeline status" aria-live="polite">
+  <div class="status-strip">
+    <div class="stat">
+      <span class="k">scan</span>
+      <span class="v">
+        {{if .Scan.Running}}<span class="pill running">running&hellip;</span>
+        {{else if .Scan.LastError}}<span class="pill error">error</span>
+        {{else if .Scan.LastOKAt}}<span class="pill ok">ok</span>
+        {{else}}<span class="pill unknown">never</span>{{end}}
+      </span>
+    </div>
+    {{if .Scan.Running}}
+      <div class="stat"><span class="k">started</span><span class="v">{{.Scan.StartedAt}}</span></div>
+    {{else if .LastRun}}
+      <div class="stat"><span class="k">last run</span><span class="v">{{age .Now .LastRun.StartedAt}}</span> {{runPill .LastRun.Status}}</div>
+    {{end}}
+    <div class="stat"><span class="k">games</span><span class="v">{{.Totals.Games}}</span></div>
+    <div class="stat"><span class="k">size</span><span class="v">{{.Totals.BytesHuman}}</span></div>
+    <div class="stat"><span class="k">systems</span><span class="v">{{.Totals.ActiveSystems}} active / {{.Totals.Systems}}</span></div>
+    <div class="stat"><span class="k">incoming</span><span class="v">{{.Incoming.Files}} files · {{.Incoming.BytesHuman}}</span></div>
+    <span class="spacer"></span>
+    <button class="primary" hx-post="/rescan" hx-target="#status-panel" hx-swap="outerHTML"
+            {{if .Scan.Running}}disabled{{end}}>
+      {{if .Scan.Running}}scanning&hellip;{{else}}Rescan{{end}}
+    </button>
+  </div>
+</div>
+
+<section>
+  <h2>Recent runs</h2>
+  {{if .Runs}}
+  <table class="runs">
+    <tr><th>kind</th><th>started</th><th>duration</th><th>status</th><th>detail</th></tr>
+    {{range .Runs}}
+    <tr>
+      <td>{{.Kind}}</td>
+      <td title="{{.StartedAt}}">{{.StartedAt}}</td>
+      <td>{{runDuration .}}</td>
+      <td>{{runPill .Status}}</td>
+      <td class="detail">{{runDetail .}}</td>
+    </tr>
+    {{end}}
+  </table>
+  {{else}}
+  <p class="sub">no runs recorded yet — the startup scan may still be in flight.</p>
+  {{end}}
+</section>
+{{end}}

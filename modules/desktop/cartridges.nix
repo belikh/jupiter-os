@@ -15,8 +15,9 @@
 #
 # The ROMs + their Pegasus metadata (metadata.pegasus.txt + media/) live on
 # europa under /tank/archive/retro/games/<dataset>/<system>/ — bulk-staged via
-# Minerva torrents and scraped with Skyscraper (see modules/services/rom-acquire
-# .nix and rom-scraper.nix on europa). This module only consumes the result: it
+# Minerva torrents and scraped with Skyscraper (now owned by the arcade
+# webapp on europa — modules/services/arcade-webapp.nix; the old rom-
+# acquire/rom-scraper units are retired). This module only consumes the result: it
 # mounts each used dataset read-only, points the emulator at it, persists saves,
 # and contributes each <system>/ dir to jupiter.arcade.gameDirs.
 #
@@ -57,7 +58,8 @@ let
 
   # The console catalogue — DERIVED from scripts/cartridge-catalogue.tsv via
   # modules/services/arcade-catalogue.nix (single source of truth shared with
-  # rom-acquire, rom-scraper, arcade-inventory and cartridge-scrape.sh).
+  # the retired rom-acquire/rom-scraper/arcade-inventory units and
+  # cartridge-scrape.sh — now the arcade-webapp's job).
   # Fields not already in the catalogue are derived: shortname = the key,
   # dataset = the catalogue's bucket (which europa ZFS dataset / NFS mount +
   # recordsize the ROMs live on). `core`/`emulator` attrs are OMITTED when

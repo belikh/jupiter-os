@@ -1,0 +1,2214 @@
+// Package store is the arcade webapp's SQLite persistence layer
+// (ADR-0002 D3): one database file under the retro state dir, WAL mode,
+// pure-Go modernc.org/sqlite driver (no cgo — the package substitutes
+// cleanly from cache.nixos.org on every host). Single writer on a single
+// host; the webapp serializes pipeline jobs around this store.
+//
+// The schema is v1 and deliberately shaped for the phases that follow
+// (gauntlet plan §2) without building them: games carries curation
+// (hidden) and verify (verify_state) columns P3/P7 flip later; runs is a
+// generic job table ('scan' today, 'verify'/'scrape'/'generate' from P2+);
+// dat_info and scrape_coverage back DAT currency (P3) and the coverage
+// tracker (P5).
+//
+// P4 adds the read side: ListGames paginated/filterable browsing queries
+// and GetGame detail joins. Title search routes through an FTS5 index when
+// this driver build provides one (probed at Open — see initSearch for the
+// decision) and degrades to LIKE otherwise.
+package store
+
+import (
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	_ "modernc.org/sqlite" // pure-Go driver, registers as "sqlite"
+)
+
+// SchemaVersion is the current schema version, recorded in
+// PRAGMA user_version. Bump and add a step in Migrate for every additive
+// change; migrations are stepped and idempotent.
+//
+// v2 (P3): verify_results persists the last igir report's per-system
+// aggregates (the zero-unmatched indicator's source), and staging carries
+// the scan-time per-system incoming staging summary (files/bytes/in-flight).
+//
+// v3 (P3, real-igir bring-up): verify_results.extra — igir scans the
+// output tree too, and output-side UNUSED rows (games-tree files the DAT
+// doesn't claim) are a different signal from input-side junk; they get
+// their own column + amber indicator instead of joining 'unmatched'.
+//
+// v4 (P4): verify_unmatched persists the offender filenames themselves
+// (the P3 critic's gap — the aggregate count alone can't answer "which
+// files?"), replaced per verify run, plus the runs detail JSON feeding
+// SystemVerifyHistory's per-system sparkline.
+//
+// v5 (P5): games gains the metadata-engine columns — has_description /
+// has_cover (best-effort Skyscraper cache-presence flags, flipped by the
+// coverage recompute after scrape runs) and crc32 / sha1 (ingested from
+// igir report rows when the report carries hash columns).
+//
+// v6 (P6): games gains the launcher-DB enrichment columns — description /
+// release / developer / publisher / genre / rating (nullable TEXT). The
+// generator emits them into metadata.pegasus.txt when present; until an
+// ingest fills them they read as absent and generated files carry
+// title+file only. All nullable so pre-P6 rows need no backfill.
+//
+// v7 (P6, VM bring-up): verify_results.artifacts — igir inventories the
+// launcher-DB files the generator/Skyscraper own (metadata.pegasus.txt,
+// media/**) as output-side UNUSED rows; they are pipeline artifacts, not
+// ROM-set deviations, and get their own benign counter instead of
+// poisoning the amber 'extra' signal forever (the P6 generation trigger
+// makes every post-verify verify see them).
+//
+// v8 (P7): custom collections — collections (operator-named game sets,
+// shortname UNIQUE and stable once assigned: it is the launcher-DB block's
+// identity across system files) and collection_games (cross-system
+// membership; ON DELETE CASCADE on both ends so deleting a collection or
+// a scanned-away game cleans up silently). Position is persisted for a
+// future reorder UI but emission order stays deterministic today.
+//
+// v9 (P8): systems gains source ('catalogue' | 'exo') and the bucket
+// CHECK widens with 'exo'. The eXo curated collections (dos/win3x/win9x,
+// parsed from their kiosk-generated metadata.pegasus.txt) become real
+// systems+games rows so browse/curation/coverage reuse every existing
+// surface; generation skips them by contract (their launcher DB stays
+// kiosk-side). SQLite cannot ALTER a CHECK constraint, so v9 rebuilds
+// the systems table inside the migration transaction with foreign_keys
+// OFF around it (the documented procedure — with keys ON, DROP TABLE's
+// implicit DELETE would cascade away every games row).
+//
+// v10 (P8): games gains a nullable display title. eXo game identity is
+// the parsed file: target — a per-game emulator CONF whose basename
+// ("dosbox.conf") would render every imported game identically and make
+// title search useless. The importer persists the real `game:` value;
+// catalogue rows stay NULL (their filenames ARE their titles) and every
+// consumer falls back to the filename derivation when NULL.
+const SchemaVersion = 10
+
+// SystemRow is one catalogue system as persisted (Extensions is a JSON
+// array string — enough for P1's rendering needs). Source distinguishes
+// catalogue systems (imported from the TSV) from eXo curated collections
+// (P8, imported read-only from their kiosk-generated metadata files).
+type SystemRow struct {
+	Key        string
+	Collection string
+	Bucket     string
+	Core       string
+	Emulator   string
+	SkyHandle  string
+	Torrent    string
+	Extensions string
+	SortOrder  int
+	Source     string // "catalogue" (default) | "exo"
+}
+
+// Source values for SystemRow.Source.
+const (
+	SourceCatalogue = "catalogue"
+	SourceExo       = "exo"
+)
+
+// ExoBucket is the bucket value carried by every eXo-sourced system: the
+// three games buckets are console trees; the eXo curated collections
+// mount from their own root and never take part in bucket-root routing
+// (generation and verify skip them by contract).
+const ExoBucket = "exo"
+
+// GameRow is one ROM file found under a system's directory, relative to
+// that directory. SizeBytes is the file size; identity is (system, path).
+// Title is the OPTIONAL display/search title (P8): empty for catalogue
+// scans (filenames carry the title), set by the eXo import from the
+// parsed `game:` value. A selective upsert keeps stored titles unless a
+// non-empty one arrives.
+type GameRow struct {
+	RelPath   string
+	SizeBytes int64
+	Title     string
+}
+
+// DATInfo is the parsed header of <datDir>/<system>.dat plus file stats.
+type DATInfo struct {
+	SystemKey string
+	Filename  string
+	DatName   string
+	Version   string
+	Date      string // Logiqx header <date> (preferred) or <build>, raw text
+	RomCount  int    // <game> entries in the DAT
+	SizeBytes int64
+	ModTime   time.Time
+}
+
+// InventoryRow is one per-system count imported from the legacy
+// arcade-inventory JSON (transition aid — the webapp subsumes the
+// inventory in P8).
+type InventoryRow struct {
+	SystemKey   string
+	Count       int64
+	SizeBytes   int64
+	GeneratedAt string
+}
+
+// Run is one pipeline job record (kind: scan/acquire today; verify and
+// dat-fetch from P3; scrape/generate later). Status: running | ok | error.
+type Run struct {
+	ID         int64
+	Kind       string
+	StartedAt  string
+	FinishedAt string
+	Status     string
+	Detail     string
+}
+
+// VerifyResult is the last igir verify outcome for one system — the
+// ingested shape of the report CSV (found/missing/unmatched/…) that the
+// zero-unmatched indicator renders from. One row per system, replaced by
+// each verify run; Unchecked marks the promote-without-DAT degradation
+// (cartridge-verify.sh's "better partial than blocked" path — grey, not
+// red).
+type VerifyResult struct {
+	SystemKey     string
+	RunID         int64
+	FinishedAt    string
+	DatGames      int
+	Found         int
+	Missing       int
+	Unmatched     int // input-side deviations (red) — see igir.Report
+	Duplicate     int // output-side re-verify echoes (benign)
+	Extra         int // output-side files the DAT doesn't claim (amber)
+	Other         int // unknown statuses/provenance (red)
+	Artifacts     int // launcher-DB files ignored (metadata.pegasus.txt, media/**)
+	PromotedBytes int64
+	Unchecked     int // 1 = promoted as-is (no DAT)
+	ReportPath    string
+}
+
+// StagingRow is the scan-time summary of one system's incoming staging
+// tree (<incomingDir>/<sys>): file/byte counts plus whether aria2 control
+// files were present at scan time (download in flight).
+type StagingRow struct {
+	SystemKey string
+	Files     int64
+	Bytes     int64
+	InFlight  bool
+}
+
+// SystemSummary is the dashboard's card-wall row: one system joined with
+// its scan aggregates.
+type SystemSummary struct {
+	Key          string
+	Collection   string
+	Bucket       string
+	SortOrder    int
+	Torrent      string // catalogue torrent basename ("" = no staged torrent)
+	GameCount    int64
+	TotalBytes   int64
+	Verified     int64  // games with verify_state='verified' (P3 flips these)
+	Unmatched    int64  // games with verify_state='unmatched'
+	DATDate      string // "" when no DAT
+	DATVersion   string
+	DATRomCount  int64
+	CacheEntries int64 // distinct game ids in the Skyscraper cache (heuristic)
+	ArtCount     int64 // games with has_cover=1 (Skyscraper covers, or eXo box_front at import)
+	// Source: "catalogue" for TSV systems, "exo" for the P8-imported
+	// curated collections. Consumers skip or special-case exo rows
+	// (verify/scrape/generation stay catalogue-only by contract).
+	Source string
+	// Last verify run's ingested report (zero-value when none recorded) —
+	// the system-level verify pill renders from this (P3), NOT from the
+	// per-game aggregates: the report is the authoritative statement about
+	// the staged set ("every DAT game found, nothing extra staged").
+	Verify        VerifyResult
+	VerifyPresent bool // a verify_results row exists
+}
+
+// Active reports whether the system has any signal to show (games, DAT, or
+// cache coverage) — inactive catalogue systems collapse out of the card
+// wall into the "empty systems" footer count.
+func (s SystemSummary) Active() bool {
+	return s.GameCount > 0 || s.DATDate != "" || s.CacheEntries > 0
+}
+
+// CoveragePct returns the Skyscraper cache coverage percentage (presence
+// heuristic), or -1 when it cannot be computed (no ROMs or no cache).
+func (s SystemSummary) CoveragePct() int {
+	if s.GameCount <= 0 || s.CacheEntries < 0 {
+		return -1
+	}
+	pct := int(float64(s.CacheEntries) * 100 / float64(s.GameCount))
+	if pct > 100 {
+		pct = 100
+	}
+	return pct
+}
+
+// Store wraps the SQLite handle. fts records whether this driver build
+// answered the FTS5 probe at Open (search backend choice for ListGames —
+// see initSearch); it selects the index plan, never the feature set.
+type Store struct {
+	db  *sql.DB
+	fts bool
+}
+
+// Open opens (creating if needed) the database at path and applies pragmas
+// + schema. The parent directory must already exist (the systemd unit's
+// preStart / stateDir guarantee).
+func Open(path string) (*Store, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		return nil, fmt.Errorf("store: mkdir %s: %w", filepath.Dir(path), err)
+	}
+	dsn := "file:" + path +
+		"?_pragma=journal_mode(WAL)" +
+		"&_pragma=busy_timeout(10000)" +
+		"&_pragma=foreign_keys(1)" +
+		"&_pragma=synchronous(NORMAL)"
+	db, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("store: open %s: %w", path, err)
+	}
+	// One connection: SQLite is happier with a single conn under WAL and
+	// it makes the scan transaction + web reads interleave predictably.
+	db.SetMaxOpenConns(1)
+	s := &Store{db: db}
+	if err := s.Migrate(); err != nil {
+		db.Close() //nolint:errcheck // best effort during error path
+		return nil, err
+	}
+	if err := s.initSearch(); err != nil {
+		db.Close() //nolint:errcheck // best effort during error path
+		return nil, err
+	}
+	return s, nil
+}
+
+// Migrate creates/extends the schema. Idempotent; steps forward through
+// every version (a v1 database from an earlier phase migrates to v2 in
+// place — the webapp has never shipped to a host, but the VM test host's
+// state dir can survive across dev iterations).
+func (s *Store) Migrate() error {
+	var version int
+	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&version); err != nil {
+		return fmt.Errorf("store: read user_version: %w", err)
+	}
+	if version == SchemaVersion {
+		return nil
+	}
+	if version > SchemaVersion {
+		return fmt.Errorf("store: schema version %d is newer/unknown than supported %d — upgrade the webapp", version, SchemaVersion)
+	}
+	// v9 rebuilds the systems table; with foreign_keys enforcement ON,
+	// DROP TABLE's implicit DELETE would cascade every child row away.
+	// The documented rebuild procedure turns keys OFF around the whole
+	// migration transaction and back ON afterwards (verified below — a
+	// silent OFF would disable cascade cleanup forever after).
+	if version < 9 {
+		if _, err := s.db.Exec(`PRAGMA foreign_keys=OFF`); err != nil {
+			return fmt.Errorf("store: pragma foreign_keys off: %w", err)
+		}
+		defer func() {
+			if _, err := s.db.Exec(`PRAGMA foreign_keys=ON`); err != nil {
+				panic(fmt.Sprintf("store: re-enabling foreign_keys failed: %v", err))
+			}
+			var on int
+			if err := s.db.QueryRow(`PRAGMA foreign_keys`).Scan(&on); err != nil || on != 1 {
+				panic(fmt.Sprintf("store: foreign_keys not re-enabled (on=%d err=%v)", on, err))
+			}
+		}()
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after commit
+	if version < 1 {
+		for _, stmt := range schemaV1 {
+			if _, err := tx.Exec(stmt); err != nil {
+				return fmt.Errorf("store: migrate v1: %w", err)
+			}
+		}
+	}
+	if version < 2 {
+		for _, stmt := range schemaV2 {
+			if _, err := tx.Exec(stmt); err != nil {
+				return fmt.Errorf("store: migrate v2: %w", err)
+			}
+		}
+	}
+	if version < 3 {
+		for _, stmt := range schemaV3 {
+			if _, err := tx.Exec(stmt); err != nil {
+				return fmt.Errorf("store: migrate v3: %w", err)
+			}
+		}
+	}
+	if version < 4 {
+		for _, stmt := range schemaV4 {
+			if _, err := tx.Exec(stmt); err != nil {
+				return fmt.Errorf("store: migrate v4: %w", err)
+			}
+		}
+	}
+	if version < 5 {
+		for _, stmt := range schemaV5 {
+			if _, err := tx.Exec(stmt); err != nil {
+				return fmt.Errorf("store: migrate v5: %w", err)
+			}
+		}
+	}
+	if version < 6 {
+		for _, stmt := range schemaV6 {
+			if _, err := tx.Exec(stmt); err != nil {
+				return fmt.Errorf("store: migrate v6: %w", err)
+			}
+		}
+	}
+	if version < 7 {
+		for _, stmt := range schemaV7 {
+			if _, err := tx.Exec(stmt); err != nil {
+				return fmt.Errorf("store: migrate v7: %w", err)
+			}
+		}
+	}
+	if version < 8 {
+		for _, stmt := range schemaV8 {
+			if _, err := tx.Exec(stmt); err != nil {
+				return fmt.Errorf("store: migrate v8: %w", err)
+			}
+		}
+	}
+	if version < 9 {
+		for _, stmt := range schemaV9 {
+			if _, err := tx.Exec(stmt); err != nil {
+				return fmt.Errorf("store: migrate v9: %w", err)
+			}
+		}
+	}
+	if version < 10 {
+		for _, stmt := range schemaV10 {
+			if _, err := tx.Exec(stmt); err != nil {
+				return fmt.Errorf("store: migrate v10: %w", err)
+			}
+		}
+	}
+	if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, SchemaVersion)); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+var schemaV1 = []string{
+	`CREATE TABLE meta (
+		key   TEXT PRIMARY KEY,
+		value TEXT NOT NULL
+	)`,
+	`CREATE TABLE systems (
+		key        TEXT PRIMARY KEY,
+		collection TEXT NOT NULL,
+		bucket     TEXT NOT NULL CHECK (bucket IN ('cartridge','optical','modern')),
+		core       TEXT NOT NULL DEFAULT '',
+		emulator   TEXT NOT NULL DEFAULT '',
+		sky_handle TEXT NOT NULL DEFAULT '',
+		torrent    TEXT NOT NULL DEFAULT '',
+		extensions TEXT NOT NULL DEFAULT '[]',
+		sort_order INTEGER NOT NULL
+	)`,
+	`CREATE TABLE games (
+		id           INTEGER PRIMARY KEY AUTOINCREMENT,
+		system_key   TEXT NOT NULL REFERENCES systems(key) ON DELETE CASCADE,
+		rel_path     TEXT NOT NULL,
+		size_bytes   INTEGER NOT NULL,
+		first_seen_at TEXT NOT NULL,
+		last_seen_at  TEXT NOT NULL,
+		-- Future phases (columns land now so rescans never clobber state):
+		hidden        INTEGER NOT NULL DEFAULT 0,            -- P7 curation
+		verify_state  TEXT NOT NULL DEFAULT 'unknown'        -- P3: unknown|verified|unmatched
+	)`,
+	`CREATE UNIQUE INDEX games_system_path ON games(system_key, rel_path)`,
+	`CREATE INDEX games_system ON games(system_key)`,
+	`CREATE TABLE dat_info (
+		system_key TEXT PRIMARY KEY REFERENCES systems(key) ON DELETE CASCADE,
+		filename   TEXT NOT NULL,
+		dat_name   TEXT NOT NULL DEFAULT '',
+		version    TEXT NOT NULL DEFAULT '',
+		date       TEXT NOT NULL DEFAULT '',
+		rom_count  INTEGER NOT NULL DEFAULT 0,
+		size_bytes INTEGER NOT NULL DEFAULT 0,
+		mod_time   TEXT NOT NULL DEFAULT ''
+	)`,
+	`CREATE TABLE scrape_coverage (
+		system_key    TEXT PRIMARY KEY REFERENCES systems(key) ON DELETE CASCADE,
+		cache_entries INTEGER NOT NULL DEFAULT 0,
+		computed_at   TEXT NOT NULL
+	)`,
+	`CREATE TABLE inventory_counts (
+		system_key   TEXT PRIMARY KEY REFERENCES systems(key) ON DELETE CASCADE,
+		count        INTEGER NOT NULL,
+		size_bytes   INTEGER NOT NULL,
+		generated_at TEXT NOT NULL DEFAULT ''
+	)`,
+	`CREATE TABLE runs (
+		id          INTEGER PRIMARY KEY AUTOINCREMENT,
+		kind        TEXT NOT NULL,
+		started_at  TEXT NOT NULL,
+		finished_at TEXT NOT NULL DEFAULT '',
+		status      TEXT NOT NULL,
+		detail      TEXT NOT NULL DEFAULT ''
+	)`,
+}
+
+var schemaV2 = []string{
+	`CREATE TABLE verify_results (
+		system_key     TEXT PRIMARY KEY REFERENCES systems(key) ON DELETE CASCADE,
+		run_id         INTEGER NOT NULL,
+		finished_at    TEXT NOT NULL,
+		dat_games      INTEGER NOT NULL DEFAULT 0,
+		found          INTEGER NOT NULL DEFAULT 0,
+		missing        INTEGER NOT NULL DEFAULT 0,
+		unmatched      INTEGER NOT NULL DEFAULT 0,
+		duplicate      INTEGER NOT NULL DEFAULT 0,
+		other          INTEGER NOT NULL DEFAULT 0,
+		promoted_bytes INTEGER NOT NULL DEFAULT 0,
+		unchecked      INTEGER NOT NULL DEFAULT 0,
+		report_path    TEXT NOT NULL DEFAULT ''
+	)`,
+	`CREATE TABLE staging (
+		system_key TEXT PRIMARY KEY REFERENCES systems(key) ON DELETE CASCADE,
+		files      INTEGER NOT NULL DEFAULT 0,
+		bytes      INTEGER NOT NULL DEFAULT 0,
+		in_flight  INTEGER NOT NULL DEFAULT 0,
+		computed_at TEXT NOT NULL
+	)`,
+}
+
+// schemaV3 adds the provenance-split extra count (see SchemaVersion).
+var schemaV3 = []string{
+	`ALTER TABLE verify_results ADD COLUMN extra INTEGER NOT NULL DEFAULT 0`,
+}
+
+// schemaV4 persists the unmatched-file offenders (see SchemaVersion): one
+// row per filename, tagged with the verify run that reported it. The
+// system index serves both the read (by run+system) and the replace
+// delete (by system).
+var schemaV4 = []string{
+	`CREATE TABLE verify_unmatched (
+		run_id     INTEGER NOT NULL,
+		system_key TEXT NOT NULL REFERENCES systems(key) ON DELETE CASCADE,
+		filename   TEXT NOT NULL
+	)`,
+	`CREATE INDEX verify_unmatched_system_run ON verify_unmatched(system_key, run_id)`,
+}
+
+// schemaV5 adds the P5 metadata-engine columns to games (see
+// SchemaVersion). All four are nullable/defaulted so pre-P5 rows read as
+// "unscraped, unchecked" — rescans never clobber state.
+var schemaV5 = []string{
+	`ALTER TABLE games ADD COLUMN has_description INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE games ADD COLUMN has_cover INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE games ADD COLUMN crc32 TEXT`,
+	`ALTER TABLE games ADD COLUMN sha1 TEXT`,
+}
+
+// schemaV6 adds the P6 launcher-DB enrichment columns to games (see
+// SchemaVersion). Nullable TEXTs: absent enrichment reads as NULL → ""
+// at the generator's query.
+var schemaV6 = []string{
+	`ALTER TABLE games ADD COLUMN description TEXT`,
+	`ALTER TABLE games ADD COLUMN release TEXT`,
+	`ALTER TABLE games ADD COLUMN developer TEXT`,
+	`ALTER TABLE games ADD COLUMN publisher TEXT`,
+	`ALTER TABLE games ADD COLUMN genre TEXT`,
+	`ALTER TABLE games ADD COLUMN rating TEXT`,
+}
+
+// schemaV7 separates launcher-DB artifacts from real output-side extras
+// (see SchemaVersion). Defaulted 0: pre-v7 rows read as "no artifacts".
+var schemaV7 = []string{
+	`ALTER TABLE verify_results ADD COLUMN artifacts INTEGER NOT NULL DEFAULT 0`,
+}
+
+// schemaV8 adds custom collections (see SchemaVersion). Membership is
+// cross-system: game_id references games(id) (not a (system, path) pair),
+// so a collection can span nes+snes+…; CASCADE on both foreign keys means
+// deleting a collection or pruning a scanned-away game row never leaves
+// dangling members.
+var schemaV8 = []string{
+	`CREATE TABLE collections (
+		id         INTEGER PRIMARY KEY AUTOINCREMENT,
+		name       TEXT NOT NULL,
+		shortname  TEXT NOT NULL UNIQUE,
+		summary    TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL
+	)`,
+	`CREATE TABLE collection_games (
+		collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+		game_id       INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+		added_at      TEXT NOT NULL,
+		position      INTEGER NOT NULL DEFAULT 0
+	)`,
+	`CREATE UNIQUE INDEX collection_games_pair ON collection_games(collection_id, game_id)`,
+	`CREATE INDEX collection_games_game ON collection_games(game_id)`,
+}
+
+// schemaV9 rebuilds the systems table (see SchemaVersion): the bucket
+// CHECK widens with 'exo' and the source column lands. SQLite cannot
+// ALTER a CHECK, so: create sibling → copy rows (source defaults to
+// 'catalogue') → drop original → rename. Runs with foreign_keys OFF
+// (Migrate's window) or DROP TABLE would cascade every games row away;
+// legacy_alter_table is OFF by default so child tables' REFERENCES
+// clauses follow the rename automatically.
+var schemaV9 = []string{
+	`CREATE TABLE systems_v9 (
+		key        TEXT PRIMARY KEY,
+		collection TEXT NOT NULL,
+		bucket     TEXT NOT NULL CHECK (bucket IN ('cartridge','optical','modern','exo')),
+		core       TEXT NOT NULL DEFAULT '',
+		emulator   TEXT NOT NULL DEFAULT '',
+		sky_handle TEXT NOT NULL DEFAULT '',
+		torrent    TEXT NOT NULL DEFAULT '',
+		extensions TEXT NOT NULL DEFAULT '[]',
+		sort_order INTEGER NOT NULL,
+		source     TEXT NOT NULL DEFAULT 'catalogue' CHECK (source IN ('catalogue','exo'))
+	)`,
+	`INSERT INTO systems_v9 (key, collection, bucket, core, emulator, sky_handle, torrent, extensions, sort_order, source)
+		SELECT key, collection, bucket, core, emulator, sky_handle, torrent, extensions, sort_order, 'catalogue'
+		FROM systems`,
+	`DROP TABLE systems`,
+	`ALTER TABLE systems_v9 RENAME TO systems`,
+}
+
+// schemaV10 adds the optional display title (see SchemaVersion). Nullable:
+// pre-P8 and all catalogue rows read NULL → filename-derived titles.
+var schemaV10 = []string{
+	`ALTER TABLE games ADD COLUMN title TEXT`,
+}
+
+// Close closes the database.
+func (s *Store) Close() error { return s.db.Close() }
+
+// SchemaVersion returns the DB's recorded schema version.
+func (s *Store) SchemaVersion() int {
+	var v int
+	if err := s.db.QueryRow(`PRAGMA user_version`).Scan(&v); err != nil {
+		return -1
+	}
+	return v
+}
+
+// JournalMode returns the current journal_mode (diagnostic; WAL expected).
+func (s *Store) JournalMode() string {
+	var m string
+	_ = s.db.QueryRow(`PRAGMA journal_mode`).Scan(&m)
+	return m
+}
+
+// nowUTC is the persisted timestamp format (RFC3339, UTC).
+func nowUTC() string { return time.Now().UTC().Format(time.RFC3339) }
+
+// UpsertSystems replaces the CATALOGUE rows with rows (catalogue order
+// is the sort_order). Rows absent from the new import are deleted (cascade
+// clears their games/dat/coverage rows) — EXCEPT eXo-sourced rows, which
+// a catalogue rescan must never touch (P8: they are imported by the exo
+// importer; pruning them here would cascade their games away on every
+// scan).
+func (s *Store) UpsertSystems(rows []SystemRow) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after commit
+	for _, r := range rows {
+		if r.Source == "" {
+			r.Source = SourceCatalogue
+		}
+		_, err := tx.Exec(`INSERT INTO systems
+			(key, collection, bucket, core, emulator, sky_handle, torrent, extensions, sort_order, source)
+			VALUES (?,?,?,?,?,?,?,?,?,?)
+			ON CONFLICT(key) DO UPDATE SET
+			  collection=excluded.collection, bucket=excluded.bucket,
+			  core=excluded.core, emulator=excluded.emulator,
+			  sky_handle=excluded.sky_handle, torrent=excluded.torrent,
+			  extensions=excluded.extensions, sort_order=excluded.sort_order,
+			  source=excluded.source`,
+			r.Key, r.Collection, r.Bucket, r.Core, r.Emulator, r.SkyHandle, r.Torrent, r.Extensions, r.SortOrder, r.Source)
+		if err != nil {
+			return fmt.Errorf("store: upsert system %s: %w", r.Key, err)
+		}
+	}
+	if len(rows) == 0 {
+		if _, err := tx.Exec(`DELETE FROM systems WHERE source != ?`, SourceExo); err != nil {
+			return err
+		}
+		return tx.Commit()
+	}
+	ph := "?" + strings.Repeat(",?", len(rows)-1)
+	args := make([]any, len(rows))
+	for i, r := range rows {
+		args[i] = r.Key
+	}
+	if _, err := tx.Exec(`DELETE FROM systems WHERE source != ? AND key NOT IN (`+ph+`)`,
+		append([]any{SourceExo}, args...)...); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// UpsertExoSystem inserts or refreshes ONE eXo-sourced system row (P8).
+// It never prunes anything — unlike UpsertSystems, whose replace
+// semantics own the catalogue slice only.
+func (s *Store) UpsertExoSystem(row SystemRow) error {
+	row.Source = SourceExo
+	_, err := s.db.Exec(`INSERT INTO systems
+		(key, collection, bucket, core, emulator, sky_handle, torrent, extensions, sort_order, source)
+		VALUES (?,?,?,?,?,?,?,?,?,?)
+		ON CONFLICT(key) DO UPDATE SET
+		  collection=excluded.collection, bucket=excluded.bucket,
+		  core=excluded.core, emulator=excluded.emulator,
+		  sky_handle=excluded.sky_handle, torrent=excluded.torrent,
+		  extensions=excluded.extensions, sort_order=excluded.sort_order,
+		  source=excluded.source`,
+		row.Key, row.Collection, row.Bucket, row.Core, row.Emulator, row.SkyHandle,
+		row.Torrent, row.Extensions, row.SortOrder, row.Source)
+	if err != nil {
+		return fmt.Errorf("store: upsert exo system %s: %w", row.Key, err)
+	}
+	return nil
+}
+
+// System returns one system by key, or nil when absent.
+func (s *Store) System(key string) (*SystemRow, error) {
+	var r SystemRow
+	err := s.db.QueryRow(`SELECT key, collection, bucket, core, emulator, sky_handle, torrent, extensions, sort_order, source
+		FROM systems WHERE key=?`, key).
+		Scan(&r.Key, &r.Collection, &r.Bucket, &r.Core, &r.Emulator, &r.SkyHandle,
+			&r.Torrent, &r.Extensions, &r.SortOrder, &r.Source)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+// ExoStat is one eXo collection's coverage aggregates (P8): imported game
+// count plus how many carry box-front art (games.has_cover, set at
+// import from assets.box_front).
+type ExoStat struct {
+	Games int64
+	Art   int64
+}
+
+// ExoStatsBySystem returns the per-collection aggregates for every
+// eXo-sourced system that has games.
+func (s *Store) ExoStatsBySystem() (map[string]ExoStat, error) {
+	rows, err := s.db.Query(`SELECT g.system_key, COUNT(*), COALESCE(SUM(g.has_cover), 0)
+		FROM games g JOIN systems s ON s.key = g.system_key
+		WHERE s.source = ?
+		GROUP BY g.system_key`, SourceExo)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	out := map[string]ExoStat{}
+	for rows.Next() {
+		var k string
+		var st ExoStat
+		if err := rows.Scan(&k, &st.Games, &st.Art); err != nil {
+			return nil, err
+		}
+		out[k] = st
+	}
+	return out, rows.Err()
+}
+
+// SetSystemCoverFlags applies one system's has_cover flips in a single
+// transaction with full-replace semantics (zero first, then set the
+// listed positives). The eXo importer uses it for assets.box_front
+// presence; a re-import of a file that lost art clears stale flags.
+func (s *Store) SetSystemCoverFlags(systemKey string, coverRels []string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after commit
+	if _, err := tx.Exec(`UPDATE games SET has_cover=0 WHERE system_key=?`, systemKey); err != nil {
+		return err
+	}
+	for _, rel := range coverRels {
+		if _, err := tx.Exec(`UPDATE games SET has_cover=1 WHERE system_key=? AND rel_path=?`,
+			systemKey, rel); err != nil {
+			return fmt.Errorf("store: cover flag %s/%s: %w", systemKey, rel, err)
+		}
+	}
+	return tx.Commit()
+}
+
+// Systems returns all systems in catalogue order.
+func (s *Store) Systems() ([]SystemRow, error) {
+	rows, err := s.db.Query(`SELECT key, collection, bucket, core, emulator, sky_handle, torrent, extensions, sort_order, source
+		FROM systems ORDER BY sort_order, key`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	var out []SystemRow
+	for rows.Next() {
+		var r SystemRow
+		if err := rows.Scan(&r.Key, &r.Collection, &r.Bucket, &r.Core, &r.Emulator, &r.SkyHandle, &r.Torrent, &r.Extensions, &r.SortOrder, &r.Source); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// gameStampLayout is gameStamp's shape. The fraction is FIXED-width
+// (always 9 digits) on purpose: variable-length fractions (RFC3339Nano
+// strips trailing zeros) misorder lexicographically when one fraction is
+// a prefix of the other ("…00.5Z" sorts AFTER "…00.52Z"), which would
+// reintroduce this exact bug class at sub-second granularity.
+const gameStampLayout = "2006-01-02T15:04:05.000000000Z07:00"
+
+// gameStamp formats t as the persisted games.first_seen_at/last_seen_at
+// value: RFC3339 UTC with a fixed 9-digit fractional second.
+//
+// Why sub-second (ADV-P6-01): the rescan prune compares last_seen_at <
+// ts as STRINGS, and second-truncated stamps made any two scans that
+// straddled a wall-clock second boundary read as ≥1s apart — a subset
+// replace milliseconds after a full one deleted rows upserted moments
+// earlier (the generate-test ENOENT flake class), while a same-second
+// rescan masked real prunes (the scanner_test sleep). With the fixed
+// fraction, lexicographic order IS chronological order for every pair
+// of new-format stamps.
+//
+// Migration compat (no backfill needed): rows written by pre-upgrade
+// binaries carry second-truncated stamps ("…56Z"). Against a new stamp
+// in an EARLIER second they still sort below it, so prune decisions can
+// never fire early and delete live data. An old-format row in the SAME
+// second as a new write compares GREATER ('Z' > '.'), i.e. reads as
+// newer than it is — the only effect is surviving one extra prune cycle
+// until its next upsert rewrites it in the new format; SortRecent can
+// likewise only misorder within that single upgrade-boundary second.
+func gameStamp(t time.Time) string { return t.UTC().Format(gameStampLayout) }
+
+// ReplaceSystemGames upserts the scanned ROM set for one system at scan
+// time seen: sizes update, new files appear, vanished files are pruned.
+// Curation columns (hidden, verify_state) are deliberately preserved —
+// rescans never clobber later-phase state.
+//
+// seen carries sub-second precision through gameStamp (ADV-P6-01): two
+// replaces within the same wall-clock second must order deterministically
+// or the subset-replace prune deletes fresh rows.
+func (s *Store) ReplaceSystemGames(systemKey string, games []GameRow, seen time.Time) error {
+	ts := gameStamp(seen)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after commit
+	for _, g := range games {
+		_, err := tx.Exec(`INSERT INTO games (system_key, rel_path, size_bytes, first_seen_at, last_seen_at, title)
+			VALUES (?,?,?,?,?,?)
+			ON CONFLICT(system_key, rel_path) DO UPDATE SET
+			  size_bytes=excluded.size_bytes, last_seen_at=excluded.last_seen_at,
+			  title=CASE WHEN excluded.title != '' THEN excluded.title ELSE games.title END`,
+			systemKey, g.RelPath, g.SizeBytes, ts, ts, g.Title)
+		if err != nil {
+			return fmt.Errorf("store: upsert game %s/%s: %w", systemKey, g.RelPath, err)
+		}
+	}
+	if _, err := tx.Exec(`DELETE FROM games WHERE system_key=? AND last_seen_at < ?`, systemKey, ts); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// SetDATInfo upserts one system's DAT header info.
+func (s *Store) SetDATInfo(info DATInfo) error {
+	_, err := s.db.Exec(`INSERT INTO dat_info
+		(system_key, filename, dat_name, version, date, rom_count, size_bytes, mod_time)
+		VALUES (?,?,?,?,?,?,?,?)
+		ON CONFLICT(system_key) DO UPDATE SET
+		  filename=excluded.filename, dat_name=excluded.dat_name,
+		  version=excluded.version, date=excluded.date,
+		  rom_count=excluded.rom_count, size_bytes=excluded.size_bytes,
+		  mod_time=excluded.mod_time`,
+		info.SystemKey, info.Filename, info.DatName, info.Version, info.Date,
+		info.RomCount, info.SizeBytes, info.ModTime.UTC().Format(time.RFC3339))
+	return err
+}
+
+// DATInfo returns one system's DAT info, or nil when the system has no DAT
+// recorded.
+func (s *Store) DATInfo(systemKey string) (*DATInfo, error) {
+	var d DATInfo
+	var mod string
+	err := s.db.QueryRow(`SELECT system_key, filename, dat_name, version, date, rom_count, size_bytes, mod_time
+		FROM dat_info WHERE system_key=?`, systemKey).
+		Scan(&d.SystemKey, &d.Filename, &d.DatName, &d.Version, &d.Date, &d.RomCount, &d.SizeBytes, &mod)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	d.ModTime, _ = time.Parse(time.RFC3339, mod)
+	return &d, nil
+}
+
+// SetScrapeCoverage records the Skyscraper cache game count for a system.
+func (s *Store) SetScrapeCoverage(systemKey string, cacheEntries int64) error {
+	_, err := s.db.Exec(`INSERT INTO scrape_coverage (system_key, cache_entries, computed_at)
+		VALUES (?,?,?)
+		ON CONFLICT(system_key) DO UPDATE SET
+		  cache_entries=excluded.cache_entries, computed_at=excluded.computed_at`,
+		systemKey, cacheEntries, nowUTC())
+	return err
+}
+
+// ---- P5: metadata-engine columns ------------------------------------------
+
+// GameScrapeFlag is one game's best-effort Skyscraper cache-presence
+// flags (the coverage tracker's per-game drill-down data).
+type GameScrapeFlag struct {
+	RelPath     string
+	Description bool
+	Cover       bool
+}
+
+// SetSystemScrapeFlags applies one system's per-game has_description /
+// has_cover flips in a single transaction with full-replace semantics
+// (mirroring SetSystemVerifyStates): every row of the system is zeroed
+// first, then the listed positives are set. Games absent from flags end
+// up unflagged — a recompute pass always describes the WHOLE system's
+// cache state, so stale flags cannot survive a cache wipe.
+func (s *Store) SetSystemScrapeFlags(systemKey string, flags []GameScrapeFlag) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after commit
+	if _, err := tx.Exec(`UPDATE games SET has_description=0, has_cover=0 WHERE system_key=?`, systemKey); err != nil {
+		return err
+	}
+	for _, f := range flags {
+		if _, err := tx.Exec(`UPDATE games SET has_description=?, has_cover=? WHERE system_key=? AND rel_path=?`,
+			boolInt(f.Description), boolInt(f.Cover), systemKey, f.RelPath); err != nil {
+			return fmt.Errorf("store: scrape flag %s/%s: %w", systemKey, f.RelPath, err)
+		}
+	}
+	return tx.Commit()
+}
+
+// GameChecksum is one game's checksums as ingested from a checksum-bearing
+// igir report's FOUND rows.
+type GameChecksum struct {
+	RelPath string
+	CRC32   string
+	SHA1    string
+}
+
+// SetGameChecksums persists per-game crc32/sha1 in one transaction.
+// SELECTIVE update: an empty field leaves the stored value untouched
+// (CASE WHEN ? != ”), because reports without hash columns must not
+// erase checksums a previous richer report recorded, and a partial row
+// (CRC only) must not clear a known SHA1. Callers wanting a true clear
+// can pass a literal sentinel — none exists today by design.
+func (s *Store) SetGameChecksums(systemKey string, cks []GameChecksum) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after commit
+	for _, c := range cks {
+		if _, err := tx.Exec(`UPDATE games SET
+			crc32 = CASE WHEN ?1 != '' THEN ?1 ELSE crc32 END,
+			sha1  = CASE WHEN ?2 != '' THEN ?2 ELSE sha1 END
+			WHERE system_key=?3 AND rel_path=?4`, c.CRC32, c.SHA1, systemKey, c.RelPath); err != nil {
+			return fmt.Errorf("store: game checksum %s/%s: %w", systemKey, c.RelPath, err)
+		}
+	}
+	return tx.Commit()
+}
+
+// ReplaceInventory swaps the imported legacy inventory rows in one go
+// (nil = absent inventory file → table cleared).
+func (s *Store) ReplaceInventory(rows []InventoryRow) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after commit
+	if _, err := tx.Exec(`DELETE FROM inventory_counts`); err != nil {
+		return err
+	}
+	for _, r := range rows {
+		if _, err := tx.Exec(`INSERT INTO inventory_counts (system_key, count, size_bytes, generated_at)
+			VALUES (?,?,?,?)`,
+			r.SystemKey, r.Count, r.SizeBytes, r.GeneratedAt); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// InventoryRows returns the imported legacy inventory rows in catalogue
+// order (empty when the last scan found no inventory file).
+func (s *Store) InventoryRows() ([]InventoryRow, error) {
+	rows, err := s.db.Query(`SELECT i.system_key, i.count, i.size_bytes, i.generated_at
+		FROM inventory_counts i JOIN systems s ON s.key = i.system_key
+		ORDER BY s.sort_order`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	var out []InventoryRow
+	for rows.Next() {
+		var r InventoryRow
+		if err := rows.Scan(&r.SystemKey, &r.Count, &r.SizeBytes, &r.GeneratedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// StartRun records a running job and returns its id.
+func (s *Store) StartRun(kind string) (int64, error) {
+	res, err := s.db.Exec(`INSERT INTO runs (kind, started_at, status) VALUES (?,?, 'running')`,
+		kind, nowUTC())
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+// FinishRun closes a job with status (ok|error) and a detail payload
+// (JSON summary or error text).
+func (s *Store) FinishRun(id int64, status, detail string) error {
+	_, err := s.db.Exec(`UPDATE runs SET finished_at=?, status=?, detail=? WHERE id=?`,
+		nowUTC(), status, detail, id)
+	return err
+}
+
+// LastRun returns the most recent run, or nil when none exist.
+func (s *Store) LastRun() (*Run, error) {
+	runs, err := s.RecentRuns(1)
+	if err != nil {
+		return nil, err
+	}
+	if len(runs) == 0 {
+		return nil, nil
+	}
+	return &runs[0], nil
+}
+
+// RecentRuns returns up to n runs, newest first.
+func (s *Store) RecentRuns(n int) ([]Run, error) {
+	rows, err := s.db.Query(`SELECT id, kind, started_at, finished_at, status, detail
+		FROM runs ORDER BY id DESC LIMIT ?`, n)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	var out []Run
+	for rows.Next() {
+		var r Run
+		if err := rows.Scan(&r.ID, &r.Kind, &r.StartedAt, &r.FinishedAt, &r.Status, &r.Detail); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// SystemSummary returns every system with its scan aggregates, in
+// catalogue order — the dashboard card wall query. The verify_results
+// join carries the last igir report's aggregates per system (P3).
+func (s *Store) SystemSummary() ([]SystemSummary, error) {
+	rows, err := s.db.Query(`
+		SELECT s.key, s.collection, s.bucket, s.sort_order, s.torrent, s.source,
+		       COALESCE(g.cnt, 0), COALESCE(g.bytes, 0),
+		       COALESCE(g.verified, 0), COALESCE(g.unmatched, 0),
+		       COALESCE(d.date, ''), COALESCE(d.version, ''), COALESCE(d.rom_count, 0),
+		       COALESCE(c.cache_entries, 0), COALESCE(g.art_n, 0),
+		       COALESCE(v.run_id, 0), COALESCE(v.finished_at, ''),
+		       COALESCE(v.dat_games, 0), COALESCE(v.found, 0), COALESCE(v.missing, 0),
+		       COALESCE(v.unmatched, 0), COALESCE(v.duplicate, 0), COALESCE(v.other, 0),
+		       COALESCE(v.extra, 0), COALESCE(v.artifacts, 0),
+		       COALESCE(v.promoted_bytes, 0), COALESCE(v.unchecked, 0), COALESCE(v.report_path, ''),
+		       CASE WHEN v.system_key IS NULL THEN 0 ELSE 1 END
+		FROM systems s
+		LEFT JOIN (SELECT system_key, COUNT(*) cnt, SUM(size_bytes) bytes,
+		                  SUM(CASE WHEN verify_state='verified' THEN 1 ELSE 0 END) verified,
+		                  SUM(CASE WHEN verify_state='unmatched' THEN 1 ELSE 0 END) unmatched,
+		                  SUM(has_cover) art_n
+		           FROM games GROUP BY system_key) g ON g.system_key = s.key
+		LEFT JOIN dat_info d ON d.system_key = s.key
+		LEFT JOIN scrape_coverage c ON c.system_key = s.key
+		LEFT JOIN verify_results v ON v.system_key = s.key
+		ORDER BY s.sort_order, s.key`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	var out []SystemSummary
+	for rows.Next() {
+		var r SystemSummary
+		if err := rows.Scan(&r.Key, &r.Collection, &r.Bucket, &r.SortOrder, &r.Torrent, &r.Source,
+			&r.GameCount, &r.TotalBytes, &r.Verified, &r.Unmatched,
+			&r.DATDate, &r.DATVersion, &r.DATRomCount,
+			&r.CacheEntries, &r.ArtCount,
+			&r.Verify.RunID, &r.Verify.FinishedAt,
+			&r.Verify.DatGames, &r.Verify.Found, &r.Verify.Missing,
+			&r.Verify.Unmatched, &r.Verify.Duplicate, &r.Verify.Other,
+			&r.Verify.Extra, &r.Verify.Artifacts,
+			&r.Verify.PromotedBytes, &r.Verify.Unchecked, &r.Verify.ReportPath,
+			&r.VerifyPresent); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// RecordVerifyResult upserts one system's last-verify aggregates (each
+// verify run replaces the previous row — the pill always shows the latest
+// report).
+func (s *Store) RecordVerifyResult(r VerifyResult) error {
+	_, err := s.db.Exec(`INSERT INTO verify_results
+		(system_key, run_id, finished_at, dat_games, found, missing, unmatched, duplicate, other, extra, artifacts, promoted_bytes, unchecked, report_path)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		ON CONFLICT(system_key) DO UPDATE SET
+		  run_id=excluded.run_id, finished_at=excluded.finished_at,
+		  dat_games=excluded.dat_games, found=excluded.found, missing=excluded.missing,
+		  unmatched=excluded.unmatched, duplicate=excluded.duplicate, other=excluded.other,
+		  extra=excluded.extra, artifacts=excluded.artifacts,
+		  promoted_bytes=excluded.promoted_bytes,
+		  unchecked=excluded.unchecked, report_path=excluded.report_path`,
+		r.SystemKey, r.RunID, r.FinishedAt, r.DatGames, r.Found, r.Missing,
+		r.Unmatched, r.Duplicate, r.Other, r.Extra, r.Artifacts, r.PromotedBytes, r.Unchecked, r.ReportPath)
+	return err
+}
+
+// SetSystemVerifyStates applies one verify run's per-game state flips for
+// a system in a single transaction: rel paths claimed by the report's
+// FOUND rows become 'verified', every OTHER row of the system becomes
+// 'unmatched' — the DAT is authoritative, so a games-tree file the DAT
+// does not cover is by definition not verified (cartridge-verify.sh's
+// design note: unmatched files are deliberately excluded from a 1G1R
+// collection; here they stay visible instead of vanishing).
+func (s *Store) SetSystemVerifyStates(systemKey string, verifiedRels []string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after commit
+	if _, err := tx.Exec(`UPDATE games SET verify_state='unmatched' WHERE system_key=?`, systemKey); err != nil {
+		return err
+	}
+	for _, rel := range verifiedRels {
+		if _, err := tx.Exec(`UPDATE games SET verify_state='verified' WHERE system_key=? AND rel_path=?`,
+			systemKey, rel); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// ---- P4: unmatched-file persistence + verify history ----------------------
+
+// RecordVerifyUnmatched persists one verify run's unmatched-file list for
+// a system in a single transaction: the system's previous rows are
+// deleted (replace semantics — the table always describes the latest
+// verify) and the new filenames inserted under the run id that produced
+// them. The caller reads them back with VerifyUnmatched(runID, systemKey)
+// — the pair is the identity, so an older run's list reads as gone after
+// a newer one replaced it.
+func (s *Store) RecordVerifyUnmatched(systemKey string, runID int64, files []string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after commit
+	if _, err := tx.Exec(`DELETE FROM verify_unmatched WHERE system_key=?`, systemKey); err != nil {
+		return fmt.Errorf("store: clear unmatched %s: %w", systemKey, err)
+	}
+	for _, f := range files {
+		if _, err := tx.Exec(`INSERT INTO verify_unmatched (run_id, system_key, filename) VALUES (?,?,?)`,
+			runID, systemKey, f); err != nil {
+			return fmt.Errorf("store: record unmatched %s/%s: %w", systemKey, f, err)
+		}
+	}
+	return tx.Commit()
+}
+
+// VerifyUnmatched returns the persisted unmatched filenames for one
+// system's verify run, filename-ordered; nil when nothing is recorded for
+// that pair.
+func (s *Store) VerifyUnmatched(runID int64, systemKey string) ([]string, error) {
+	rows, err := s.db.Query(`SELECT filename FROM verify_unmatched
+		WHERE run_id=? AND system_key=? ORDER BY filename`, runID, systemKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	var out []string
+	for rows.Next() {
+		var f string
+		if err := rows.Scan(&f); err != nil {
+			return nil, err
+		}
+		out = append(out, f)
+	}
+	return out, rows.Err()
+}
+
+// VerifyRunPoint is one historical verify run's outcome for a system — a
+// history sparkline data point.
+type VerifyRunPoint struct {
+	FinishedAt string
+	Found      int
+	Unmatched  int
+	Extra      int
+}
+
+// verifyHistoryScanBound caps how many runs SystemVerifyHistory walks no
+// matter what n asks for — the sparkline never needs more and the scan
+// must stay cheap even on a long-lived database.
+const verifyHistoryScanBound = 100
+
+// verifyRunDetail mirrors the JSON FinishRun detail payload internal/igir
+// writes (only the fields the history needs).
+type verifyRunDetail struct {
+	Systems []struct {
+		Sys       string `json:"Sys"`
+		Found     int    `json:"Found"`
+		Unmatched int    `json:"Unmatched"`
+		Extra     int    `json:"Extra"`
+	} `json:"Systems"`
+}
+
+// SystemVerifyHistory returns up to n verify-run outcomes for one system,
+// newest first. It scans runs WHERE kind='verify' newest-first (bounded by
+// verifyHistoryScanBound), parsing each run's detail JSON for that
+// system's outcome; runs without a detail entry for the system (other
+// systems only, or non-JSON error text) contribute nothing. n<=0 yields
+// nil.
+func (s *Store) SystemVerifyHistory(systemKey string, n int) ([]VerifyRunPoint, error) {
+	if n <= 0 {
+		return nil, nil
+	}
+	rows, err := s.db.Query(`SELECT finished_at, detail FROM runs
+		WHERE kind='verify' ORDER BY id DESC LIMIT ?`, verifyHistoryScanBound)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	var out []VerifyRunPoint
+	for rows.Next() {
+		var finished, detail string
+		if err := rows.Scan(&finished, &detail); err != nil {
+			return nil, err
+		}
+		var d verifyRunDetail
+		if err := json.Unmarshal([]byte(detail), &d); err != nil {
+			continue // error-text detail: nothing plottable in this run
+		}
+		for _, sys := range d.Systems {
+			if sys.Sys != systemKey {
+				continue
+			}
+			out = append(out, VerifyRunPoint{FinishedAt: finished, Found: sys.Found, Unmatched: sys.Unmatched, Extra: sys.Extra})
+			break
+		}
+		if len(out) >= n {
+			break
+		}
+	}
+	return out, rows.Err()
+}
+
+// ---- P5: metadata-engine reads ---------------------------------------------
+
+// ScrapeRow is one system's metadata-coverage line for the /metadata
+// page: the games-table scrape flags (has_description/has_cover — set by
+// the driver's post-scrape ApplyCacheFlags refresh) joined with the
+// scrape_coverage aggregate the scanner and the driver both maintain.
+type ScrapeRow struct {
+	Key          string
+	Collection   string
+	Bucket       string
+	Games        int64
+	Desc         int64  // games with has_description=1
+	Cover        int64  // games with has_cover=1
+	CacheEntries int64  // distinct ids in the platform db.xml
+	ComputedAt   string // when coverage was last recomputed ("" never)
+}
+
+// ScrapeSummary returns every CATALOGUE system in catalogue order with
+// its metadata-coverage aggregates. Systems without games read as zeros
+// (the page collapses them into an idle count, like the card wall).
+// eXo-sourced systems are excluded by contract (P8): Skyscraper has no
+// platform mapping for them and their launcher DB is kiosk-side.
+func (s *Store) ScrapeSummary() ([]ScrapeRow, error) {
+	rows, err := s.db.Query(`
+		SELECT s.key, s.collection, s.bucket,
+		       COALESCE(g.cnt, 0), COALESCE(g.desc_n, 0), COALESCE(g.cover_n, 0),
+		       COALESCE(c.cache_entries, 0), COALESCE(c.computed_at, '')
+		FROM systems s
+		LEFT JOIN (SELECT system_key, COUNT(*) cnt,
+		                  SUM(has_description) desc_n,
+		                  SUM(has_cover) cover_n
+		           FROM games GROUP BY system_key) g ON g.system_key = s.key
+		LEFT JOIN scrape_coverage c ON c.system_key = s.key
+		WHERE s.source = ?
+		ORDER BY s.sort_order, s.key`, SourceCatalogue)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	var out []ScrapeRow
+	for rows.Next() {
+		var r ScrapeRow
+		if err := rows.Scan(&r.Key, &r.Collection, &r.Bucket,
+			&r.Games, &r.Desc, &r.Cover, &r.CacheEntries, &r.ComputedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// SystemScrapeCounts is one system's ScrapeSummary slice — what the
+// runner folds into each run-detail outcome so the history can show
+// coverage deltas without re-parsing caches at render time.
+func (s *Store) SystemScrapeCounts(systemKey string) (games, desc, cover int64, err error) {
+	err = s.db.QueryRow(`
+		SELECT COUNT(*),
+		       COALESCE(SUM(has_description), 0),
+		       COALESCE(SUM(has_cover), 0)
+		FROM games WHERE system_key = ?`, systemKey).Scan(&games, &desc, &cover)
+	return games, desc, cover, err
+}
+
+// ScrapeRunPoint is one kind=scrape run's recorded outcome for one
+// system — the drill-down's history points (newest first).
+type ScrapeRunPoint struct {
+	RunID      int64
+	FinishedAt string
+	Status     string
+	Outcome    string
+	Err        string
+	Games      int64
+	Desc       int64
+	Cover      int64
+}
+
+// scrapeRunDetail mirrors the runner's runs.detail JSON.
+type scrapeRunDetail struct {
+	Systems []ScrapeOutcome `json:"Systems"`
+}
+
+// ScrapeOutcome is the store-side mirror of scrape.SystemOutcome (the
+// JSON round-trip shape; defined here to avoid a store→scrape import).
+type ScrapeOutcome struct {
+	Sys     string `json:"Sys"`
+	Outcome string `json:"Outcome"`
+	Err     string `json:"Err,omitempty"`
+	Games   int64  `json:"Games"`
+	Desc    int64  `json:"Desc"`
+	Cover   int64  `json:"Cover"`
+}
+
+// scrapeHistoryScanBound bounds the runs-table walk behind the history
+// query (well past any realistic batch frequency; one indexed scan).
+const scrapeHistoryScanBound = 100
+
+// SystemScrapeHistory walks the newest finished runs of kind='scrape'
+// and extracts one system's outcome from each run's detail payload,
+// newest first — the verify drill-down's pattern applied to scrape runs.
+func (s *Store) SystemScrapeHistory(systemKey string, n int) ([]ScrapeRunPoint, error) {
+	if n <= 0 {
+		return nil, nil
+	}
+	rows, err := s.db.Query(`SELECT id, finished_at, status, detail FROM runs
+		WHERE kind='scrape' AND finished_at != '' ORDER BY id DESC LIMIT ?`,
+		scrapeHistoryScanBound)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	var out []ScrapeRunPoint
+	for rows.Next() {
+		var p ScrapeRunPoint
+		var detail string
+		if err := rows.Scan(&p.RunID, &p.FinishedAt, &p.Status, &detail); err != nil {
+			return nil, err
+		}
+		var d scrapeRunDetail
+		if err := json.Unmarshal([]byte(detail), &d); err != nil {
+			continue // error-text detail: nothing plottable in this run
+		}
+		for _, sys := range d.Systems {
+			if sys.Sys != systemKey {
+				continue
+			}
+			p.Outcome, p.Err = sys.Outcome, sys.Err
+			p.Games, p.Desc, p.Cover = sys.Games, sys.Desc, sys.Cover
+			out = append(out, p)
+			break
+		}
+		if len(out) >= n {
+			break
+		}
+	}
+	return out, rows.Err()
+}
+
+// ReplaceStaging upserts the scan-time incoming staging summary rows.
+// Rows for systems absent from the batch are cleared (a scan that found
+// no incoming dir reports zeros, keeping the table in step with disk).
+func (s *Store) ReplaceStaging(rows []StagingRow) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after commit
+	if _, err := tx.Exec(`DELETE FROM staging`); err != nil {
+		return err
+	}
+	for _, r := range rows {
+		if _, err := tx.Exec(`INSERT INTO staging (system_key, files, bytes, in_flight, computed_at)
+			VALUES (?,?,?,?,?)`,
+			r.SystemKey, r.Files, r.Bytes, boolInt(r.InFlight), nowUTC()); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+// StagingRows returns the per-system staging summaries in catalogue order.
+func (s *Store) StagingRows() ([]StagingRow, error) {
+	rows, err := s.db.Query(`SELECT t.system_key, t.files, t.bytes, t.in_flight
+		FROM staging t JOIN systems s ON s.key = t.system_key
+		ORDER BY s.sort_order`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	var out []StagingRow
+	for rows.Next() {
+		var r StagingRow
+		var inflight int
+		if err := rows.Scan(&r.SystemKey, &r.Files, &r.Bytes, &inflight); err != nil {
+			return nil, err
+		}
+		r.InFlight = inflight != 0
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+// GameVerifyState returns one game row's verify_state ("unknown" when
+// the row does not exist).
+func (s *Store) GameVerifyState(systemKey, relPath string) string {
+	var v string
+	_ = s.db.QueryRow(`SELECT verify_state FROM games WHERE system_key=? AND rel_path=?`,
+		systemKey, relPath).Scan(&v)
+	return v
+}
+
+// SetMeta upserts a meta key (scan telemetry the status strip reads back).
+func (s *Store) SetMeta(key, value string) error {
+	_, err := s.db.Exec(`INSERT INTO meta (key, value) VALUES (?,?)
+		ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, value)
+	return err
+}
+
+// GetMeta returns a meta value, or "" when unset.
+func (s *Store) GetMeta(key string) string {
+	var v string
+	_ = s.db.QueryRow(`SELECT value FROM meta WHERE key=?`, key).Scan(&v)
+	return v
+}
+
+// ---- P6: launcher-DB enrichment + generation reads -------------------------
+
+// GameMeta is one game's enrichment fields as WRITTEN (SetGameMeta).
+// Empty fields leave the stored value untouched — an ingest that knows
+// only the genre must not wipe a stored description.
+type GameMeta struct {
+	RelPath     string
+	Description string
+	Release     string
+	Developer   string
+	Publisher   string
+	Genre       string
+	Rating      string
+}
+
+// GameMetaRow is one row of SystemGamesWithMeta: the generator's view of
+// a system's visible games. Absent enrichment reads as "".
+type GameMetaRow struct {
+	ID      int64
+	RelPath string
+	GameMeta
+}
+
+// SetGameMeta persists enrichment fields for one system's games in one
+// transaction, SELECTIVELY (empty field = keep stored value), mirroring
+// SetGameChecksums' contract.
+func (s *Store) SetGameMeta(systemKey string, metas []GameMeta) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after commit
+	for _, m := range metas {
+		_, err := tx.Exec(`UPDATE games SET
+			description = CASE WHEN ?1 != '' THEN ?1 ELSE description END,
+			release     = CASE WHEN ?2 != '' THEN ?2 ELSE release END,
+			developer   = CASE WHEN ?3 != '' THEN ?3 ELSE developer END,
+			publisher   = CASE WHEN ?4 != '' THEN ?4 ELSE publisher END,
+			genre       = CASE WHEN ?5 != '' THEN ?5 ELSE genre END,
+			rating      = CASE WHEN ?6 != '' THEN ?6 ELSE rating END
+			WHERE system_key=?7 AND rel_path=?8`,
+			m.Description, m.Release, m.Developer, m.Publisher, m.Genre, m.Rating,
+			systemKey, m.RelPath)
+		if err != nil {
+			return fmt.Errorf("store: game meta %s/%s: %w", systemKey, m.RelPath, err)
+		}
+	}
+	return tx.Commit()
+}
+
+// SystemGamesWithMeta returns one system's VISIBLE (hidden=0) games with
+// their enrichment fields, rel_path-ordered — the generator's input for
+// the main collection. Curation (hidden) is excluded here by contract:
+// hidden games never reach generation.
+func (s *Store) SystemGamesWithMeta(systemKey string) ([]GameMetaRow, error) {
+	rows, err := s.db.Query(`
+		SELECT id, rel_path,
+		       COALESCE(description, ''), COALESCE(release, ''),
+		       COALESCE(developer, ''),  COALESCE(publisher, ''),
+		       COALESCE(genre, ''),      COALESCE(rating, '')
+		FROM games WHERE system_key=? AND hidden=0
+		ORDER BY rel_path`, systemKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	var out []GameMetaRow
+	for rows.Next() {
+		var r GameMetaRow
+		if err := rows.Scan(&r.ID, &r.RelPath,
+			&r.Description, &r.Release, &r.Developer,
+			&r.Publisher, &r.Genre, &r.Rating); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// GamesMissingSHA1 returns the rel paths of one system's games whose
+// sha1 column is still NULL — the scanner hashes exactly these
+// (fill-once; repeat scans never re-hash unchanged paths).
+func (s *Store) GamesMissingSHA1(systemKey string) ([]string, error) {
+	rows, err := s.db.Query(`SELECT rel_path FROM games WHERE system_key=? AND sha1 IS NULL ORDER BY rel_path`, systemKey)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	var out []string
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// SetGameHidden flips one game's curation flag (the P6 generator
+// excludes hidden rows; the P7 UI owns the affordance). Unknown rel
+// paths are a no-op — curation is idempotent, never an error.
+func (s *Store) SetGameHidden(systemKey, relPath string, hidden bool) error {
+	_, err := s.db.Exec(`UPDATE games SET hidden=? WHERE system_key=? AND rel_path=?`,
+		boolInt(hidden), systemKey, relPath)
+	return err
+}
+
+// RunsByKind returns up to n finished runs of one kind, newest first —
+// the generation log section's source.
+func (s *Store) RunsByKind(kind string, n int) ([]Run, error) {
+	rows, err := s.db.Query(`SELECT id, kind, started_at, finished_at, status, detail
+		FROM runs WHERE kind=? AND finished_at != '' ORDER BY id DESC LIMIT ?`, kind, n)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	var out []Run
+	for rows.Next() {
+		var r Run
+		if err := rows.Scan(&r.ID, &r.Kind, &r.StartedAt, &r.FinishedAt, &r.Status, &r.Detail); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// ---- P4: library browsing (ListGames / GetGame) ---------------------------
+
+// Search backend decision (gauntlet plan §2 P4): driver builds vary in
+// which SQLite extensions they compile in, so Open probes once by creating
+// a throwaway FTS5 table in the connection's scratch in-memory temp schema.
+// When the probe answers, q searches run through an external-content
+// games_fts index kept current by triggers on games (rebuild-once
+// bookkeeping via meta 'fts_ready'); when it does not, the same filter
+// degrades to LIKE '%q%' + ORDER BY over the base table — identical
+// feature surface, no extra schema, just a slower scan. The index is
+// derived state: deliberately not versioned in user_version, droppable and
+// rebuildable at will, and self-healing if a database written by an
+// FTS5-capable binary is later opened by one without it.
+//
+// Semantics note: FTS5 matches case-folded TOKEN prefixes ("zel" hits
+// "Zelda", mid-word "elda" does not); LIKE matches case-folded SUBSTRINGS
+// anywhere. Callers get word-prefix search either way; only the fallback
+// honors arbitrary mid-word substrings.
+const (
+	// SortTitle orders by rel_path case-insensitively — the filename is
+	// the title source until Skyscraper metadata lands (P5).
+	SortTitle = "title"
+	// SortSize orders biggest first.
+	SortSize = "size"
+	// SortRecent orders by last_seen_at, newest first.
+	SortRecent = "recent"
+)
+
+// GameSummary is one row of ListGames output. RelPath doubles as the
+// display/search title until per-game metadata arrives (P5).
+type GameSummary struct {
+	ID          int64
+	SystemKey   string
+	RelPath     string
+	SizeBytes   int64
+	FirstSeenAt string
+	LastSeenAt  string
+	Hidden      bool
+	VerifyState string
+	// Title is the optional stored display/search title (P8, eXo
+	// imports); "" for catalogue rows — consumers derive from RelPath
+	// then (see web.displayTitle).
+	Title string
+}
+
+// GameDetail is GetGame's shape: one game joined with its owning system.
+// The P5 fields (HasDescription/HasCover, CRC32/SHA1) carry the metadata
+// engine's best-effort cache flags and the igir-ingested checksums —
+// zero-value ("unscraped") until a scrape run / checksum-bearing report
+// fills them.
+type GameDetail struct {
+	GameSummary
+	System         SystemRow
+	HasDescription bool
+	HasCover       bool
+	CRC32          string
+	SHA1           string
+}
+
+// GameListOpts filters/sorts/paginates ListGames. Empty strings mean "no
+// filter"; Hidden=nil means "both". Sort is "" | SortTitle | SortSize |
+// SortRecent (anything else is an error). Limit<=0 returns everything;
+// Offset only applies together with a positive Limit.
+type GameListOpts struct {
+	SystemKey   string
+	Q           string
+	VerifyState string
+	Hidden      *bool
+	Sort        string
+	Limit       int
+	Offset      int
+}
+
+// GamePage is one page of results plus the unpaginated total matching the
+// same filters (the pager renders from Total).
+type GamePage struct {
+	Games []GameSummary
+	Total int64
+}
+
+// ftsDDL keeps the external-content FTS5 mirror of games.rel_path in step.
+// The UPDATE trigger only fires for rel_path changes — rescan size
+// updates, verify_state flips and hidden toggles skip reindexing entirely.
+var ftsDDL = []string{
+	`CREATE VIRTUAL TABLE IF NOT EXISTS games_fts USING fts5(
+		rel_path,
+		content='games',
+		content_rowid='id'
+	)`,
+	`CREATE TRIGGER IF NOT EXISTS games_fts_ai AFTER INSERT ON games BEGIN
+		INSERT INTO games_fts(rowid, rel_path) VALUES (new.id, new.rel_path);
+	END`,
+	`CREATE TRIGGER IF NOT EXISTS games_fts_au AFTER UPDATE OF rel_path ON games BEGIN
+		INSERT INTO games_fts(games_fts, rowid, rel_path) VALUES('delete', old.id, old.rel_path);
+		INSERT INTO games_fts(rowid, rel_path) VALUES (new.id, new.rel_path);
+	END`,
+	`CREATE TRIGGER IF NOT EXISTS games_fts_ad AFTER DELETE ON games BEGIN
+		INSERT INTO games_fts(games_fts, rowid, rel_path) VALUES('delete', old.id, old.rel_path);
+	END`,
+}
+
+// fts5Supported answers whether THIS build of the linked driver registers
+// FTS5, via the cheapest possible virtual DDL against the temp schema
+// (private to the connection, so probing leaves no trace).
+func fts5Supported(db *sql.DB) bool {
+	if _, err := db.Exec(`CREATE VIRTUAL TABLE temp.store_fts5_probe USING fts5(x)`); err != nil {
+		return false
+	}
+	_, _ = db.Exec(`DROP TABLE IF EXISTS temp.store_fts5_probe`)
+	return true
+}
+
+// initSearch picks the ListGames search backend (see the section comment)
+// and on the FTS5 path creates the shadow index + sync triggers and
+// backfills once. A database previously written by an FTS5-capable binary
+// but opened by one without it self-heals here: leftover triggers would
+// otherwise fail every rescan write.
+func (s *Store) initSearch() error {
+	s.fts = fts5Supported(s.db)
+	if !s.fts {
+		for _, stmt := range []string{
+			`DROP TRIGGER IF EXISTS games_fts_ai`,
+			`DROP TRIGGER IF EXISTS games_fts_au`,
+			`DROP TRIGGER IF EXISTS games_fts_ad`,
+			`DROP TABLE IF EXISTS games_fts`,
+		} {
+			if _, err := s.db.Exec(stmt); err != nil {
+				return fmt.Errorf("store: drop stale fts objects: %w", err)
+			}
+		}
+		return nil
+	}
+	for _, stmt := range ftsDDL {
+		if _, err := s.db.Exec(stmt); err != nil {
+			return fmt.Errorf("store: fts ddl: %w", err)
+		}
+	}
+	var ready string
+	_ = s.db.QueryRow(`SELECT value FROM meta WHERE key='fts_ready'`).Scan(&ready)
+	if ready != "1" {
+		// The external-content rebuild re-derives the whole index from
+		// games — idempotent, so also correct after a crash between DDL
+		// and flag.
+		if _, err := s.db.Exec(`INSERT INTO games_fts(games_fts) VALUES('rebuild')`); err != nil {
+			return fmt.Errorf("store: fts rebuild: %w", err)
+		}
+		if err := s.SetMeta("fts_ready", "1"); err != nil {
+			return fmt.Errorf("store: mark fts ready: %w", err)
+		}
+	}
+	return nil
+}
+
+// FTSSearchEnabled reports which search backend ListGames routes q through
+// (true = FTS5 index, false = LIKE fallback) — for diagnostics and tests.
+func (s *Store) FTSSearchEnabled() bool { return s.fts }
+
+// ListGames runs one paginated library-browsing query (P4): optional title
+// substring q (case-insensitive), system, verify state and hidden flag;
+// sorted and paged, with the unpaginated match total for the pager.
+func (s *Store) ListGames(opts GameListOpts) (GamePage, error) {
+	order, err := gameOrderBy(opts.Sort)
+	if err != nil {
+		return GamePage{}, err
+	}
+	where := []string{"1=1"}
+	args := []any{}
+	if opts.SystemKey != "" {
+		where = append(where, `g.system_key = ?`)
+		args = append(args, opts.SystemKey)
+	}
+	if opts.VerifyState != "" {
+		where = append(where, `g.verify_state = ?`)
+		args = append(args, opts.VerifyState)
+	}
+	if opts.Hidden != nil {
+		where = append(where, `g.hidden = ?`)
+		args = append(args, boolInt(*opts.Hidden))
+	}
+	// Title matching (P8): eXo conf paths carry no title bytes, so EVERY
+	// backend additionally substring-matches the optional stored title
+	// (case-folded LIKE — same semantics on FTS and non-FTS builds).
+	switch q := strings.TrimSpace(opts.Q); {
+	case q == "":
+	case s.fts && ftsMatchQuery(q) == "":
+		// Only quotes/punctuation: nothing tokenizable for the path
+		// index; the title LIKE still gets a chance below.
+		where = append(where, `g.id IN (SELECT rowid FROM games_fts WHERE games_fts MATCH ?)
+		       OR lower(COALESCE(g.title, '')) LIKE ? ESCAPE '\'`)
+		args = append(args, "", "%"+likeEscape(strings.ToLower(q))+"%")
+	case s.fts:
+		where = append(where, `(g.id IN (SELECT rowid FROM games_fts WHERE games_fts MATCH ?)
+		       OR lower(COALESCE(g.title, '')) LIKE ? ESCAPE '\')`)
+		args = append(args, ftsMatchQuery(q), "%"+likeEscape(strings.ToLower(q))+"%")
+	default:
+		where = append(where, `(lower(g.rel_path) LIKE ? ESCAPE '\'
+		       OR lower(COALESCE(g.title, '')) LIKE ? ESCAPE '\')`)
+		args = append(args, "%"+likeEscape(strings.ToLower(q))+"%", "%"+likeEscape(strings.ToLower(q))+"%")
+	}
+	cond := strings.Join(where, " AND ")
+
+	page := GamePage{}
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM games g WHERE `+cond, args...).Scan(&page.Total); err != nil {
+		return GamePage{}, fmt.Errorf("store: list games count: %w", err)
+	}
+
+	query := `SELECT g.id, g.system_key, g.rel_path, g.size_bytes,
+			g.first_seen_at, g.last_seen_at, g.hidden, g.verify_state,
+			COALESCE(g.title, '')
+		FROM games g WHERE ` + cond + ` ORDER BY ` + order
+	qargs := args
+	if opts.Limit > 0 {
+		query += ` LIMIT ?`
+		qargs = append(qargs, opts.Limit)
+		if opts.Offset > 0 {
+			query += ` OFFSET ?`
+			qargs = append(qargs, opts.Offset)
+		}
+	}
+	rows, err := s.db.Query(query, qargs...)
+	if err != nil {
+		return GamePage{}, fmt.Errorf("store: list games: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	for rows.Next() {
+		var g GameSummary
+		var hidden int
+		if err := rows.Scan(&g.ID, &g.SystemKey, &g.RelPath, &g.SizeBytes,
+			&g.FirstSeenAt, &g.LastSeenAt, &hidden, &g.VerifyState, &g.Title); err != nil {
+			return GamePage{}, err
+		}
+		g.Hidden = hidden != 0
+		page.Games = append(page.Games, g)
+	}
+	return page, rows.Err()
+}
+
+// gameOrderBy maps a GameListOpts.Sort to a deterministic ORDER BY (stable
+// id tie-break in matching direction, so pagination never repeats or
+// drops boundary rows).
+func gameOrderBy(sort string) (string, error) {
+	switch sort {
+	case "", SortTitle:
+		return `COALESCE(NULLIF(g.title, ''), g.rel_path) COLLATE NOCASE ASC, g.id ASC`, nil
+	case SortSize:
+		return `g.size_bytes DESC, g.id ASC`, nil
+	case SortRecent:
+		return `g.last_seen_at DESC, g.id DESC`, nil
+	default:
+		return "", fmt.Errorf("store: unknown game sort %q (want title|size|recent)", sort)
+	}
+}
+
+// GetGame returns one game joined with its system (the detail-page query),
+// or nil when the (system, id) pair has no row — the system key is part of
+// the identity, so a valid id under the wrong system reads as absent.
+func (s *Store) GetGame(systemKey string, id int64) (*GameDetail, error) {
+	var d GameDetail
+	var hidden int
+	var desc, cover int
+	err := s.db.QueryRow(`
+		SELECT g.id, g.system_key, g.rel_path, g.size_bytes, g.first_seen_at, g.last_seen_at,
+		       g.hidden, g.verify_state, COALESCE(g.title, ''),
+		       COALESCE(g.has_description, 0), COALESCE(g.has_cover, 0),
+		       COALESCE(g.crc32, ''), COALESCE(g.sha1, ''),
+		       s.key, s.collection, s.bucket, s.core, s.emulator, s.sky_handle, s.torrent, s.extensions, s.sort_order, s.source
+		FROM games g JOIN systems s ON s.key = g.system_key
+		WHERE g.system_key = ? AND g.id = ?`, systemKey, id).
+		Scan(&d.ID, &d.SystemKey, &d.RelPath, &d.SizeBytes, &d.FirstSeenAt, &d.LastSeenAt,
+			&hidden, &d.VerifyState, &d.Title,
+			&desc, &cover, &d.CRC32, &d.SHA1,
+			&d.System.Key, &d.System.Collection, &d.System.Bucket, &d.System.Core,
+			&d.System.Emulator, &d.System.SkyHandle, &d.System.Torrent,
+			&d.System.Extensions, &d.System.SortOrder, &d.System.Source)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("store: get game %s/%d: %w", systemKey, id, err)
+	}
+	d.Hidden = hidden != 0
+	d.HasDescription = desc != 0
+	d.HasCover = cover != 0
+	return &d, nil
+}
+
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
+// likeEscape neutralizes LIKE metacharacters in user input (paired with
+// ESCAPE '\' in the fallback predicate).
+func likeEscape(q string) string { return likeEscaper.Replace(q) }
+
+// ---- P7: custom collections -------------------------------------------------
+
+// CollectionRow is one operator-defined collection (P7): a named,
+// cross-system game set the generator emits as its own Pegasus
+// collection block in every member system's file. Shortname is assigned
+// at creation from the name and NEVER changes afterwards — it is the
+// block's identity across every generated file, and renaming must not
+// silently churn the served launcher DB.
+type CollectionRow struct {
+	ID        int64
+	Name      string
+	Shortname string
+	Summary   string
+	CreatedAt string
+	UpdatedAt string
+	Games     int64 // member count (lists render it; not written)
+}
+
+// CollectionMemberRow is one membership of CollectionGames: the game's
+// identity pair plus display bits. Hidden is surfaced so the editor can
+// explain why a member will not reach the kiosk output (hidden members
+// are excluded from generation by contract).
+type CollectionMemberRow struct {
+	GameID    int64
+	SystemKey string
+	RelPath   string
+	Hidden    bool
+	Position  int64
+	AddedAt   string
+	Title     string // optional stored title (P8 eXo imports); "" otherwise
+}
+
+// pendingShortnameSuffix is the pending section's shortname shape the
+// generator emits for EVERY system ("shortname: <key>-pending" — see
+// generate.renderSystem; pegasus.IsPending matches the suffix). Duplicated
+// here rather than imported because the store must not depend on the
+// generator (the dependency points the other way).
+const pendingShortnameSuffix = "-pending"
+
+// ReservedShortnameError reports a collection NAME whose derived
+// launcher-DB identity is owned by a catalogue system: the generated file
+// declares "shortname: <sys.Key>" for the main collection and
+// "<sys.Key>-pending" for its trailing pending section, and the strict
+// parser rejects duplicate shortnames within one file — so a colliding
+// collection could never be emitted for that system at all (ADV-P7-01:
+// create/add kept answering success while every regeneration failed).
+type ReservedShortnameError struct {
+	Name      string // the rejected collection name
+	Shortname string // the derived (colliding) shortname
+	SystemKey string // the catalogue system owning that identity
+	Pending   bool   // collision is with the system's "-pending" section
+}
+
+func (e *ReservedShortnameError) Error() string {
+	what := fmt.Sprintf("catalogue system %q", e.SystemKey)
+	if e.Pending {
+		what = fmt.Sprintf("catalogue system %q's pending section", e.SystemKey)
+	}
+	return fmt.Sprintf("collection %q derives shortname %q, which is reserved by %s — pick another name",
+		e.Name, e.Shortname, what)
+}
+
+// reservedSystemCollision probes a derived shortname against the
+// catalogue identities every generated file already claims (system keys
+// plus their "-pending" sections). The systems table IS the catalogue
+// copy (the scanner upserts it from the TSV), so this is a plain store
+// query — no injected list, nothing to drift. nil error = available.
+func (s *Store) reservedSystemCollision(shortname string) (*ReservedShortnameError, error) {
+	rows, err := s.db.Query(`SELECT key FROM systems`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			return nil, err
+		}
+		switch shortname {
+		case key:
+			return &ReservedShortnameError{Shortname: shortname, SystemKey: key}, nil
+		case key + pendingShortnameSuffix:
+			return &ReservedShortnameError{Shortname: shortname, SystemKey: key, Pending: true}, nil
+		}
+	}
+	return nil, rows.Err()
+}
+
+// checkCollectionName rejects a name whose derived shortname would
+// collide with a catalogue identity. Both create AND rename go through
+// this (ADV-P7-01): a rename keeps the row's stored shortname so it
+// cannot break generation by itself, but names derive identities in this
+// UI's mental model and a rename to "NES" would read as claiming that
+// block — refusing it keeps create/rename symmetric and self-healing
+// ("NES" → "NES Games" renames fine).
+func (s *Store) checkCollectionName(name string) error {
+	collision, err := s.reservedSystemCollision(collectionShortname(name))
+	if err != nil {
+		return fmt.Errorf("store: probe shortname for collection %q: %w", name, err)
+	}
+	if collision != nil {
+		collision.Name = name
+		return collision
+	}
+	return nil
+}
+
+// collectionShortname derives the stable launcher-DB identity for a
+// collection name: lowercase alphanumerics joined by single dashes,
+// trimmed. A name with no usable characters ("★!!") falls back to
+// "collection" rather than an empty shortname. Uniqueness (schema UNIQUE
+// + CreateCollection's suffix probing) keeps cross-file merging
+// unambiguous.
+func collectionShortname(name string) string {
+	var b strings.Builder
+	dash := false
+	for _, r := range strings.ToLower(name) {
+		switch {
+		case r >= 'a' && r <= 'z' || r >= '0' && r <= '9':
+			if dash && b.Len() > 0 {
+				b.WriteByte('-')
+			}
+			b.WriteRune(r)
+			dash = false
+		default:
+			dash = true
+		}
+	}
+	if s := b.String(); s != "" {
+		return s
+	}
+	return "collection"
+}
+
+// CreateCollection inserts one collection, deriving its unique shortname
+// from the name (deterministic -2/-3… probing on collision with OTHER
+// collections). Names deriving a catalogue system identity are rejected
+// outright (ADV-P7-01) — no suffix probe can rescue "nes": it is the
+// main collection's shortname in nes's generated file forever. The row's
+// ID is returned.
+func (s *Store) CreateCollection(name, summary string) (int64, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return 0, fmt.Errorf("store: collection name required")
+	}
+	base := collectionShortname(name)
+	if err := s.checkCollectionName(name); err != nil {
+		return 0, err
+	}
+	for attempt := 1; ; attempt++ {
+		sn := base
+		if attempt > 1 {
+			sn = fmt.Sprintf("%s-%d", base, attempt)
+		}
+		ts := nowUTC()
+		res, err := s.db.Exec(`INSERT INTO collections (name, shortname, summary, created_at, updated_at)
+			VALUES (?,?,?,?,?)`, name, sn, strings.TrimSpace(summary), ts, ts)
+		if err == nil {
+			id, ierr := res.LastInsertId()
+			if ierr != nil {
+				return 0, ierr
+			}
+			return id, nil
+		}
+		if !strings.Contains(err.Error(), "UNIQUE") {
+			return 0, fmt.Errorf("store: create collection %q: %w", name, err)
+		}
+		if attempt >= 100 {
+			return 0, fmt.Errorf("store: create collection %q: no free shortname", name)
+		}
+	}
+}
+
+// UpdateCollection renames/re-summaries one collection (shortname stays —
+// see CollectionRow). The new name is probed against the catalogue
+// identities like a create (ADV-P7-01). Unknown ids are a no-op.
+func (s *Store) UpdateCollection(id int64, name, summary string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("store: collection name required")
+	}
+	if err := s.checkCollectionName(name); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(`UPDATE collections SET name=?, summary=?, updated_at=? WHERE id=?`,
+		name, strings.TrimSpace(summary), nowUTC(), id)
+	return err
+}
+
+// DeleteCollection removes one collection; its memberships cascade away.
+func (s *Store) DeleteCollection(id int64) error {
+	_, err := s.db.Exec(`DELETE FROM collections WHERE id=?`, id)
+	return err
+}
+
+// Collections returns every collection, member-counted, name-ordered
+// (NOCASE, id tiebreak — deterministic page order).
+func (s *Store) Collections() ([]CollectionRow, error) {
+	rows, err := s.db.Query(`
+		SELECT c.id, c.name, c.shortname, c.summary, c.created_at, c.updated_at,
+		       (SELECT COUNT(*) FROM collection_games cg WHERE cg.collection_id = c.id)
+		FROM collections c
+		ORDER BY c.name COLLATE NOCASE, c.id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	var out []CollectionRow
+	for rows.Next() {
+		var r CollectionRow
+		if err := rows.Scan(&r.ID, &r.Name, &r.Shortname, &r.Summary, &r.CreatedAt, &r.UpdatedAt, &r.Games); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// Collection returns one collection by id, or nil when absent.
+func (s *Store) Collection(id int64) (*CollectionRow, error) {
+	var r CollectionRow
+	err := s.db.QueryRow(`
+		SELECT c.id, c.name, c.shortname, c.summary, c.created_at, c.updated_at,
+		       (SELECT COUNT(*) FROM collection_games cg WHERE cg.collection_id = c.id)
+		FROM collections c WHERE c.id=?`, id).
+		Scan(&r.ID, &r.Name, &r.Shortname, &r.Summary, &r.CreatedAt, &r.UpdatedAt, &r.Games)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+// CollectionMembers lists one collection's memberships newest-last,
+// position-first (position, system, rel_path — deterministic emission
+// order). Hidden members are INCLUDED here (the editor shows them with
+// their marker); the generator filters them out by contract.
+func (s *Store) CollectionMembers(collectionID int64) ([]CollectionMemberRow, error) {
+	rows, err := s.db.Query(`
+		SELECT g.id, g.system_key, g.rel_path, g.hidden, cg.position, cg.added_at, COALESCE(g.title, '')
+		FROM collection_games cg JOIN games g ON g.id = cg.game_id
+		WHERE cg.collection_id=?
+		ORDER BY cg.position, g.system_key, g.rel_path`, collectionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	var out []CollectionMemberRow
+	for rows.Next() {
+		var m CollectionMemberRow
+		var hidden int
+		if err := rows.Scan(&m.GameID, &m.SystemKey, &m.RelPath, &hidden, &m.Position, &m.AddedAt, &m.Title); err != nil {
+			return nil, err
+		}
+		m.Hidden = hidden != 0
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// AddCollectionGame adds one game to one collection. Idempotent on the
+// (collection, game) pair; the game must exist under exactly this
+// (system, id) identity or the add fails — a collection never holds a
+// stale pointer to a renamed/deleted row.
+func (s *Store) AddCollectionGame(collectionID int64, systemKey string, gameID int64) error {
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM games WHERE id=? AND system_key=?`, gameID, systemKey).
+		Scan(&n); err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("store: game %s/%d does not exist", systemKey, gameID)
+	}
+	if _, err := s.db.Exec(`INSERT INTO collection_games (collection_id, game_id, added_at)
+		VALUES (?,?,?)
+		ON CONFLICT DO NOTHING`, collectionID, gameID, nowUTC()); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(`UPDATE collections SET updated_at=? WHERE id=?`, nowUTC(), collectionID)
+	return err
+}
+
+// RemoveCollectionGame drops one membership. Removing a non-member is a
+// no-op (curation is idempotent, never an error), like SetGameHidden.
+func (s *Store) RemoveCollectionGame(collectionID int64, systemKey string, gameID int64) error {
+	_, err := s.db.Exec(`DELETE FROM collection_games
+		WHERE collection_id=? AND game_id=(SELECT id FROM games WHERE id=? AND system_key=?)`,
+		collectionID, gameID, systemKey)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`UPDATE collections SET updated_at=? WHERE id=?`, nowUTC(), collectionID)
+	return err
+}
+
+// SetSystemHiddenAll flips the hidden flag of EVERY game of one system in
+// one statement (the per-system "show all hidden" bulk action passes
+// hidden=false). Returns the number of rows changed so the caller can
+// skip the regeneration trigger when nothing was actually hidden.
+func (s *Store) SetSystemHiddenAll(systemKey string, hidden bool) (int64, error) {
+	res, err := s.db.Exec(`UPDATE games SET hidden=? WHERE system_key=? AND hidden!=?`,
+		boolInt(hidden), systemKey, boolInt(hidden))
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// HiddenCountsBySystem reports each system's hidden-game count (systems
+// with none are absent) — the verify worklist's bulk-action affordance
+// renders only where it can do something.
+func (s *Store) HiddenCountsBySystem() (map[string]int64, error) {
+	rows, err := s.db.Query(`SELECT system_key, COUNT(*) FROM games WHERE hidden=1 GROUP BY system_key`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	out := map[string]int64{}
+	for rows.Next() {
+		var k string
+		var n int64
+		if err := rows.Scan(&k, &n); err != nil {
+			return nil, err
+		}
+		out[k] = n
+	}
+	return out, rows.Err()
+}
+
+// ftsMatchQuery turns free text into a safe FTS5 MATCH expression: each
+// whitespace-separated term becomes a quoted prefix term ("term"*), so user
+// input can neither break MATCH syntax nor inject operators. Terms made
+// entirely of quotes/punctuation yield "" (caller decides zero-match).
+func ftsMatchQuery(q string) string {
+	parts := make([]string, 0, 8)
+	for _, tok := range strings.Fields(q) {
+		tok = strings.ReplaceAll(tok, `"`, "")
+		if tok == "" {
+			continue
+		}
+		parts = append(parts, `"`+tok+`"*`)
+	}
+	return strings.Join(parts, " ")
+}

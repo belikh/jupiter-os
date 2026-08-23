@@ -41,9 +41,7 @@
     ../../modules/services/iscsi-target.nix
     ../../modules/services/headscale.nix
     ../../modules/services/tailscale.nix
-    ../../modules/services/rom-acquire.nix
-    ../../modules/services/rom-scraper.nix
-    ../../modules/services/arcade-inventory.nix
+    ../../modules/services/arcade-webapp.nix
     ../../modules/services/suno-backup.nix
     ../../modules/services/suno-web.nix
     ../../modules/services/aria2.nix
@@ -502,17 +500,46 @@
     initiatorIqn = "iqn.2026-07.au.jupiter:callisto";
   };
 
-  # ---- jupiterOS Arcade (europa-side cartridge pipeline) ------------------
-  # Bulk-stage No-Intro Nintendo cartridge ROMs via Minerva torrents, verify
-  # against DATs with igir, scrape Pegasus metadata with Skyscraper, and emit
-  # a periodic library inventory. Acquisition/verify are manual oneshots (no
-  # timer — start them explicitly); scraping runs daily; inventory hourly
-  # (arcade-inventory.nix: OnBootSec=2m, OnUnitActiveSec=1h — a full walk
-  # stats every file on multi-TB trees, so it is deliberately not frequent).
-  # Kiosks mount /tank/archive/retro/games/cartridge read-only.
-  jupiter.services.romAcquire.enable = true;
-  jupiter.services.romScraper.enable = true;
-  jupiter.services.arcadeInventory.enable = true;
+  # ---- jupiterOS Arcade (europa-side pipeline) ----------------------------
+  # The arcade-webapp owns the whole cartridge-ROM pipeline since the
+  # gauntlet (docs/plans/arcade-webapp-gauntlet.md): DAT currency, aria2
+  # download control, igir verify/organize, Skyscraper scraping, launcher-DB
+  # generation, curation, and the fleet inventory JSON
+  # (http://<europa>:8094/inventory.json — field-for-field parity with the
+  # retired unit's file). The old sprawl is retired repo-side here:
+  #   * jupiter-rom-acquire / jupiter-rom-dats / jupiter-rom-verify oneshots
+  #     (modules/services/rom-acquire.nix — removed),
+  #   * jupiter-rom-scrape daily timer (modules/services/rom-scraper.nix —
+  #     removed; the webapp carries the cadence in-process),
+  #   * jupiter-arcade-inventory hourly timer (modules/services/
+  #     arcade-inventory.nix — removed; the webapp serves the JSON).
+  # scripts/cartridge-{verify,scrape}.sh + fetch-mclean-1g1r-dats.sh moved
+  # to scripts/deprecated/. NOTE: this takes effect at europa's NEXT
+  # nixos-rebuild switch (coordinator-gated cutover, post-merge) — until
+  # then the live host still runs the old units alongside the webapp.
+  # aria2 + AriaNg STAY (general-purpose daemon; the webapp is its
+  # ROM-facing front end and links AriaNg for non-arcade downloads), and
+  # keep the incoming root writable so partial downloads resume in place.
+  # Secret wiring (final-audit FIN-05): the cutover above retires
+  # rom-acquire/rom-scraper, and with them that module pair's sops
+  # declarations — without re-wiring, arcadeWebapp would lose aria2 RPC
+  # auth (download control dead) and both scraper credential sources at
+  # switch. Paths only, values never touched:
+  #   * aria2SecretFile points at jupiter_aria2_rpc_secret, still declared
+  #     by modules/services/aria2.nix (enabled below) — pure pointer per
+  #     D-P2b, no second declaration;
+  #   * screenscraper_creds + tgdb_apikey exist unchanged in
+  #     secrets/secrets.yaml but their ONLY declaration lived in the
+  #     deleted rom-scraper.nix — re-declared verbatim host-side in the
+  #     sops block below (the webapp module stays deliberately sops-free,
+  #     D-P2b).
+  jupiter.services.arcadeWebapp = {
+    enable = true;
+    openFirewall = true;
+    aria2SecretFile = config.sops.secrets.jupiter_aria2_rpc_secret.path;
+    screenscraperCredsFile = config.sops.secrets.screenscraper_creds.path;
+    tgdbApikeyFile = config.sops.secrets.tgdb_apikey.path;
+  };
 
   # Suno account backup daemon — WAV masters + full per-clip metadata into
   # /tank/archive/suno. The suno_cookie sops secret must hold the Clerk
@@ -544,10 +571,12 @@
     rpcHost = "rpc.jupiter.au";
     rpcProtocol = "wss";
     rpcWebPort = 443;
-    # The arcade's rom-acquire submits its per-system torrents with
+    # The arcade webapp submits its per-system torrents with
     # dir=<incomingDir>/<sys> (fire-and-forget via the JSON-RPC endpoint), so
-    # the daemon needs the incoming root writable to resume partials in place.
-    extraWritableDirs = [ config.jupiter.services.romAcquire.incomingDir ];
+    # the daemon needs the incoming root writable to resume partials in
+    # place. Literal path: rom-acquire.nix (which owned the option) is
+    # retired with the P8 sprawl removal.
+    extraWritableDirs = [ "/tank/archive/retro/cache/incoming/nointro-nintendo" ];
     # Enable IPv6 DHT (--enable-dht6). Bind to europa's stable global unicast
     # address (the mngtmpaddr EUI-64 one, not the rotating temporaries).
     dhtListenAddr6 = "2402:1060:2305:0:d267:26ff:fed3:b0a5";
@@ -560,6 +589,14 @@
   # nix_build_ssh_key: private half of the dedicated builder keypair; the
   # public half is in callisto's root authorized_keys (buildMachines above).
   sops.secrets.nix_build_ssh_key = { };
+  # screenscraper_creds / tgdb_apikey: ScreenScraper credentials + TheGamesDB
+  # API key for the arcade-webapp scrape driver. Same sops keys the retired
+  # rom-scraper.nix declared (values unchanged in secrets/secrets.yaml);
+  # re-declared host-side at the FIN-05 wiring so activation keeps rendering
+  # them for the webapp after cutover. Default 0400 root is fine — the
+  # webapp runs as root.
+  sops.secrets.screenscraper_creds = { };
+  sops.secrets.tgdb_apikey = { };
 
   environment.systemPackages = with pkgs; [
     nix-output-monitor

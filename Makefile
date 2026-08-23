@@ -1,4 +1,4 @@
-.PHONY: build-all check update fmt fmt-check verify-arcade status-arcade docs docs-serve
+.PHONY: build-all check update fmt fmt-check verify-arcade status-arcade fixture-arcade test-arcade-webapp docs docs-serve
 
 # Build every registered host closure (the 4 dashboard kiosks).
 build-all:
@@ -46,11 +46,29 @@ ROOTS ?= /mnt/exo-games/exo-dos /mnt/exo-games/exo-win3x /mnt/exo-games/exo-win9
 verify-arcade:
 	./scripts/verify-exo-collections.sh $(ROOTS)
 
-# Fleet arcade status — pretty-print europa's generated inventory JSON
-# (cartridge ROM counts/sizes + eXo art coverage). Requires europa reachable
-# at 10.1.1.2 and the arcade-inventory timer to have run at least once.
+# Fleet arcade status — pretty-print the fleet inventory JSON (cartridge
+# ROM counts/sizes + eXo art coverage). P8: the webapp SERVES the document
+# (field-for-field parity with the retired jupiter-arcade-inventory unit's
+# state file); scripts/arcade-status.sh reads the webapp endpoint first and
+# falls back to the legacy SSH path during transition.
 status-arcade:
 	./scripts/arcade-status.sh
+
+# Regenerate the arcade-webapp fixture ROM tree (deterministic, self-authored
+# dummy bytes — see tests/fixtures/arcade/README.md) and run the igir
+# zero-unmatched gate over it (gauntlet plan §1.3 item 6 / AC-3 fixture half).
+# Needs go on PATH; igir comes from the flake's locked nixpkgs via nix run
+# (override with IGIR=/path/to/igir to use a local binary).
+fixture-arcade:
+	./scripts/fixture-arcade.sh
+
+# Arcade webapp pipeline VM test (gauntlet plan §4 Phase 1): boots the
+# minimal test host tests/hosts/arcade-webapp-vm.nix — the real
+# modules/services/arcade-webapp.nix against the fixture corpus — and
+# asserts service up, /healthz, dashboard fixture counts, rescan. Needs
+# /dev/kvm for a sane boot time.
+test-arcade-webapp:
+	./scripts/test-arcade-webapp.sh
 
 # Update flake locks
 update:

@@ -1,0 +1,30 @@
+commit 7a447170658b22ad40fee1a87515a6e301458309
+Author: Antigravity <operator@host>
+Date:   Sun Aug 23 19:19:42 2026 +1000
+
+    Why: gauntlet P8 sprawl retirement (repo side) — the flake still wired five europa units the arcade webapp has now subsumed, so the next deploy would run two pipelines against the same trees.
+    
+    Removed from the flake: modules/services/{rom-acquire,rom-scraper,
+    arcade-inventory}.nix — i.e. the legacy-rom-unit/legacy-rom-unit/
+    legacy-rom-unit oneshots, the legacy-rom-unit daily timer and the
+    legacy-inventory-timer hourly timer. Their Go ports have been in the
+    webapp since P3/P5/P6 (internal/igir, internal/scrape, internal/dats)
+    and the inventory JSON is served at /inventory.json with pinned parity
+    (scripts/arcade-status.sh reads it; SSH fallback kept for transition).
+    aria2.service + AriaNg stay untouched (general-purpose daemon; the
+    webapp is its ROM-facing front end). europa's aria2 extraWritableDirs
+    now carries the incoming root literally instead of referencing the
+    deleted romAcquire option. scripts/cartridge-{verify,scrape}.sh +
+    fetch-mclean-1g1r-dats.sh moved to scripts/deprecated/ (precedent:
+    issue #40 quarantine), README updated with their Go-port dispositions;
+    stale comment references fixed across modules/scripts; europa's config
+    comment records the retirement + that the LIVE cutover is a
+    coordinator-gated nixos-rebuild switch AFTER this merges (decision
+    D-P8a on the progress page).
+    
+    Plan: project-plan §2 P8.
+
+ CLAUDE.md                                          |  18 +-
+ hosts/europa/configuration.nix                     |  51 ++-
+ modules/desktop/cartridges.nix                     |   8 +-
+ modules/desktop/tcxwave-kiosk.nix                  |   2 +-

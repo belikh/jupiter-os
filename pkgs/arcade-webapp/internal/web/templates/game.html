@@ -1,0 +1,78 @@
+{{/* Game detail page (P4): large poster art, identity chips, file facts
+      and the verify trail (per-game state + link to the system's last
+      igir report CSV). The back-link preserves the library query via the
+      sanitized ?back= param the cards attach. Hide/show renders disabled:
+      curation lands in P7 — the affordance says so instead of vanishing.
+*/ -}}
+{{define "layout-game"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>jupiterOS Arcade — {{.Meta.Title}}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js"></script>
+</head>
+<body>
+  {{template "topbar" .Meta}}
+  <main class="wrap">
+    <p><a class="back-link" href="{{.BackHref}}">‹ back to library</a></p>
+    <div class="game-hero">
+      <img class="art" src="{{.ArtURL}}" alt="generated cover art for {{.Title}}" width="480" height="640">
+      <div class="game-meta">
+        <h2>{{.Title}}</h2>
+        <p class="chips-row">
+          <span class="chip">{{.SystemKey}}</span>
+          <span class="chip">{{.Bucket}}</span>
+          {{gamePill .VerifyState}}
+          {{if .Hidden}}<span class="chip hidden-chip">hidden</span>{{end}}
+        </p>
+        <div class="game-facts">
+          <span class="k">file</span><span class="v"><code>{{.RelPath}}</code></span>
+          <span class="k">size</span><span class="v">{{.SizeHuman}}</span>
+          <span class="k">core</span><span class="v">{{if .Core}}{{.Core}}{{else}}—{{end}}{{if .Emulator}} · {{.Emulator}}{{end}}</span>
+          <span class="k">first seen</span><span class="v">{{.FirstSeenDay}}</span>
+          <span class="k">last seen</span><span class="v">{{.LastSeenDay}} ({{.LastSeenAgo}})</span>
+          <span class="k">verify</span><span class="v">
+            {{if .HasReport}}<a href="/verify/reports/{{.SystemKey}}.csv">last igir report (csv)</a>
+            {{else}}<span class="sub">no report yet — run Verify</span>{{end}}
+          </span>
+          <span class="k">metadata</span><span class="v">
+            {{if .HasDescription}}description ✓{{else}}description —{{end}} ·
+            {{if .HasCover}}cover ✓{{else}}cover —{{end}}
+            <span class="sub" title="best-effort flags from the Skyscraper resource cache; re-scrape to refresh">(cache flags)</span>
+          </span>
+          <span class="k">sha1</span><span class="v">
+            {{if .SHA1}}<code>{{.SHA1}}</code>{{else}}<span class="sub" title="filled by the next scan (files over 512 MiB are skipped) or a checksum-bearing verify report">—</span>{{end}}
+          </span>
+        </div>
+        {{template "game-actions" .Actions}}
+      </div>
+    </div>
+    {{template "foot"}}
+  </main>
+</body>
+</html>
+{{end}}
+
+{{/* Game-detail actions region (P5): the plan's per-game re-scrape
+      action, wired to Driver.ScrapeGame; swaps itself so a kicked job
+      flips the row into its in-flight state without a reload. P7 wires
+      hide/show: one toggle endpoint, the region re-renders with the
+      flipped label and triggers an async launcher-DB regeneration. */ -}}
+{{define "game-actions"}}
+<div id="game-actions" class="actions">
+  {{if .RegenAlert}}<div class="action-error" role="status" style="flex-basis: 100%;">{{.RegenAlert}}</div>{{end}}
+  <button class="mini" hx-post="/systems/{{.SystemKey}}/games/{{.GameID}}/hide"
+    hx-target="#game-actions" hx-swap="outerHTML"
+    title="{{if .Hidden}}show this game in the library and the launcher DB{{else}}hide this game from the library and the launcher DB{{end}}">
+    {{if .Hidden}}Show{{else}}Hide{{end}}</button>
+  <button class="mini primary" hx-post="/systems/{{.SystemKey}}/games/{{.GameID}}/scrape"
+    hx-target="#game-actions" hx-swap="outerHTML"
+    {{if not .CanScrape}}disabled{{end}}
+    title="re-run Skyscraper for this ROM now (gather passes windowed to it)">
+    {{if .Running}}scraping…{{else if .CanScrape}}re-scrape{{else}}re-scrape (unconfigured){{end}}</button>
+  {{if .Running}}<span class="pill running">a scrape is running — this page reflects results on reload</span>{{end}}
+</div>
+{{end}}

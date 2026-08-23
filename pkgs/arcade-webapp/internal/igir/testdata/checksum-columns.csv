@@ -1,0 +1,6 @@
+DAT Name,Game Name,Status,ROM Files,Patched,BIOS,Retail Release,Unlicensed,Debug,Demo,Beta,Sample,Prototype,Program,Aftermarket,Homebrew,Bad,CRC32,SHA1
+Nintendo Entertainment System (jupiter fixture),Crystal Carp (USA) (Rev A),FOUND,/out/nes/Crystal Carp (USA) (Rev A).nes,false,false,true,false,false,false,false,false,false,false,false,false,false,deadbeef,aaa1112223334445556667778889990001112223
+Nintendo Entertainment System (jupiter fixture),Mecha Garden (Japan),FOUND,/out/nes/Mecha Garden (Japan).nes,false,false,true,false,false,false,false,false,false,false,false,false,false,,bbb2223334445556667778889990001112223334
+Nintendo Entertainment System (jupiter fixture),Neon Ninjutsu (World),FOUND,/out/nes/Neon Ninjutsu (World).nes,false,false,true,false,false,false,false,false,false,false,false,false,false,
+Nintendo Entertainment System (jupiter fixture),Pogo Postman (Europe),FOUND,/out/nes/Pogo Postman (Europe).nes,false,false,true,false,false,false,false,false,false,false,false,false,false,cafebabe,
+Nintendo Entertainment System (jupiter fixture),Unreleased Prototype (Japan),MISSING,,false,false,false,false,false,false,false,true,false,false,false,false,false,,

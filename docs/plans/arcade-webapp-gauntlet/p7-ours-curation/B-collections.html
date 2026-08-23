@@ -1,0 +1,87 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  
+  <meta name="htmx-config" content='{"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"409","swap":true},{"code":"[45]..","swap":false,"error":true}]}'>
+  <title>CABINET-MANAGER — collections</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js"></script>
+</head>
+<body>
+  
+<div class="topbar">
+  <div class="wrap">
+    <h1>CABINET-OS <span class="accent">Arcade</span></h1>
+    <span class="sub">custom collections</span>
+    <span class="spacer"></span>
+    <nav class="nav" aria-label="pages">
+      <a href="/" >Dashboard</a>
+      <a href="/library" >Library</a>
+      <a href="/collections" class="active" aria-current="page">Collections</a>
+      <a href="/downloads" >Downloads</a>
+      <a href="/verify" >Verify</a>
+      <a href="/metadata" >Metadata</a>
+    </nav>
+    <span class="pill "></span>
+  </div>
+</div>
+
+  <main class="wrap">
+    
+<div id="collections-panel" role="region" aria-label="custom collections" aria-live="polite">
+
+  
+  
+
+  <section>
+    <h2>Collections <span class="chip">1</span></h2>
+
+    <p class="sub">Operator-defined game sets spanning systems. Each collection is emitted as its
+      own launchable block in EVERY member system's metadata file of the served launcher DB —
+      an edit here reaches the kiosks within seconds (the regeneration runs in the background;
+      the log lives on the Metadata page).</p>
+
+    <form class="filter-bar" aria-label="create a collection"
+          hx-post="/collections/create" hx-target="#collections-panel" hx-swap="outerHTML">
+      <input type="text" name="name" required maxlength="80" placeholder="collection name…" aria-label="collection name">
+      <input type="text" name="summary" maxlength="200" placeholder="summary (optional)" aria-label="collection summary">
+      <button type="submit">create</button>
+    </form>
+
+    
+    <table class="dl systems">
+      <thead><tr>
+        <th scope="col">name</th><th scope="col">shortname</th><th scope="col">games</th>
+        <th scope="col"><span class="visually-hidden">actions</span></th>
+      </tr></thead>
+      <tbody>
+        
+        <tr data-collection="1">
+          <td><a href="/collections/1">Kitchen quick-play</a> <span class="sub">Two-player cabinet picks</span></td>
+          <td><code class="sub">kitchen-quick-play</code></td>
+          <td class="num">3 <span class="sub" title="last edited">37s ago</span></td>
+          <td>
+            <button class="mini danger" hx-post="/collections/1/delete"
+              hx-target="#collections-panel" hx-swap="outerHTML" hx-confirm="Delete “Kitchen quick-play”?"
+              title="delete this collection (its members stay in the library)">delete</button>
+          </td>
+        </tr>
+        
+      </tbody>
+    </table>
+    
+  </section>
+</div>
+
+    
+<footer>
+  CABINET-MANAGER webapp — <a href="https://example.invalid/repo">gauntlet plan</a>
+  · fragments auto-refresh via htmx (dashboard 10s, download queue 2s)
+</footer>
+
+  </main>
+</body>
+</html>

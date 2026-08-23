@@ -1,0 +1,176 @@
+{{/* Collections pages (P7): the list (name, stable shortname, member
+      count, delete) and the create form — one fragment, #collections-
+      panel, that every action re-renders. The editor lives in
+      collection.html. */ -}}
+{{define "layout-collections"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- ADV-P7-01: create/rename collisions answer 409 with a re-rendered
+       panel naming the collision; stock responseHandling never swaps
+       4xx bodies, so this page opts 409 in (first match wins). -->
+  <meta name="htmx-config" content='{"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"409","swap":true},{"code":"[45]..","swap":false,"error":true}]}'>
+  <title>jupiterOS Arcade — {{.Meta.Title}}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js"></script>
+</head>
+<body>
+  {{template "topbar" .Meta}}
+  <main class="wrap">
+    {{template "partial-collections" .}}
+    {{template "foot"}}
+  </main>
+</body>
+</html>
+{{end}}
+
+{{define "partial-collections"}}
+<div id="collections-panel" role="region" aria-label="custom collections" aria-live="polite">
+
+  {{if .Error}}<div class="action-error" role="alert">{{.Error}}</div>{{end}}
+  {{if .RegenAlert}}<div class="action-error" role="status">{{.RegenAlert}}</div>{{end}}
+
+  <section>
+    <h2>Collections <span class="chip">{{len .Collections}}</span></h2>
+
+    <p class="sub">Operator-defined game sets spanning systems. Each collection is emitted as its
+      own launchable block in EVERY member system's metadata file of the served launcher DB —
+      an edit here reaches the kiosks within seconds (the regeneration runs in the background;
+      the log lives on the Metadata page).</p>
+
+    <form class="filter-bar" aria-label="create a collection"
+          hx-post="/collections/create" hx-target="#collections-panel" hx-swap="outerHTML">
+      <input type="text" name="name" required maxlength="80" placeholder="collection name…" aria-label="collection name">
+      <input type="text" name="summary" maxlength="200" placeholder="summary (optional)" aria-label="collection summary">
+      <button type="submit">create</button>
+    </form>
+
+    {{if .Collections}}
+    <table class="dl systems">
+      <thead><tr>
+        <th scope="col">name</th><th scope="col">shortname</th><th scope="col">games</th>
+        <th scope="col"><span class="visually-hidden">actions</span></th>
+      </tr></thead>
+      <tbody>
+        {{range .Collections}}
+        <tr data-collection="{{.ID}}">
+          <td><a href="/collections/{{.ID}}">{{.Name}}</a>{{if .Summary}} <span class="sub">{{.Summary}}</span>{{end}}</td>
+          <td><code class="sub">{{.Shortname}}</code></td>
+          <td class="num">{{.Games}}{{if .UpdatedAgo}} <span class="sub" title="last edited">{{.UpdatedAgo}}</span>{{end}}</td>
+          <td>
+            <button class="mini danger" hx-post="/collections/{{.ID}}/delete"
+              hx-target="#collections-panel" hx-swap="outerHTML" hx-confirm="Delete “{{.Name}}”?"
+              title="delete this collection (its members stay in the library)">delete</button>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <p class="sub">no collections yet — create one above.</p>
+    {{end}}
+  </section>
+</div>
+{{end}}
+
+{{/* Collection editor (P7): rename/summary form, the member table with
+      per-member remove, and the add-by-search box over ListGames q.
+      Everything swaps #collection-panel; add/remove buttons carry their
+      (system, game) identity in the hx-post URL. */ -}}
+{{define "layout-collection"}}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- ADV-P7-01: same 409-swap opt-in as the collections list page. -->
+  <meta name="htmx-config" content='{"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"409","swap":true},{"code":"[45]..","swap":false,"error":true}]}'>
+  <title>jupiterOS Arcade — {{.Meta.Title}}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js"></script>
+</head>
+<body>
+  {{template "topbar" .Meta}}
+  <main class="wrap">
+    {{template "partial-collection" .}}
+    {{template "foot"}}
+  </main>
+</body>
+</html>
+{{end}}
+
+{{define "partial-collection"}}
+<div id="collection-panel" role="region" aria-label="collection editor" aria-live="polite">
+
+  {{if .Error}}<div class="action-error" role="alert">{{.Error}}</div>{{end}}
+  {{if .RegenAlert}}<div class="action-error" role="status">{{.RegenAlert}}</div>{{end}}
+
+  <p><a class="back-link" href="/collections">‹ back to collections</a></p>
+
+  <section>
+    <h2>{{.Collection.Name}}
+      <span class="chip" title="stable identity used by the generated launcher-DB blocks">{{.Collection.Shortname}}</span>
+      <span class="chip" title="{{if .Sniffable}}tracked members / members that reach the kiosk as launchable{{else}}games roots not wired — playability not sniffed{{end}}"
+      >{{if .Sniffable}}{{.Tracked}} tracked / {{.Playable}} playable{{else}}{{len .Members}} games{{end}}</span>
+    </h2>
+
+    <p class="sub">Membership is cross-system: every member repeats inside ITS system's generated file,
+      under a block named after this collection. Hidden or incomplete (pending) members are excluded
+      from generation until fixed.</p>
+
+    <form class="filter-bar" aria-label="rename collection"
+          hx-post="/collections/{{.Collection.ID}}/update" hx-target="#collection-panel" hx-swap="outerHTML">
+      <input type="text" name="name" required maxlength="80" value="{{.Collection.Name}}" aria-label="collection name">
+      <input type="text" name="summary" maxlength="200" value="{{.Collection.Summary}}" placeholder="summary (optional)" aria-label="collection summary">
+      <button type="submit">save</button>
+    </form>
+
+    {{if .Members}}
+    <table class="dl systems">
+      <thead><tr>
+        <th scope="col">game</th><th scope="col">system</th><th scope="col"><span class="visually-hidden">actions</span></th>
+      </tr></thead>
+      <tbody>
+        {{range .Members}}
+        <tr data-game="{{.GameID}}">
+          <td>{{.Title}}{{if .Hidden}} <span class="chip hidden-chip" title="hidden games are excluded from the generated launcher DB">hidden</span>{{else if .Pending}} <span class="chip pending-chip" title="file incomplete (completeness sniff) — lands in the system's (Pending) collection, not launchable yet">pending</span>{{end}}</td>
+          <td><span class="chip">{{.SystemKey}}</span></td>
+          <td>
+            <button class="mini danger" hx-post="/collections/{{$.Collection.ID}}/remove?system={{.SystemKey}}&game={{.GameID}}"
+              hx-target="#collection-panel" hx-swap="outerHTML"
+              title="remove from this collection (stays in the library)">remove</button>
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <p class="sub">no games yet — search below to add some.</p>
+    {{end}}
+
+    <form class="filter-bar" method="get" action="/collections/{{.Collection.ID}}" aria-label="add games by search"
+          hx-get="/collections/{{.Collection.ID}}" hx-target="#collection-panel" hx-swap="outerHTML"
+          hx-trigger="input changed delay:300ms, change delay:300ms">
+      <input type="search" name="q" value="{{.Q}}" placeholder="search titles to add…" aria-label="search titles to add">
+      <noscript><button type="submit">search</button></noscript>
+    </form>
+
+    {{if .Results}}
+    <ul class="results">
+      {{range .Results}}
+      <li data-candidate="{{.GameID}}">
+        {{.Title}} <span class="chip">{{.SystemKey}}</span>
+        <button class="mini primary" hx-post="/collections/{{$.Collection.ID}}/add?system={{.SystemKey}}&game={{.GameID}}"
+          hx-target="#collection-panel" hx-swap="outerHTML"
+          title="add to this collection">add</button>
+      </li>
+      {{end}}
+    </ul>
+    {{else if .Q}}
+    <p class="sub">no further matches for “{{.Q}}”.</p>
+    {{end}}
+  </section>
+</div>
+{{end}}

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE datafile PUBLIC "-//Logiqx//DTD ROM Management Datafile//EN" "http://www.logiqx.com/Dats/datafile.dtd">
+<datafile>
+	<header>
+		<name>Super Nintendo Entertainment System (jupiter fixture)</name>
+		<description>Self-authored jupiter-os arcade-webapp fixture DAT: dummy ROM bytes, no copyrighted material</description>
+		<version>1.0</version>
+		<date>2026-08-21</date>
+		<author>jupiter-os</author>
+		<homepage>https://github.com/belikh/jupiter-os</homepage>
+	</header>
+	<game name="Astral Almari (USA)">
+		<description>Astral Almari (USA)</description>
+		<rom name="Astral Almari (USA).sfc" size="524288" crc="b4905b6f" md5="c562b3a20a98bbc48e10df0a2b08e319" sha1="5b83a8258046257fac36a85c7ac97fb53532dbf4"/>
+	</game>
+	<game name="Bakery Bandits (Europe)">
+		<description>Bakery Bandits (Europe)</description>
+		<rom name="Bakery Bandits (Europe).sfc" size="262144" crc="5f2987ab" md5="2d122698758efa1d660b49706b3397b9" sha1="577ee5f582b7ceca1f1aa95a5103bb7fbf5f6845"/>
+	</game>
+	<game name="Turbo Tadpole (Japan)">
+		<description>Turbo Tadpole (Japan)</description>
+		<rom name="Turbo Tadpole (Japan).sfc" size="131073" crc="6b8a83cb" md5="272ec52ce32eb10110e2fc42e6589941" sha1="f948cc095d929edcacc4d76bc27e59ee4bc1437b"/>
+	</game>
+	<game name="Vault of Vertigo (USA) (Rev A)">
+		<description>Vault of Vertigo (USA) (Rev A)</description>
+		<rom name="Vault of Vertigo (USA) (Rev A).sfc" size="786432" crc="505ca113" md5="60c2f6d65898a44c3c800a915a875c1b" sha1="c4a77db308a6ff7916e29954362a91dc252ad97a"/>
+	</game>
+</datafile>

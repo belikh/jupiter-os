@@ -1,0 +1,3 @@
+DAT Name,Game Name,Status,ROM Files,Patched,BIOS,Retail Release
+"Commodore 64, The (No-Intro)","Game, With Comma (USA)",FOUND,"/out/c64/Game, With Comma (USA).prg",false,false,true
+,other file,UNUSED,"/in/other, file.prg",false,false,false

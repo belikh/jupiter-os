@@ -1,0 +1,126 @@
+{{/* Verify fragment (P3): the DAT currency + igir verify control surface.
+      Per-system worklist (DAT date/age, staged files, last verify
+      summary, promote state, report link), verify-all + per-system
+      verify + DAT refresh actions, a progressbar while a batch runs.
+      Polled every 2s; aria-live so progress and completions are
+      announced. Unconfigured igir / DAT manager = state chips, never a
+      500. */ -}}
+{{define "partial-verify"}}
+<div id="verify-panel" hx-get="/partials/verify" hx-trigger="every 2s" hx-swap="outerHTML"
+     role="region" aria-label="verify and DAT currency" aria-live="polite"
+     {{if .Configured}}data-igir="ok"{{else}}data-igir="unconfigured"{{end}}>
+
+  {{if .Error}}<div class="action-error" role="alert">{{.Error}}</div>{{end}}
+
+  <section>
+    <h2>Verify &amp; organize
+      {{if .Configured}}
+        {{if .Runner.Running}}
+        <span class="pill running">verifying{{if .Runner.CurrentSystem}}: {{.Runner.CurrentSystem}}{{end}}…</span>
+        {{else if .Runner.LastError}}
+        <span class="pill error">{{.Runner.LastError}}</span>
+        {{else if .Runner.LastOKAt}}
+        <span class="pill ok">last run {{age .Now .Runner.LastOKAt}}</span>
+        {{else}}
+        <span class="pill unknown">never verified</span>
+        {{end}}
+      {{else}}
+        <span class="pill unknown">igir not configured</span>
+      {{end}}
+      <span class="chip" title="systems whose last verify found every DAT game with nothing unmatched">{{.NVerified}} verified</span>
+      <span class="chip" title="systems with DAT games missing from the staged set">{{.NMissing}} missing</span>
+      <span class="chip" title="systems whose games tree holds files the DAT doesn't claim (all DAT games found)">{{.NExtra}} extra</span>
+      <span class="chip" title="systems with unmatched staged input / duplicates">{{.NUnmatched}} unmatched</span>
+      <span class="chip" title="systems promoted without a DAT (better partial than blocked)">{{.NUnchecked}} unchecked</span>
+    </h2>
+
+    {{if .Configured}}{{if .Runner.Running}}
+    {{/* In-flight batch: a real progressbar over systems done/total. */}}
+    <div class="meter dl" role="progressbar" aria-valuemin="0" aria-valuemax="{{.Runner.Total}}"
+         aria-valuenow="{{.Runner.Done}}" aria-label="verify batch progress">
+      <span style="width: {{if .Runner.Total}}{{mul100 .Runner.Done .Runner.Total}}{{else}}0{{end}}%"></span>
+    </div>
+    <p class="sub">{{.Runner.Done}} / {{.Runner.Total}} systems processed…</p>
+    {{end}}{{end}}
+
+    <p class="sub">igir <code>copy test report</code> per system against its No-Intro DAT —
+      matched ROMs are COPIED into the games tree (the staged torrent stays intact for aria2),
+      and the report feeds the indicators. Nothing staged or still downloading (aria2 control
+      files present) skips; a missing DAT degrades to promote-unchecked, never a block.</p>
+
+    <div class="actions">
+      <button class="primary" hx-post="/verify" hx-target="#verify-panel" hx-swap="outerHTML"
+              {{if or (not .Configured) .Runner.Running}}disabled{{end}}>
+        {{if .Runner.Running}}verifying…{{else}}Verify all{{end}}</button>
+      <button hx-post="/dats/refresh" hx-target="#verify-panel" hx-swap="outerHTML"
+              {{if .DATsRunning}}disabled{{end}}>
+        {{if .DATsRunning}}fetching DATs…{{else}}Refresh all DATs{{end}}</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Systems {{if .IdleCount}}<span class="chip">{{.IdleCount}} idle</span>{{end}}</h2>
+    {{if .Rows}}
+    <table class="dl systems verify">
+      <thead><tr>
+        <th scope="col">system</th><th scope="col">DAT</th><th scope="col">staged</th>
+        <th scope="col">last verify</th><th scope="col">promoted</th><th scope="col">report</th>
+        <th scope="col"><span class="visually-hidden">actions</span></th>
+      </tr></thead>
+      <tbody>
+        {{range .Rows}}
+        <tr data-system="{{.Key}}" data-verify="{{.State}}">
+          <td>{{.Collection}} <span class="chip">{{.Key}}</span></td>
+          <td>
+            {{if .DATDate}}
+              {{.DATDate}} <span class="pill {{if lt .DATAgeDays 0}}unknown{{else if le .DATAgeDays 30}}ok{{else if le .DATAgeDays 90}}warn{{else}}stale{{end}}">{{.DATAgeHuman}}</span>
+            {{else}}<span class="pill unknown">no dat</span>{{end}}
+            {{if .DATMapped}}
+            {{if $.DATsConfigured}}
+            <button class="mini" hx-post="/systems/{{.Key}}/dat-refresh"
+              hx-target="#verify-panel" hx-swap="outerHTML"
+              title="fetch this system's McLean 1G1R DAT now">↻ dat</button>
+            {{end}}
+            {{else}}<span class="sub" title="no McLean DAT exists for this system — verify degrades to promote-unchecked">unmapped</span>{{end}}
+          </td>
+          <td class="num">
+            {{if .StagedFiles}}{{.StagedFiles}} files · {{.StagedBytes}}{{if .InFlight}} <span class="pill running" title="aria2 control files present at last scan">in flight</span>{{end}}{{else}}<span class="sub">—</span>{{end}}
+          </td>
+          <td>{{verifyStateChip .State .Counts}}{{if .LastAttemptFailed}} <span class="pill error" title="{{if .CountsValid}}last attempt failed — showing last good report{{else}}last attempt failed — no report ingested yet{{end}}">last attempt failed</span>{{end}}{{if .CountsValid}} <span class="sub" title="last verify finished">{{.FinishedAgo}}</span>{{end}}
+            {{if .OffenderFiles}}
+            {{/* P4 drill-down: the persisted per-file offenders (input-side
+                 junk + output-side extras) behind the unmatched/extra pill.
+                 html/template auto-escapes every filename. */}}
+            <details class="stage"><summary class="sub">{{len .OffenderFiles}} file{{if ne (len .OffenderFiles) 1}}s{{end}} to fix</summary>
+              <ul>{{range .OffenderFiles}}<li><code>{{.}}</code></li>{{end}}</ul>
+            </details>
+            {{end}}
+            {{if .History}}
+            <details class="stage"><summary class="sub">run history ({{len .History}})</summary>
+              <ul>{{range .History}}<li class="sub">{{.FinishedHuman}} — found={{.Found}} unmatched={{.Unmatched}}{{if .DeltaUnmatched}} (Δ{{.DeltaUnmatched}} unmatched){{end}}{{if .Extra}}, extra={{.Extra}}{{end}}</li>{{end}}</ul>
+            </details>
+            {{end}}
+          </td>
+          <td class="num">{{if .Counts.PromotedBytes}}{{.PromotedHuman}}{{else if eq .State "unchecked"}}0 B re-run{{else}}<span class="sub">—</span>{{end}}</td>
+          <td>{{if .HasReport}}<a href="/verify/reports/{{.Key}}.csv">csv</a>{{else}}<span class="sub">—</span>{{end}}</td>
+          <td>
+            <button class="mini primary" hx-post="/systems/{{.Key}}/verify"
+              hx-target="#verify-panel" hx-swap="outerHTML"
+              {{if not .CanVerify}}disabled{{end}}
+              title="igir copy test report: verify + promote this system now">verify</button>
+            {{if .HiddenCount}}
+            <button class="mini" hx-post="/systems/{{.Key}}/unhide-all"
+              hx-target="#verify-panel" hx-swap="outerHTML"
+              title="show every hidden game of this system again (regenerates the launcher DB)">show {{.HiddenCount}} hidden</button>
+            {{end}}
+          </td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    {{else}}
+    <p class="sub">no systems with library, DAT or staging signal.</p>
+    {{end}}
+  </section>
+</div>
+{{end}}

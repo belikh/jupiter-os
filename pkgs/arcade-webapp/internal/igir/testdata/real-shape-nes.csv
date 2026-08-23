@@ -1,0 +1,6 @@
+DAT Name,Game Name,Status,ROM Files,Patched,BIOS,Retail Release,Unlicensed,Debug,Demo,Beta,Sample,Prototype,Program,Aftermarket,Homebrew,Bad
+Nintendo Entertainment System (jupiter fixture),Crystal Carp (USA) (Rev A),FOUND,/home/io/Projects/jupiter-os/tests/fixtures/arcade/verified/nes/Crystal Carp (USA) (Rev A).nes,false,false,true,false,false,false,false,false,false,false,false,false,false
+Nintendo Entertainment System (jupiter fixture),Mecha Garden (Japan),FOUND,/home/io/Projects/jupiter-os/tests/fixtures/arcade/verified/nes/Mecha Garden (Japan).nes,false,false,true,false,false,false,false,false,false,false,false,false,false
+Nintendo Entertainment System (jupiter fixture),Neon Ninjutsu (World),FOUND,/home/io/Projects/jupiter-os/tests/fixtures/arcade/verified/nes/Neon Ninjutsu (World).nes,false,false,true,false,false,false,false,false,false,false,false,false,false
+Nintendo Entertainment System (jupiter fixture),Pogo Postman (Europe),FOUND,/home/io/Projects/jupiter-os/tests/fixtures/arcade/verified/nes/Pogo Postman (Europe).nes,false,false,true,false,false,false,false,false,false,false,false,false,false
+Nintendo Entertainment System (jupiter fixture),Starlit Vault (USA),FOUND,/home/io/Projects/jupiter-os/tests/fixtures/arcade/verified/nes/Starlit Vault (USA).nes,false,false,true,false,false,false,false,false,false,false,false,false,false

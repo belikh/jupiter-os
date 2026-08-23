@@ -38,3 +38,25 @@ global launcher script).
 - `validate-arcade-metadata.sh` / `verify-pegasus-artwork.sh` — validators
   that never worked: under `set -eu`, `((PASS++))` exits 1 on the first
   passing check; superseded by scripts/verify-exo-collections.sh
+
+## Retired by the arcade-webapp gauntlet (2026-08-23, plan §2 P8)
+
+The jupiterOS Arcade pipeline moved into the in-tree webapp
+(pkgs/arcade-webapp + modules/services/arcade-webapp.nix — DAT currency,
+aria2 download control, igir verify/organize, Skyscraper scraping,
+launcher-DB generation, curation, and the fleet inventory JSON at
+/inventory.json). The europa-side shell-script units these scripts drove
+are removed from the flake:
+
+- `cartridge-verify.sh` — drove `jupiter-rom-verify` (igir copy/test/
+  report per staged system). Ported Go-side: pkgs/arcade-webapp
+  internal/igir (same flag set + the aria2 `.torrent` input exclusion).
+- `cartridge-scrape.sh` — drove `jupiter-rom-scrape` daily (Skyscraper
+  three-pass flow). Ported Go-side: internal/scrape; its rom_complete /
+  split_pending semantics live in internal/generate.
+- `fetch-mclean-1g1r-dats.sh` — drove `jupiter-rom-dats` (Fresh1G1R
+  McLean DAT fetch). Ported Go-side: internal/dats (on demand +
+  scheduled).
+
+Nothing in the tree references them anymore; they are kept for one
+release cycle as design reference for the igir/Skyscraper flag sets.

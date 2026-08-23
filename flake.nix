@@ -351,6 +351,16 @@
         # over ext4-iSCSI on europa's zvol).
         callisto = mkHost ./hosts/callisto/configuration.nix [ ];
 
+        # Arcade webapp pipeline TEST host — a minimal VM (tests/hosts/
+        # arcade-webapp-vm.nix) running the real
+        # modules/services/arcade-webapp.nix against the deterministic
+        # fixture corpus, with in-VM smoke assertions. Not a fleet machine:
+        # no common.nix, no sops. Driven by `make test-arcade-webapp`
+        # (scripts/test-arcade-webapp.sh); registered here so
+        # `nixos-rebuild build-vm` / the driver can reach it (and `make
+        # check` proves it evaluates).
+        arcade-webapp-vm = mkHost ./tests/hosts/arcade-webapp-vm.nix [ ];
+
         # Kamatera VPS (persistent, disk-booted; not a fleet member — built
         # standalone, not via mkHost). The raw disk image is built with nixpkgs'
         # make-disk-image.nix (see hosts/pallene/disk-configuration.nix),
@@ -432,6 +442,22 @@
       # suno-backup above. Consumed by modules/services/nom-web.nix.
       packages.x86_64-linux.nom-web = (
         import ./pkgs/nom-web {
+          lib = nixpkgs.lib;
+          buildGoModule = nixpkgs.legacyPackages.x86_64-linux.buildGoModule;
+        }
+      );
+
+      # arcade-webapp — the jupiterOS Arcade pipeline webapp (DAT currency,
+      # aria2 download control, igir verify, Skyscraper metadata, Pegasus
+      # launcher-DB generation, curation; Phase 0 stub for now). Built from
+      # in-tree stdlib-only source, same pattern as suno-backup/nom-web above
+      # — exposed standalone (untuned legacyPackages) so the vendorHash can be
+      # recomputed via `nix build .#arcade-webapp` without pulling europa's
+      # closure. In-tree per ADR-0002 D2 (no new flake input); will be
+      # consumed by modules/services/arcade-webapp.nix (Phase 1) via
+      # pkgs.callPackage.
+      packages.x86_64-linux.arcade-webapp = (
+        import ./pkgs/arcade-webapp {
           lib = nixpkgs.lib;
           buildGoModule = nixpkgs.legacyPackages.x86_64-linux.buildGoModule;
         }

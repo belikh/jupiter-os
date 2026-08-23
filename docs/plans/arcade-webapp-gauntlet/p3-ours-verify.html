@@ -1,0 +1,201 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>jupiterOS Arcade — verify</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js"></script>
+</head>
+<body>
+  
+<div class="topbar">
+  <div class="wrap">
+    <h1>jupiterOS <span class="accent">Arcade</span></h1>
+    <span class="sub">verify &amp; organize</span>
+    <span class="spacer"></span>
+    <nav class="nav" aria-label="pages">
+      <a href="/" >Dashboard</a>
+      <a href="/downloads" >Downloads</a>
+      <a href="/verify" class="active" aria-current="page">Verify</a>
+    </nav>
+    <span class="pill "></span>
+  </div>
+</div>
+
+  <main class="wrap">
+    
+<div id="verify-panel" hx-get="/partials/verify" hx-trigger="every 2s" hx-swap="outerHTML"
+     role="region" aria-label="verify and DAT currency" aria-live="polite"
+     data-igir="ok">
+
+  
+
+  <section>
+    <h2>Verify &amp; organize
+      
+        
+        <span class="pill ok">last run 1m0s ago</span>
+        
+      
+      <span class="chip" title="systems whose last verify found every DAT game with nothing unmatched">2 verified</span>
+      <span class="chip" title="systems with DAT games missing from the staged set">0 missing</span>
+      <span class="chip" title="systems whose games tree holds files the DAT doesn't claim (all DAT games found)">0 extra</span>
+      <span class="chip" title="systems with unmatched staged input / duplicates">1 unmatched</span>
+      <span class="chip" title="systems promoted without a DAT (better partial than blocked)">0 unchecked</span>
+    </h2>
+
+    
+
+    <p class="sub">igir <code>copy test report</code> per system against its No-Intro DAT —
+      matched ROMs are COPIED into the games tree (the staged torrent stays intact for aria2),
+      and the report feeds the indicators. Nothing staged or still downloading (aria2 control
+      files present) skips; a missing DAT degrades to promote-unchecked, never a block.</p>
+
+    <div class="actions">
+      <button class="primary" hx-post="/verify" hx-target="#verify-panel" hx-swap="outerHTML"
+              >
+        Verify all</button>
+      <button hx-post="/dats/refresh" hx-target="#verify-panel" hx-swap="outerHTML"
+              >
+        Refresh all DATs</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Systems <span class="chip">57 idle</span></h2>
+    
+    <table class="dl systems verify">
+      <thead><tr>
+        <th scope="col">system</th><th scope="col">DAT</th><th scope="col">staged</th>
+        <th scope="col">last verify</th><th scope="col">promoted</th><th scope="col">report</th>
+        <th scope="col"><span class="visually-hidden">actions</span></th>
+      </tr></thead>
+      <tbody>
+        
+        <tr data-system="nes" data-verify="unmatched">
+          <td>Nintendo Entertainment System <span class="chip">nes</span></td>
+          <td>
+            
+              2026-08-21 <span class="pill ok">0d</span>
+            
+            
+            
+            <button class="mini" hx-post="/systems/nes/dat-refresh"
+              hx-target="#verify-panel" hx-swap="outerHTML"
+              title="fetch this system's McLean 1G1R DAT now">↻ dat</button>
+            
+            
+          </td>
+          <td class="num">
+            7 files · 291.0 KiB
+          </td>
+          <td><span class="pill stale" title="5 found / 0 missing / 2 unmatched">2 unmatched</span> <span class="sub" title="last verify finished">1m0s ago</span></td>
+          <td class="num">288.0 KiB</td>
+          <td><a href="/verify/reports/nes.csv">csv</a></td>
+          <td>
+            <button class="mini primary" hx-post="/systems/nes/verify"
+              hx-target="#verify-panel" hx-swap="outerHTML"
+              
+              title="igir copy test report: verify + promote this system now">verify</button>
+          </td>
+        </tr>
+        
+        <tr data-system="snes" data-verify="verified">
+          <td>Super Nintendo Entertainment System <span class="chip">snes</span></td>
+          <td>
+            
+              2026-08-21 <span class="pill ok">0d</span>
+            
+            
+            
+            <button class="mini" hx-post="/systems/snes/dat-refresh"
+              hx-target="#verify-panel" hx-swap="outerHTML"
+              title="fetch this system's McLean 1G1R DAT now">↻ dat</button>
+            
+            
+          </td>
+          <td class="num">
+            4 files · 1.6 MiB
+          </td>
+          <td><span class="pill ok" title="4 of 4 DAT games found, 0 unmatched (4 already-promoted echo)">verified</span> <span class="sub" title="last verify finished">1m0s ago</span></td>
+          <td class="num">1.6 MiB</td>
+          <td><a href="/verify/reports/snes.csv">csv</a></td>
+          <td>
+            <button class="mini primary" hx-post="/systems/snes/verify"
+              hx-target="#verify-panel" hx-swap="outerHTML"
+              
+              title="igir copy test report: verify + promote this system now">verify</button>
+          </td>
+        </tr>
+        
+        <tr data-system="gb" data-verify="verified">
+          <td>Nintendo Game Boy <span class="chip">gb</span></td>
+          <td>
+            
+              2026-08-21 <span class="pill ok">0d</span>
+            
+            
+            
+            <button class="mini" hx-post="/systems/gb/dat-refresh"
+              hx-target="#verify-panel" hx-swap="outerHTML"
+              title="fetch this system's McLean 1G1R DAT now">↻ dat</button>
+            
+            
+          </td>
+          <td class="num">
+            4 files · 232.0 KiB
+          </td>
+          <td><span class="pill ok" title="4 of 4 DAT games found, 0 unmatched (4 already-promoted echo)">verified</span> <span class="sub" title="last verify finished">1m0s ago</span></td>
+          <td class="num">232.0 KiB</td>
+          <td><a href="/verify/reports/gb.csv">csv</a></td>
+          <td>
+            <button class="mini primary" hx-post="/systems/gb/verify"
+              hx-target="#verify-panel" hx-swap="outerHTML"
+              
+              title="igir copy test report: verify + promote this system now">verify</button>
+          </td>
+        </tr>
+        
+        <tr data-system="segacd" data-verify="unknown">
+          <td>Sega Mega CD &amp; Sega CD <span class="chip">segacd</span></td>
+          <td>
+            <span class="pill unknown">no dat</span>
+            
+            
+            <button class="mini" hx-post="/systems/segacd/dat-refresh"
+              hx-target="#verify-panel" hx-swap="outerHTML"
+              title="fetch this system's McLean 1G1R DAT now">↻ dat</button>
+            
+            
+          </td>
+          <td class="num">
+            <span class="sub">—</span>
+          </td>
+          <td><span class="pill unknown">unknown</span></td>
+          <td class="num"><span class="sub">—</span></td>
+          <td><span class="sub">—</span></td>
+          <td>
+            <button class="mini primary" hx-post="/systems/segacd/verify"
+              hx-target="#verify-panel" hx-swap="outerHTML"
+              
+              title="igir copy test report: verify + promote this system now">verify</button>
+          </td>
+        </tr>
+        
+      </tbody>
+    </table>
+    
+  </section>
+</div>
+
+    
+<footer>
+  jupiterOS Arcade webapp — <a href="https://github.com/belikh/jupiter-os/blob/main/docs/plans/arcade-webapp-gauntlet.md">gauntlet plan</a>
+  · fragments auto-refresh via htmx (dashboard 10s, download queue 2s)
+</footer>
+
+  </main>
+</body>
+</html>

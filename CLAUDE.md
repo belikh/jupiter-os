@@ -127,16 +127,22 @@ without changing stack-guide first.
   layer.
 - `pkgs/` — flake packages: `ariang` (vendored third-party UI),
   `dsh`, `nom-web`, `suno-backup`.
-- **jupiterOS Arcade** (partial, in-tree) — cartridge-ROM pipeline
-  (`modules/services/rom-acquire.nix`, `rom-scraper.nix`,
-  `arcade-inventory.nix`: bulk-stage via Minerva torrents, igir-verify,
-  Skyscraper-scrape into Pegasus metadata, emit inventory JSON); kiosks
-  consume results read-only over NFS and mount eXo DOS/Win3x collections
-  (`modules/desktop/exodos.nix`). `modules/gaming/console.nix` is the
-  Bazzite-style Jovian gaming stack (gamescope "gaming mode", Steam,
-  peripherals), flipped into via `modules/desktop/dashboard-gaming.nix`.
-  Arcade management UI follows stack-guide §2 absorption into the unified
-  platform.
+- **jupiterOS Arcade** (in-tree) — europa runs the cartridge-ROM pipeline
+  through the arcade webapp (`modules/services/arcade-webapp.nix`,
+  `pkgs/arcade-webapp/`: DAT currency, aria2 download control, igir
+  verify/organize, Skyscraper-scrape into Pegasus metadata, launcher-DB
+  generation, curation, and the fleet inventory JSON it serves at
+  `/inventory.json`); kiosks consume the results read-only over NFS and
+  mount the eXo DOS/Win3x collections (`modules/desktop/exodos.nix`),
+  which the webapp imports read-only for browse/curation/coverage. The
+  old per-job units (rom-acquire/rom-dats/rom-verify oneshots, the
+  rom-scrape timer, the arcade-inventory timer) are removed from the
+  flake (their scripts live in `scripts/deprecated/`); europa's live
+  cutover is a coordinator-gated deploy. Arcade management UI follows
+  stack-guide §2 absorption into the unified platform.
+  `modules/gaming/console.nix` is the Bazzite-style Jovian gaming stack
+  (gamescope "gaming mode", Steam, peripherals), flipped into via
+  `modules/desktop/dashboard-gaming.nix`.
 - `secrets/secrets.yaml` — sops-nix + age. Recipients (one age key per host
   plus the admin key) listed in `.sops.yaml`.
 
