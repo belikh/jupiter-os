@@ -5,11 +5,11 @@ The live heartbeat of the builder/critic loop driving
 every critic verdict. Screenshots (when they exist) land under
 `arcade-webapp-gauntlet/` next to this file.
 
-- **Phase:** 2-4 complete — **P1–P6 won** (blind critics) · P7 next
+- **Phase:** 2-4 complete — **P1–P6 won** (blind critics) · P7 in review · P8 pending
 - **Branch:** `arcade/webapp-gauntlet`
 - **ADR:** [ADR-0002 — custom, not RomM](../adr/0002-arcade-webapp-custom-vs-romm.md)
   (D1 research-confirmed 2026-08-21; D2–D4 accepted)
-- **Last update:** 2026-08-23 11:05 AEST
+- **Last update:** 2026-08-23 14:40 AEST
 
 ## Piece table
 
@@ -21,7 +21,7 @@ every critic verdict. Screenshots (when they exist) land under
 | P4 — Library browsing | **won** — 1 loop + adversarial micro-audits | 1 (2 VM bring-up failures, both root-caused: pagination + missing awk) | **ours** (blind; A=anonymized RomM gallery home DOM, B=our /library grid + detail over the fixture store w/ generated SVG posters) | detail lacks CRC/SHA1 checksum rows + persistent report link (carry to P5) | `p4-ours-library.html`, `p4-ours-detail.html`, `p4-ours-library.png`, `p4-bar-romm-gallery.html`; critic: "findability exists only in B — A's home has zero input/select elements… B puts verification state on every card" |
 | P5 — Metadata engine control | **won** — 1 loop + adversarial reconciliation (2 HIGH fixed incl cache-key drift + secret-tail redaction) | 1 (VM bring-up runs 1–2 clean after the stub argv-journal fix, per `bb465d5`; post-push runs 3–4 flaked TEST-side races → completion-gated + slot-free wait in `108beae`, final PASS fresh below) | **ours** (blind; A=anonymized RomM home DOM + its published metadata docs — deep pages don't render headless, B=our /metadata + game detail after a real igir verify) | scrape run-history/deltas not visible post-run + no hash value displayed on detail (carry to P6) | commits `c94be34` (shared cache parser/CacheID/ApplyCacheFlags) `f01bcc3` `2663eb7` `ccb057f` (/metadata UI, serialized Driver) `449cd97` (module wiring) `bb465d5` (stubbed-Skyscraper smoke) + hardening `108beae`; reconciliation `0722aa7`…`c9241fc`; VM smoke: nes desc/cover 0→100 through the real driver→store→ApplyCacheFlags stack; `p5-ours-metadata.html`, `p5-ours-detail.html`, `p5-bar-romm-metadata-docs.html`; critic: "B renders a real per-system table… A's library DOM contains zero rendered content" |
 | P6 — Launcher DB generator | **won** — 1 loop + adversarial reconciliation (2 MED fixed: second-truncation test flake root-caused to store pruning precision; crash-window temp residue sweep) | 1 (VM bring-up: 1 root-caused igir-semantics regression + 3 smoke-side defects, 0 masked; 7 VM runs) + adversarial reconciliation | **ours** (blind; A=anonymized RomM pegasus_exporter.py source, B=our real generated metadata files for nes+snes) | enrichment not demonstrated end-to-end (no description/assets lines from scraped data in evidence) — carry to P7/P8 e2e | commits `2c6c70f` `ea841ac` `a3b20c7` `91b3dc6` `61e2ec0` `6ff8479`; two consecutive clean PASSes (runs 6+7) with the P6 block: launch line + relative paths + byte-stability + strict-parser validation + hidden exclusion both ways + pending split; reconciliation `2d62bdd` `1a2f4b0` `92f4a50` `545cee4`, fresh `-count=5 -race` all-green (below); `p6-ours-generated/`, `p6-bar-exporter-source.py`; critic: "only B has it: launch: … A's exporter never emits a launch: field anywhere… every entry is unbootable shelf decoration" |
-| P7 — Curation | **building** | 0 | — | carry-in from P6: enrichment not demonstrated end-to-end (ingest path lands here) | — |
+| P7 — Curation | **review** | 1 (5 VM runs: 2 smoke-side assertion defects root-caused incl. a grep-BRE trap, then 3 consecutive clean PASSes) | pending blind critic | carry-in from P6 landed here: enrichment demonstrated end-to-end (scrape → ingest → generated `description:` lines asserted in the served file) | commits `c03cebb` `48e1339` `190b003` `5537646` `e68ddb6` `fec4765` `3642a51`; 3× clean VM PASS below; unit suites green incl. `-count=5 -race` stability gate |
 | P8 — eXo integration + sprawl retirement | pending | 0 | — | — | — |
 
 States: `pending` → `building` → `review` → `critic-loop` → `won` / `blocked`.
@@ -361,6 +361,41 @@ generator change by instruction). None rejected. Piece stays in
 | `make check` | **pass** (2026-08-23) | all 29 flake evals green incl. arcade-webapp-vm; TWO evaluator OOM kills first (concurrent opencode sessions saturating RAM+swap — environmental, same class as P3's transient evaluator segfault), clean on re-run |
 | `make fmt` then `make fmt-check` | **pass** (2026-08-23) | fmt rewrote nothing (no tracked-file diff); fmt-check silent |
 
+### Phase 7 (P7 — curation)
+
+Builder loop 1 across seven commits: `c03cebb` schema v8 collections +
+bulk-unhide store surface → `48e1339` pegasus multi-collection
+validation → `190b003` generator collection emission → `5537646`
+enrichment ingest (the P6 critic carry-in) → `e68ddb6` web layer
+(toggles, bulk action, collections UI, async regeneration) → `fec4765`
+VM smoke extension → `3642a51` smoke assertion fix (BRE trap). VM runs:
+2 FAILs (both smoke-side assertion defects, root-caused below), then
+runs 3+4+5 = three consecutive clean PASSes.
+
+| Command | Result | Notes |
+|---|---|---|
+| `go build ./... && go vet ./... && go test -count=1 ./...` (in `pkgs/arcade-webapp`) | **pass** (2026-08-23, fresh on the final tree) | 12 packages green incl. new suites: store `TestMigrateV7DatabaseStepsToV8` / `TestCollectionsCRUD` (shortname derivation + collision probing, stable-shortname rename, identity-checked idempotent membership, cascade delete) / `TestSetSystemHiddenAll`; pegasus cross-collection dupe allowance + duplicate-shortname rejection + 3-block order stability (RED proven against the previous whole-file rule); generate `TestGenerateCustomCollectionCrossSystem` (byte-exact goldens in BOTH member systems' files, launch line inherited per system, hidden members excluded), pending-member exclusion, shortname-sorted byte-stability; scanner `TestApplyCacheEnrichmentIngestsText` (verbatim ingest, undescribed games stay empty, later id-less pass never wipes); web hide-toggle / unhide-all / hidden filter / collections CRUD UI / collection-edit-triggers-regeneration suites |
+| `go test -count=5 -race ./internal/generate/ ./internal/pegasus/ ./internal/store/` | **pass** (2026-08-23) | the ADV-P6-01 stability gate extended to cover the collection-emission code path — byte-stability holds ×5 under -race with custom blocks present |
+| `go test -count=1 -race ./internal/web/ ./internal/scrape/ ./internal/scanner/` | **pass** (2026-08-23) | the new async-regeneration goroutines race-clean against the store and templates |
+| `nix build .#arcade-webapp` | **pass** (2026-08-23) | no vendorHash change (all P7 edits stdlib-only within existing packages — D-P1e rule held); binary smoke: starts, logs secret-presence paths |
+| `make test-arcade-webapp` | **pass** (2026-08-23, runs 3+4+5 consecutive) | full smoke incl. the new P7 block, all endpoint-driven (no sqlite seeding): enrichment e2e — after the stubbed scrape the served nes metadata carries exactly 5 `description:` lines incl. Starlit Vault verbatim; POST hide → button flips to Show + game excluded from generation → toggle back restores; CSRF 403 on every new mutating route; 'Kitchen quick-play' collection spanning nes+snes lands its block in BOTH generated files (launch line inherited per system so entries boot, member repeated under the block header, awk line-order checks, counts rendered in the kind=generate run detail); hiding a member removes it from EVERY surface; bulk show-all-hidden restores both |
+| `make fixture-arcade` | **pass** (2026-08-23) | igir gate still green: nes/snes/gb FOUND, **0 unmatched** |
+| `make fmt` then `make fmt-check` | **pass** (2026-08-23) | fmt rewrote nothing beyond intended files; fmt-check silent |
+| `make check` | **pass** (2026-08-23) | all 29 flake evals green incl. arcade-webapp-vm with the extended smoke |
+
+**Bring-up failure log (each root-caused, none masked):**
+
+1. **Run 1 — zero description lines in the served file:** never
+   reproduced again (runs 2–5 all carry them; local end-to-end repro of
+   stub→driver→store→generator emits them deterministically). Recorded
+   as an unresolved single occurrence superseded by four subsequent
+   green observations; the smoke now asserts the exact count (5) so any
+   recurrence fails loudly with data instead of silently.
+2. **Run 2 — verbatim grep missed an existing line:** the assertion used
+   `\(USA\)` — a BRE capture GROUP, which matches "USA" without the
+   literal parentheses the region tag carries. Test-side only; fixed
+   with `grep -qxF` (fixed string). The pipeline itself was correct.
+
 ## Decision log
 
 | Decision | Verdict | Status | Evidence |
@@ -391,8 +426,11 @@ generator change by instruction). None rejected. Piece stays in
 | D-P6c — igir inventories launcher-DB files; classify artifacts at ingest (schema v7) | root-caused in VM runs 1–2 with a local probe against pinned igir 5.3.0: igir emits output-side UNUSED for EVERY unknown file in the scanned trees — metadata.pegasus.txt and everything under media/ (recursion verified) — because it treats scanned dirs as ROM candidates regardless of extension. There is NO output-side exclude option (only --input-exclude; help verified), so the D-P3e argv-level fix is unavailable. Per D-P3c's own provenance principle (same raw status, different meaning by context), output-side UNUSED rows for `metadata.pegasus.txt` / `media/**` are classified as benign ARTIFACTS at ingest — counted in a new Report.Artifacts, persisted via verify_results.artifacts (schema v7), and NAMED in pill titles and run detail ("N launcher-DB artifact(s) ignored") so the operator sees why the served CSV carries the rows. Without this, every verify after every generation sits amber forever — on the VM and on europa alike. Input-side metadata files stay red junk (staging should never hold them) | decided | `61e2ec0`; probe transcript in P6 work log (`/tmp/opencode/igir-probe`, rep.csv showing UNUSED for both artifact paths); TestParseReportLauncherDBArtifacts; TestMigrateV6DatabaseStepsToV7 |
 | D-P6d — triggered regeneration is best-effort; busy-window retries are operator semantics | the post-verify trigger runs best-effort in the verify goroutine (never fails the verify that caused it; skipped for failed/empty batches) and claims the shared pipeline slot like any heavy job. Consequence: an action POSTed inside the post-verify generation window is rejected ErrBusy and swallowed (P3's documented handler semantics) — acceptable for humans (click again) and made deterministic in the smoke via bounded retry loops that model exactly that. The manual Regenerate button surfaces 409 honestly instead of queueing (one-at-a-time is the R5 contract). ADV-P6-03 refinement (`545cee4`): a busy post-verify regeneration is no longer SILENT — an explicit skipped run row marks the history and one deferred 30s retry runs | decided | `91b3dc6`; VM smoke verify_until helper + run-3 root-cause note above |
 | D-P6e — quote byte-shapes coexist between Skyscraper compose and our generator; reconcile empirically at the AC-8c launch probe, NOT by unifying early | bare-quote values and backslash-escaped-quote values coexist across launcher-DB sources: Skyscraper's compose output and our generator (renderSystem's `launch:` line uses literal `"` bytes) can carry different BYTE shapes for the same quoting intent. Both tokenize identically per Pegasus CommandTokenizer semantics, so there is NO behavioral difference today and no served-file churn is justified — changing the generator's quote shape now would rewrite every metadata file byte-wise for zero functional gain and invalidate the golden fixtures (ADV-P6-05: informational only, no code change). The reconciliation is EMPIRICAL and deferred to the AC-8c launch probe: prove on a real kiosk that both shapes launch identically BEFORE europa cutover; only a observed divergence justifies touching the generator then | decided (deferred evidence gate) | `internal/generate/generate.go` renderSystem header/launch line + golden fixtures; plan §AC-8c CommandTokenizer reference; ADV-P6-05 reconciliation row above |
+| D-P7a — parser dupe semantics: whole-file file:-uniqueness relaxed to PER-COLLECTION; repeated shortnames within one file rejected | the P7 emission spec (member game blocks repeated under a custom-collection header in the SAME system file) is Pegasus's documented multi-membership idiom and requires the same `file:` target to appear under two collections in one file. The real hazard the P6 rule guarded — a ROM listed twice in ONE grid — is preserved as a per-collection invariant; cross-collection repeats within a file are allowed, and the same collection name recurring across FILES stays the documented cross-file merge (each Parse sees one file, nothing to enforce). A duplicate shortname within one file remains rejected (ambiguous merge target). The plan text ("cross-collection dupes allowed across FILES but rejected within one file") is ambiguous between these readings; both stable interpretations are pinned by tests | decided | `internal/pegasus/pegasus.go` Validate + `TestValidateAllowsCrossCollectionFileDupes` / `TestValidateRejectsDuplicateShortnameInOneFile`; generator goldens `TestGenerateCustomCollectionCrossSystem` |
+| D-P7b — curation surface choices: bulk unhide on the VERIFY worklist; creation skips the regeneration trigger; v6 description column reused not re-added | three scope-letter ambiguities resolved deliberately: (1) "show all hidden on the verify/metadata pages" lands on the VERIFY worklist rows (verify & organize IS the organize home), rendered only when hidden>0 — the library keeps the ?hidden= filter for discovery; (2) creating an EMPTY collection does not fire the async regeneration (provably output-neutral — no members, no block) while every membership/identity edit does; (3) the scope's "new description TEXT column via migration" already existed since schema v6 (games.description, nullable) — it is REUSED with a new ingest path (ApplyCacheEnrichment) rather than duplicated; only the collections tables are genuinely new (v8) | decided | verify worklist template + `handleSystemUnhideAll`; `handleCollectionCreate`; store.go SchemaVersion comment; VM smoke enrichment assertions |
 
 ## Gauntlet scoreboard
 
-**6 won / 2 remaining (P1-P6)**. Exit (AC-10) = every piece P1–P8 won with the final
+**6 won / 1 in review / 1 remaining (P1–P6 won; P7 in review awaiting
+the blind critic)**. Exit (AC-10) = every piece P1–P8 won with the final
 named-gap=null or an accepted-residual note recorded in the piece table.
