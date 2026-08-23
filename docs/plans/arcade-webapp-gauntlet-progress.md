@@ -506,6 +506,32 @@ inverted assertion reached its fail branch`) + make exit 1; restored →
 PASS. `go build/vet/test -count=1 ./...` green (14 packages);
 `make check`/`make fmt-check` per the standing gate below.
 
+### Final audit fix — FIN-02 closed (rebase onto origin/main, restored green)
+
+The second MUST-FIX-before-merge item: the branch was 102 commits ahead
+of a merge-base that origin/main had itself moved +45 past (flake bumps
+incl. nixpkgs, Aeon removal, x86-64-v3 microarch, Postgres on callisto,
+CI splits, and main's own jq-awk NOM_FILTER rewrite).
+
+| Item | Disposition | Evidence |
+|---|---|---|
+| Rebase onto origin/main (`--rebase-merges`) | **done** — 102 commits replayed, tip `e9cbb07` -> `680fe9a` (+1 docs commit on top) | exactly ONE conflict (CLAUDE.md, as merge-tree predicted); europa/configuration.nix + tcxwave-kiosk.nix auto-merged |
+| CLAUDE.md conflict | both sides preserved semantically: ours' arcade-webapp Layout bullet (webapp pipeline, retired per-job units, coordinator-gated cutover); theirs' additions all kept (authority-documents section, title, Aeon removal in the secrets line, callisto Postgres/serving-host rows, Harmonia renames) with their stack-guide §2 absorption sentence folded into our bullet | `git show 6497a81 -- CLAUDE.md` |
+| 3d8df86 (our jq->awk NOM_FILTER rewrite) vs main's own landing (`241b445`+`0a1c1f5`) | **DROPPED by the rebase** — git omitted it from the todo as already-upstream; FIN-07's manual-drop contingency never triggered because it did NOT survive as a residual diff | range-diff row `98: 3d8df86 < -: -------`; the three ci-distributed workflows diff EMPTY vs origin/main at the final tree |
+| nixpkgs-bump hash churn | **none** — `vendorHash` built unchanged; the fleet-pinned igir (D-P3a: nixpkgs pin, not store-path literals) rode the bump with zero test/script edits | `nix build .#arcade-webapp` green first try; fixture gate and VM smoke both ran real igir |
+
+Matrix, fresh on rebased HEAD (2026-08-24):
+
+| Command | Result | Notes |
+|---|---|---|
+| `go build ./... && go vet ./...` | **pass** | pkgs/arcade-webapp, 14 packages clean |
+| `go test -count=1 -race -timeout 30m ./...` | **pass** | all 14 packages ok under -race (store 52.7s, web 92.1s, scanner 14.6s, generate 13.8s) |
+| `nix build .#arcade-webapp` | **pass** | go-modules FOD rebuilt clean on the bumped nixpkgs |
+| `make test-arcade-webapp` | **pass** | in-VM smoke PASSED incl. the FIN-01 launch-probe block live: both probe cases green (nes fceumm / snes snes9x), journal line "probe ok — argv survived real sh parsing byte-exact" |
+| `make fixture-arcade` | **pass** | igir gate: gb 4/4 games, 0 unmatched |
+| `make fmt` then `fmt-check` | **pass** | zero tracked churn from fmt; fmt-check RC 0 |
+| `make check` (`nix flake check --no-build`) | **killed (OOM class)** then green serially | evaluator OOM-killed mid-run under concurrent session load — same recorded environmental class as P6/P8; backup evidence: per-attribute eval of ALL 26 leaves individually OK = 8 nixosConfigurations toplevels + 8 checks + 9 packages + devShell |
+
 ## Decision log
 
 | Decision | Verdict | Status | Evidence |
