@@ -1261,3 +1261,218 @@ func TestSetGameHidden(t *testing.T) {
 		t.Fatalf("unknown rel path must be a no-op, got %v", err)
 	}
 }
+
+// ---- P7: custom collections -------------------------------------------------
+
+// TestMigrateV7DatabaseStepsToV8 pins the P7 tables: a pre-v8 database
+// migrates in place, keeps its rows, and the new CRUD round-trips.
+func TestMigrateV7DatabaseStepsToV8(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "v7.db")
+	db, err := sql.Open("sqlite", "file:"+p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	steps := []string{}
+	steps = append(steps, schemaV1...)
+	steps = append(steps, schemaV2...)
+	steps = append(steps, schemaV3...)
+	steps = append(steps, schemaV4...)
+	steps = append(steps, schemaV5...)
+	steps = append(steps, schemaV6...)
+	steps = append(steps, schemaV7...)
+	for _, stmt := range steps {
+		if _, err := db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "already exists") {
+			t.Fatalf("seed v7 schema: %v", err)
+		}
+	}
+	if _, err := db.Exec(`INSERT INTO systems (key, collection, bucket, sort_order) VALUES ('nes', 'NES', 'cartridge', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`PRAGMA user_version = 7`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := Open(p)
+	if err != nil {
+		t.Fatalf("Open v7 database: %v", err)
+	}
+	defer s.Close() //nolint:errcheck // test
+	if got := s.SchemaVersion(); got != SchemaVersion {
+		t.Fatalf("migrated user_version = %d, want %d", got, SchemaVersion)
+	}
+	cols, err := s.Collections()
+	if err != nil || len(cols) != 0 {
+		t.Fatalf("fresh Collections() = %+v, %v; want empty", cols, err)
+	}
+}
+
+// TestCollectionsCRUD pins the P7 store surface: shortname derivation and
+// collision probing, rename keeping the shortname stable, member
+// add/remove idempotence with identity checks, cascade delete, and
+// deterministic member ordering.
+func TestCollectionsCRUD(t *testing.T) {
+	s := seedP6Store(t)
+	// One batch — UpsertSystems REPLACES the table and cascades away any
+	// system omitted from the list (ADV-P1-03's delete semantics).
+	if err := s.UpsertSystems([]SystemRow{
+		{Key: "nes", Collection: "Nintendo Entertainment System", Bucket: "cartridge", Core: "fceumm", SortOrder: 1, Extensions: `["nes"]`},
+		{Key: "snes", Collection: "Super NES", Bucket: "cartridge", Core: "snes9x", SortOrder: 2, Extensions: `["sfc"]`},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ReplaceSystemGames("snes", []GameRow{{RelPath: "D Snes Game (USA).sfc", SizeBytes: 4}}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	id, err := s.CreateCollection("Kitchen Quick-Play!", "pick up and play")
+	if err != nil {
+		t.Fatalf("CreateCollection: %v", err)
+	}
+	col, err := s.Collection(id)
+	if err != nil || col == nil {
+		t.Fatalf("Collection(%d) = %+v, %v; want row", id, col, err)
+	}
+	if col.Shortname != "kitchen-quick-play" || col.Summary != "pick up and play" || col.Name != "Kitchen Quick-Play!" {
+		t.Fatalf("created collection wrong: %+v", col)
+	}
+
+	// Shortname collision probing: same name again → -2 suffix, no error.
+	id2, err := s.CreateCollection("Kitchen Quick-Play!", "")
+	if err != nil {
+		t.Fatalf("CreateCollection duplicate name: %v", err)
+	}
+	col2, _ := s.Collection(id2)
+	if col2 == nil || col2.Shortname != "kitchen-quick-play-2" {
+		t.Fatalf("collision probe wrong: %+v", col2)
+	}
+	if err := s.DeleteCollection(id2); err != nil {
+		t.Fatal(err)
+	}
+
+	// Membership: cross-system, idempotent, identity-checked.
+	games, err := s.ListGames(GameListOpts{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var nesA, snesD GameSummary
+	for _, g := range games.Games {
+		switch g.RelPath {
+		case "A First (USA).nes":
+			nesA = g
+		case "D Snes Game (USA).sfc":
+			snesD = g
+		}
+	}
+	if nesA.ID == 0 || snesD.ID == 0 {
+		t.Fatal("fixture games missing")
+	}
+	if err := s.AddCollectionGame(id, "nes", nesA.ID); err != nil {
+		t.Fatalf("AddCollectionGame nes: %v", err)
+	}
+	if err := s.AddCollectionGame(id, "nes", nesA.ID); err != nil {
+		t.Fatalf("re-add must be idempotent: %v", err)
+	}
+	if err := s.AddCollectionGame(id, "snes", snesD.ID); err != nil {
+		t.Fatalf("AddCollectionGame snes (cross-system): %v", err)
+	}
+	// Wrong system for the id → rejected (identity is (system, id)).
+	if err := s.AddCollectionGame(id, "snes", nesA.ID); err == nil {
+		t.Fatal("add accepted a game under the WRONG system key")
+	}
+	members, err := s.CollectionMembers(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(members) != 2 {
+		t.Fatalf("members = %d, want 2", len(members))
+	}
+	if members[0].SystemKey != "nes" || members[1].SystemKey != "snes" {
+		t.Fatalf("member order not (position, system, rel_path)-deterministic: %+v", members)
+	}
+	col, _ = s.Collection(id)
+	if col.Games != 2 {
+		t.Fatalf("member count = %d, want 2", col.Games)
+	}
+
+	// Hidden members stay listed for the editor but are flagged.
+	if err := s.SetGameHidden("nes", "A First (USA).nes", true); err != nil {
+		t.Fatal(err)
+	}
+	members, _ = s.CollectionMembers(id)
+	if len(members) != 2 || !members[0].Hidden {
+		t.Fatalf("hidden member not flagged for the editor: %+v", members)
+	}
+	if err := s.SetGameHidden("nes", "A First (USA).nes", false); err != nil {
+		t.Fatal(err)
+	}
+
+	// Rename keeps the shortname (stable launcher-DB identity).
+	if err := s.UpdateCollection(id, "Late Night Set", "after dark"); err != nil {
+		t.Fatal(err)
+	}
+	col, _ = s.Collection(id)
+	if col.Name != "Late Night Set" || col.Summary != "after dark" || col.Shortname != "kitchen-quick-play" {
+		t.Fatalf("rename mangled the collection: %+v", col)
+	}
+
+	// Remove one member; removing a non-member is a no-op.
+	if err := s.RemoveCollectionGame(id, "snes", snesD.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RemoveCollectionGame(id, "snes", snesD.ID); err != nil {
+		t.Fatalf("remove of non-member must be a no-op: %v", err)
+	}
+	members, _ = s.CollectionMembers(id)
+	if len(members) != 1 {
+		t.Fatalf("members after remove = %d, want 1", len(members))
+	}
+
+	// Delete cascades the memberships away.
+	if err := s.DeleteCollection(id); err != nil {
+		t.Fatal(err)
+	}
+	if col, _ := s.Collection(id); col != nil {
+		t.Fatal("deleted collection still readable")
+	}
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM collection_games`).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("cascade left membership rows behind (%d, %v)", n, err)
+	}
+}
+
+// TestSetSystemHiddenAll pins the bulk unhide: only actually-flipped rows
+// count (the caller skips the regeneration trigger when nothing changed).
+func TestSetSystemHiddenAll(t *testing.T) {
+	s := seedP6Store(t) // C Hidden pre-hidden
+	n, err := s.SetSystemHiddenAll("nes", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("unhide-all changed %d rows, want 1 (only the hidden one)", n)
+	}
+	n, err = s.SetSystemHiddenAll("nes", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Fatalf("re-unhide changed %d rows, want 0", n)
+	}
+	counts, err := s.HiddenCountsBySystem()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(counts) != 0 {
+		t.Fatalf("hidden counts after unhide-all = %v, want empty", counts)
+	}
+	if _, err := s.SetSystemHiddenAll("nes", true); err != nil {
+		t.Fatal(err)
+	}
+	counts, _ = s.HiddenCountsBySystem()
+	if counts["nes"] != 3 {
+		t.Fatalf("hidden count = %d, want 3", counts["nes"])
+	}
+}

@@ -65,7 +65,14 @@ import (
 // ROM-set deviations, and get their own benign counter instead of
 // poisoning the amber 'extra' signal forever (the P6 generation trigger
 // makes every post-verify verify see them).
-const SchemaVersion = 7
+//
+// v8 (P7): custom collections — collections (operator-named game sets,
+// shortname UNIQUE and stable once assigned: it is the launcher-DB block's
+// identity across system files) and collection_games (cross-system
+// membership; ON DELETE CASCADE on both ends so deleting a collection or
+// a scanned-away game cleans up silently). Position is persisted for a
+// future reorder UI but emission order stays deterministic today.
+const SchemaVersion = 8
 
 // SystemRow is one catalogue system as persisted (Extensions is a JSON
 // array string — enough for P1's rendering needs).
@@ -306,6 +313,13 @@ func (s *Store) Migrate() error {
 			}
 		}
 	}
+	if version < 8 {
+		for _, stmt := range schemaV8 {
+			if _, err := tx.Exec(stmt); err != nil {
+				return fmt.Errorf("store: migrate v8: %w", err)
+			}
+		}
+	}
 	if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, SchemaVersion)); err != nil {
 		return err
 	}
@@ -440,6 +454,30 @@ var schemaV6 = []string{
 // (see SchemaVersion). Defaulted 0: pre-v7 rows read as "no artifacts".
 var schemaV7 = []string{
 	`ALTER TABLE verify_results ADD COLUMN artifacts INTEGER NOT NULL DEFAULT 0`,
+}
+
+// schemaV8 adds custom collections (see SchemaVersion). Membership is
+// cross-system: game_id references games(id) (not a (system, path) pair),
+// so a collection can span nes+snes+…; CASCADE on both foreign keys means
+// deleting a collection or pruning a scanned-away game row never leaves
+// dangling members.
+var schemaV8 = []string{
+	`CREATE TABLE collections (
+		id         INTEGER PRIMARY KEY AUTOINCREMENT,
+		name       TEXT NOT NULL,
+		shortname  TEXT NOT NULL UNIQUE,
+		summary    TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL,
+		updated_at TEXT NOT NULL
+	)`,
+	`CREATE TABLE collection_games (
+		collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+		game_id       INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+		added_at      TEXT NOT NULL,
+		position      INTEGER NOT NULL DEFAULT 0
+	)`,
+	`CREATE UNIQUE INDEX collection_games_pair ON collection_games(collection_id, game_id)`,
+	`CREATE INDEX collection_games_game ON collection_games(game_id)`,
 }
 
 // Close closes the database.
@@ -1603,6 +1641,247 @@ var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 // likeEscape neutralizes LIKE metacharacters in user input (paired with
 // ESCAPE '\' in the fallback predicate).
 func likeEscape(q string) string { return likeEscaper.Replace(q) }
+
+// ---- P7: custom collections -------------------------------------------------
+
+// CollectionRow is one operator-defined collection (P7): a named,
+// cross-system game set the generator emits as its own Pegasus
+// collection block in every member system's file. Shortname is assigned
+// at creation from the name and NEVER changes afterwards — it is the
+// block's identity across every generated file, and renaming must not
+// silently churn the served launcher DB.
+type CollectionRow struct {
+	ID        int64
+	Name      string
+	Shortname string
+	Summary   string
+	CreatedAt string
+	UpdatedAt string
+	Games     int64 // member count (lists render it; not written)
+}
+
+// CollectionMemberRow is one membership of CollectionGames: the game's
+// identity pair plus display bits. Hidden is surfaced so the editor can
+// explain why a member will not reach the kiosk output (hidden members
+// are excluded from generation by contract).
+type CollectionMemberRow struct {
+	GameID    int64
+	SystemKey string
+	RelPath   string
+	Hidden    bool
+	Position  int64
+	AddedAt   string
+}
+
+// collectionShortname derives the stable launcher-DB identity for a
+// collection name: lowercase alphanumerics joined by single dashes,
+// trimmed. A name with no usable characters ("★!!") falls back to
+// "collection" rather than an empty shortname. Uniqueness (schema UNIQUE
+// + CreateCollection's suffix probing) keeps cross-file merging
+// unambiguous.
+func collectionShortname(name string) string {
+	var b strings.Builder
+	dash := false
+	for _, r := range strings.ToLower(name) {
+		switch {
+		case r >= 'a' && r <= 'z' || r >= '0' && r <= '9':
+			if dash && b.Len() > 0 {
+				b.WriteByte('-')
+			}
+			b.WriteRune(r)
+			dash = false
+		default:
+			dash = true
+		}
+	}
+	if s := b.String(); s != "" {
+		return s
+	}
+	return "collection"
+}
+
+// CreateCollection inserts one collection, deriving its unique shortname
+// from the name (deterministic -2/-3… probing on collision). The row's
+// ID is returned.
+func (s *Store) CreateCollection(name, summary string) (int64, error) {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return 0, fmt.Errorf("store: collection name required")
+	}
+	base := collectionShortname(name)
+	for attempt := 1; ; attempt++ {
+		sn := base
+		if attempt > 1 {
+			sn = fmt.Sprintf("%s-%d", base, attempt)
+		}
+		ts := nowUTC()
+		res, err := s.db.Exec(`INSERT INTO collections (name, shortname, summary, created_at, updated_at)
+			VALUES (?,?,?,?,?)`, name, sn, strings.TrimSpace(summary), ts, ts)
+		if err == nil {
+			id, ierr := res.LastInsertId()
+			if ierr != nil {
+				return 0, ierr
+			}
+			return id, nil
+		}
+		if !strings.Contains(err.Error(), "UNIQUE") {
+			return 0, fmt.Errorf("store: create collection %q: %w", name, err)
+		}
+		if attempt >= 100 {
+			return 0, fmt.Errorf("store: create collection %q: no free shortname", name)
+		}
+	}
+}
+
+// UpdateCollection renames/re-summaries one collection (shortname stays —
+// see CollectionRow). Unknown ids are a no-op.
+func (s *Store) UpdateCollection(id int64, name, summary string) error {
+	_, err := s.db.Exec(`UPDATE collections SET name=?, summary=?, updated_at=? WHERE id=?`,
+		strings.TrimSpace(name), strings.TrimSpace(summary), nowUTC(), id)
+	return err
+}
+
+// DeleteCollection removes one collection; its memberships cascade away.
+func (s *Store) DeleteCollection(id int64) error {
+	_, err := s.db.Exec(`DELETE FROM collections WHERE id=?`, id)
+	return err
+}
+
+// Collections returns every collection, member-counted, name-ordered
+// (NOCASE, id tiebreak — deterministic page order).
+func (s *Store) Collections() ([]CollectionRow, error) {
+	rows, err := s.db.Query(`
+		SELECT c.id, c.name, c.shortname, c.summary, c.created_at, c.updated_at,
+		       (SELECT COUNT(*) FROM collection_games cg WHERE cg.collection_id = c.id)
+		FROM collections c
+		ORDER BY c.name COLLATE NOCASE, c.id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	var out []CollectionRow
+	for rows.Next() {
+		var r CollectionRow
+		if err := rows.Scan(&r.ID, &r.Name, &r.Shortname, &r.Summary, &r.CreatedAt, &r.UpdatedAt, &r.Games); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// Collection returns one collection by id, or nil when absent.
+func (s *Store) Collection(id int64) (*CollectionRow, error) {
+	var r CollectionRow
+	err := s.db.QueryRow(`
+		SELECT c.id, c.name, c.shortname, c.summary, c.created_at, c.updated_at,
+		       (SELECT COUNT(*) FROM collection_games cg WHERE cg.collection_id = c.id)
+		FROM collections c WHERE c.id=?`, id).
+		Scan(&r.ID, &r.Name, &r.Shortname, &r.Summary, &r.CreatedAt, &r.UpdatedAt, &r.Games)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+// CollectionMembers lists one collection's memberships newest-last,
+// position-first (position, system, rel_path — deterministic emission
+// order). Hidden members are INCLUDED here (the editor shows them with
+// their marker); the generator filters them out by contract.
+func (s *Store) CollectionMembers(collectionID int64) ([]CollectionMemberRow, error) {
+	rows, err := s.db.Query(`
+		SELECT g.id, g.system_key, g.rel_path, g.hidden, cg.position, cg.added_at
+		FROM collection_games cg JOIN games g ON g.id = cg.game_id
+		WHERE cg.collection_id=?
+		ORDER BY cg.position, g.system_key, g.rel_path`, collectionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	var out []CollectionMemberRow
+	for rows.Next() {
+		var m CollectionMemberRow
+		var hidden int
+		if err := rows.Scan(&m.GameID, &m.SystemKey, &m.RelPath, &hidden, &m.Position, &m.AddedAt); err != nil {
+			return nil, err
+		}
+		m.Hidden = hidden != 0
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}
+
+// AddCollectionGame adds one game to one collection. Idempotent on the
+// (collection, game) pair; the game must exist under exactly this
+// (system, id) identity or the add fails — a collection never holds a
+// stale pointer to a renamed/deleted row.
+func (s *Store) AddCollectionGame(collectionID int64, systemKey string, gameID int64) error {
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM games WHERE id=? AND system_key=?`, gameID, systemKey).
+		Scan(&n); err != nil {
+		return err
+	}
+	if n == 0 {
+		return fmt.Errorf("store: game %s/%d does not exist", systemKey, gameID)
+	}
+	if _, err := s.db.Exec(`INSERT INTO collection_games (collection_id, game_id, added_at)
+		VALUES (?,?,?)
+		ON CONFLICT DO NOTHING`, collectionID, gameID, nowUTC()); err != nil {
+		return err
+	}
+	_, err := s.db.Exec(`UPDATE collections SET updated_at=? WHERE id=?`, nowUTC(), collectionID)
+	return err
+}
+
+// RemoveCollectionGame drops one membership. Removing a non-member is a
+// no-op (curation is idempotent, never an error), like SetGameHidden.
+func (s *Store) RemoveCollectionGame(collectionID int64, systemKey string, gameID int64) error {
+	_, err := s.db.Exec(`DELETE FROM collection_games
+		WHERE collection_id=? AND game_id=(SELECT id FROM games WHERE id=? AND system_key=?)`,
+		collectionID, gameID, systemKey)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`UPDATE collections SET updated_at=? WHERE id=?`, nowUTC(), collectionID)
+	return err
+}
+
+// SetSystemHiddenAll flips the hidden flag of EVERY game of one system in
+// one statement (the per-system "show all hidden" bulk action passes
+// hidden=false). Returns the number of rows changed so the caller can
+// skip the regeneration trigger when nothing was actually hidden.
+func (s *Store) SetSystemHiddenAll(systemKey string, hidden bool) (int64, error) {
+	res, err := s.db.Exec(`UPDATE games SET hidden=? WHERE system_key=? AND hidden!=?`,
+		boolInt(hidden), systemKey, boolInt(hidden))
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// HiddenCountsBySystem reports each system's hidden-game count (systems
+// with none are absent) — the verify worklist's bulk-action affordance
+// renders only where it can do something.
+func (s *Store) HiddenCountsBySystem() (map[string]int64, error) {
+	rows, err := s.db.Query(`SELECT system_key, COUNT(*) FROM games WHERE hidden=1 GROUP BY system_key`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	out := map[string]int64{}
+	for rows.Next() {
+		var k string
+		var n int64
+		if err := rows.Scan(&k, &n); err != nil {
+			return nil, err
+		}
+		out[k] = n
+	}
+	return out, rows.Err()
+}
 
 // ftsMatchQuery turns free text into a safe FTS5 MATCH expression: each
 // whitespace-separated term becomes a quoted prefix term ("term"*), so user
