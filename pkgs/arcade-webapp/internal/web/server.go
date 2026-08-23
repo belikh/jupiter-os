@@ -68,6 +68,12 @@ type Server struct {
 	regenOnce sync.Once
 	regenMu   sync.Mutex
 	regen     regenState
+
+	// romAcquireUnit is the systemd unit the legacy inventory JSON's
+	// rom_acquire.active_state described (P8 parity endpoint). The
+	// webapp answers with the unit's live state on hosts that still
+	// have it and "unknown" everywhere else — the field exists either way.
+	romAcquireUnit string
 }
 
 // regenState is the coordinator's bookkeeping (see generate.go):
@@ -175,6 +181,7 @@ type cardVM struct {
 	Key          string
 	Collection   string
 	Bucket       string
+	Source       string // "catalogue" | "exo" (P8): exo cards label their coverage differently
 	Active       bool
 	GameCount    int64
 	SizeHuman    string
@@ -253,6 +260,7 @@ func (s *Server) viewModel() (dashboardVM, error) {
 			Key:          sys.Key,
 			Collection:   sys.Collection,
 			Bucket:       sys.Bucket,
+			Source:       sys.Source,
 			Active:       sys.Active(),
 			GameCount:    sys.GameCount,
 			SizeHuman:    HumanBytes(sys.TotalBytes),
@@ -264,6 +272,14 @@ func (s *Server) viewModel() (dashboardVM, error) {
 			Unmatched:    sys.Unmatched,
 			VerifyState:  classifyVerify(sys.Verify, sys.VerifyPresent),
 			VerifyCounts: sys.Verify,
+		}
+		if sys.Source == store.SourceExo {
+			// eXo cards cover with box-front art (the import's has_cover
+			// flags), not the Skyscraper cache heuristic — there is no
+			// cache to count and "art %" is exactly what the legacy
+			// inventory's exo section meant.
+			c.CoveragePct = artCoveragePct(sys.ArtCount, sys.GameCount)
+			c.VerifyState = VerifyStateExo
 		}
 		if sys.DATDate != "" {
 			c.DATAgeDays = scanner.AgeDays(sys.DATDate, vm.Now)

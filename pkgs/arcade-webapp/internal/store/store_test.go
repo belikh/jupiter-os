@@ -1630,3 +1630,157 @@ func TestGameDeleteCascadesCollectionMembership(t *testing.T) {
 		t.Fatalf("memberships after game delete = %d, want 0 (cascade broken)", got)
 	}
 }
+
+// TestMigrateV8DatabaseStepsToV9PreservesGames pins the P8 systems-table
+// rebuild: with the production DSN's foreign_keys enforcement ON, a naive
+// DROP TABLE would run its implicit DELETE with cascades and wipe every
+// games row. After the rebuild: version 9, the catalogue row survives
+// with source='catalogue', its game survives (the join still resolves),
+// the widened bucket CHECK accepts 'exo', cascade cleanup still works,
+// and the CHECK still rejects garbage buckets.
+func TestMigrateV8DatabaseStepsToV9PreservesGames(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "v8.db")
+	db, err := sql.Open("sqlite", "file:"+p+"?_pragma=foreign_keys(1)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fk int
+	if err := db.QueryRow(`PRAGMA foreign_keys`).Scan(&fk); err != nil || fk != 1 {
+		t.Fatalf("test precondition: foreign_keys on = %d, %v", fk, err)
+	}
+	steps := []string{}
+	for _, grp := range [][]string{schemaV1, schemaV2, schemaV3, schemaV4, schemaV5, schemaV6, schemaV7, schemaV8} {
+		steps = append(steps, grp...)
+	}
+	for _, stmt := range steps {
+		if _, err := db.Exec(stmt); err != nil && !strings.Contains(err.Error(), "already exists") {
+			t.Fatalf("seed v8 schema: %v", err)
+		}
+	}
+	if _, err := db.Exec(`INSERT INTO systems (key, collection, bucket, sort_order) VALUES ('nes', 'NES', 'cartridge', 1)`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO games (system_key, rel_path, size_bytes, first_seen_at, last_seen_at)
+		VALUES ('nes', 'Starlit Vault (USA).nes', 5, '2026-08-20T00:00:00Z', '2026-08-20T00:00:00Z')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`PRAGMA user_version = 8`); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := Open(p)
+	if err != nil {
+		t.Fatalf("Open v8 database: %v", err)
+	}
+	defer s.Close() //nolint:errcheck // test
+	if got := s.SchemaVersion(); got != SchemaVersion {
+		t.Fatalf("migrated user_version = %d, want %d", got, SchemaVersion)
+	}
+
+	// The catalogue system survived, reads as catalogue-sourced...
+	sys, err := s.System("nes")
+	if err != nil || sys == nil {
+		t.Fatalf("System(nes) after v9 = %+v, %v; want present", sys, err)
+	}
+	if sys.Source != SourceCatalogue {
+		t.Fatalf("source = %q, want %q", sys.Source, SourceCatalogue)
+	}
+	// ...and its GAME survived the rebuild (the cascade-wipe regression).
+	game, err := s.GetGame("nes", 1)
+	if err != nil || game == nil || game.RelPath != "Starlit Vault (USA).nes" {
+		t.Fatalf("game lost by the v9 rebuild: %+v, %v", game, err)
+	}
+
+	// The widened bucket accepts exo rows; enforcement is back ON, so
+	// cascade cleanup works and garbage buckets still bounce.
+	if err := s.UpsertExoSystem(SystemRow{Key: "dos", Collection: "eXoDOS", Bucket: ExoBucket, SortOrder: 1000}); err != nil {
+		t.Fatalf("exo bucket rejected: %v", err)
+	}
+	if _, err := s.db.Exec(`INSERT INTO systems (key, collection, bucket, sort_order) VALUES ('x', 'X', 'floptical', 99)`); err == nil {
+		t.Fatal("garbage bucket accepted — CHECK constraint gone")
+	}
+	if _, err := s.db.Exec(`DELETE FROM systems WHERE key='nes'`); err != nil {
+		t.Fatal(err)
+	}
+	if g, _ := s.GetGame("nes", 1); g != nil {
+		t.Fatal("cascade cleanup broken after the rebuild (game outlived its system)")
+	}
+	s2, err := s.db.Exec(`PRAGMA foreign_keys`)
+	_ = s2 // (read directly below instead)
+	var on int
+	if err := s.db.QueryRow(`PRAGMA foreign_keys`).Scan(&on); err != nil || on != 1 {
+		t.Fatalf("foreign_keys left OFF after migration: on=%d err=%v", on, err)
+	}
+}
+
+// TestUpsertSystemsPruneKeepsExoRows: a catalogue rescan must never prune
+// (and thereby cascade-away) eXo-imported systems — P8's load-bearing
+// UpsertSystems contract.
+func TestUpsertSystemsPruneKeepsExoRows(t *testing.T) {
+	s := openTemp(t)
+	defer s.Close() //nolint:errcheck // test
+
+	catalogue := []SystemRow{
+		{Key: "nes", Collection: "NES", Bucket: "cartridge", SortOrder: 1},
+		{Key: "snes", Collection: "SNES", Bucket: "cartridge", SortOrder: 2},
+	}
+	if err := s.UpsertSystems(catalogue); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpsertExoSystem(SystemRow{Key: "dos", Collection: "eXoDOS", Bucket: ExoBucket, SortOrder: 1000}); err != nil {
+		t.Fatal(err)
+	}
+
+	// A rescan whose TSV no longer lists snes prunes snes only.
+	if err := s.UpsertSystems([]SystemRow{catalogue[0]}); err != nil {
+		t.Fatal(err)
+	}
+	systems, err := s.Systems()
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := map[string]bool{}
+	for _, sys := range systems {
+		keys[sys.Key] = true
+	}
+	if !keys["nes"] || keys["snes"] || !keys["dos"] {
+		t.Fatalf("rescan prune wrong: %v (want nes kept, snes pruned, dos untouched)", keys)
+	}
+}
+
+// TestSetSystemCoverFlagsAndExoStats: full-replace cover flags + the P8
+// per-collection aggregates the inventory endpoint renders from.
+func TestSetSystemCoverFlagsAndExoStats(t *testing.T) {
+	s := openTemp(t)
+	defer s.Close() //nolint:errcheck // test
+
+	if err := s.UpsertExoSystem(SystemRow{Key: "dos", Collection: "eXoDOS", Bucket: ExoBucket, SortOrder: 1000}); err != nil {
+		t.Fatal(err)
+	}
+	games := []GameRow{{RelPath: "a.conf"}, {RelPath: "b.conf"}, {RelPath: "c.conf"}}
+	if err := s.ReplaceSystemGames("dos", games, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetSystemCoverFlags("dos", []string{"a.conf", "c.conf"}); err != nil {
+		t.Fatal(err)
+	}
+	stats, err := s.ExoStatsBySystem()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := stats["dos"]; got.Games != 3 || got.Art != 2 {
+		t.Fatalf("exo stats = %+v, want {3 2}", got)
+	}
+
+	// Re-import that lost art clears stale flags (full-replace).
+	if err := s.SetSystemCoverFlags("dos", []string{"c.conf"}); err != nil {
+		t.Fatal(err)
+	}
+	stats, _ = s.ExoStatsBySystem()
+	if got := stats["dos"]; got.Art != 1 {
+		t.Fatalf("stale cover flag survived replace: %+v", got)
+	}
+}

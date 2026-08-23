@@ -72,10 +72,29 @@ import (
 // membership; ON DELETE CASCADE on both ends so deleting a collection or
 // a scanned-away game cleans up silently). Position is persisted for a
 // future reorder UI but emission order stays deterministic today.
-const SchemaVersion = 8
+//
+// v9 (P8): systems gains source ('catalogue' | 'exo') and the bucket
+// CHECK widens with 'exo'. The eXo curated collections (dos/win3x/win9x,
+// parsed from their kiosk-generated metadata.pegasus.txt) become real
+// systems+games rows so browse/curation/coverage reuse every existing
+// surface; generation skips them by contract (their launcher DB stays
+// kiosk-side). SQLite cannot ALTER a CHECK constraint, so v9 rebuilds
+// the systems table inside the migration transaction with foreign_keys
+// OFF around it (the documented procedure — with keys ON, DROP TABLE's
+// implicit DELETE would cascade away every games row).
+//
+// v10 (P8): games gains a nullable display title. eXo game identity is
+// the parsed file: target — a per-game emulator CONF whose basename
+// ("dosbox.conf") would render every imported game identically and make
+// title search useless. The importer persists the real `game:` value;
+// catalogue rows stay NULL (their filenames ARE their titles) and every
+// consumer falls back to the filename derivation when NULL.
+const SchemaVersion = 10
 
 // SystemRow is one catalogue system as persisted (Extensions is a JSON
-// array string — enough for P1's rendering needs).
+// array string — enough for P1's rendering needs). Source distinguishes
+// catalogue systems (imported from the TSV) from eXo curated collections
+// (P8, imported read-only from their kiosk-generated metadata files).
 type SystemRow struct {
 	Key        string
 	Collection string
@@ -86,13 +105,31 @@ type SystemRow struct {
 	Torrent    string
 	Extensions string
 	SortOrder  int
+	Source     string // "catalogue" (default) | "exo"
 }
+
+// Source values for SystemRow.Source.
+const (
+	SourceCatalogue = "catalogue"
+	SourceExo       = "exo"
+)
+
+// ExoBucket is the bucket value carried by every eXo-sourced system: the
+// three games buckets are console trees; the eXo curated collections
+// mount from their own root and never take part in bucket-root routing
+// (generation and verify skip them by contract).
+const ExoBucket = "exo"
 
 // GameRow is one ROM file found under a system's directory, relative to
 // that directory. SizeBytes is the file size; identity is (system, path).
+// Title is the OPTIONAL display/search title (P8): empty for catalogue
+// scans (filenames carry the title), set by the eXo import from the
+// parsed `game:` value. A selective upsert keeps stored titles unless a
+// non-empty one arrives.
 type GameRow struct {
 	RelPath   string
 	SizeBytes int64
+	Title     string
 }
 
 // DATInfo is the parsed header of <datDir>/<system>.dat plus file stats.
@@ -177,6 +214,11 @@ type SystemSummary struct {
 	DATVersion   string
 	DATRomCount  int64
 	CacheEntries int64 // distinct game ids in the Skyscraper cache (heuristic)
+	ArtCount     int64 // games with has_cover=1 (Skyscraper covers, or eXo box_front at import)
+	// Source: "catalogue" for TSV systems, "exo" for the P8-imported
+	// curated collections. Consumers skip or special-case exo rows
+	// (verify/scrape/generation stay catalogue-only by contract).
+	Source string
 	// Last verify run's ingested report (zero-value when none recorded) —
 	// the system-level verify pill renders from this (P3), NOT from the
 	// per-game aggregates: the report is the authoritative statement about
@@ -259,6 +301,25 @@ func (s *Store) Migrate() error {
 	if version > SchemaVersion {
 		return fmt.Errorf("store: schema version %d is newer/unknown than supported %d — upgrade the webapp", version, SchemaVersion)
 	}
+	// v9 rebuilds the systems table; with foreign_keys enforcement ON,
+	// DROP TABLE's implicit DELETE would cascade every child row away.
+	// The documented rebuild procedure turns keys OFF around the whole
+	// migration transaction and back ON afterwards (verified below — a
+	// silent OFF would disable cascade cleanup forever after).
+	if version < 9 {
+		if _, err := s.db.Exec(`PRAGMA foreign_keys=OFF`); err != nil {
+			return fmt.Errorf("store: pragma foreign_keys off: %w", err)
+		}
+		defer func() {
+			if _, err := s.db.Exec(`PRAGMA foreign_keys=ON`); err != nil {
+				panic(fmt.Sprintf("store: re-enabling foreign_keys failed: %v", err))
+			}
+			var on int
+			if err := s.db.QueryRow(`PRAGMA foreign_keys`).Scan(&on); err != nil || on != 1 {
+				panic(fmt.Sprintf("store: foreign_keys not re-enabled (on=%d err=%v)", on, err))
+			}
+		}()
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -317,6 +378,20 @@ func (s *Store) Migrate() error {
 		for _, stmt := range schemaV8 {
 			if _, err := tx.Exec(stmt); err != nil {
 				return fmt.Errorf("store: migrate v8: %w", err)
+			}
+		}
+	}
+	if version < 9 {
+		for _, stmt := range schemaV9 {
+			if _, err := tx.Exec(stmt); err != nil {
+				return fmt.Errorf("store: migrate v9: %w", err)
+			}
+		}
+	}
+	if version < 10 {
+		for _, stmt := range schemaV10 {
+			if _, err := tx.Exec(stmt); err != nil {
+				return fmt.Errorf("store: migrate v10: %w", err)
 			}
 		}
 	}
@@ -480,6 +555,39 @@ var schemaV8 = []string{
 	`CREATE INDEX collection_games_game ON collection_games(game_id)`,
 }
 
+// schemaV9 rebuilds the systems table (see SchemaVersion): the bucket
+// CHECK widens with 'exo' and the source column lands. SQLite cannot
+// ALTER a CHECK, so: create sibling → copy rows (source defaults to
+// 'catalogue') → drop original → rename. Runs with foreign_keys OFF
+// (Migrate's window) or DROP TABLE would cascade every games row away;
+// legacy_alter_table is OFF by default so child tables' REFERENCES
+// clauses follow the rename automatically.
+var schemaV9 = []string{
+	`CREATE TABLE systems_v9 (
+		key        TEXT PRIMARY KEY,
+		collection TEXT NOT NULL,
+		bucket     TEXT NOT NULL CHECK (bucket IN ('cartridge','optical','modern','exo')),
+		core       TEXT NOT NULL DEFAULT '',
+		emulator   TEXT NOT NULL DEFAULT '',
+		sky_handle TEXT NOT NULL DEFAULT '',
+		torrent    TEXT NOT NULL DEFAULT '',
+		extensions TEXT NOT NULL DEFAULT '[]',
+		sort_order INTEGER NOT NULL,
+		source     TEXT NOT NULL DEFAULT 'catalogue' CHECK (source IN ('catalogue','exo'))
+	)`,
+	`INSERT INTO systems_v9 (key, collection, bucket, core, emulator, sky_handle, torrent, extensions, sort_order, source)
+		SELECT key, collection, bucket, core, emulator, sky_handle, torrent, extensions, sort_order, 'catalogue'
+		FROM systems`,
+	`DROP TABLE systems`,
+	`ALTER TABLE systems_v9 RENAME TO systems`,
+}
+
+// schemaV10 adds the optional display title (see SchemaVersion). Nullable:
+// pre-P8 and all catalogue rows read NULL → filename-derived titles.
+var schemaV10 = []string{
+	`ALTER TABLE games ADD COLUMN title TEXT`,
+}
+
 // Close closes the database.
 func (s *Store) Close() error { return s.db.Close() }
 
@@ -502,9 +610,12 @@ func (s *Store) JournalMode() string {
 // nowUTC is the persisted timestamp format (RFC3339, UTC).
 func nowUTC() string { return time.Now().UTC().Format(time.RFC3339) }
 
-// UpsertSystems replaces the systems table with rows (catalogue order is
-// the sort_order). Rows absent from the new import are deleted (cascade
-// clears their games/dat/coverage rows).
+// UpsertSystems replaces the CATALOGUE rows with rows (catalogue order
+// is the sort_order). Rows absent from the new import are deleted (cascade
+// clears their games/dat/coverage rows) — EXCEPT eXo-sourced rows, which
+// a catalogue rescan must never touch (P8: they are imported by the exo
+// importer; pruning them here would cascade their games away on every
+// scan).
 func (s *Store) UpsertSystems(rows []SystemRow) error {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -512,21 +623,25 @@ func (s *Store) UpsertSystems(rows []SystemRow) error {
 	}
 	defer tx.Rollback() //nolint:errcheck // no-op after commit
 	for _, r := range rows {
+		if r.Source == "" {
+			r.Source = SourceCatalogue
+		}
 		_, err := tx.Exec(`INSERT INTO systems
-			(key, collection, bucket, core, emulator, sky_handle, torrent, extensions, sort_order)
-			VALUES (?,?,?,?,?,?,?,?,?)
+			(key, collection, bucket, core, emulator, sky_handle, torrent, extensions, sort_order, source)
+			VALUES (?,?,?,?,?,?,?,?,?,?)
 			ON CONFLICT(key) DO UPDATE SET
 			  collection=excluded.collection, bucket=excluded.bucket,
 			  core=excluded.core, emulator=excluded.emulator,
 			  sky_handle=excluded.sky_handle, torrent=excluded.torrent,
-			  extensions=excluded.extensions, sort_order=excluded.sort_order`,
-			r.Key, r.Collection, r.Bucket, r.Core, r.Emulator, r.SkyHandle, r.Torrent, r.Extensions, r.SortOrder)
+			  extensions=excluded.extensions, sort_order=excluded.sort_order,
+			  source=excluded.source`,
+			r.Key, r.Collection, r.Bucket, r.Core, r.Emulator, r.SkyHandle, r.Torrent, r.Extensions, r.SortOrder, r.Source)
 		if err != nil {
 			return fmt.Errorf("store: upsert system %s: %w", r.Key, err)
 		}
 	}
 	if len(rows) == 0 {
-		if _, err := tx.Exec(`DELETE FROM systems`); err != nil {
+		if _, err := tx.Exec(`DELETE FROM systems WHERE source != ?`, SourceExo); err != nil {
 			return err
 		}
 		return tx.Commit()
@@ -536,15 +651,107 @@ func (s *Store) UpsertSystems(rows []SystemRow) error {
 	for i, r := range rows {
 		args[i] = r.Key
 	}
-	if _, err := tx.Exec(`DELETE FROM systems WHERE key NOT IN (`+ph+`)`, args...); err != nil {
+	if _, err := tx.Exec(`DELETE FROM systems WHERE source != ? AND key NOT IN (`+ph+`)`,
+		append([]any{SourceExo}, args...)...); err != nil {
 		return err
+	}
+	return tx.Commit()
+}
+
+// UpsertExoSystem inserts or refreshes ONE eXo-sourced system row (P8).
+// It never prunes anything — unlike UpsertSystems, whose replace
+// semantics own the catalogue slice only.
+func (s *Store) UpsertExoSystem(row SystemRow) error {
+	row.Source = SourceExo
+	_, err := s.db.Exec(`INSERT INTO systems
+		(key, collection, bucket, core, emulator, sky_handle, torrent, extensions, sort_order, source)
+		VALUES (?,?,?,?,?,?,?,?,?,?)
+		ON CONFLICT(key) DO UPDATE SET
+		  collection=excluded.collection, bucket=excluded.bucket,
+		  core=excluded.core, emulator=excluded.emulator,
+		  sky_handle=excluded.sky_handle, torrent=excluded.torrent,
+		  extensions=excluded.extensions, sort_order=excluded.sort_order,
+		  source=excluded.source`,
+		row.Key, row.Collection, row.Bucket, row.Core, row.Emulator, row.SkyHandle,
+		row.Torrent, row.Extensions, row.SortOrder, row.Source)
+	if err != nil {
+		return fmt.Errorf("store: upsert exo system %s: %w", row.Key, err)
+	}
+	return nil
+}
+
+// System returns one system by key, or nil when absent.
+func (s *Store) System(key string) (*SystemRow, error) {
+	var r SystemRow
+	err := s.db.QueryRow(`SELECT key, collection, bucket, core, emulator, sky_handle, torrent, extensions, sort_order, source
+		FROM systems WHERE key=?`, key).
+		Scan(&r.Key, &r.Collection, &r.Bucket, &r.Core, &r.Emulator, &r.SkyHandle,
+			&r.Torrent, &r.Extensions, &r.SortOrder, &r.Source)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &r, nil
+}
+
+// ExoStat is one eXo collection's coverage aggregates (P8): imported game
+// count plus how many carry box-front art (games.has_cover, set at
+// import from assets.box_front).
+type ExoStat struct {
+	Games int64
+	Art   int64
+}
+
+// ExoStatsBySystem returns the per-collection aggregates for every
+// eXo-sourced system that has games.
+func (s *Store) ExoStatsBySystem() (map[string]ExoStat, error) {
+	rows, err := s.db.Query(`SELECT g.system_key, COUNT(*), COALESCE(SUM(g.has_cover), 0)
+		FROM games g JOIN systems s ON s.key = g.system_key
+		WHERE s.source = ?
+		GROUP BY g.system_key`, SourceExo)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	out := map[string]ExoStat{}
+	for rows.Next() {
+		var k string
+		var st ExoStat
+		if err := rows.Scan(&k, &st.Games, &st.Art); err != nil {
+			return nil, err
+		}
+		out[k] = st
+	}
+	return out, rows.Err()
+}
+
+// SetSystemCoverFlags applies one system's has_cover flips in a single
+// transaction with full-replace semantics (zero first, then set the
+// listed positives). The eXo importer uses it for assets.box_front
+// presence; a re-import of a file that lost art clears stale flags.
+func (s *Store) SetSystemCoverFlags(systemKey string, coverRels []string) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() //nolint:errcheck // no-op after commit
+	if _, err := tx.Exec(`UPDATE games SET has_cover=0 WHERE system_key=?`, systemKey); err != nil {
+		return err
+	}
+	for _, rel := range coverRels {
+		if _, err := tx.Exec(`UPDATE games SET has_cover=1 WHERE system_key=? AND rel_path=?`,
+			systemKey, rel); err != nil {
+			return fmt.Errorf("store: cover flag %s/%s: %w", systemKey, rel, err)
+		}
 	}
 	return tx.Commit()
 }
 
 // Systems returns all systems in catalogue order.
 func (s *Store) Systems() ([]SystemRow, error) {
-	rows, err := s.db.Query(`SELECT key, collection, bucket, core, emulator, sky_handle, torrent, extensions, sort_order
+	rows, err := s.db.Query(`SELECT key, collection, bucket, core, emulator, sky_handle, torrent, extensions, sort_order, source
 		FROM systems ORDER BY sort_order, key`)
 	if err != nil {
 		return nil, err
@@ -553,7 +760,7 @@ func (s *Store) Systems() ([]SystemRow, error) {
 	var out []SystemRow
 	for rows.Next() {
 		var r SystemRow
-		if err := rows.Scan(&r.Key, &r.Collection, &r.Bucket, &r.Core, &r.Emulator, &r.SkyHandle, &r.Torrent, &r.Extensions, &r.SortOrder); err != nil {
+		if err := rows.Scan(&r.Key, &r.Collection, &r.Bucket, &r.Core, &r.Emulator, &r.SkyHandle, &r.Torrent, &r.Extensions, &r.SortOrder, &r.Source); err != nil {
 			return nil, err
 		}
 		out = append(out, r)
@@ -606,11 +813,12 @@ func (s *Store) ReplaceSystemGames(systemKey string, games []GameRow, seen time.
 	}
 	defer tx.Rollback() //nolint:errcheck // no-op after commit
 	for _, g := range games {
-		_, err := tx.Exec(`INSERT INTO games (system_key, rel_path, size_bytes, first_seen_at, last_seen_at)
-			VALUES (?,?,?,?,?)
+		_, err := tx.Exec(`INSERT INTO games (system_key, rel_path, size_bytes, first_seen_at, last_seen_at, title)
+			VALUES (?,?,?,?,?,?)
 			ON CONFLICT(system_key, rel_path) DO UPDATE SET
-			  size_bytes=excluded.size_bytes, last_seen_at=excluded.last_seen_at`,
-			systemKey, g.RelPath, g.SizeBytes, ts, ts)
+			  size_bytes=excluded.size_bytes, last_seen_at=excluded.last_seen_at,
+			  title=CASE WHEN excluded.title != '' THEN excluded.title ELSE games.title END`,
+			systemKey, g.RelPath, g.SizeBytes, ts, ts, g.Title)
 		if err != nil {
 			return fmt.Errorf("store: upsert game %s/%s: %w", systemKey, g.RelPath, err)
 		}
@@ -825,11 +1033,11 @@ func (s *Store) RecentRuns(n int) ([]Run, error) {
 // join carries the last igir report's aggregates per system (P3).
 func (s *Store) SystemSummary() ([]SystemSummary, error) {
 	rows, err := s.db.Query(`
-		SELECT s.key, s.collection, s.bucket, s.sort_order, s.torrent,
+		SELECT s.key, s.collection, s.bucket, s.sort_order, s.torrent, s.source,
 		       COALESCE(g.cnt, 0), COALESCE(g.bytes, 0),
 		       COALESCE(g.verified, 0), COALESCE(g.unmatched, 0),
 		       COALESCE(d.date, ''), COALESCE(d.version, ''), COALESCE(d.rom_count, 0),
-		       COALESCE(c.cache_entries, 0),
+		       COALESCE(c.cache_entries, 0), COALESCE(g.art_n, 0),
 		       COALESCE(v.run_id, 0), COALESCE(v.finished_at, ''),
 		       COALESCE(v.dat_games, 0), COALESCE(v.found, 0), COALESCE(v.missing, 0),
 		       COALESCE(v.unmatched, 0), COALESCE(v.duplicate, 0), COALESCE(v.other, 0),
@@ -839,7 +1047,8 @@ func (s *Store) SystemSummary() ([]SystemSummary, error) {
 		FROM systems s
 		LEFT JOIN (SELECT system_key, COUNT(*) cnt, SUM(size_bytes) bytes,
 		                  SUM(CASE WHEN verify_state='verified' THEN 1 ELSE 0 END) verified,
-		                  SUM(CASE WHEN verify_state='unmatched' THEN 1 ELSE 0 END) unmatched
+		                  SUM(CASE WHEN verify_state='unmatched' THEN 1 ELSE 0 END) unmatched,
+		                  SUM(has_cover) art_n
 		           FROM games GROUP BY system_key) g ON g.system_key = s.key
 		LEFT JOIN dat_info d ON d.system_key = s.key
 		LEFT JOIN scrape_coverage c ON c.system_key = s.key
@@ -852,10 +1061,10 @@ func (s *Store) SystemSummary() ([]SystemSummary, error) {
 	var out []SystemSummary
 	for rows.Next() {
 		var r SystemSummary
-		if err := rows.Scan(&r.Key, &r.Collection, &r.Bucket, &r.SortOrder, &r.Torrent,
+		if err := rows.Scan(&r.Key, &r.Collection, &r.Bucket, &r.SortOrder, &r.Torrent, &r.Source,
 			&r.GameCount, &r.TotalBytes, &r.Verified, &r.Unmatched,
 			&r.DATDate, &r.DATVersion, &r.DATRomCount,
-			&r.CacheEntries,
+			&r.CacheEntries, &r.ArtCount,
 			&r.Verify.RunID, &r.Verify.FinishedAt,
 			&r.Verify.DatGames, &r.Verify.Found, &r.Verify.Missing,
 			&r.Verify.Unmatched, &r.Verify.Duplicate, &r.Verify.Other,
@@ -1043,9 +1252,11 @@ type ScrapeRow struct {
 	ComputedAt   string // when coverage was last recomputed ("" never)
 }
 
-// ScrapeSummary returns every catalogue system in catalogue order with
+// ScrapeSummary returns every CATALOGUE system in catalogue order with
 // its metadata-coverage aggregates. Systems without games read as zeros
 // (the page collapses them into an idle count, like the card wall).
+// eXo-sourced systems are excluded by contract (P8): Skyscraper has no
+// platform mapping for them and their launcher DB is kiosk-side.
 func (s *Store) ScrapeSummary() ([]ScrapeRow, error) {
 	rows, err := s.db.Query(`
 		SELECT s.key, s.collection, s.bucket,
@@ -1057,7 +1268,8 @@ func (s *Store) ScrapeSummary() ([]ScrapeRow, error) {
 		                  SUM(has_cover) cover_n
 		           FROM games GROUP BY system_key) g ON g.system_key = s.key
 		LEFT JOIN scrape_coverage c ON c.system_key = s.key
-		ORDER BY s.sort_order, s.key`)
+		WHERE s.source = ?
+		ORDER BY s.sort_order, s.key`, SourceCatalogue)
 	if err != nil {
 		return nil, err
 	}
@@ -1401,6 +1613,10 @@ type GameSummary struct {
 	LastSeenAt  string
 	Hidden      bool
 	VerifyState string
+	// Title is the optional stored display/search title (P8, eXo
+	// imports); "" for catalogue rows — consumers derive from RelPath
+	// then (see web.displayTitle).
+	Title string
 }
 
 // GameDetail is GetGame's shape: one game joined with its owning system.
@@ -1537,18 +1753,25 @@ func (s *Store) ListGames(opts GameListOpts) (GamePage, error) {
 		where = append(where, `g.hidden = ?`)
 		args = append(args, boolInt(*opts.Hidden))
 	}
+	// Title matching (P8): eXo conf paths carry no title bytes, so EVERY
+	// backend additionally substring-matches the optional stored title
+	// (case-folded LIKE — same semantics on FTS and non-FTS builds).
 	switch q := strings.TrimSpace(opts.Q); {
 	case q == "":
 	case s.fts && ftsMatchQuery(q) == "":
-		// Only quotes/punctuation: nothing tokenizable to match (the LIKE
-		// branch would scan for the raw bytes and find none either).
-		where = append(where, `1=0`)
+		// Only quotes/punctuation: nothing tokenizable for the path
+		// index; the title LIKE still gets a chance below.
+		where = append(where, `g.id IN (SELECT rowid FROM games_fts WHERE games_fts MATCH ?)
+		       OR lower(COALESCE(g.title, '')) LIKE ? ESCAPE '\'`)
+		args = append(args, "", "%"+likeEscape(strings.ToLower(q))+"%")
 	case s.fts:
-		where = append(where, `g.id IN (SELECT rowid FROM games_fts WHERE games_fts MATCH ?)`)
-		args = append(args, ftsMatchQuery(q))
+		where = append(where, `(g.id IN (SELECT rowid FROM games_fts WHERE games_fts MATCH ?)
+		       OR lower(COALESCE(g.title, '')) LIKE ? ESCAPE '\')`)
+		args = append(args, ftsMatchQuery(q), "%"+likeEscape(strings.ToLower(q))+"%")
 	default:
-		where = append(where, `lower(g.rel_path) LIKE ? ESCAPE '\'`)
-		args = append(args, "%"+likeEscape(strings.ToLower(q))+"%")
+		where = append(where, `(lower(g.rel_path) LIKE ? ESCAPE '\'
+		       OR lower(COALESCE(g.title, '')) LIKE ? ESCAPE '\')`)
+		args = append(args, "%"+likeEscape(strings.ToLower(q))+"%", "%"+likeEscape(strings.ToLower(q))+"%")
 	}
 	cond := strings.Join(where, " AND ")
 
@@ -1558,7 +1781,8 @@ func (s *Store) ListGames(opts GameListOpts) (GamePage, error) {
 	}
 
 	query := `SELECT g.id, g.system_key, g.rel_path, g.size_bytes,
-			g.first_seen_at, g.last_seen_at, g.hidden, g.verify_state
+			g.first_seen_at, g.last_seen_at, g.hidden, g.verify_state,
+			COALESCE(g.title, '')
 		FROM games g WHERE ` + cond + ` ORDER BY ` + order
 	qargs := args
 	if opts.Limit > 0 {
@@ -1578,7 +1802,7 @@ func (s *Store) ListGames(opts GameListOpts) (GamePage, error) {
 		var g GameSummary
 		var hidden int
 		if err := rows.Scan(&g.ID, &g.SystemKey, &g.RelPath, &g.SizeBytes,
-			&g.FirstSeenAt, &g.LastSeenAt, &hidden, &g.VerifyState); err != nil {
+			&g.FirstSeenAt, &g.LastSeenAt, &hidden, &g.VerifyState, &g.Title); err != nil {
 			return GamePage{}, err
 		}
 		g.Hidden = hidden != 0
@@ -1593,7 +1817,7 @@ func (s *Store) ListGames(opts GameListOpts) (GamePage, error) {
 func gameOrderBy(sort string) (string, error) {
 	switch sort {
 	case "", SortTitle:
-		return `g.rel_path COLLATE NOCASE ASC, g.id ASC`, nil
+		return `COALESCE(NULLIF(g.title, ''), g.rel_path) COLLATE NOCASE ASC, g.id ASC`, nil
 	case SortSize:
 		return `g.size_bytes DESC, g.id ASC`, nil
 	case SortRecent:
@@ -1612,18 +1836,18 @@ func (s *Store) GetGame(systemKey string, id int64) (*GameDetail, error) {
 	var desc, cover int
 	err := s.db.QueryRow(`
 		SELECT g.id, g.system_key, g.rel_path, g.size_bytes, g.first_seen_at, g.last_seen_at,
-		       g.hidden, g.verify_state,
+		       g.hidden, g.verify_state, COALESCE(g.title, ''),
 		       COALESCE(g.has_description, 0), COALESCE(g.has_cover, 0),
 		       COALESCE(g.crc32, ''), COALESCE(g.sha1, ''),
-		       s.key, s.collection, s.bucket, s.core, s.emulator, s.sky_handle, s.torrent, s.extensions, s.sort_order
+		       s.key, s.collection, s.bucket, s.core, s.emulator, s.sky_handle, s.torrent, s.extensions, s.sort_order, s.source
 		FROM games g JOIN systems s ON s.key = g.system_key
 		WHERE g.system_key = ? AND g.id = ?`, systemKey, id).
 		Scan(&d.ID, &d.SystemKey, &d.RelPath, &d.SizeBytes, &d.FirstSeenAt, &d.LastSeenAt,
-			&hidden, &d.VerifyState,
+			&hidden, &d.VerifyState, &d.Title,
 			&desc, &cover, &d.CRC32, &d.SHA1,
 			&d.System.Key, &d.System.Collection, &d.System.Bucket, &d.System.Core,
 			&d.System.Emulator, &d.System.SkyHandle, &d.System.Torrent,
-			&d.System.Extensions, &d.System.SortOrder)
+			&d.System.Extensions, &d.System.SortOrder, &d.System.Source)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -1671,6 +1895,7 @@ type CollectionMemberRow struct {
 	Hidden    bool
 	Position  int64
 	AddedAt   string
+	Title     string // optional stored title (P8 eXo imports); "" otherwise
 }
 
 // pendingShortnameSuffix is the pending section's shortname shape the
@@ -1882,7 +2107,7 @@ func (s *Store) Collection(id int64) (*CollectionRow, error) {
 // their marker); the generator filters them out by contract.
 func (s *Store) CollectionMembers(collectionID int64) ([]CollectionMemberRow, error) {
 	rows, err := s.db.Query(`
-		SELECT g.id, g.system_key, g.rel_path, g.hidden, cg.position, cg.added_at
+		SELECT g.id, g.system_key, g.rel_path, g.hidden, cg.position, cg.added_at, COALESCE(g.title, '')
 		FROM collection_games cg JOIN games g ON g.id = cg.game_id
 		WHERE cg.collection_id=?
 		ORDER BY cg.position, g.system_key, g.rel_path`, collectionID)
@@ -1894,7 +2119,7 @@ func (s *Store) CollectionMembers(collectionID int64) ([]CollectionMemberRow, er
 	for rows.Next() {
 		var m CollectionMemberRow
 		var hidden int
-		if err := rows.Scan(&m.GameID, &m.SystemKey, &m.RelPath, &hidden, &m.Position, &m.AddedAt); err != nil {
+		if err := rows.Scan(&m.GameID, &m.SystemKey, &m.RelPath, &hidden, &m.Position, &m.AddedAt, &m.Title); err != nil {
 			return nil, err
 		}
 		m.Hidden = hidden != 0

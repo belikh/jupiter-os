@@ -298,3 +298,34 @@ file: Starlit Vault (USA).nes
 		}
 	}
 }
+
+// TestParseMultiFieldAccumulates (P8): eXo metadata emits one `genre:` /
+// `tag:` line per value; Multi must carry every occurrence in file order
+// while Fields keeps the last-wins contract other consumers rely on.
+func TestParseMultiFieldAccumulates(t *testing.T) {
+	in := `collection: eXoDOS
+shortname: dos
+launch: exo-launch dosbox "{file.path}"
+
+game: Turbo Tractor
+file: !dos/TurboTrk/dosbox.conf
+genre: Racing
+genre: Sports
+tag: Single Player
+description: Pull, plough and drag.
+`
+	f, err := Parse(strings.NewReader(in))
+	if err != nil {
+		t.Fatal(err)
+	}
+	g := f.Collections[0].Games[0]
+	if got := g.Multi["genre"]; len(got) != 2 || got[0] != "Racing" || got[1] != "Sports" {
+		t.Fatalf("Multi[genre] = %v, want [Racing Sports]", got)
+	}
+	if _, ok := g.Multi["tag"]; ok {
+		t.Fatalf("single-occurrence key leaked into Multi: %v", g.Multi["tag"])
+	}
+	if g.Fields["genre"] != "Sports" || g.Fields["description"] != "Pull, plough and drag." {
+		t.Fatalf("Fields last-wins broken: %+v", g.Fields)
+	}
+}

@@ -26,13 +26,21 @@
           {{if ge .CoveragePct 0}}{{.CoveragePct}}%{{else}}—{{end}}
         </span>
         {{if ge .CoveragePct 0}}
+        {{if eq .Source "exo"}}
+        <div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="100"
+             aria-valuenow="{{.CoveragePct}}" aria-label="box art coverage {{.Collection}}"
+             title="box-front art coverage {{.CoveragePct}}% (eXo curated collection — launcher DB stays kiosk-side)">
+          <span style="width: {{.CoveragePct}}%"></span>
+        </div>
+        {{else}}
         <div class="meter" role="progressbar" aria-valuemin="0" aria-valuemax="100"
              aria-valuenow="{{.CoveragePct}}" aria-label="cache coverage {{.Collection}}"
              title="cache coverage {{.CoveragePct}}%">
           <span style="width: {{.CoveragePct}}%"></span>
         </div>
+        {{end}}
         {{else}}
-        <div class="meter" aria-hidden="true" title="cache coverage unknown"></div>
+        <div class="meter" aria-hidden="true" title="coverage unknown"></div>
         {{end}}
       </div>
     </div>

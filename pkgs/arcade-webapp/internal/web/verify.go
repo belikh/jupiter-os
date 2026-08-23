@@ -53,6 +53,10 @@ const (
 	VerifyStateMissing   = "missing"   // DAT games missing from the staged set (amber)
 	VerifyStateExtra     = "extra"     // games-tree files the DAT doesn't claim (amber)
 	VerifyStateUnmatched = "unmatched" // unmatched staged input / other deviations (red)
+	// VerifyStateExo marks P8's eXo-sourced systems: their launcher DB is
+	// kiosk-side and no igir verify applies — a distinct grey state so
+	// "unknown" keeps meaning "not verified YET".
+	VerifyStateExo = "exo"
 )
 
 // classifyVerify derives the per-system zero-unmatched state from the
@@ -65,6 +69,21 @@ const (
 // system red on its second verify. Input-side duplicates DO count (they
 // fold into Unmatched at parse time); only the output-side echo is
 // benign. Proven against the real igir 5.3.0 (P3 VM bring-up).
+// artCoveragePct renders art*100/games for eXo cards (P8): -1 when
+// nothing can be covered (no games) — the CoveragePct contract.
+func artCoveragePct(art, games int64) int {
+	if games <= 0 {
+		return -1
+	}
+	p := int(art * 100 / games)
+	if p > 100 {
+		p = 100
+	}
+	return p
+}
+
+// classifyVerify maps a stored report to its pill state (the card wall's
+// and verify worklist's shared classifier).
 func classifyVerify(v store.VerifyResult, present bool) string {
 	if !present {
 		return VerifyStateUnknown
@@ -114,6 +133,8 @@ func verifyStateChip(state string, v store.VerifyResult) template.HTML {
 		return template.HTML(fmt.Sprintf(`<span class="pill warn" title="all %d DAT games found; %d games-tree file(s) the DAT doesn't claim%s">%d extra</span>`, v.DatGames, v.Extra, art, v.Extra))
 	case VerifyStateUnchecked:
 		return template.HTML(fmt.Sprintf(`<span class="pill unknown" title="no DAT — promoted unchecked (%s)">unchecked</span>`, HumanBytes(v.PromotedBytes)))
+	case VerifyStateExo:
+		return template.HTML(`<span class="pill unknown" title="eXo curated collection — launcher DB generated kiosk-side; browse/curation only">exo</span>`)
 	default:
 		return `<span class="pill unknown">unknown</span>`
 	}
@@ -226,6 +247,12 @@ func (s *Server) fetchVerify() verifyVM {
 	lastAttempt := s.lastVerifyAttempts()
 
 	for _, sys := range summary {
+		// P8: eXo-sourced systems have no DAT/igir pipeline — they would
+		// sit on the worklist as forever-unknown rows with buttons that
+		// only answer 400. Excluded; browse/curation covers them.
+		if sys.Source == store.SourceExo {
+			continue
+		}
 		st := staged[sys.Key]
 		row := verifyRowVM{
 			Key:           sys.Key,
@@ -426,13 +453,19 @@ func (s *Server) handleVerifySystem(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "htmx requests only", http.StatusForbidden)
 		return
 	}
-	if s.ig == nil || !s.ig.Configured() {
-		http.Error(w, "verify not configured (igir binary missing)", http.StatusServiceUnavailable)
-		return
-	}
+	// P8: eXo refusal precedes the configuration check — an imported
+	// collection gets a NAMED 400 even on hosts where verify is down,
+	// never a misleading "not configured".
 	sys := r.PathValue("system")
 	if !s.systemExists(sys) {
 		http.Error(w, "unknown system "+sys, http.StatusNotFound)
+		return
+	}
+	if s.rejectExoSystem(w, sys) {
+		return
+	}
+	if s.ig == nil || !s.ig.Configured() {
+		http.Error(w, "verify not configured (igir binary missing)", http.StatusServiceUnavailable)
 		return
 	}
 	go func() {
@@ -513,11 +546,15 @@ func (s *Server) handleDATRefreshSystem(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "htmx requests only", http.StatusForbidden)
 		return
 	}
+	// P8: eXo refusal precedes the configuration check (see verify).
+	sys := r.PathValue("system")
+	if s.rejectExoSystem(w, sys) {
+		return
+	}
 	if s.df == nil {
 		http.Error(w, "DAT manager not configured", http.StatusServiceUnavailable)
 		return
 	}
-	sys := r.PathValue("system")
 	var row *store.SystemRow
 	systems, err := s.st.Systems()
 	if err != nil {
@@ -586,6 +623,27 @@ func (s *Server) systemExists(key string) bool {
 		if sys.Key == key {
 			return true
 		}
+	}
+	return false
+}
+
+// rejectExoSystem answers 400 for P8's eXo-sourced systems on the
+// pipeline endpoints: their launcher DB is generated kiosk-side
+// (jupiter-exodos-metadata.service), they have no DAT/torrent/staging of
+// their own, and Skyscraper has no platform mapping — browse/curation is
+// the whole webapp surface for them. Returns false when the system isn't
+// eXo-sourced (or doesn't exist — the caller's existing 404 path owns
+// that case).
+func (s *Server) rejectExoSystem(w http.ResponseWriter, key string) bool {
+	sys, err := s.st.System(key)
+	if err != nil || sys == nil {
+		return false
+	}
+	if sys.Source == store.SourceExo {
+		http.Error(w,
+			key+" is an eXo curated collection: its metadata stays kiosk-side; browse/curation only",
+			http.StatusBadRequest)
+		return true
 	}
 	return false
 }

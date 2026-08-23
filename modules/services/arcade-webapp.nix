@@ -81,7 +81,7 @@ let
     cfg.torrentDir
     cfg.scratchDir
     cfg.stateDir
-  ];
+  ] ++ lib.optionals (cfg.exoRoot != null) [ cfg.exoRoot ];
 in
 {
   options.jupiter.services.arcadeWebapp = {
@@ -334,6 +334,24 @@ in
       '';
     };
 
+    exoRoot = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      # Literal default matching arcade-inventory.nix's exoRoot. null
+      # disables the eXo import entirely.
+      default = "/tank/archive/retro/games/curated";
+      description = ''
+        Root of the eXo curated collections (P8): each is read READ-ONLY
+        at <literal>&lt;root&gt;/exo-&lt;name&gt;/metadata.pegasus.txt</literal>
+        (dos, win3x, win9x — generated kiosk-side by
+        jupiter-exodos-metadata.service via scripts/exo-to-pegasus.py) and
+        imported into the store as source=exo systems, giving browse,
+        curation and coverage surfaces over them. Generation for these
+        systems deliberately STAYS kiosk-side — the webapp never writes
+        into this root (read-only to the service). Absent files are
+        normal on hosts without the curated mounts.
+      '';
+    };
+
     aria2SecretFile = lib.mkOption {
       type = lib.types.nullOr lib.types.path;
       default = null;
@@ -446,6 +464,10 @@ in
       // lib.optionalAttrs (cfg.inventoryFile != null) {
         ARCADE_WEBAPP_INVENTORY_FILE = cfg.inventoryFile;
       }
+      // P8 eXo import: read-only curated-collection root.
+      // lib.optionalAttrs (cfg.exoRoot != null) {
+        ARCADE_WEBAPP_EXO_ROOT = cfg.exoRoot;
+      }
       // lib.optionalAttrs (cfg.aria2SecretFile != null) {
         ARCADE_WEBAPP_ARIA2_SECRET_FILE = toString cfg.aria2SecretFile;
       }
@@ -515,7 +537,10 @@ in
         ReadOnlyPaths = [
           cfg.incomingDir
         ]
-        ++ lib.optionals (cfg.artDir != null) [ cfg.artDir ];
+        ++ lib.optionals (cfg.artDir != null) [ cfg.artDir ]
+        # The curated trees are the kiosk-side generator's to write; the
+        # webapp only parses their metadata files (P8).
+        ++ lib.optionals (cfg.exoRoot != null) [ cfg.exoRoot ];
       }
       // commonServiceHardening;
     };

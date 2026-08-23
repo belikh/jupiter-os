@@ -79,6 +79,7 @@ func main() {
 		SkyscraperCacheDir: envOr("ARCADE_WEBAPP_SKYSCRAPER_CACHE_DIR", ""),
 		IncomingDir:        envOr("ARCADE_WEBAPP_INCOMING_DIR", ""),
 		InventoryFile:      envOr("ARCADE_WEBAPP_INVENTORY_FILE", ""),
+		ExoRoot:            envOr("ARCADE_WEBAPP_EXO_ROOT", ""),
 		DBPath:             envOr("ARCADE_WEBAPP_DB", "/var/lib/arcade-webapp/arcade.db"),
 	}
 

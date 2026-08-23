@@ -80,14 +80,14 @@ type collectionEditorVM struct {
 	// as launchable (visible AND complete). Sniffable reports whether the
 	// games roots are wired — without them playability cannot be sniffed,
 	// so the header degrades to "N tracked" rather than guessing.
-	Tracked, Playable            int
-	Sniffable                    bool
-	Q                            string
-	Results                      []collectionSearchVM
-	Error                        string
-	RegenAlert                   string // last failed regeneration marker (ADV-P7-01b); "" = healthy
-	Meta                         pageMeta
-	Now                          time.Time
+	Tracked, Playable int
+	Sniffable         bool
+	Q                 string
+	Results           []collectionSearchVM
+	Error             string
+	RegenAlert        string // last failed regeneration marker (ADV-P7-01b); "" = healthy
+	Meta              pageMeta
+	Now               time.Time
 }
 
 func collectionsPageMeta() pageMeta {
@@ -177,7 +177,7 @@ func (s *Server) fetchCollectionEditor(r *http.Request, id int64) (collectionEdi
 		}
 		vm.Members = append(vm.Members, collectionMemberVM{
 			GameID: m.GameID, SystemKey: m.SystemKey,
-			Title: gameTitle(m.RelPath), Hidden: m.Hidden, Pending: pending,
+			Title: displayTitle(m.Title, m.RelPath), Hidden: m.Hidden, Pending: pending,
 		})
 		vm.Tracked++
 		if !m.Hidden && !pending {
@@ -202,7 +202,7 @@ func (s *Server) fetchCollectionEditor(r *http.Request, id int64) (collectionEdi
 				continue
 			}
 			vm.Results = append(vm.Results, collectionSearchVM{
-				GameID: g.ID, SystemKey: g.SystemKey, Title: gameTitle(g.RelPath),
+				GameID: g.ID, SystemKey: g.SystemKey, Title: displayTitle(g.Title, g.RelPath),
 			})
 			if len(vm.Results) >= colSearchLimit {
 				break

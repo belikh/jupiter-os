@@ -42,7 +42,12 @@ func IsPending(shortname string) bool {
 type Game struct {
 	Title  string            // the `game:` value (display title)
 	File   string            // the `file:` value (ROM path, relative)
-	Fields map[string]string // other per-game keys (description, release, …)
+	Fields map[string]string // other per-game keys (description, release, …); repeated keys keep the LAST value
+	// Multi accumulates keys that appear MORE THAN ONCE in the block
+	// (P8: eXo metadata emits one `genre:` / `tag:` line per value — a
+	// last-wins map would silently drop all but one genre). Keys seen
+	// once stay out of Multi; consumers join Multi values themselves.
+	Multi  map[string][]string
 	Assets map[string]string // assets.<key> → value (media paths)
 }
 
@@ -153,6 +158,17 @@ func Parse(r io.Reader) (*File, error) {
 			}
 			if game.Fields == nil {
 				game.Fields = map[string]string{}
+			}
+			if prev, seen := game.Fields[key]; seen {
+				// Second+ occurrence: start Multi from the FIRST value so
+				// it carries every occurrence in file order.
+				if game.Multi == nil {
+					game.Multi = map[string][]string{}
+				}
+				if _, started := game.Multi[key]; !started {
+					game.Multi[key] = []string{prev}
+				}
+				game.Multi[key] = append(game.Multi[key], value)
 			}
 			game.Fields[key] = value
 		}

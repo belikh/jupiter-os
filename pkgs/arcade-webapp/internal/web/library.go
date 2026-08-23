@@ -58,6 +58,16 @@ func gameTitle(relPath string) string {
 	return strings.TrimSuffix(base, filepath.Ext(base))
 }
 
+// displayTitle prefers the optional stored title (P8 eXo imports carry
+// real `game:` values; their conf paths would render as "dosbox") and
+// falls back to the filename derivation for catalogue rows.
+func displayTitle(stored, relPath string) string {
+	if stored != "" {
+		return stored
+	}
+	return gameTitle(relPath)
+}
+
 // libURL rebuilds a /library URL with only the non-default params, in a
 // deterministic key order (url.Values.Encode sorts) — pager hrefs and
 // tests depend on that shape.
@@ -197,7 +207,7 @@ func (s *Server) fetchLibrary(r *http.Request) (libraryVM, error) {
 		vm.Games = append(vm.Games, gameCardVM{
 			ID:          g.ID,
 			SystemKey:   g.SystemKey,
-			Title:       gameTitle(g.RelPath),
+			Title:       displayTitle(g.Title, g.RelPath),
 			SizeHuman:   HumanBytes(g.SizeBytes),
 			VerifyState: g.VerifyState,
 			Hidden:      g.Hidden,
@@ -364,7 +374,7 @@ func (s *Server) handleGameDetail(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	title := gameTitle(g.RelPath)
+	title := displayTitle(g.Title, g.RelPath)
 	vm := gameDetailVM{
 		ID:             g.ID,
 		SystemKey:      g.SystemKey,

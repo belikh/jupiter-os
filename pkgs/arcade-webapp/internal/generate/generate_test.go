@@ -824,3 +824,36 @@ func TestGenerateCustomCollectionsSortedAndStable(t *testing.T) {
 		}
 	}
 }
+
+// TestGenerateSkipsExoSystems pins the P8 contract: eXo-sourced systems
+// are imported read-only from kiosk-generated metadata; generation must
+// skip them BEFORE any filesystem probing — no file written, no outcome
+// row, and a missing local tree must not fail the batch.
+func TestGenerateSkipsExoSystems(t *testing.T) {
+	g, st, _ := newGenHarness(t)
+	// An exo-sourced system WITH games but NO directory under any root.
+	if err := st.UpsertSystems([]store.SystemRow{
+		{Key: "nes", Collection: "Nintendo Entertainment System", Bucket: "cartridge", Core: "fceumm", SortOrder: 1, Extensions: `["nes"]`},
+		{Key: "wiiu", Collection: "Nintendo Wii U", Bucket: "modern", Emulator: "cemu", SortOrder: 2, Extensions: `["rpx"]`},
+		{Key: "nolaunch", Collection: "No Launch Mapped", Bucket: "cartridge", SortOrder: 3, Extensions: `["nes"]`},
+		{Key: "dos", Collection: "eXoDOS", Bucket: store.ExoBucket, SortOrder: 1000, Source: store.SourceExo},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.ReplaceSystemGames("dos", []store.GameRow{{RelPath: "!dos/StarRgr/dosbox.conf", Title: "Star Ranger"}}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := g.Generate(false)
+	if err != nil {
+		t.Fatalf("generate with an exo system: %v", err)
+	}
+	for _, oc := range res.Systems {
+		if oc.Sys == "dos" {
+			t.Fatalf("exo system reached generation: %+v", oc)
+		}
+	}
+	if _, serr := os.Stat(filepath.Join(g.CartridgeRoot, "dos", targetName)); !os.IsNotExist(serr) {
+		t.Fatal("generation wrote into an exo-sourced system dir")
+	}
+}

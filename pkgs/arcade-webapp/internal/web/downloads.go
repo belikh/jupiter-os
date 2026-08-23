@@ -309,6 +309,9 @@ func (s *Server) joinSystems(queue []aria2.Download) ([]systemDL, int) {
 	var out []systemDL
 	idle := 0
 	for _, sys := range summary {
+		if sys.Source == store.SourceExo {
+			continue // P8: browse/curation-only, no download surface
+		}
 		row := systemDL{
 			Key:          sys.Key,
 			Collection:   sys.Collection,
@@ -687,6 +690,11 @@ func (s *Server) stageTarget(sys string) (name string, code int, msg string) {
 	}
 	for _, row := range systems {
 		if row.Key == sys {
+			// P8: eXo curated collections are browse/curation-only — no
+			// torrents exist for them and none may be staged.
+			if row.Source == store.SourceExo {
+				return "", http.StatusBadRequest, sys + " is an eXo curated collection: download control does not apply"
+			}
 			if row.Torrent == "" {
 				return "", http.StatusBadRequest, sys + " has no torrent in the catalogue"
 			}

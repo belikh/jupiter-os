@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/exo"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/generate"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/store"
 )
@@ -471,4 +472,97 @@ func TestCollectionEditTriggersRegeneration(t *testing.T) {
 			t.Errorf("generated file missing %q after the collection edit:\n%s", want, out)
 		}
 	}
+}
+
+// TestExoSystemsBrowseButNotPipeline pins the P8 surface split: an
+// imported eXo collection shows up on the dashboard card wall (with art
+// coverage + the exo pill) and in the library, while the pipeline
+// endpoints (verify / dat-refresh / scrape / stage-torrent) refuse it —
+// generation stays kiosk-side by contract.
+func TestExoSystemsBrowseButNotPipeline(t *testing.T) {
+	h := newGenServer(t)
+	handler := h.srv.Handler()
+
+	// Import a tiny eXo collection directly into the harness store.
+	dir := filepath.Join(h.root, "exo", "exo-dos")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	meta := "# sample\ncollection: eXoDOS\nshortname: dos\nlaunch: exo-launch dosbox \"{file.path}\"\n\n" +
+		"game: Star Ranger\nfile: !dos/StarRgr/dosbox.conf\ndescription: Fly deep-space patrol missions.\n" +
+		"assets.box_front: Images/MS-DOS/Box - Front/Star Ranger-01.jpg\n"
+	if err := os.WriteFile(filepath.Join(dir, "metadata.pegasus.txt"), []byte(meta), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res := exo.Import(h.srv.st, filepath.Join(h.root, "exo"))
+	if len(res.Warnings) != 0 || res.Games != 1 {
+		t.Fatalf("import = %+v", res)
+	}
+
+	// Card wall: dos renders as an active card with box-art coverage.
+	page := get(t, handler, "/").Body.String()
+	if !strings.Contains(page, `data-system="dos" data-games="1" data-coverage="100"`) {
+		t.Fatalf("exo card missing/wrong:\n%s", page)
+	}
+	if !strings.Contains(page, ">exo</span>") {
+		t.Fatalf("exo verify pill missing:\n%s", page)
+	}
+
+	// Library: title search finds it via the STORED title, not the conf
+	// basename; the detail route resolves (via the card's own href —
+	// autoincrement ids are never assumed).
+	lib := get(t, handler, "/library?q=Star+Ranger").Body.String()
+	if !strings.Contains(lib, "Star Ranger") {
+		t.Fatalf("library title search missed the eXo game:\n%s", lib)
+	}
+	href := ""
+	for _, line := range strings.Split(lib, "\n") {
+		if strings.Contains(line, `class="gcard" href="/systems/dos/games/`) {
+			if i := strings.Index(line, `href="`); i >= 0 {
+				href = line[i+6:]
+				if j := strings.Index(href, `"`); j >= 0 {
+					href = href[:j]
+				}
+			}
+			break
+		}
+	}
+	if href == "" {
+		t.Fatal("no library card link for the imported eXo game")
+	}
+	detail := get(t, handler, href).Body.String()
+	if !strings.Contains(detail, "Star Ranger") || !strings.Contains(detail, "!dos/StarRgr/dosbox.conf") {
+		t.Fatalf("detail page missing stored title or conf-path fact:\n%s", detail)
+	}
+
+	// Pipeline endpoints refuse it with a NAMED 400.
+	for _, ep := range []string{
+		"/systems/dos/verify",
+		"/systems/dos/dat-refresh",
+		"/systems/dos/scrape",
+		"/systems/dos/stage-torrent",
+	} {
+		rec := postHX(t, handler, ep)
+		if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "eXo") {
+			t.Errorf("POST %s = %d (%q), want 400 naming eXo", ep, rec.Code, truncateStr(rec.Body.String(), 120))
+		}
+	}
+
+	// The verify worklist excludes it (no forever-unknown row).
+	frag := get(t, handler, "/partials/verify").Body.String()
+	if strings.Contains(frag, `data-system="dos"`) {
+		t.Fatal("exo system rendered on the verify worklist")
+	}
+	// …and so does the metadata scrape worklist.
+	mfrag := get(t, handler, "/partials/metadata").Body.String()
+	if strings.Contains(mfrag, `data-system="dos"`) {
+		t.Fatal("exo system rendered on the metadata worklist")
+	}
+}
+
+func truncateStr(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }

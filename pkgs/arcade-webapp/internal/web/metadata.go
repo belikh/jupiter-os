@@ -224,6 +224,9 @@ func (s *Server) handleScrapeSystem(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unknown system "+sys, http.StatusNotFound)
 		return
 	}
+	if s.rejectExoSystem(w, sys) {
+		return
+	}
 	if err := s.scrapeStart(func() error { return s.sc.StartOne(sys) }); err != nil {
 		s.renderScrapeError(w, err)
 		return

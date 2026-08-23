@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/catalogue"
+	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/exo"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/store"
 )
 
@@ -50,6 +51,7 @@ type Config struct {
 	SkyscraperCacheDir string
 	IncomingDir        string
 	InventoryFile      string
+	ExoRoot            string // eXo curated collections root (P8 import); "" disables
 	DBPath             string // informational (logging); store is injected
 }
 
@@ -74,6 +76,11 @@ type Result struct {
 	IncomingBytes int64
 	Errors        int
 	Warnings      []string
+	// eXo curated-collection import (P8): systems/games/art counts from
+	// the read-only metadata parse (0 when no exo root is configured).
+	ExoSystems int
+	ExoGames   int64
+	ExoArt     int64
 }
 
 // State is the in-memory scan status the dashboard polls.
@@ -249,7 +256,19 @@ func (s *Scanner) scanAll() Result {
 		}
 	}
 
-	// 6. Incoming staging summary — per system (files/bytes/aria2-control
+	// 6. eXo curated collections (P8): read-only import of the kiosk-
+	// generated metadata files into source=exo systems. Absent root or
+	// absent per-collection files are normal; per-collection parse
+	// failures become warnings and keep the previous rows.
+	if s.cfg.ExoRoot != "" {
+		er := exo.Import(s.st, s.cfg.ExoRoot)
+		res.ExoSystems = len(er.Imported)
+		res.ExoGames = er.Games
+		res.ExoArt = er.Art
+		res.Warnings = append(res.Warnings, er.Warnings...)
+	}
+
+	// 7. Incoming staging summary — per system (files/bytes/aria2-control
 	// presence, the verify page's "staged" column) plus the whole-tree
 	// totals for the status strip. Persisted at scan time only: a live
 	// walk of a multi-TB staged tree on every 2s poll would hammer

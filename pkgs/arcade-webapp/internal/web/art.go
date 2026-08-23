@@ -190,7 +190,7 @@ func (s *Server) handleArt(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	title := gameTitle(g.RelPath)
+	title := displayTitle(g.Title, g.RelPath)
 
 	w.Header().Set("Cache-Control", "public, max-age=86400")
 	if s.artDir != "" {

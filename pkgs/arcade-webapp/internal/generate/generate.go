@@ -272,6 +272,17 @@ func (g *Generator) run(dryRun bool, opts Options) (Result, error) {
 		return res, fmt.Errorf("generate: systems: %w", serr)
 	}
 	for _, sys := range systems {
+		// P8: eXo-sourced systems are imported READ-ONLY from the kiosk-
+		// generated metadata files (internal/exo); generation for them
+		// STAYS KIOSK-SIDE (jupiter-exodos-metadata.service owns those
+		// files, their file: targets point at per-game emulator confs on
+		// the kiosk mounts, and their launch line invokes exo-launch —
+		// none of which this generator can or should emit). Skipped
+		// before any filesystem probing, so a missing local tree can
+		// never fail the batch and an import can never be overwritten.
+		if sys.Source == store.SourceExo {
+			continue
+		}
 		games, qerr := g.St.SystemGamesWithMeta(sys.Key)
 		if qerr != nil {
 			res.Systems = append(res.Systems, SystemOutcome{Sys: sys.Key,
