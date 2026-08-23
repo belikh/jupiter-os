@@ -897,14 +897,38 @@ jobs:
                   | select((.level // 3) <= 2)
                   | if .action == "msg" then .msg else empty end)
             end'
-          NOM_FILTER='if (startswith("@nix ") | not) then .
-            else (.[5:] | fromjson? // empty) as $j
-            | if (($j | .action // "") == "result")
-                  and (($j | .fields // []) | map(type) | any(. != "number"))
-              then empty
-              else ("@nix " + ($j | tostring))
-              end
-            end'
+          # Stateful awk filter (replaces an older stateless jq one): keeps
+          # start/stop/msg plus build progress, drops the two firehoses that
+          # made logs GBs/run -- (a) result lines whose fields carry builder
+          # stdout (non-numeric fields), and (b) type-105 progress ticks for
+          # TRANSFER activities (copying/downloading/substituting/querying/
+          # connecting/uploading/waiting and their children), which were
+          # 99%+ of all events (~70x smaller on a real run; nom replay still
+          # renders identically, incl. error summary).
+          NOM_FILTER='/^@nix /{
+            if ($0 ~ /"action":"start"/) {
+              id=""; par=""
+              if (match($0, /"id":[0-9]+/)) id=substr($0, RSTART+5, RLENGTH-5)
+              if (match($0, /"parent":[0-9]+/)) par=substr($0, RSTART+9, RLENGTH-9)
+              if ($0 ~ /"text":"(copying|downloading|substituting|querying|connecting|uploading|waiting)/) quiet[id]=1
+              if (par != "" && par in quiet) quiet[id]=1
+              print; next
+            }
+            if ($0 ~ /"action":"stop"/) {
+              if (match($0, /"id":[0-9]+/)) { id=substr($0, RSTART+5, RLENGTH-5); delete quiet[id] }
+              print; next
+            }
+            if ($0 ~ /"action":"result"/) {
+              if ($0 ~ /"fields":\[[^]]*"/) next
+              if (match($0, /"id":[0-9]+/)) {
+                id=substr($0, RSTART+5, RLENGTH-5)
+                if (id in quiet) next
+              }
+              print; next
+            }
+            print; next
+          }
+          { print }'
 
           HOSTS="europa callisto"
           INSTALLABLES=()
@@ -1005,7 +1029,7 @@ jobs:
             --keep-going \
             --print-out-paths --no-link --fallback \
             --log-format internal-json 2>&1 1>"$OUT_PATHS" \
-            | stdbuf -o0 tee >(stdbuf -o0 jq -rR --unbuffered "$NOM_FILTER" | ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-log "cat >> '$NOM_LOG'") \
+            | stdbuf -o0 tee >(stdbuf -o0 awk "$NOM_FILTER" | ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-log "cat >> '$NOM_LOG'") \
             | { stdbuf -o0 jq -rR --unbuffered "$NOM_TO_HUMAN" || cat; }
           # pipefail is on, so $? is the pipeline's -- nix's own status is
           # PIPESTATUS[0].
@@ -1076,7 +1100,7 @@ jobs:
               --keep-going \
               --print-out-paths --no-link --fallback \
               --log-format internal-json 2>&1 1>>"$OUT_PATHS" \
-              | stdbuf -o0 tee >(stdbuf -o0 jq -rR --unbuffered "$NOM_FILTER" | ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-log "cat >> '$NOM_LOG'") \
+              | stdbuf -o0 tee >(stdbuf -o0 awk "$NOM_FILTER" | ssh -o IdentitiesOnly=yes -o PasswordAuthentication=no europa-log "cat >> '$NOM_LOG'") \
               | { stdbuf -o0 jq -rR --unbuffered "$NOM_TO_HUMAN" || cat; }
             BUILD_EXIT=${PIPESTATUS[0]}
 
