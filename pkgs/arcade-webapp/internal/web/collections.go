@@ -23,10 +23,12 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/generate"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/store"
 )
 
@@ -59,7 +61,8 @@ type collectionMemberVM struct {
 	GameID    int64
 	SystemKey string
 	Title     string
-	Hidden    bool // excluded from generation while hidden (marker explains why)
+	Hidden    bool // excluded from generation while hidden (chip explains why)
+	Pending   bool // fails the completeness sniff: listed-not-launchable (chip)
 }
 
 type collectionSearchVM struct {
@@ -72,12 +75,19 @@ type collectionEditorVM struct {
 	Collection store.CollectionRow
 	UpdatedAgo string
 	Members    []collectionMemberVM
-	Q          string
-	Results    []collectionSearchVM
-	Error      string
-	RegenAlert string // last failed regeneration marker (ADV-P7-01b); "" = healthy
-	Meta       pageMeta
-	Now        time.Time
+	// Honest member counts (P7-critic carry-in, built with P8): Tracked
+	// is every member; Playable is the subset that will reach the kiosk
+	// as launchable (visible AND complete). Sniffable reports whether the
+	// games roots are wired — without them playability cannot be sniffed,
+	// so the header degrades to "N tracked" rather than guessing.
+	Tracked, Playable            int
+	Sniffable                    bool
+	Q                            string
+	Results                      []collectionSearchVM
+	Error                        string
+	RegenAlert                   string // last failed regeneration marker (ADV-P7-01b); "" = healthy
+	Meta                         pageMeta
+	Now                          time.Time
 }
 
 func collectionsPageMeta() pageMeta {
@@ -140,6 +150,18 @@ func (s *Server) fetchCollectionEditor(r *http.Request, id int64) (collectionEdi
 	if col.UpdatedAt != "" {
 		vm.UpdatedAgo = relTime(vm.Now, col.UpdatedAt)
 	}
+	// The pending sniff needs each member's file under its system's
+	// bucket root; the buckets come from the systems table (the catalogue
+	// copy the scanner upserts).
+	buckets := map[string]string{}
+	if systems, err := s.st.Systems(); err == nil {
+		for _, sys := range systems {
+			buckets[sys.Key] = sys.Bucket
+		}
+	} else {
+		log.Printf("web: collection %d systems: %v", id, err) // degrade: no pending chips
+	}
+	sniffable := s.gameRoots != gameRoots{}
 	members, err := s.st.CollectionMembers(id)
 	if err != nil {
 		log.Printf("web: collection %d members: %v", id, err)
@@ -149,11 +171,20 @@ func (s *Server) fetchCollectionEditor(r *http.Request, id int64) (collectionEdi
 	memberIDs := map[int64]bool{}
 	for _, m := range members {
 		memberIDs[m.GameID] = true
+		pending := false
+		if root := s.gameRoots.forBucket(buckets[m.SystemKey]); root != "" {
+			pending = !generate.RomComplete(filepath.Join(root, m.SystemKey, m.RelPath))
+		}
 		vm.Members = append(vm.Members, collectionMemberVM{
 			GameID: m.GameID, SystemKey: m.SystemKey,
-			Title: gameTitle(m.RelPath), Hidden: m.Hidden,
+			Title: gameTitle(m.RelPath), Hidden: m.Hidden, Pending: pending,
 		})
+		vm.Tracked++
+		if !m.Hidden && !pending {
+			vm.Playable++
+		}
 	}
+	vm.Sniffable = sniffable
 
 	vm.Q = strings.TrimSpace(r.URL.Query().Get("q"))
 	if len([]rune(vm.Q)) > 100 {

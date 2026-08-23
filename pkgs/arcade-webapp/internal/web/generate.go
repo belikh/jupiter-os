@@ -38,9 +38,38 @@ import (
 )
 
 // WithGenerator wires the P6 launcher-DB generator (nil = the page
-// renders its "not configured" state and /generate answers 503).
+// renders its "not configured" state and /generate answers 503). The
+// generator's bucket roots are ALSO captured on the server: they locate
+// member ROM files for the collection editor's completeness-sniff chips
+// (P7-critic carry-in) — one wiring, one source of roots.
 func WithGenerator(g *generate.Generator) Option {
-	return func(s *Server) { s.gen = g }
+	return func(s *Server) {
+		s.gen = g
+		s.gameRoots = gameRoots{
+			cartridge: g.CartridgeRoot,
+			optical:   g.OpticalRoot,
+			modern:    g.ModernRoot,
+		}
+	}
+}
+
+// gameRoots are the three served games buckets (mirroring the
+// generator's). Zero values = not wired: the editor then degrades to
+// hidden-chips only and honest "N tracked" counts without the playable
+// half (it refuses to guess playability it cannot sniff).
+type gameRoots struct {
+	cartridge, optical, modern string
+}
+
+func (r gameRoots) forBucket(bucket string) string {
+	switch bucket {
+	case "optical":
+		return r.optical
+	case "modern":
+		return r.modern
+	default:
+		return r.cartridge
+	}
 }
 
 // generateOptions assembles the generator's Options from the store:

@@ -362,6 +362,73 @@ func searchPrefix(g store.GameSummary) string {
 	return t
 }
 
+// TestCollectionMemberStatusChipsAndCounts pins the P7-critic carry-in
+// (built with P8): member rows carry a status chip when a member will not
+// reach the kiosk output as launchable — hidden OR pending-only (the
+// completeness sniff) — and the editor's count is honest
+// ("N tracked / M playable") instead of a bare game count.
+func TestCollectionMemberStatusChipsAndCounts(t *testing.T) {
+	h := newGenServer(t)
+	handler := h.srv.Handler()
+
+	// A pending-shaped member: a zip-named file whose bytes are not a zip
+	// fails the generator's completeness sniff exactly like aria2's
+	// preallocated in-flight downloads do.
+	pendPath := filepath.Join(h.root, "games", "cartridge", "nes", "Pending Planet (USA).zip")
+	if err := os.WriteFile(pendPath, []byte("this is not a zip"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.srv.scan.Scan(); err != nil { // rescan picks it up
+		t.Fatal(err)
+	}
+
+	if rec := postHXForm(t, handler, "/collections/create", url.Values{"name": {"Status Chips"}}); rec.Code != 200 {
+		t.Fatal("create failed")
+	}
+	cols, _ := h.srv.st.Collections()
+	cid := cols[0].ID
+
+	games, _ := h.srv.st.ListGames(store.GameListOpts{SystemKey: "nes"})
+	var okGame, pendGame *store.GameSummary
+	for i := range games.Games {
+		g := games.Games[i]
+		switch {
+		case strings.HasPrefix(g.RelPath, "Pending Planet"):
+			pendGame = &games.Games[i]
+		case g.RelPath == games.Games[0].RelPath && okGame == nil && !strings.HasPrefix(g.RelPath, "Pending"):
+			okGame = &games.Games[i]
+		}
+	}
+	if okGame == nil || pendGame == nil {
+		t.Fatalf("fixture missing members: ok=%v pending=%v", okGame, pendGame)
+	}
+	postHX(t, handler, fmt.Sprintf("/collections/%d/add?system=%s&game=%d", cid, okGame.SystemKey, okGame.ID))
+	rec := postHX(t, handler, fmt.Sprintf("/collections/%d/add?system=%s&game=%d", cid, pendGame.SystemKey, pendGame.ID))
+	body := rec.Body.String()
+	if !strings.Contains(body, "pending") {
+		t.Fatalf("pending member rendered without its status chip:\n%s", body)
+	}
+
+	// Honest counts from the start: the pending member is tracked but not
+	// playable, so 2 members = 2 tracked / 1 playable.
+	if !strings.Contains(body, "2 tracked / 1 playable") {
+		t.Fatalf("counts not honest before hiding:\n%s", body)
+	}
+
+	// Hide the complete member: it stays tracked but can no longer reach
+	// the kiosk, so playable drops AND the row gains its hidden chip.
+	if err := h.srv.st.SetGameHidden(okGame.SystemKey, okGame.RelPath, true); err != nil {
+		t.Fatal(err)
+	}
+	body = get(t, handler, fmt.Sprintf("/collections/%d", cid)).Body.String()
+	if !strings.Contains(body, "2 tracked / 0 playable") {
+		t.Fatalf("hidden member did not drop out of the playable count:\n%s", body)
+	}
+	if !strings.Contains(body, `hidden-chip`) {
+		t.Fatalf("hidden member rendered without its chip:\n%s", body)
+	}
+}
+
 // TestCollectionEditTriggersRegeneration: adding a member fires the async
 // launcher-DB regeneration — the served file gains the custom block.
 func TestCollectionEditTriggersRegeneration(t *testing.T) {

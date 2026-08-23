@@ -610,13 +610,16 @@ func sanitizeValue(s string) string {
 	return strings.Join(out, "; ")
 }
 
-// romComplete reports whether a ROM file's magic bytes match its format
-// — cartridge-scrape.sh rom_complete ported. While aria2 torrents it
-// PREALLOCATES files as zeros; emulators abort on those, so they must
+// RomComplete reports whether a ROM file's magic bytes match its format
+// — cartridge-scrape.sh's rom_complete ported (the script now lives in
+// scripts/deprecated/; the P8 collection editor reuses this exact sniff
+// for its per-member "pending" chips, so the UI can never disagree with
+// what the generator would do with the same file). While aria2 torrents
+// it PREALLOCATES files as zeros; emulators abort on those, so they must
 // list as pending, not playable. Only formats with reliable leading
 // magic are checked; everything else is optimistically complete (a raw
 // .iso legitimately starts with zeros). Unreadable → incomplete.
-func romComplete(path string) bool {
+func RomComplete(path string) bool {
 	switch strings.ToLower(filepath.Ext(path)) {
 	case ".chd":
 		head := readHead(path, len(mComprHDMagic))
@@ -628,6 +631,9 @@ func romComplete(path string) bool {
 		return true
 	}
 }
+
+// romComplete is renderSystem's internal name for the shared sniff.
+func romComplete(path string) bool { return RomComplete(path) }
 
 // readHead reads at most n leading bytes. The od-equivalent: read EXACTLY
 // n bytes, never scan the file hunting for non-NUL characters.

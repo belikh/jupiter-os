@@ -112,11 +112,13 @@
   <section>
     <h2>{{.Collection.Name}}
       <span class="chip" title="stable identity used by the generated launcher-DB blocks">{{.Collection.Shortname}}</span>
-      <span class="chip">{{len .Members}} games</span>
+      <span class="chip" title="{{if .Sniffable}}tracked members / members that reach the kiosk as launchable{{else}}games roots not wired — playability not sniffed{{end}}"
+      >{{if .Sniffable}}{{.Tracked}} tracked / {{.Playable}} playable{{else}}{{len .Members}} games{{end}}</span>
     </h2>
 
     <p class="sub">Membership is cross-system: every member repeats inside ITS system's generated file,
-      under a block named after this collection. Hidden members are excluded from generation until shown.</p>
+      under a block named after this collection. Hidden or incomplete (pending) members are excluded
+      from generation until fixed.</p>
 
     <form class="filter-bar" aria-label="rename collection"
           hx-post="/collections/{{.Collection.ID}}/update" hx-target="#collection-panel" hx-swap="outerHTML">
@@ -133,7 +135,7 @@
       <tbody>
         {{range .Members}}
         <tr data-game="{{.GameID}}">
-          <td>{{.Title}}{{if .Hidden}} <span class="chip hidden-chip" title="hidden games are excluded from the generated launcher DB">hidden</span>{{end}}</td>
+          <td>{{.Title}}{{if .Hidden}} <span class="chip hidden-chip" title="hidden games are excluded from the generated launcher DB">hidden</span>{{else if .Pending}} <span class="chip pending-chip" title="file incomplete (completeness sniff) — lands in the system's (Pending) collection, not launchable yet">pending</span>{{end}}</td>
           <td><span class="chip">{{.SystemKey}}</span></td>
           <td>
             <button class="mini danger" hx-post="/collections/{{$.Collection.ID}}/remove?system={{.SystemKey}}&game={{.GameID}}"

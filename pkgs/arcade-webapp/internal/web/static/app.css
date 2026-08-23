@@ -447,6 +447,11 @@ details.stage[open] > summary { border-style: solid; }
   border-color: color-mix(in srgb, var(--yellow) 40%, transparent);
 }
 
+.pending-chip {
+  color: var(--peach);
+  border-color: color-mix(in srgb, var(--peach) 40%, transparent);
+}
+
 .pager {
   display: flex;
   gap: 0.9rem;

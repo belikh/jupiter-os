@@ -57,6 +57,10 @@ type Server struct {
 	sc *scrape.Driver
 	// Launcher-DB generator (P6): nil = not configured. See generate.go.
 	gen *generate.Generator
+	// gameRoots mirror the generator's bucket roots (captured at wiring)
+	// so the collection editor can sniff member files for its pending
+	// chips without a second configuration surface. See generate.go.
+	gameRoots gameRoots
 
 	// Curation-regeneration coordination (P7 / ADV-P7-03): ONE worker
 	// goroutine drains a dirty flag instead of every mutation spawning
