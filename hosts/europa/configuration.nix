@@ -520,9 +520,25 @@
   # aria2 + AriaNg STAY (general-purpose daemon; the webapp is its
   # ROM-facing front end and links AriaNg for non-arcade downloads), and
   # keep the incoming root writable so partial downloads resume in place.
+  # Secret wiring (final-audit FIN-05): the cutover above retires
+  # rom-acquire/rom-scraper, and with them that module pair's sops
+  # declarations — without re-wiring, arcadeWebapp would lose aria2 RPC
+  # auth (download control dead) and both scraper credential sources at
+  # switch. Paths only, values never touched:
+  #   * aria2SecretFile points at jupiter_aria2_rpc_secret, still declared
+  #     by modules/services/aria2.nix (enabled below) — pure pointer per
+  #     D-P2b, no second declaration;
+  #   * screenscraper_creds + tgdb_apikey exist unchanged in
+  #     secrets/secrets.yaml but their ONLY declaration lived in the
+  #     deleted rom-scraper.nix — re-declared verbatim host-side in the
+  #     sops block below (the webapp module stays deliberately sops-free,
+  #     D-P2b).
   jupiter.services.arcadeWebapp = {
     enable = true;
     openFirewall = true;
+    aria2SecretFile = config.sops.secrets.jupiter_aria2_rpc_secret.path;
+    screenscraperCredsFile = config.sops.secrets.screenscraper_creds.path;
+    tgdbApikeyFile = config.sops.secrets.tgdb_apikey.path;
   };
 
   # Suno account backup daemon — WAV masters + full per-clip metadata into
@@ -573,6 +589,14 @@
   # nix_build_ssh_key: private half of the dedicated builder keypair; the
   # public half is in callisto's root authorized_keys (buildMachines above).
   sops.secrets.nix_build_ssh_key = { };
+  # screenscraper_creds / tgdb_apikey: ScreenScraper credentials + TheGamesDB
+  # API key for the arcade-webapp scrape driver. Same sops keys the retired
+  # rom-scraper.nix declared (values unchanged in secrets/secrets.yaml);
+  # re-declared host-side at the FIN-05 wiring so activation keeps rendering
+  # them for the webapp after cutover. Default 0400 root is fine — the
+  # webapp runs as root.
+  sops.secrets.screenscraper_creds = { };
+  sops.secrets.tgdb_apikey = { };
 
   environment.systemPackages = with pkgs; [
     nix-output-monitor
