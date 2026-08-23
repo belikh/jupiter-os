@@ -1,0 +1,209 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CABINET-OS Arcade — library</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js"></script>
+</head>
+<body>
+  
+<div class="topbar">
+  <div class="wrap">
+    <h1>CABINET-OS <span class="accent">Arcade</span></h1>
+    <span class="sub">game library</span>
+    <span class="spacer"></span>
+    <nav class="nav" aria-label="pages">
+      <a href="/" >Dashboard</a>
+      <a href="/library" class="active" aria-current="page">Library</a>
+      <a href="/collections" >Collections</a>
+      <a href="/downloads" >Downloads</a>
+      <a href="/verify" >Verify</a>
+      <a href="/metadata" >Metadata</a>
+    </nav>
+    <span class="pill "></span>
+  </div>
+</div>
+
+  <main class="wrap">
+    <section>
+      <h2>Library</h2>
+      <form class="filter-bar" method="get" action="/library" aria-label="library filters"
+            hx-get="/partials/library" hx-target="#library-grid" hx-swap="outerHTML"
+            hx-trigger="input changed delay:300ms, change delay:300ms">
+        <input type="search" name="q" value="" placeholder="search titles…" aria-label="search titles">
+        <select name="system" aria-label="system">
+          <option value="">all systems</option>
+          
+          <option value="nes">Nintendo Entertainment System</option><option value="snes">Super Nintendo Entertainment System</option><option value="gb">Nintendo Game Boy</option><option value="gbc">Nintendo Game Boy Color</option><option value="gba">Nintendo Game Boy Advance</option><option value="n64">Nintendo 64</option><option value="fds">Nintendo Famicom Disk System</option><option value="virtualboy">Nintendo Virtual Boy</option><option value="pokemonmini">Nintendo Pokemon Mini</option><option value="gameandwatch">Nintendo Game &amp; Watch</option><option value="nds">Nintendo DS</option><option value="dsi">Nintendo DSi</option><option value="gamecube">Nintendo GameCube</option><option value="wii">Nintendo Wii</option><option value="3ds">Nintendo 3DS</option><option value="new3ds">Nintendo New 3DS</option><option value="wiiu">Nintendo Wii U</option><option value="sms">Sega Master System - Mark III</option><option value="megadrive">Sega Mega Drive - Genesis</option><option value="gamegear">Sega Game Gear</option><option value="sega32x">Sega 32X</option><option value="sg1000">Sega SG-1000 - SC-3000</option><option value="segacd">Sega Mega CD &amp; Sega CD</option><option value="saturn">Sega Saturn</option><option value="dreamcast">Sega Dreamcast</option><option value="ps1">Sony PlayStation</option><option value="ps2">Sony PlayStation 2</option><option value="psp">Sony PlayStation Portable</option><option value="a2600">Atari 2600</option><option value="a5200">Atari 5200</option><option value="a7800">Atari 7800</option><option value="a800">Atari 8-bit Family</option><option value="lynx">Atari Lynx</option><option value="jaguar">Atari Jaguar</option><option value="atari_st">Atari ST</option><option value="jaguar_cd">Atari Jaguar CD</option><option value="pce">NEC PC Engine - TurboGrafx-16</option><option value="pce_cd">NEC PC Engine CD &amp; TurboGrafx CD</option><option value="supergrafx">NEC PC Engine SuperGrafx</option><option value="pcfx">NEC PC-FX</option><option value="pc98">NEC PC-98 series</option><option value="ngp">SNK NeoGeo Pocket</option><option value="ngpc">SNK NeoGeo Pocket Color</option><option value="neocd">SNK Neo Geo CD</option><option value="c64">Commodore 64</option><option value="vic20">Commodore VIC-20</option><option value="plus4">Commodore Plus-4</option><option value="amiga">Commodore Amiga</option><option value="amiga_cd">Commodore Amiga CD</option><option value="amiga_cd32">Commodore Amiga CD32</option><option value="amiga_cdtv">Commodore Amiga CDTV</option><option value="msx">Microsoft MSX</option><option value="msx2">Microsoft MSX2</option><option value="coleco">ColecoVision</option><option value="intellivision">Mattel Intellivision</option><option value="vectrex">GCE Vectrex</option><option value="odyssey2">Magnavox Odyssey 2</option><option value="videopac">Philips Videopac&#43;</option><option value="zxspectrum">Sinclair ZX Spectrum</option><option value="apple2">Apple II</option><option value="fmtowns">Fujitsu FM-Towns</option><option value="dos">eXoDOS</option>
+        </select>
+        <select name="state" aria-label="verify state">
+          
+          <option value="">any verify state</option>
+          <option value="verified">verified</option>
+          <option value="unmatched">unmatched</option>
+          <option value="unknown">unknown</option>
+        </select>
+        <select name="hidden" aria-label="hidden filter">
+          
+          <option value="" selected>shown + hidden</option>
+          <option value="0">visible only</option>
+          <option value="1">hidden only</option>
+        </select>
+        <select name="sort" aria-label="sort by">
+          
+          <option value="title" selected>sort: title</option>
+          <option value="size">sort: size</option>
+          <option value="recent">sort: recent</option>
+        </select>
+        <noscript><button type="submit">apply</button></noscript>
+      </form>
+      
+<div id="library-grid" role="region" aria-label="game gallery">
+  <p class="sub">10 of 21 games</p>
+  
+  <div class="gallery">
+    
+    <a class="gcard" href="/systems/snes/games/8?back=%2Flibrary" data-system="snes" data-verify="unknown">
+      <img class="gcard-art" src="/art/snes/8" alt="" width="240" height="320" loading="lazy" decoding="async">
+      <span class="gcard-body">
+        <span class="gcard-title" title="Astral Almari (USA)">Astral Almari (USA)</span>
+        <span class="gcard-meta">
+          <span class="chip">snes</span>
+          <span class="pill unknown" title="never verified">unknown</span>
+          
+        </span>
+      </span>
+    </a>
+    
+    <a class="gcard" href="/systems/snes/games/9?back=%2Flibrary" data-system="snes" data-verify="unknown">
+      <img class="gcard-art" src="/art/snes/9" alt="" width="240" height="320" loading="lazy" decoding="async">
+      <span class="gcard-body">
+        <span class="gcard-title" title="Bakery Bandits (Europe)">Bakery Bandits (Europe)</span>
+        <span class="gcard-meta">
+          <span class="chip">snes</span>
+          <span class="pill unknown" title="never verified">unknown</span>
+          
+        </span>
+      </span>
+    </a>
+    
+    <a class="gcard" href="/systems/nes/games/1?back=%2Flibrary" data-system="nes" data-verify="unknown">
+      <img class="gcard-art" src="/art/nes/1" alt="" width="240" height="320" loading="lazy" decoding="async">
+      <span class="gcard-body">
+        <span class="gcard-title" title="Bonza Box (USA)">Bonza Box (USA)</span>
+        <span class="gcard-meta">
+          <span class="chip">nes</span>
+          <span class="pill unknown" title="never verified">unknown</span>
+          
+        </span>
+      </span>
+    </a>
+    
+    <a class="gcard" href="/systems/dos/games/21?back=%2Flibrary" data-system="dos" data-verify="unknown">
+      <img class="gcard-art" src="/art/dos/21" alt="" width="240" height="320" loading="lazy" decoding="async">
+      <span class="gcard-body">
+        <span class="gcard-title" title="Cipher Bureau &#39;38">Cipher Bureau &#39;38</span>
+        <span class="gcard-meta">
+          <span class="chip">dos</span>
+          <span class="pill unknown" title="never verified">unknown</span>
+          
+        </span>
+      </span>
+    </a>
+    
+    <a class="gcard" href="/systems/nes/games/2?back=%2Flibrary" data-system="nes" data-verify="unknown">
+      <img class="gcard-art" src="/art/nes/2" alt="" width="240" height="320" loading="lazy" decoding="async">
+      <span class="gcard-body">
+        <span class="gcard-title" title="Crystal Carp (USA) (Rev A)">Crystal Carp (USA) (Rev A)</span>
+        <span class="gcard-meta">
+          <span class="chip">nes</span>
+          <span class="pill unknown" title="never verified">unknown</span>
+          
+        </span>
+      </span>
+    </a>
+    
+    <a class="gcard" href="/systems/dos/games/18?back=%2Flibrary" data-system="dos" data-verify="unknown">
+      <img class="gcard-art" src="/art/dos/18" alt="" width="240" height="320" loading="lazy" decoding="async">
+      <span class="gcard-body">
+        <span class="gcard-title" title="Desert Convoy">Desert Convoy</span>
+        <span class="gcard-meta">
+          <span class="chip">dos</span>
+          <span class="pill unknown" title="never verified">unknown</span>
+          
+        </span>
+      </span>
+    </a>
+    
+    <a class="gcard" href="/systems/gb/games/12?back=%2Flibrary" data-system="gb" data-verify="unknown">
+      <img class="gcard-art" src="/art/gb/12" alt="" width="240" height="320" loading="lazy" decoding="async">
+      <span class="gcard-body">
+        <span class="gcard-title" title="Grumble Weed (Japan)">Grumble Weed (Japan)</span>
+        <span class="gcard-meta">
+          <span class="chip">gb</span>
+          <span class="pill unknown" title="never verified">unknown</span>
+          
+        </span>
+      </span>
+    </a>
+    
+    <a class="gcard" href="/systems/dos/games/19?back=%2Flibrary" data-system="dos" data-verify="unknown">
+      <img class="gcard-art" src="/art/dos/19" alt="" width="240" height="320" loading="lazy" decoding="async">
+      <span class="gcard-body">
+        <span class="gcard-title" title="Lighthouse Keeper">Lighthouse Keeper</span>
+        <span class="gcard-meta">
+          <span class="chip">dos</span>
+          <span class="pill unknown" title="never verified">unknown</span>
+          
+        </span>
+      </span>
+    </a>
+    
+    <a class="gcard" href="/systems/gb/games/13?back=%2Flibrary" data-system="gb" data-verify="unknown">
+      <img class="gcard-art" src="/art/gb/13" alt="" width="240" height="320" loading="lazy" decoding="async">
+      <span class="gcard-body">
+        <span class="gcard-title" title="Marble Marsupial (Europe)">Marble Marsupial (Europe)</span>
+        <span class="gcard-meta">
+          <span class="chip">gb</span>
+          <span class="pill unknown" title="never verified">unknown</span>
+          
+        </span>
+      </span>
+    </a>
+    
+    <a class="gcard" href="/systems/nes/games/3?back=%2Flibrary" data-system="nes" data-verify="unknown">
+      <img class="gcard-art" src="/art/nes/3" alt="" width="240" height="320" loading="lazy" decoding="async">
+      <span class="gcard-body">
+        <span class="gcard-title" title="Mecha Garden (Japan)">Mecha Garden (Japan)</span>
+        <span class="gcard-meta">
+          <span class="chip">nes</span>
+          <span class="pill unknown" title="never verified">unknown</span>
+          
+        </span>
+      </span>
+    </a>
+    
+  </div>
+  
+  
+  <nav class="pager" aria-label="gallery pages">
+    <span class="sub">‹ prev</span>
+    <span class="sub">page 1 of 3 · 21 games</span>
+    <a href="/library?page=2" rel="next">next ›</a>
+  </nav>
+  
+</div>
+
+    </section>
+    
+<footer>
+  CABINET-OS Arcade webapp — <a href="https://example.invalid/repo">gauntlet plan</a>
+  · fragments auto-refresh via htmx (dashboard 10s, download queue 2s)
+</footer>
+
+  </main>
+</body>
+</html>
