@@ -163,6 +163,71 @@ func TestPostVerifyTriggersGeneration(t *testing.T) {
 	}
 }
 
+// TestPostVerifyGenerationBusyRecordsSkipAndRetries pins ADV-P6-03: a
+// regeneration that finds the pipeline slot busy is not silent — an
+// explicit kind=generate run row marked "skipped" lands in the history
+// naming the reason, and exactly ONE deferred retry follows once the
+// slot frees (the accepted residual is only a retry that finds it busy
+// again).
+func TestPostVerifyGenerationBusyRecordsSkipAndRetries(t *testing.T) {
+	h := newGenServer(t)
+	old := postVerifyRetryDelay
+	postVerifyRetryDelay = 50 * time.Millisecond
+	t.Cleanup(func() { postVerifyRetryDelay = old })
+
+	genRuns := func() []store.Run {
+		t.Helper()
+		var out []store.Run
+		runs, _ := h.srv.st.RecentRuns(50)
+		for _, r := range runs {
+			if r.Kind == "generate" {
+				out = append(out, r)
+			}
+		}
+		return out
+	}
+
+	// Hold the shared pipeline slot exactly like a running scrape would.
+	if !h.gen.Pipeline.TryAcquire() {
+		t.Fatal("could not hold the idle pipeline mutex")
+	}
+	h.srv.maybeGenerateAfterVerify([]igir.SystemOutcome{
+		{Sys: "nes", Outcome: igir.OutcomeVerified},
+	}, nil)
+
+	runs := genRuns()
+	if len(runs) != 1 || runs[0].Status != "skipped" {
+		t.Fatalf("busy trigger recorded %+v, want exactly one skipped run", runs)
+	}
+	if !strings.Contains(runs[0].Detail, "pipeline busy") {
+		t.Errorf("skip detail = %q, want the pipeline-busy reason (history must be legible)", runs[0].Detail)
+	}
+
+	// Free the slot; the single deferred retry lands one more run. Wait
+	// for a FINISHED run ("running" rows appear at StartRun time) so no
+	// generation goroutine leaks past the test's teardown.
+	h.gen.Pipeline.Release()
+	finished := func() bool {
+		for _, r := range genRuns() {
+			if r.Status == "ok" || r.Status == "error" {
+				return true
+			}
+		}
+		return false
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) && !finished() {
+		time.Sleep(20 * time.Millisecond)
+	}
+	runs = genRuns()
+	if !finished() {
+		t.Fatalf("deferred retry never finished: %+v", runs)
+	}
+	if len(runs) != 2 {
+		t.Fatalf("generate runs after retry = %d (%+v), want 2 (skipped + deferred ok)", len(runs), runs)
+	}
+}
+
 var errFake = &fakeErr{}
 
 type fakeErr struct{}

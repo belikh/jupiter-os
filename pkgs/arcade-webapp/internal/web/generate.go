@@ -21,6 +21,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/generate"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/igir"
@@ -69,6 +70,15 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 // operator can always click Regenerate). Runs in the caller's
 // background goroutine; the runner has released the pipeline slot by
 // the time Verify returns, so the generator can claim it here.
+//
+// When the slot IS held (a scrape or a manual generate owns it), the
+// skip is not silent (ADV-P6-03): an explicit kind=generate run row
+// marked "skipped" lands in the generation history, and ONE retry is
+// scheduled after postVerifyRetryDelay — promotions changed the served
+// trees, so the follow-up matters more than a casual drop. If the retry
+// finds the slot busy again, that is the accepted residual: the next
+// verify/scrape/generation will regenerate anyway, and D-P6d keeps
+// queueing semantics out of scope.
 func (s *Server) maybeGenerateAfterVerify(outcomes []igir.SystemOutcome, verifyErr error) {
 	if verifyErr != nil || s.gen == nil || !s.gen.Configured() {
 		return
@@ -84,10 +94,40 @@ func (s *Server) maybeGenerateAfterVerify(outcomes []igir.SystemOutcome, verifyE
 		return // skipped-empty/failed batches changed no tree
 	}
 	if _, err := s.gen.Generate(false); err != nil {
-		log.Printf("web: post-verify regeneration: %v", err)
+		if !errors.Is(err, generate.ErrBusy) {
+			log.Printf("web: post-verify regeneration: %v", err)
+			return
+		}
+		s.recordGenerateSkip()
+		time.AfterFunc(postVerifyRetryDelay, func() {
+			if _, err := s.gen.Generate(false); err != nil {
+				log.Printf("web: post-verify regeneration (deferred retry): %v", err)
+				return
+			}
+			log.Printf("web: post-verify regeneration complete (deferred retry)")
+		})
 		return
 	}
 	log.Printf("web: post-verify regeneration complete")
+}
+
+// postVerifyRetryDelay is the single deferred-retry window for a
+// regeneration that found the pipeline slot busy (ADV-P6-03). A var so
+// tests can shrink it.
+var postVerifyRetryDelay = 30 * time.Second
+
+// recordGenerateSkip leaves the visible history marker for a skipped
+// post-verify regeneration: silence would read as "nothing needed
+// regenerating", which is exactly the lie this row prevents.
+func (s *Server) recordGenerateSkip() {
+	id, err := s.st.StartRun("generate")
+	if err != nil {
+		log.Printf("web: record generate skip: %v", err)
+		return
+	}
+	if err := s.st.FinishRun(id, "skipped", "post-verify regeneration skipped (pipeline busy)"); err != nil {
+		log.Printf("web: record generate skip: %v", err)
+	}
 }
 
 // ---- generation log view model ---------------------------------------------
