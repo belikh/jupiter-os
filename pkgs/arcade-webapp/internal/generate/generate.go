@@ -182,30 +182,73 @@ func (g *Generator) Generate(dryRun bool) (Result, error) {
 }
 
 // GenerateOptions is Generate with the P7 curation seam wired through.
+// The options are taken as GIVEN: a caller holding a pre-lock snapshot
+// can interleave snapshot(pre-state) → another generation commits
+// post-state → claim the freed slot and overwrite the served tree with
+// stale bytes (ADV-P7-02's lost update) — trigger paths belong on
+// GenerateFresh.
 func (g *Generator) GenerateOptions(dryRun bool, opts Options) (Result, error) {
+	if err := g.claim(); err != nil {
+		return Result{}, err
+	}
+	defer g.release()
+	return g.run(dryRun, opts)
+}
+
+// GenerateFresh reads its options INSIDE the locked region (ADV-P7-02):
+// triggers pass a provider callback instead of a pre-built snapshot, so
+// whatever the store held at generation time is what gets rendered. A
+// pass can no longer race a fresher one by claiming a slot freed after
+// its options were captured. The provider runs only after BOTH locks are
+// held and is invoked exactly once per attempt; its error aborts before
+// any run row exists.
+func (g *Generator) GenerateFresh(dryRun bool, provide func() (Options, error)) (Result, error) {
+	if err := g.claim(); err != nil {
+		return Result{}, err
+	}
+	defer g.release()
+	opts, err := provide()
+	if err != nil {
+		return Result{}, fmt.Errorf("generate: options: %w", err)
+	}
+	return g.run(dryRun, opts)
+}
+
+// claim takes the generator's single-flight guard and then the shared
+// pipeline slot (ADV-P5-03), or fails WITHOUT holding either.
+func (g *Generator) claim() error {
 	if !g.Configured() {
-		return Result{}, errors.New("generate: not configured")
+		return errors.New("generate: not configured")
 	}
 	g.mu.Lock()
 	if g.running {
 		g.mu.Unlock()
-		return Result{}, ErrBusy
+		return ErrBusy
 	}
 	g.running = true
 	g.mu.Unlock()
-	defer func() {
+	if g.Pipeline != nil && !g.Pipeline.TryAcquire() {
 		g.mu.Lock()
 		g.running = false
 		g.mu.Unlock()
-	}()
-
-	if g.Pipeline != nil && !g.Pipeline.TryAcquire() {
-		return Result{}, ErrBusy
+		return ErrBusy
 	}
+	return nil
+}
+
+// release lets go of both locks in reverse acquisition order.
+func (g *Generator) release() {
 	if g.Pipeline != nil {
-		defer g.Pipeline.Release()
+		g.Pipeline.Release()
 	}
+	g.mu.Lock()
+	g.running = false
+	g.mu.Unlock()
+}
 
+// run is ONE full generation pass with both locks already held by the
+// caller (claim/release).
+func (g *Generator) run(dryRun bool, opts Options) (Result, error) {
 	runID, err := g.St.StartRun("generate")
 	if err != nil {
 		return Result{}, fmt.Errorf("generate: record run: %w", err)

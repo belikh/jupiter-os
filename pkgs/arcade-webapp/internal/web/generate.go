@@ -74,16 +74,16 @@ func (s *Server) generateOptions() (generate.Options, error) {
 // one deferred retry (ADV-P6-03); a retry that finds the slot busy again
 // stays the accepted D-P6d residual. Callers run it in their own
 // goroutine when they must not block.
+//
+// The curation options are supplied as a PROVIDER (ADV-P7-02): the
+// generator reads them only after holding the pipeline slot, so a pass
+// can never claim a slot freed by a fresher generation and overwrite the
+// served tree from a pre-lock stale snapshot.
 func (s *Server) regenerationPass(retryOnBusy bool) {
 	if s.gen == nil || !s.gen.Configured() {
 		return
 	}
-	opts, err := s.generateOptions()
-	if err != nil {
-		log.Printf("web: regeneration options: %v", err)
-		return
-	}
-	if _, err := s.gen.GenerateOptions(false, opts); err != nil {
+	if _, err := s.gen.GenerateFresh(false, s.generateOptions); err != nil {
 		if !errors.Is(err, generate.ErrBusy) {
 			log.Printf("web: regeneration: %v", err)
 			return
@@ -117,13 +117,10 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "generator not configured", http.StatusServiceUnavailable)
 		return
 	}
-	opts, err := s.generateOptions()
-	if err != nil {
-		log.Printf("web: generate: %v", err)
-		http.Error(w, "generation could not be started", http.StatusInternalServerError)
-		return
-	}
-	res, err := s.gen.GenerateOptions(false, opts)
+	// ADV-P7-02: the manual button reads its options under the slot too —
+	// a click racing the async curation worker renders post-state, never
+	// overwrites it with a stale pre-click snapshot.
+	res, err := s.gen.GenerateFresh(false, s.generateOptions)
 	if errors.Is(err, generate.ErrBusy) {
 		http.Error(w, "a pipeline job holds the slot (verify/scrape/generate)", http.StatusConflict)
 		return

@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -233,6 +234,86 @@ var errFake = &fakeErr{}
 type fakeErr struct{}
 
 func (*fakeErr) Error() string { return "fake" }
+
+// TestRegenerationReadsOptionsUnderTheSlot pins ADV-P7-02: the curation
+// options are read INSIDE the locked region, so store mutations landing
+// while the slot is held are picked up by THIS pass instead of being
+// clobbered by a pre-lock stale snapshot (the lost-update interleaving:
+// G1 snapshots pre-state → G2 generates post-state and releases → G1
+// claims the freed slot and writes stale bytes). The provider IS the
+// stall hook: it blocks mid-pass while the test mutates the store.
+func TestRegenerationReadsOptionsUnderTheSlot(t *testing.T) {
+	h := newGenServer(t)
+
+	inOpts := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		_, err := h.gen.GenerateFresh(false, func() (generate.Options, error) {
+			close(inOpts) // both locks HELD; the options read is stalled here
+			<-release
+			return h.srv.generateOptions()
+		})
+		done <- err
+	}()
+	<-inOpts
+
+	// Mutate the store WHILE this generation holds the pipeline slot: a
+	// brand-new collection with one nes member.
+	cid, err := h.srv.st.CreateCollection("Kitchen Quick-Play", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	games, _ := h.srv.st.ListGames(store.GameListOpts{SystemKey: "nes", Limit: 1})
+	if len(games.Games) != 1 {
+		t.Fatal("no nes fixture game found")
+	}
+	g := games.Games[0]
+	if err := h.srv.st.AddCollectionGame(cid, g.SystemKey, g.ID); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+
+	if err := <-done; err != nil {
+		t.Fatalf("GenerateFresh: %v", err)
+	}
+	b, rerr := os.ReadFile(filepath.Join(h.root, "games", "cartridge", "nes", "metadata.pegasus.txt"))
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	out := string(b)
+	for _, want := range []string{generate.CustomCollectionMarker, "shortname: kitchen-quick-play"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("mid-slot mutation missing from generated file (stale snapshot):\n%s", out)
+		}
+	}
+}
+
+// TestFreshProviderOnlyRunsUnderLock pins the other half of ADV-P7-02:
+// when the pipeline slot is held, GenerateFresh refuses WITHOUT ever
+// invoking the provider — an options read outside the locked region is
+// exactly the bug class being fixed.
+func TestFreshProviderOnlyRunsUnderLock(t *testing.T) {
+	h := newGenServer(t)
+	if !h.gen.Pipeline.TryAcquire() {
+		t.Fatal("could not hold the idle pipeline mutex")
+	}
+	defer h.gen.Pipeline.Release()
+
+	called := make(chan struct{})
+	_, err := h.gen.GenerateFresh(false, func() (generate.Options, error) {
+		close(called)
+		return generate.Options{}, nil
+	})
+	if !errors.Is(err, generate.ErrBusy) {
+		t.Fatalf("busy slot = %v, want ErrBusy", err)
+	}
+	select {
+	case <-called:
+		t.Fatal("provider ran WITHOUT holding the slot (pre-lock snapshot bug)")
+	default:
+	}
+}
 
 // TestGenerateRunDetailRendering: the runs-table detail cell renders the
 // generate payload humanized (never raw JSON — ADV-P1-05).
