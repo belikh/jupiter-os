@@ -58,11 +58,15 @@
 
 {{/* Game-detail actions region (P5): the plan's per-game re-scrape
       action, wired to Driver.ScrapeGame; swaps itself so a kicked job
-      flips the row into its in-flight state without a reload. Hide/show
-      stays disabled — curation lands in P7. */ -}}
+      flips the row into its in-flight state without a reload. P7 wires
+      hide/show: one toggle endpoint, the region re-renders with the
+      flipped label and triggers an async launcher-DB regeneration. */ -}}
 {{define "game-actions"}}
 <div id="game-actions" class="actions">
-  <button type="button" disabled title="curation lands in P7">{{if .Hidden}}Show{{else}}Hide{{end}}</button>
+  <button class="mini" hx-post="/systems/{{.SystemKey}}/games/{{.GameID}}/hide"
+    hx-target="#game-actions" hx-swap="outerHTML"
+    title="{{if .Hidden}}show this game in the library and the launcher DB{{else}}hide this game from the library and the launcher DB{{end}}">
+    {{if .Hidden}}Show{{else}}Hide{{end}}</button>
   <button class="mini primary" hx-post="/systems/{{.SystemKey}}/games/{{.GameID}}/scrape"
     hx-target="#game-actions" hx-swap="outerHTML"
     {{if not .CanScrape}}disabled{{end}}

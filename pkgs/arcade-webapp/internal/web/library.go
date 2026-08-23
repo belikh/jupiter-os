@@ -61,7 +61,7 @@ func gameTitle(relPath string) string {
 // libURL rebuilds a /library URL with only the non-default params, in a
 // deterministic key order (url.Values.Encode sorts) — pager hrefs and
 // tests depend on that shape.
-func libURL(q, system, state, sort string, page int) string {
+func libURL(q, system, state, sort, hidden string, page int) string {
 	vals := url.Values{}
 	if q != "" {
 		vals.Set("q", q)
@@ -74,6 +74,9 @@ func libURL(q, system, state, sort string, page int) string {
 	}
 	if sort != "" && sort != store.SortTitle {
 		vals.Set("sort", sort)
+	}
+	if hidden != "" {
+		vals.Set("hidden", hidden)
 	}
 	if page > 1 {
 		vals.Set("page", strconv.Itoa(page))
@@ -99,6 +102,7 @@ type gameCardVM struct {
 
 type libraryVM struct {
 	Q, System, State, Sort string
+	HiddenFilter           string // "" both | "1" hidden only | "0" visible only
 	Page, TotalPages       int
 	Total                  int64
 	CountShown             int
@@ -129,6 +133,10 @@ func (s *Server) fetchLibrary(r *http.Request) (libraryVM, error) {
 	default:
 		sort = ""
 	}
+	hiddenFilter := qp.Get("hidden")
+	if hiddenFilter != "0" && hiddenFilter != "1" {
+		hiddenFilter = "" // both
+	}
 	page := 1
 	if p, err := strconv.Atoi(qp.Get("page")); err == nil && p > 1 {
 		page = p
@@ -140,7 +148,8 @@ func (s *Server) fetchLibrary(r *http.Request) (libraryVM, error) {
 
 	vm := libraryVM{
 		Q: q, System: system, State: state, Sort: sort,
-		Meta: pageMeta{Title: "library", Sub: "game library", ActiveLibrary: true},
+		HiddenFilter: hiddenFilter,
+		Meta:         pageMeta{Title: "library", Sub: "game library", ActiveLibrary: true},
 	}
 	vm.BackHere = "/library"
 	if rq := r.URL.RawQuery; rq != "" {
@@ -155,6 +164,14 @@ func (s *Server) fetchLibrary(r *http.Request) (libraryVM, error) {
 	opts := store.GameListOpts{
 		Q: q, SystemKey: system, VerifyState: state, Sort: sort,
 		Limit: libPageSize, Offset: (page - 1) * libPageSize,
+	}
+	switch hiddenFilter {
+	case "1":
+		t := true
+		opts.Hidden = &t
+	case "0":
+		f := false
+		opts.Hidden = &f
 	}
 	pg, err := s.st.ListGames(opts)
 	if err != nil {
@@ -190,10 +207,10 @@ func (s *Server) fetchLibrary(r *http.Request) (libraryVM, error) {
 		})
 	}
 	if page > 1 {
-		vm.PrevURL = libURL(q, system, state, sort, page-1)
+		vm.PrevURL = libURL(q, system, state, sort, hiddenFilter, page-1)
 	}
 	if page < totalPages {
-		vm.NextURL = libURL(q, system, state, sort, page+1)
+		vm.NextURL = libURL(q, system, state, sort, hiddenFilter, page+1)
 	}
 	return vm, nil
 }
@@ -208,6 +225,52 @@ func (s *Server) handleLibraryPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.render(w, http.StatusOK, "layout-library", vm)
+}
+
+// handleGameHideToggle flips one game's hidden curation flag (P7): hide
+// when visible, show when hidden — one endpoint, the toggle IS the API.
+// Mutating endpoint: htmx-only (D-P2c). The write itself is a cheap
+// indexed UPDATE that deliberately does NOT claim the pipeline slot; the
+// launcher-DB regeneration it causes runs afterwards in the background
+// through regenerateLauncherDBAsync (serialized by the shared heavy-job
+// lock there). The answer swaps #game-actions with its refreshed self,
+// so the button flips Hide↔Show without a reload.
+func (s *Server) handleGameHideToggle(w http.ResponseWriter, r *http.Request) {
+	if !hxRequestOK(r) {
+		http.Error(w, "htmx requests only", http.StatusForbidden)
+		return
+	}
+	sys := r.PathValue("systemKey")
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil { // non-numeric ids read as absent, not 500
+		http.NotFound(w, r)
+		return
+	}
+	g, err := s.st.GetGame(sys, id)
+	if err != nil {
+		http.Error(w, "game lookup failed", http.StatusInternalServerError)
+		log.Printf("web: game hide %s/%d: %v", sys, id, err)
+		return
+	}
+	if g == nil {
+		http.NotFound(w, r)
+		return
+	}
+	if err := s.st.SetGameHidden(sys, g.RelPath, !g.Hidden); err != nil {
+		http.Error(w, "hide failed", http.StatusInternalServerError)
+		log.Printf("web: game hide %s/%s: %v", sys, g.RelPath, err)
+		return
+	}
+	s.regenerateLauncherDBAsync()
+	ng, err := s.st.GetGame(sys, id)
+	if err != nil || ng == nil {
+		// The row existed a moment ago; a re-read failure here would make
+		// the button state lie, so fail loudly instead.
+		http.Error(w, "game lookup failed after toggle", http.StatusInternalServerError)
+		log.Printf("web: game hide re-read %s/%d: %v", sys, id, err)
+		return
+	}
+	s.render(w, http.StatusOK, "game-actions", s.fetchGameActions(ng))
 }
 
 func (s *Server) handlePartialLibrary(w http.ResponseWriter, r *http.Request) {

@@ -152,6 +152,9 @@ type verifyRowVM struct {
 	// the recent-run history with run-over-run deltas.
 	OffenderFiles []string
 	History       []verifyPointVM
+	// P7 curation: this system's hidden-game count (>0 renders the bulk
+	// "show all hidden" affordance on the row).
+	HiddenCount int64
 	// Button affordances.
 	CanVerify bool
 }
@@ -212,6 +215,14 @@ func (s *Server) fetchVerify() verifyVM {
 			staged[r.SystemKey] = r
 		}
 	}
+	// P7 curation: per-system hidden counts power the bulk "show all
+	// hidden" affordance (rendered only where it can do something). Read
+	// failure degrades to no affordance, never a broken page.
+	hiddenCounts, err := s.st.HiddenCountsBySystem()
+	if err != nil {
+		log.Printf("web: verify: hidden counts: %v", err)
+		hiddenCounts = map[string]int64{}
+	}
 	lastAttempt := s.lastVerifyAttempts()
 
 	for _, sys := range summary {
@@ -230,6 +241,7 @@ func (s *Server) fetchVerify() verifyVM {
 			CountsValid:   sys.VerifyPresent,
 			PromotedHuman: HumanBytes(sys.Verify.PromotedBytes),
 			HasReport:     sys.Verify.ReportPath != "",
+			HiddenCount:   hiddenCounts[sys.Key],
 		}
 		if sys.DATDate != "" {
 			row.DATAgeDays = scannerAgeDays(sys.DATDate, vm.Now)
@@ -432,6 +444,36 @@ func (s *Server) handleVerifySystem(w http.ResponseWriter, r *http.Request) {
 	}()
 	vm := s.fetchVerify()
 	s.render(w, http.StatusAccepted, "partial-verify", vm)
+}
+
+// handleSystemUnhideAll is the P7 bulk action: every hidden game of one
+// system becomes visible again ("show all hidden" on the worklist row).
+// Mutating endpoint: htmx-only. The flip is a single UPDATE that claims
+// no pipeline slot; the launcher-DB regeneration follows asynchronously
+// through regenerateLauncherDBAsync. The answer swaps the verify panel,
+// so the affordance disappears the moment its count reads zero.
+func (s *Server) handleSystemUnhideAll(w http.ResponseWriter, r *http.Request) {
+	if !hxRequestOK(r) {
+		http.Error(w, "htmx requests only", http.StatusForbidden)
+		return
+	}
+	sys := r.PathValue("system")
+	if !s.systemExists(sys) {
+		http.Error(w, "unknown system "+sys, http.StatusNotFound)
+		return
+	}
+	n, err := s.st.SetSystemHiddenAll(sys, false)
+	if err != nil {
+		http.Error(w, "unhide failed", http.StatusInternalServerError)
+		log.Printf("web: unhide-all %s: %v", sys, err)
+		return
+	}
+	if n > 0 {
+		log.Printf("web: unhide-all %s: %d game(s) shown; regenerating launcher DB", sys, n)
+		s.regenerateLauncherDBAsync()
+	}
+	vm := s.fetchVerify()
+	s.render(w, http.StatusOK, "partial-verify", vm)
 }
 
 // handleDATRefresh fetches every mapped system's DAT (failures are

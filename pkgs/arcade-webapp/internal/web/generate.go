@@ -9,8 +9,8 @@
 // refreshed fragment renders. Serialization rides the shared pipeline
 // mutex inside generate.Generator (ADV-P5-03 family): a second click
 // while one runs — or while a verify/scrape holds the slot — is a
-// deterministic 409. Curation hooks (P7) call Generator.Generate(dryRun)
-// directly; the dry-run flag exists for their diff-preview flow.
+// deterministic 409. Curation hooks (P7) call regenerateLauncherDBAsync,
+// which runs the same pass in the caller's background goroutine.
 package web
 
 import (
@@ -34,6 +34,77 @@ func WithGenerator(g *generate.Generator) Option {
 	return func(s *Server) { s.gen = g }
 }
 
+// generateOptions assembles the generator's Options from the store:
+// every custom collection with its VISIBLE members (hidden games are
+// excluded by contract, so they are dropped here at the source). A read
+// failure is an error, never a silent empty set — dropping collections
+// silently would make the next generation un-list them from every kiosk.
+func (s *Server) generateOptions() (generate.Options, error) {
+	var opts generate.Options
+	cols, err := s.st.Collections()
+	if err != nil {
+		return opts, fmt.Errorf("collections: %w", err)
+	}
+	for _, c := range cols {
+		members, err := s.st.CollectionMembers(c.ID)
+		if err != nil {
+			return opts, fmt.Errorf("collection %d members: %w", c.ID, err)
+		}
+		gc := generate.CustomCollection{
+			Title:     c.Name,
+			Shortname: c.Shortname,
+			Summary:   c.Summary,
+		}
+		for _, m := range members {
+			if m.Hidden {
+				continue // hidden games never reach generation
+			}
+			gc.Members = append(gc.Members, generate.CollectionMember{
+				SystemKey: m.SystemKey, RelPath: m.RelPath,
+			})
+		}
+		opts.CustomCollections = append(opts.CustomCollections, gc)
+	}
+	return opts, nil
+}
+
+// regenerationPass is ONE attempt to regenerate the launcher DB with the
+// current store state (curation included), recording an explicit skipped
+// run row when the pipeline slot is held. retryOnBusy schedules exactly
+// one deferred retry (ADV-P6-03); a retry that finds the slot busy again
+// stays the accepted D-P6d residual. Callers run it in their own
+// goroutine when they must not block.
+func (s *Server) regenerationPass(retryOnBusy bool) {
+	if s.gen == nil || !s.gen.Configured() {
+		return
+	}
+	opts, err := s.generateOptions()
+	if err != nil {
+		log.Printf("web: regeneration options: %v", err)
+		return
+	}
+	if _, err := s.gen.GenerateOptions(false, opts); err != nil {
+		if !errors.Is(err, generate.ErrBusy) {
+			log.Printf("web: regeneration: %v", err)
+			return
+		}
+		s.recordGenerateSkip()
+		if retryOnBusy {
+			time.AfterFunc(postVerifyRetryDelay, func() { s.regenerationPass(false) })
+		}
+		return
+	}
+	log.Printf("web: regeneration complete")
+}
+
+// regenerateLauncherDBAsync fires one regenerationPass in the background
+// — the hide/unhide/collection-edit trigger (P7): a cheap DB write must
+// never wait on the heavy job it causes, and the operator sees the
+// result land via the generation log / served tree within seconds.
+func (s *Server) regenerateLauncherDBAsync() {
+	go s.regenerationPass(true)
+}
+
 // handleGenerate regenerates every populated system's metadata file now
 // and answers with the refreshed metadata fragment (the button swaps
 // #metadata-panel, so the new generation log row is the response).
@@ -46,7 +117,13 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "generator not configured", http.StatusServiceUnavailable)
 		return
 	}
-	res, err := s.gen.Generate(false)
+	opts, err := s.generateOptions()
+	if err != nil {
+		log.Printf("web: generate: %v", err)
+		http.Error(w, "generation could not be started", http.StatusInternalServerError)
+		return
+	}
+	res, err := s.gen.GenerateOptions(false, opts)
 	if errors.Is(err, generate.ErrBusy) {
 		http.Error(w, "a pipeline job holds the slot (verify/scrape/generate)", http.StatusConflict)
 		return
@@ -70,15 +147,6 @@ func (s *Server) handleGenerate(w http.ResponseWriter, r *http.Request) {
 // operator can always click Regenerate). Runs in the caller's
 // background goroutine; the runner has released the pipeline slot by
 // the time Verify returns, so the generator can claim it here.
-//
-// When the slot IS held (a scrape or a manual generate owns it), the
-// skip is not silent (ADV-P6-03): an explicit kind=generate run row
-// marked "skipped" lands in the generation history, and ONE retry is
-// scheduled after postVerifyRetryDelay — promotions changed the served
-// trees, so the follow-up matters more than a casual drop. If the retry
-// finds the slot busy again, that is the accepted residual: the next
-// verify/scrape/generation will regenerate anyway, and D-P6d keeps
-// queueing semantics out of scope.
 func (s *Server) maybeGenerateAfterVerify(outcomes []igir.SystemOutcome, verifyErr error) {
 	if verifyErr != nil || s.gen == nil || !s.gen.Configured() {
 		return
@@ -93,22 +161,7 @@ func (s *Server) maybeGenerateAfterVerify(outcomes []igir.SystemOutcome, verifyE
 	if !promoted {
 		return // skipped-empty/failed batches changed no tree
 	}
-	if _, err := s.gen.Generate(false); err != nil {
-		if !errors.Is(err, generate.ErrBusy) {
-			log.Printf("web: post-verify regeneration: %v", err)
-			return
-		}
-		s.recordGenerateSkip()
-		time.AfterFunc(postVerifyRetryDelay, func() {
-			if _, err := s.gen.Generate(false); err != nil {
-				log.Printf("web: post-verify regeneration (deferred retry): %v", err)
-				return
-			}
-			log.Printf("web: post-verify regeneration complete (deferred retry)")
-		})
-		return
-	}
-	log.Printf("web: post-verify regeneration complete")
+	s.regenerationPass(true)
 }
 
 // postVerifyRetryDelay is the single deferred-retry window for a
@@ -166,11 +219,12 @@ func (s *Server) fetchGenLog() genLogVM {
 // generateRunDetail mirrors the generator's runs.detail JSON.
 type generateRunDetail struct {
 	Systems []struct {
-		Sys     string `json:"Sys"`
-		Outcome string `json:"Outcome"`
-		Err     string `json:"Err,omitempty"`
-		Games   int    `json:"Games"`
-		Pending int    `json:"Pending"`
+		Sys         string `json:"Sys"`
+		Outcome     string `json:"Outcome"`
+		Err         string `json:"Err,omitempty"`
+		Games       int    `json:"Games"`
+		Pending     int    `json:"Pending"`
+		Collections int    `json:"Collections"`
 	} `json:"Systems"`
 	Validated bool `json:"Validated"`
 	DryRun    bool `json:"DryRun"`
@@ -178,7 +232,8 @@ type generateRunDetail struct {
 
 // generateRunDetailHTML renders the humanized detail cell for
 // kind=generate runs (one line per system, capped; validation verdict;
-// never raw JSON — ADV-P1-05).
+// never raw JSON — ADV-P1-05). Collection counts (P7) ride each system
+// line plus the head total.
 func generateRunDetailHTML(detail string) (template.HTML, bool) {
 	var d generateRunDetail
 	if err := json.Unmarshal([]byte(detail), &d); err != nil {
@@ -193,6 +248,13 @@ func generateRunDetailHTML(detail string) (template.HTML, bool) {
 	if d.DryRun {
 		head += " · dry-run"
 	}
+	totalCols := 0
+	for _, oc := range d.Systems {
+		totalCols += oc.Collections
+	}
+	if totalCols > 0 {
+		head += fmt.Sprintf(" · %d custom collection block(s)", totalCols)
+	}
 	b.WriteString(esc(head))
 	for i, oc := range d.Systems {
 		if i >= 4 {
@@ -202,6 +264,9 @@ func generateRunDetailHTML(detail string) (template.HTML, bool) {
 		line := fmt.Sprintf("%s: %s · %d games", esc(oc.Sys), esc(oc.Outcome), oc.Games)
 		if oc.Pending > 0 {
 			line += fmt.Sprintf(" · %d pending", oc.Pending)
+		}
+		if oc.Collections > 0 {
+			line += fmt.Sprintf(" · %d collections", oc.Collections)
 		}
 		if oc.Err != "" {
 			line += " — " + esc(truncate(oc.Err, 80))

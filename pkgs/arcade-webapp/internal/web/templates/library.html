@@ -34,6 +34,12 @@
           <option value="unmatched"{{if eq $st "unmatched"}} selected{{end}}>unmatched</option>
           <option value="unknown"{{if eq $st "unknown"}} selected{{end}}>unknown</option>
         </select>
+        <select name="hidden" aria-label="hidden filter">
+          {{$hd := .HiddenFilter}}
+          <option value=""{{if eq $hd ""}} selected{{end}}>shown + hidden</option>
+          <option value="0"{{if eq $hd "0"}} selected{{end}}>visible only</option>
+          <option value="1"{{if eq $hd "1"}} selected{{end}}>hidden only</option>
+        </select>
         <select name="sort" aria-label="sort by">
           {{$so := .Sort}}
           <option value="title"{{if or (eq $so "") (eq $so "title")}} selected{{end}}>sort: title</option>

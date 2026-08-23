@@ -119,6 +119,17 @@ func New(st *store.Store, scan *scanner.Scanner, opts ...Option) (*Server, error
 	mux.HandleFunc("POST /systems/{system}/stage-uri", s.handleStageURI)
 	// P6: launcher-DB generation — the manual Regenerate action.
 	mux.HandleFunc("POST /generate", s.handleGenerate)
+	// P7: curation — hide/show toggles + custom collections CRUD UI.
+	mux.HandleFunc("POST /systems/{systemKey}/games/{id}/hide", s.handleGameHideToggle)
+	mux.HandleFunc("POST /systems/{system}/unhide-all", s.handleSystemUnhideAll)
+	mux.HandleFunc("GET /collections", s.handleCollectionsPage)
+	mux.HandleFunc("GET /partials/collections", s.handlePartialCollections)
+	mux.HandleFunc("POST /collections/create", s.handleCollectionCreate)
+	mux.HandleFunc("GET /collections/{id}", s.handleCollectionPage)
+	mux.HandleFunc("POST /collections/{id}/update", s.handleCollectionUpdate)
+	mux.HandleFunc("POST /collections/{id}/delete", s.handleCollectionDelete)
+	mux.HandleFunc("POST /collections/{id}/add", s.handleCollectionAddGame)
+	mux.HandleFunc("POST /collections/{id}/remove", s.handleCollectionRemoveGame)
 	mux.HandleFunc("POST /rescan", s.handleRescan)
 	mux.HandleFunc("GET /", s.handleIndex)
 	s.handler = mux
@@ -164,15 +175,16 @@ type totalsVM struct {
 // pageMeta is what the shared topbar partial needs from any page's view
 // model (title, the contextual health chip, which nav item is active).
 type pageMeta struct {
-	Title         string
-	Sub           string
-	HealthLabel   string
-	HealthClass   string
-	ActiveDash    bool
-	ActiveLibrary bool
-	ActiveDloads  bool
-	ActiveVerify  bool
-	ActiveMeta    bool
+	Title             string
+	Sub               string
+	HealthLabel       string
+	HealthClass       string
+	ActiveDash        bool
+	ActiveLibrary     bool
+	ActiveCollections bool // P7 curation pages
+	ActiveDloads      bool
+	ActiveVerify      bool
+	ActiveMeta        bool
 }
 
 type incomingVM struct {

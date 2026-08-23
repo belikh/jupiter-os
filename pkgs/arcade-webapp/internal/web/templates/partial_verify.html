@@ -108,6 +108,11 @@
               hx-target="#verify-panel" hx-swap="outerHTML"
               {{if not .CanVerify}}disabled{{end}}
               title="igir copy test report: verify + promote this system now">verify</button>
+            {{if .HiddenCount}}
+            <button class="mini" hx-post="/systems/{{.Key}}/unhide-all"
+              hx-target="#verify-panel" hx-swap="outerHTML"
+              title="show every hidden game of this system again (regenerates the launcher DB)">show {{.HiddenCount}} hidden</button>
+            {{end}}
           </td>
         </tr>
         {{end}}
