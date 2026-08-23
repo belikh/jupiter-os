@@ -33,7 +33,9 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -64,6 +66,11 @@ const PendingMarker = "# jupiter-pending-section"
 const pendingSummary = "Still downloading or incomplete - listed but not yet playable."
 
 const targetName = "metadata.pegasus.txt"
+
+// processStartedAt approximates this process's birth (package-init time;
+// nothing of ours runs earlier). The stale-temp sweep only reclaims
+// residue older than it — see sweepStaleTemps.
+var processStartedAt = time.Now()
 
 // Magic-byte sniff constants (cartridge-scrape.sh rom_complete port).
 const (
@@ -280,6 +287,24 @@ func (g *Generator) GenerateOptions(dryRun bool, opts Options) (Result, error) {
 			}
 		}
 		res.Systems = append(res.Systems, p.oc)
+	}
+
+	// ADV-P6-02: a kill -9 between CreateTemp and Rename strands a
+	// dot-prefixed .tmp sibling in the SERVED tree forever — the next
+	// igir verify counts it Extra → amber. Reclaim residue in every dir
+	// this run generated into (validation-failed dirs included: they are
+	// still generated dirs) before recording the run row. A dry run must
+	// not touch the tree at all (P7's diff-preview purity).
+	if !dryRun && len(payloads) > 0 {
+		seen := map[string]bool{}
+		var dirs []string
+		for _, p := range payloads {
+			if !seen[p.dir] {
+				seen[p.dir] = true
+				dirs = append(dirs, p.dir)
+			}
+		}
+		sweepStaleTemps(dirs)
 	}
 
 	status := g.finishRun(runID, &res)
@@ -516,15 +541,77 @@ func mediaAssets(sysDir, baseNoExt string) []assetRef {
 	return out
 }
 
+// tempSiblingRe matches the dot-prefixed metadata temp siblings
+// writeAtomic creates — the current pid-stamped shape AND any legacy
+// no-pid residue left by older binaries.
+var tempSiblingRe = regexp.MustCompile(`^\.` + regexp.QuoteMeta(targetName) + `\..+\.tmp$`)
+
+// tempOwnerPid extracts the pid embedded in a current-shape temp name
+// (".metadata.pegasus.txt.<pid>.<rand>.tmp"); 0 for legacy shapes or
+// unparseable names.
+func tempOwnerPid(name string) int {
+	mid := strings.TrimSuffix(strings.TrimPrefix(name, "."+targetName+"."), ".tmp")
+	fields := strings.SplitN(mid, ".", 2)
+	pid, err := strconv.Atoi(fields[0])
+	if err != nil || pid <= 0 {
+		return 0
+	}
+	return pid
+}
+
+// sweepStaleTemps reclaims kill -9 residue: dot-prefixed *.tmp siblings
+// of metadata.pegasus.txt that two guards both disown.
+//
+// Guard 1 (pid): generations are serialized within THIS process by the
+// shared pipeline mutex, so no concurrent generation of ours can hold a
+// live temp while the sweep runs; the pid check is belt-and-braces for
+// any future caller that sweeps outside that serialization.
+//
+// Guard 2 (mtime): anything younger than this process may belong to
+// ANOTHER live webapp instance (overlapping restarts share the served
+// trees) — only residue predating our start is reclaimable debris. Our
+// own crash residue is reclaimed by the next process generation.
+func sweepStaleTemps(dirs []string) {
+	for _, dir := range dirs {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue // vanished dir: nothing to reclaim
+		}
+		for _, e := range entries {
+			name := e.Name()
+			if !tempSiblingRe.MatchString(name) {
+				continue
+			}
+			info, err := e.Info()
+			if err != nil || !info.Mode().IsRegular() {
+				continue
+			}
+			if tempOwnerPid(name) == os.Getpid() {
+				continue
+			}
+			if info.ModTime().After(processStartedAt) {
+				continue
+			}
+			if rerr := os.Remove(filepath.Join(dir, name)); rerr != nil {
+				logf("temp sweep %s: %v", filepath.Join(dir, name), rerr)
+				continue
+			}
+			logf("swept stale temp sibling %s in %s", name, filepath.Base(dir))
+		}
+	}
+}
+
 // writeAtomic installs data at path without EVER truncating the target:
 // temp sibling in the same directory (so rename is atomic on-dataset),
 // fsync'd before close, mode normalized, then renamed over the old
 // file. Any failure removes the temp and leaves the previous file
 // byte-intact — an interrupted generation degrades to "no change", the
-// kiosk-visible contract AC-5 demands.
+// kiosk-visible contract AC-5 demands. The temp name carries this
+// process's pid so the post-run stale-temp sweep (and igir's artifact
+// classifier) can attribute residue precisely.
 func writeAtomic(path string, data []byte) error {
 	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, "."+targetName+".*.tmp")
+	tmp, err := os.CreateTemp(dir, "."+targetName+"."+strconv.Itoa(os.Getpid())+".*.tmp")
 	if err != nil {
 		return fmt.Errorf("temp file: %w", err)
 	}

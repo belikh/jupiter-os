@@ -1,6 +1,7 @@
 package generate
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -536,6 +537,81 @@ func TestGeneratorStateLastOKAtWired(t *testing.T) {
 	}
 	if failState.LastOKAt != okState.LastOKAt {
 		t.Fatalf("LastOKAt moved on a failed run: %q -> %q", okState.LastOKAt, failState.LastOKAt)
+	}
+}
+
+// TestSweepReclaimsStaleTempResidue pins ADV-P6-02: kill -9 debris
+// (dot-prefixed *.tmp siblings predating this process) is swept at the
+// end of a real generation run; anything that could belong to a live
+// writer — another process's fresh temp, or our own pid-stamped shape —
+// stays untouched.
+func TestSweepReclaimsStaleTempResidue(t *testing.T) {
+	g, st, root := newGenHarness(t)
+	seedNES(t, st)
+	nesDir := filepath.Join(root, "games", "cartridge", "nes")
+
+	stale := filepath.Join(nesDir, ".metadata.pegasus.txt.999999.deadbeef.tmp")
+	writeROMBytes(t, stale, []byte("kill -9 residue"))
+	past := processStartedAt.Add(-time.Minute)
+	if err := os.Chtimes(stale, past, past); err != nil {
+		t.Fatal(err)
+	}
+	foreign := filepath.Join(nesDir, ".metadata.pegasus.txt.777777.cafebabe.tmp")
+	writeROMBytes(t, foreign, []byte("another live instance's temp"))
+	now := time.Now() // strictly after processStartedAt (package init)
+	if err := os.Chtimes(foreign, now, now); err != nil {
+		t.Fatal(err)
+	}
+	own := filepath.Join(nesDir, fmt.Sprintf(".metadata.pegasus.txt.%d.1234.tmp", os.Getpid()))
+	writeROMBytes(t, own, []byte("pid-guarded"))
+	if err := os.Chtimes(own, past, past); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := g.Generate(false); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	for _, tc := range []struct {
+		path     string
+		wantGone bool
+		note     string
+	}{
+		{stale, true, "pre-process residue"},
+		{foreign, false, "fresh other-process temp"},
+		{own, false, "our pid-stamped shape"},
+	} {
+		if _, err := os.Stat(tc.path); os.IsNotExist(err) != tc.wantGone {
+			t.Errorf("%s (%s): exists=%v, wantGone=%v", tc.note, filepath.Base(tc.path), !os.IsNotExist(err), tc.wantGone)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(nesDir, targetName)); err != nil {
+		t.Fatalf("sweep disturbed the generated file: %v", err)
+	}
+}
+
+// TestDryRunNeverSweeps pins the dry-run purity contract against the
+// sweeper: Generate(true) must not modify the served tree AT ALL (P7's
+// diff preview reads it), so residue reclaim happens on real runs only.
+func TestDryRunNeverSweeps(t *testing.T) {
+	g, st, root := newGenHarness(t)
+	seedNES(t, st)
+	nesDir := filepath.Join(root, "games", "cartridge", "nes")
+	residue := filepath.Join(nesDir, ".metadata.pegasus.txt.999999.deadbeef.tmp")
+	writeROMBytes(t, residue, []byte("residue"))
+	past := processStartedAt.Add(-time.Minute)
+	if err := os.Chtimes(residue, past, past); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := g.Generate(true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(residue); err != nil {
+		t.Fatal("dry run swept tree residue")
+	}
+	if _, err := os.Stat(filepath.Join(nesDir, targetName)); !os.IsNotExist(err) {
+		t.Fatal("dry run wrote the target file")
 	}
 }
 

@@ -38,6 +38,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -697,9 +698,16 @@ func ParseReport(rd io.Reader, inputDir, outputDir string) (*Report, error) {
 	return rep, nil
 }
 
+// launcherTmpRe matches the generator's dot-prefixed temp siblings of
+// metadata.pegasus.txt (ADV-P6-02): kill -9 residue between CreateTemp
+// and Rename, in both the pid-stamped current shape and any legacy
+// no-pid shape. Pipeline-owned debris, never tree junk.
+var launcherTmpRe = regexp.MustCompile(`^\.metadata\.pegasus\.txt\..+\.tmp$`)
+
 // launcherDBArtifact reports whether a path inside the igir output dir is
 // one of the launcher-DB files this pipeline itself generates/manages:
-// the per-system metadata.pegasus.txt and anything under its media/
+// the per-system metadata.pegasus.txt, its dot-prefixed *.tmp write
+// siblings (generator residue), and anything under its media/
 // subtree (Skyscraper's composited artwork layout). The first element of
 // a slash-separated relative path decides — case-exact on Linux.
 func launcherDBArtifact(outputDir, path string) bool {
@@ -709,6 +717,9 @@ func launcherDBArtifact(outputDir, path string) bool {
 	}
 	rel = filepath.ToSlash(rel)
 	if rel == "metadata.pegasus.txt" {
+		return true
+	}
+	if !strings.Contains(rel, "/") && launcherTmpRe.MatchString(rel) {
 		return true
 	}
 	head, _, _ := strings.Cut(rel, "/")

@@ -827,6 +827,36 @@ NES,Game A,FOUND,/out/nes/Game A.nes
 	}
 }
 
+// TestLauncherDBArtifactTmpShape pins the ADV-P6-02 defense in depth:
+// the generator's dot-prefixed *.tmp write siblings (kill -9 residue
+// between CreateTemp and Rename) classify as launcher-DB artifacts, so a
+// verify that runs before the next sweep counts them benign instead of
+// amber Extra. Both the pid-stamped current shape and legacy no-pid
+// residue match; lookalikes outside the system dir root or with other
+// stems do not.
+func TestLauncherDBArtifactTmpShape(t *testing.T) {
+	out := "/out/nes"
+	cases := []struct {
+		path string
+		want bool
+		note string
+	}{
+		{out + "/metadata.pegasus.txt", true, "the served file"},
+		{out + "/.metadata.pegasus.txt.4242.31415926.tmp", true, "pid-stamped residue"},
+		{out + "/.metadata.pegasus.txt.534534.tmp", true, "legacy no-pid residue"},
+		{out + "/media/x/cover.png", true, "media subtree unchanged"},
+		{out + "/.other.pegasus.txt.4242.tmp", false, "different stem"},
+		{out + "/sub/.metadata.pegasus.txt.4242.tmp", false, "not at the system-dir root"},
+		{out + "/operator drop.tmp", false, "real junk still amber via Extra"},
+		{"elsewhere/nes/metadata.pegasus.txt", false, "outside the output dir"},
+	}
+	for _, tc := range cases {
+		if got := launcherDBArtifact(out, tc.path); got != tc.want {
+			t.Errorf("%s: launcherDBArtifact = %v, want %v", tc.note, got, tc.want)
+		}
+	}
+}
+
 // ---- copyTree quick-check --------------------------------------------------
 
 func TestCopyTreeQuickCheckSemantics(t *testing.T) {
