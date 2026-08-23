@@ -396,6 +396,33 @@ runs 3+4+5 = three consecutive clean PASSes.
    literal parentheses the region tag carries. Test-side only; fixed
    with `grep -qxF` (fixed string). The pipeline itself was correct.
 
+### Phase 7 adversarial review — reconciliation (2026-08-23)
+
+5 findings + 1 accepted-as-recorded: **4 fixed in code** (`77ea27d`
+ADV-P7-01(+P7-05), `ce1a54d` ADV-P7-02, `64a01ec` ADV-P7-03(+P7-01b),
+`c1de6a8` ADV-P7-04), **1 accepted as recorded** (ADV-P7-06). None
+rejected.
+
+| Finding | Disposition | What changed |
+|---|---|---|
+| ADV-P7-01 HIGH — collectionShortname derives from operator names unchecked: a collection named "NES" derived shortname `nes`, colliding with the catalogue system's main-collection shortname → generation REFUSED that system's file forever (strict-parser duplicate-shortname error) while create/add answered success and the async-regen failure landed only in journal+run rows | **fixed** (`77ea27d`) | store probes the DERIVED shortname against the systems table (the catalogue copy the scanner upserts — no injected list, nothing to drift) at create AND rename time, returning a typed `ReservedShortnameError` naming both sides; no suffix probe can rescue `nes`, and rename is probed symmetrically (it keeps its stored shortname so it cannot break generation itself — the guard keeps one mental model and lets pre-fix rows self-heal by renaming away). Handlers answer 409 with the collision named in the re-rendered panel; both collections layouts opt 409 bodies into htmx's `responseHandling` (stock config never swaps 4xx) so the inline error is actually visible. Tests: store rejection matrix (main identity, case folding, `-pending` section, error text names both sides, no rows left behind, non-colliding lands, free-rename allowed), UI 409s for create+rename |
+| ADV-P7-01(b) — surface failed async regenerations to the triggering UI | **fixed** (`64a01ec`) | the coordinator records the last failed regeneration (validation refusal or per-system failures); collections panel, collection editor, game-actions region (where the hide toggle lives) and the metadata Launcher-database section render a visible warning marker naming where the log is; cleared by the next fully-ok generation (automatic or manual — `/generate` keeps it truthful). TestRegenFailureMarkerSurfacesToPages proves marker-on-failure across all surfaces and cleared-on-recovery |
+| ADV-P7-02 HIGH — regenerationPass snapshotted generateOptions() BEFORE claiming generator+pipeline locks → G1(pre-state read) → G2(post-state gen+release) → G1 claims the freed slot un-rejected and overwrites the served tree with stale bytes (lost update) | **fixed** (`ce1a54d`) | smallest correct design: options snapshot moved INSIDE the locked region via a provider callback — new `Generator.GenerateFresh(dryRun, provide)` claims, then invokes the provider under BOTH locks, then renders; the manual /generate button and every trigger path moved onto it (`GenerateOptions` stays for pre-built-options callers/tests). Tests: TestRegenerationReadsOptionsUnderTheSlot reproduces the interleaving deterministically (the provider IS the stall hook — blocked mid-pass while a collection+membership land in the store; the generated file must carry them), TestFreshProviderOnlyRunsUnderLock pins that a held slot refuses WITHOUT invoking the provider |
+| ADV-P7-03 MED — every mutation spawned its own regenerateLauncherDBAsync goroutine; busy hits each wrote a run row mislabeled "post-verify regeneration skipped" (wrong provenance for curation) plus a 30s AfterFunc each — N toggles during a verify flood history and hog the slot afterward | **fixed** (`64a01ec`) | dirty-flag + single worker goroutine: mutations call requestRegeneration(origin) (cheap, non-blocking); the flag is CLAIMED before each pass and a quiet-window gate holds the pass until the burst stops arriving (the naive claim-and-run chained 17 generations for 50 toggles — measured, then gated), so N rapid toggles cost 1–2 generations. Busy episodes write ONE coalesced row labeled accurately ("regeneration deferred — pipeline busy") with sorted provenance labels; post-verify keeps "post-verify promotion" distinct from curation's "curation edit"; the worker retries until the slot frees (no AfterFunc). Post-verify trigger migrated onto the same mechanism. Tests: TestRegenBurstCoalescing (50 toggles → 1–2 generations, zero skip rows, final state served), TestRegenDeferralCoalescedPerEpisode (one accurately-labeled row naming BOTH origins per episode, then exactly one deferred pass), TestPostVerifyGenerationBusyRecordsSkipAndRetries updated to the new contract |
+| ADV-P7-04 LOW — unbounded description ingest in ApplyCacheEnrichment | **fixed** (`c1de6a8`) | rune-safe truncation at 4000 chars (generous vs real blurbs of a few hundred), logged ONCE per run naming system+count rather than per-game spam; normal-size text stays byte-verbatim (honesty contract). Test pins exact stored length, tail-gone, verbatim passthrough |
+| ADV-P7-05 LOW — missing game→membership cascade store test | **fixed** (`77ea27d`) | TestGameDeleteCascadesCollectionMembership covers BOTH deletion paths: the scan-time prune (vanished file set removes exactly its system's memberships) and a direct games-row delete (FK ON DELETE CASCADE) |
+| ADV-P7-06 — recorded by the reviewer with disposition accepted | **accepted as recorded** (no change) | stands as documented in the review record |
+
+### Phase 7 post-reconciliation verification (fresh, on the reconciled tree)
+
+| Command | Result | Notes |
+|---|---|---|
+| `go build ./... && go vet ./...` (in `pkgs/arcade-webapp`) | **pass** (2026-08-23) | clean |
+| `go test -count=1 -race -timeout 25m ./...` | **pass** (2026-08-23) | ALL 12 packages ok incl. the new suites (web 66.8s, store 34.4s under -race); explicit timeout because the bare gate dies on go's 10-minute default cap in internal/web (recorded since the P6 reconciliation — same budget property, not a regression) |
+| `make test-arcade-webapp` | **pass** (2026-08-23) | full VM smoke end-to-end on the reconciled tree — hide/show toggles, cross-system collection blocks, pending split, enrichment e2e all still green through the NEW single-worker trigger path (the smoke's gen_now retry loop models the coordinator honestly deferring while the slot is held) |
+| `make check` | **pass** (2026-08-23) | all flake evals green incl. arcade-webapp-vm |
+| `make fmt` then `make fmt-check` | **pass** (2026-08-23) | fmt rewrote nothing (no tracked-file diff); fmt-check silent |
+
 ## Decision log
 
 | Decision | Verdict | Status | Evidence |
