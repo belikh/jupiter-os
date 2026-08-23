@@ -46,9 +46,11 @@ ROOTS ?= /mnt/exo-games/exo-dos /mnt/exo-games/exo-win3x /mnt/exo-games/exo-win9
 verify-arcade:
 	./scripts/verify-exo-collections.sh $(ROOTS)
 
-# Fleet arcade status — pretty-print europa's generated inventory JSON
-# (cartridge ROM counts/sizes + eXo art coverage). Requires europa reachable
-# at 10.1.1.2 and the arcade-inventory timer to have run at least once.
+# Fleet arcade status — pretty-print the fleet inventory JSON (cartridge
+# ROM counts/sizes + eXo art coverage). P8: the webapp SERVES the document
+# (field-for-field parity with the retired jupiter-arcade-inventory unit's
+# state file); scripts/arcade-status.sh reads the webapp endpoint first and
+# falls back to the legacy SSH path during transition.
 status-arcade:
 	./scripts/arcade-status.sh
 

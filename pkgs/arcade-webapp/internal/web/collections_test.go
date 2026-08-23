@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -565,4 +566,45 @@ func truncateStr(s string, n int) string {
 		return s
 	}
 	return s[:n] + "…"
+}
+
+// TestInventoryEndpointParityShape (web surface of the P8 inventory
+// subsumption): GET /inventory.json answers 200 application/json with
+// the legacy document's five sections, per-system counts/sizes from the
+// scanned fixture, and the constant unit name; active_state degrades to
+// "unknown" where systemctl has no such unit (the VM, any non-europa
+// host) — the field exists either way.
+func TestInventoryEndpointParityShape(t *testing.T) {
+	srv := newTestServer(t)
+	handler := srv.Handler()
+
+	rec := get(t, handler, "/inventory.json")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /inventory.json = %d", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Fatalf("content type = %q", ct)
+	}
+	body := rec.Body.String()
+	for _, marker := range []string{
+		`"generated_at"`,
+		`"cartridge"`,
+		`"optical"`,
+		`"modern"`,
+		`"exo"`,
+		`"rom_acquire"`,
+		`{"count":5,"size_bytes":294929}`, // the fixture nes aggregates
+		`"unit":"jupiter-rom-acquire.service"`,
+	} {
+		if !strings.Contains(body, marker) {
+			t.Fatalf("inventory document missing %s:\n%s", marker, body)
+		}
+	}
+	// active_state carries A value: the live unit state where systemctl
+	// knows the unit, "unknown" where it does not (VM / non-europa) —
+	// never an absent field (parity contract).
+	as := regexp.MustCompile(`"active_state":"[a-z]+"`).FindString(body)
+	if as == "" {
+		t.Fatalf("active_state missing or not a bare word:\n%s", body)
+	}
 }

@@ -122,6 +122,7 @@ func New(st *store.Store, scan *scanner.Scanner, opts ...Option) (*Server, error
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealthz)
+	mux.HandleFunc("GET /inventory.json", s.handleInventoryJSON)
 	mux.HandleFunc("GET /static/", s.handleStatic)
 	mux.HandleFunc("GET /partials/status", s.handlePartialStatus)
 	mux.HandleFunc("GET /partials/systems", s.handlePartialSystems)

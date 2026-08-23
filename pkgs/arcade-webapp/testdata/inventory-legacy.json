@@ -1,0 +1,21 @@
+{
+  "generated_at": "2026-08-23T09:00:00Z",
+  "cartridge": {
+    "gb": {"count": 4, "size_bytes": 40960},
+    "nes": {"count": 5, "size_bytes": 61440},
+    "snes": {"count": 4, "size_bytes": 53248}
+  },
+  "optical": {
+    "segacd": {"count": 1, "size_bytes": 6272}
+  },
+  "modern": {},
+  "exo": {
+    "dos": {"games": 6, "art": 5, "coverage_pct": 83.3},
+    "win3x": {"games": 0, "art": 0, "coverage_pct": 0},
+    "win9x": {"games": 0, "art": 0, "coverage_pct": 0}
+  },
+  "rom_acquire": {
+    "unit": "jupiter-rom-acquire.service",
+    "active_state": "inactive"
+  }
+}
