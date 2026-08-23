@@ -1,0 +1,38 @@
+collection: Nintendo Entertainment System
+shortname: nes
+launch: CABINET-RETRO -L fceumm "{file.path}"
+
+game: Crystal Carp (USA) (Rev A)
+file: Crystal Carp (USA) (Rev A).nes
+
+game: Mecha Garden (Japan)
+file: Mecha Garden (Japan).nes
+
+game: Neon Ninjutsu (World)
+file: Neon Ninjutsu (World).nes
+
+game: Pogo Postman (Europe)
+file: Pogo Postman (Europe).nes
+
+game: Starlit Vault (USA)
+file: Starlit Vault (USA).nes
+
+# pending-section
+collection: Nintendo Entertainment System (Pending)
+shortname: nes-pending
+summary: Still downloading or incomplete - listed but not yet playable.
+
+game: Bonza Box (USA)
+file: Bonza Box (USA).zip
+
+game: Zip Zapper (Europe)
+file: Zip Zapper (Europe).zip
+
+# custom-collection section
+collection: Kitchen quick-play
+shortname: kitchen-quick-play
+summary: Two-player cabinet picks
+launch: CABINET-RETRO -L fceumm "{file.path}"
+
+game: Crystal Carp (USA) (Rev A)
+file: Crystal Carp (USA) (Rev A).nes

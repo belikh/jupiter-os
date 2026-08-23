@@ -1,0 +1,117 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  
+  <meta name="htmx-config" content='{"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"409","swap":true},{"code":"[45]..","swap":false,"error":true}]}'>
+  <title>CABINET-MANAGER — collection</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js"></script>
+</head>
+<body>
+  
+<div class="topbar">
+  <div class="wrap">
+    <h1>CABINET-OS <span class="accent">Arcade</span></h1>
+    <span class="sub">custom collections</span>
+    <span class="spacer"></span>
+    <nav class="nav" aria-label="pages">
+      <a href="/" >Dashboard</a>
+      <a href="/library" >Library</a>
+      <a href="/collections" class="active" aria-current="page">Collections</a>
+      <a href="/downloads" >Downloads</a>
+      <a href="/verify" >Verify</a>
+      <a href="/metadata" >Metadata</a>
+    </nav>
+    <span class="pill "></span>
+  </div>
+</div>
+
+  <main class="wrap">
+    
+<div id="collection-panel" role="region" aria-label="collection editor" aria-live="polite">
+
+  
+  
+
+  <p><a class="back-link" href="/collections">‹ back to collections</a></p>
+
+  <section>
+    <h2>Kitchen quick-play
+      <span class="chip" title="stable identity used by the generated launcher-DB blocks">kitchen-quick-play</span>
+      <span class="chip">3 games</span>
+    </h2>
+
+    <p class="sub">Membership is cross-system: every member repeats inside ITS system's generated file,
+      under a block named after this collection. Hidden members are excluded from generation until shown.</p>
+
+    <form class="filter-bar" aria-label="rename collection"
+          hx-post="/collections/1/update" hx-target="#collection-panel" hx-swap="outerHTML">
+      <input type="text" name="name" required maxlength="80" value="Kitchen quick-play" aria-label="collection name">
+      <input type="text" name="summary" maxlength="200" value="Two-player cabinet picks" placeholder="summary (optional)" aria-label="collection summary">
+      <button type="submit">save</button>
+    </form>
+
+    
+    <table class="dl systems">
+      <thead><tr>
+        <th scope="col">game</th><th scope="col">system</th><th scope="col"><span class="visually-hidden">actions</span></th>
+      </tr></thead>
+      <tbody>
+        
+        <tr data-game="1">
+          <td>Bonza Box (USA)</td>
+          <td><span class="chip">nes</span></td>
+          <td>
+            <button class="mini danger" hx-post="/collections/1/remove?system=nes&game=1"
+              hx-target="#collection-panel" hx-swap="outerHTML"
+              title="remove from this collection (stays in the library)">remove</button>
+          </td>
+        </tr>
+        
+        <tr data-game="2">
+          <td>Crystal Carp (USA) (Rev A)</td>
+          <td><span class="chip">nes</span></td>
+          <td>
+            <button class="mini danger" hx-post="/collections/1/remove?system=nes&game=2"
+              hx-target="#collection-panel" hx-swap="outerHTML"
+              title="remove from this collection (stays in the library)">remove</button>
+          </td>
+        </tr>
+        
+        <tr data-game="8">
+          <td>Astral Almari (USA)</td>
+          <td><span class="chip">snes</span></td>
+          <td>
+            <button class="mini danger" hx-post="/collections/1/remove?system=snes&game=8"
+              hx-target="#collection-panel" hx-swap="outerHTML"
+              title="remove from this collection (stays in the library)">remove</button>
+          </td>
+        </tr>
+        
+      </tbody>
+    </table>
+    
+
+    <form class="filter-bar" method="get" action="/collections/1" aria-label="add games by search"
+          hx-get="/collections/1" hx-target="#collection-panel" hx-swap="outerHTML"
+          hx-trigger="input changed delay:300ms, change delay:300ms">
+      <input type="search" name="q" value="" placeholder="search titles to add…" aria-label="search titles to add">
+      <noscript><button type="submit">search</button></noscript>
+    </form>
+
+    
+  </section>
+</div>
+
+    
+<footer>
+  CABINET-MANAGER webapp — <a href="https://example.invalid/repo">gauntlet plan</a>
+  · fragments auto-refresh via htmx (dashboard 10s, download queue 2s)
+</footer>
+
+  </main>
+</body>
+</html>

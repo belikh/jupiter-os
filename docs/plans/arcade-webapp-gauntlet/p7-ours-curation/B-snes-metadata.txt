@@ -1,0 +1,24 @@
+collection: Super Nintendo Entertainment System
+shortname: snes
+launch: CABINET-RETRO -L snes9x "{file.path}"
+
+game: Astral Almari (USA)
+file: Astral Almari (USA).sfc
+
+game: Bakery Bandits (Europe)
+file: Bakery Bandits (Europe).sfc
+
+game: Turbo Tadpole (Japan)
+file: Turbo Tadpole (Japan).sfc
+
+game: Vault of Vertigo (USA) (Rev A)
+file: Vault of Vertigo (USA) (Rev A).sfc
+
+# custom-collection section
+collection: Kitchen quick-play
+shortname: kitchen-quick-play
+summary: Two-player cabinet picks
+launch: CABINET-RETRO -L snes9x "{file.path}"
+
+game: Astral Almari (USA)
+file: Astral Almari (USA).sfc

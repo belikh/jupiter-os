@@ -5,11 +5,11 @@ The live heartbeat of the builder/critic loop driving
 every critic verdict. Screenshots (when they exist) land under
 `arcade-webapp-gauntlet/` next to this file.
 
-- **Phase:** 2-4 complete — **P1–P6 won** (blind critics) · P7 in review · P8 pending
+- **Phase:** 2-4 complete — **P1–P7 won** (blind critics) · P8 in progress
 - **Branch:** `arcade/webapp-gauntlet`
 - **ADR:** [ADR-0002 — custom, not RomM](../adr/0002-arcade-webapp-custom-vs-romm.md)
   (D1 research-confirmed 2026-08-21; D2–D4 accepted)
-- **Last update:** 2026-08-23 14:40 AEST
+- **Last update:** 2026-08-23 17:55 AEST
 
 ## Piece table
 
@@ -21,7 +21,7 @@ every critic verdict. Screenshots (when they exist) land under
 | P4 — Library browsing | **won** — 1 loop + adversarial micro-audits | 1 (2 VM bring-up failures, both root-caused: pagination + missing awk) | **ours** (blind; A=anonymized RomM gallery home DOM, B=our /library grid + detail over the fixture store w/ generated SVG posters) | detail lacks CRC/SHA1 checksum rows + persistent report link (carry to P5) | `p4-ours-library.html`, `p4-ours-detail.html`, `p4-ours-library.png`, `p4-bar-romm-gallery.html`; critic: "findability exists only in B — A's home has zero input/select elements… B puts verification state on every card" |
 | P5 — Metadata engine control | **won** — 1 loop + adversarial reconciliation (2 HIGH fixed incl cache-key drift + secret-tail redaction) | 1 (VM bring-up runs 1–2 clean after the stub argv-journal fix, per `bb465d5`; post-push runs 3–4 flaked TEST-side races → completion-gated + slot-free wait in `108beae`, final PASS fresh below) | **ours** (blind; A=anonymized RomM home DOM + its published metadata docs — deep pages don't render headless, B=our /metadata + game detail after a real igir verify) | scrape run-history/deltas not visible post-run + no hash value displayed on detail (carry to P6) | commits `c94be34` (shared cache parser/CacheID/ApplyCacheFlags) `f01bcc3` `2663eb7` `ccb057f` (/metadata UI, serialized Driver) `449cd97` (module wiring) `bb465d5` (stubbed-Skyscraper smoke) + hardening `108beae`; reconciliation `0722aa7`…`c9241fc`; VM smoke: nes desc/cover 0→100 through the real driver→store→ApplyCacheFlags stack; `p5-ours-metadata.html`, `p5-ours-detail.html`, `p5-bar-romm-metadata-docs.html`; critic: "B renders a real per-system table… A's library DOM contains zero rendered content" |
 | P6 — Launcher DB generator | **won** — 1 loop + adversarial reconciliation (2 MED fixed: second-truncation test flake root-caused to store pruning precision; crash-window temp residue sweep) | 1 (VM bring-up: 1 root-caused igir-semantics regression + 3 smoke-side defects, 0 masked; 7 VM runs) + adversarial reconciliation | **ours** (blind; A=anonymized RomM pegasus_exporter.py source, B=our real generated metadata files for nes+snes) | enrichment not demonstrated end-to-end (no description/assets lines from scraped data in evidence) — carry to P7/P8 e2e | commits `2c6c70f` `ea841ac` `a3b20c7` `91b3dc6` `61e2ec0` `6ff8479`; two consecutive clean PASSes (runs 6+7) with the P6 block: launch line + relative paths + byte-stability + strict-parser validation + hidden exclusion both ways + pending split; reconciliation `2d62bdd` `1a2f4b0` `92f4a50` `545cee4`, fresh `-count=5 -race` all-green (below); `p6-ours-generated/`, `p6-bar-exporter-source.py`; critic: "only B has it: launch: … A's exporter never emits a launch: field anywhere… every entry is unbootable shelf decoration" |
-| P7 — Curation | **review** | 1 (5 VM runs: 2 smoke-side assertion defects root-caused incl. a grep-BRE trap, then 3 consecutive clean PASSes) | pending blind critic | carry-in from P6 landed here: enrichment demonstrated end-to-end (scrape → ingest → generated `description:` lines asserted in the served file) | commits `c03cebb` `48e1339` `190b003` `5537646` `e68ddb6` `fec4765` `3642a51`; 3× clean VM PASS below; unit suites green incl. `-count=5 -race` stability gate |
+| P7 — Curation | **won** — 1 loop + adversarial reconciliation (2 HIGH fixed: derived-shortname collision could brick a system's regeneration while UI said success — now probed at create/rename with visible 409; regen options snapshot raced the lock and could overwrite fresh bytes with stale — snapshot moved inside GenerateFresh(provider)) | 1 (5 VM runs: 2 smoke-side assertion defects root-caused incl. a grep-BRE trap, then 3 consecutive clean PASSes) + adversarial reconciliation | **ours** (blind; A=anonymized RomM collections model+endpoints source, B=our real /collections+editor DOM + generated nes/snes files carrying the cross-system "Kitchen quick-play" block per-console cores) | no hidden/pending status chip on collection member rows; count honesty ("3 tracked / 2 playable") — carry to P8 | `p7-ours-curation/`, `p7-romm-model.py`, `p7-romm-endpoints.py`; critic: "A curates only an authenticated web API — nothing in its model or endpoints emits a launcher file" |
 | P8 — eXo integration + sprawl retirement | pending | 0 | — | — | — |
 
 States: `pending` → `building` → `review` → `critic-loop` → `won` / `blocked`.
@@ -458,6 +458,5 @@ rejected.
 
 ## Gauntlet scoreboard
 
-**6 won / 1 in review / 1 remaining (P1–P6 won; P7 in review awaiting
-the blind critic)**. Exit (AC-10) = every piece P1–P8 won with the final
+**7 won / 1 remaining (P1–P7 won)**. Exit (AC-10) = every piece P1–P8 won with the final
 named-gap=null or an accepted-residual note recorded in the piece table.
