@@ -506,13 +506,17 @@ func countCacheGames(cacheDir string) (int64, error) {
 // / Covers count distinct ids holding at least one resource of type
 // "description" / "cover" (the P5 coverage tracker's headline split). The
 // ID sets are exported so per-game mapping (CacheID + ApplyCacheFlags)
-// runs off the SAME single parse.
+// runs off the SAME single parse; DescriptionsByID carries the actual
+// description TEXT per id (first resource wins) so the P7 enrichment
+// ingest can fill games.description from exactly what the cache holds —
+// never invented, never padded.
 type CacheCoverage struct {
-	Entries      int64
-	Descriptions int64
-	Covers       int64
-	DescIDs      map[string]struct{}
-	CoverIDs     map[string]struct{}
+	Entries         int64
+	Descriptions    int64
+	Covers          int64
+	DescIDs         map[string]struct{}
+	CoverIDs        map[string]struct{}
+	DescriptionsIDs map[string]string // id → description text
 }
 
 // ReadCacheCoverage parses <cacheDir>/db.xml. An absent db.xml reads as a
@@ -530,8 +534,9 @@ func ReadCacheCoverage(cacheDir string) (*CacheCoverage, error) {
 	defer f.Close() //nolint:errcheck // read-only
 
 	cc := &CacheCoverage{
-		DescIDs:  map[string]struct{}{},
-		CoverIDs: map[string]struct{}{},
+		DescIDs:         map[string]struct{}{},
+		CoverIDs:        map[string]struct{}{},
+		DescriptionsIDs: map[string]string{},
 	}
 	ids := map[string]struct{}{}
 	dec := xml.NewDecoder(f)
@@ -568,6 +573,17 @@ func ReadCacheCoverage(cacheDir string) (*CacheCoverage, error) {
 				if _, seen := cc.DescIDs[id]; !seen {
 					cc.DescIDs[id] = struct{}{}
 					cc.Descriptions++
+				}
+				// The element's chardata IS the description text the cache
+				// holds. First resource wins (Skyscraper keeps one per
+				// source; we never merge prose). Whitespace-only text does
+				// not count as ingested enrichment.
+				if _, seen := cc.DescriptionsIDs[id]; !seen {
+					var text string
+					if err := dec.DecodeElement(&text, &se); err == nil &&
+						strings.TrimSpace(text) != "" {
+						cc.DescriptionsIDs[id] = text
+					}
 				}
 			case "cover":
 				if _, seen := cc.CoverIDs[id]; !seen {
@@ -706,6 +722,47 @@ func ApplyCacheFlags(st *store.Store, sys store.SystemRow, sysDir, cacheDir stri
 		log.Printf("scanner: %s: %d game file(s) not keyed for coverage (size/read limits)", sys.Key, skipped)
 	}
 	return st.SetSystemScrapeFlags(sys.Key, flags)
+}
+
+// ApplyCacheEnrichment fills games.description from the platform cache
+// after a scrape run (P7 / P6-critic carry-in: enrichment demonstrated
+// END TO END — cache → store → generated metadata). Each visible game's
+// CacheID is looked up among the db.xml description resources; the
+// resource TEXT is persisted verbatim via SetGameMeta (selective write:
+// only non-empty values land, so an id-less pass can never wipe a stored
+// description). Honesty contract: the generator emits exactly what this
+// ingested — no placeholder prose, no synthesis from titles.
+//
+// Returns the number of games whose description was set/refreshed.
+func ApplyCacheEnrichment(st *store.Store, sys store.SystemRow, sysDir, cacheDir string) (int, error) {
+	cc, err := ReadCacheCoverage(cacheDir)
+	if err != nil {
+		return 0, fmt.Errorf("scanner: enrichment %s: %w", sys.Key, err)
+	}
+	if len(cc.DescriptionsIDs) == 0 {
+		return 0, nil
+	}
+	page, err := st.ListGames(store.GameListOpts{SystemKey: sys.Key})
+	if err != nil {
+		return 0, fmt.Errorf("scanner: enrichment games %s: %w", sys.Key, err)
+	}
+	metas := make([]store.GameMeta, 0, len(page.Games))
+	for _, g := range page.Games {
+		id, err := CacheID(filepath.Join(sysDir, g.RelPath))
+		if err != nil {
+			continue // oversized/unreadable: stays unenriched (documented miss)
+		}
+		if text, ok := cc.DescriptionsIDs[id]; ok {
+			metas = append(metas, store.GameMeta{RelPath: g.RelPath, Description: strings.TrimSpace(text)})
+		}
+	}
+	if len(metas) == 0 {
+		return 0, nil
+	}
+	if err := st.SetGameMeta(sys.Key, metas); err != nil {
+		return 0, fmt.Errorf("scanner: enrichment persist %s: %w", sys.Key, err)
+	}
+	return len(metas), nil
 }
 
 // size mirrors one inventory JSON per-system entry.

@@ -511,9 +511,17 @@ func (d *Driver) scrapeOutcome(systemKey, startAt string) (string, error) {
 	}
 
 	// Coverage refresh after ANY successful pass — best effort; a scanner
-	// hiccup must not fail an otherwise-successful scrape.
+	// hiccup must not fail an otherwise-successful scrape. The enrichment
+	// ingest (P7 / P6-critic carry-in) rides the same single parse of the
+	// cache: description TEXT lands in games.description so the generator
+	// emits real `description:` lines into the launcher DB.
 	if err := scanner.ApplyCacheFlags(d.Store, sys, dir, cache); err != nil {
 		logf("%s: coverage refresh: %v", systemKey, err)
+	}
+	if n, err := scanner.ApplyCacheEnrichment(d.Store, sys, dir, cache); err != nil {
+		logf("%s: enrichment ingest: %v", systemKey, err)
+	} else if n > 0 {
+		logf("%s: ingested %d description(s) from the cache", systemKey, n)
 	}
 	return OutcomeScraped, nil
 }

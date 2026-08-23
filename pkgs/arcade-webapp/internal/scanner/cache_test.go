@@ -390,3 +390,83 @@ func TestScanPersistsSHA1(t *testing.T) {
 		t.Fatalf("fill-once violated: sha1 moved from %q to %q on re-scan", want, d.SHA1)
 	}
 }
+
+// TestApplyCacheEnrichmentIngestsText pins the P7 carry-in: description
+// TEXT from the platform cache lands in games.description (verbatim,
+// keyed by CacheID), only for games the cache actually describes, and a
+// later id-less pass never wipes what was stored.
+func TestApplyCacheEnrichmentIngestsText(t *testing.T) {
+	root := t.TempDir()
+	st, err := store.Open(filepath.Join(root, "arcade.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close() //nolint:errcheck // test
+	sys := store.SystemRow{Key: "nes", Collection: "NES", Bucket: "cartridge",
+		SortOrder: 1, Extensions: `["nes"]`}
+	if err := st.UpsertSystems([]store.SystemRow{sys}); err != nil {
+		t.Fatal(err)
+	}
+
+	sysDir := filepath.Join(root, "games", "nes")
+	if err := os.MkdirAll(sysDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	starlit := bytes.Repeat([]byte("vault-bytes"), 8)
+	mecha := bytes.Repeat([]byte("garden-bytes"), 8)
+	if err := os.WriteFile(filepath.Join(sysDir, "Starlit Vault (USA).nes"), starlit, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sysDir, "Mecha Garden (Japan).nes"), mecha, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.ReplaceSystemGames("nes", []store.GameRow{
+		{RelPath: "Starlit Vault (USA).nes", SizeBytes: int64(len(starlit))},
+		{RelPath: "Mecha Garden (Japan).nes", SizeBytes: int64(len(mecha))},
+	}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	// A cache that describes ONLY one game, with real prose.
+	cacheDir := CacheDirFor(filepath.Join(root, "cache"), sys)
+	writeCacheDB(t, cacheDir, `<db>
+  <resource id="`+sha1Hex(t, starlit)+`" type="description" source="ScreenScraper" timestamp="1">A vault. In space.</resource>
+  <resource id="`+sha1Hex(t, starlit)+`" type="cover" source="ScreenScraper" timestamp="1">covers/starlit.png</resource>
+</db>`)
+
+	n, err := ApplyCacheEnrichment(st, sys, sysDir, cacheDir)
+	if err != nil {
+		t.Fatalf("ApplyCacheEnrichment: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("ingested %d descriptions, want 1 (only the described game)", n)
+	}
+	rows, err := st.SystemGamesWithMeta("nes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, r := range rows {
+		got[r.RelPath] = r.Description
+	}
+	if got["Starlit Vault (USA).nes"] != "A vault. In space." {
+		t.Fatalf("description not ingested verbatim: %q", got["Starlit Vault (USA).nes"])
+	}
+	if got["Mecha Garden (Japan).nes"] != "" {
+		t.Fatalf("undescribed game must stay empty (honesty contract): %q", got["Mecha Garden (Japan).nes"])
+	}
+
+	// A later scrape whose cache lost the id must NOT wipe the stored text
+	// (SetGameMeta's selective-write contract).
+	writeCacheDB(t, cacheDir, `<?xml version="1.0"?><db></db>`)
+	n, err = ApplyCacheEnrichment(st, sys, sysDir, cacheDir)
+	if err != nil || n != 0 {
+		t.Fatalf("empty-cache pass: n=%d err=%v, want 0/nil", n, err)
+	}
+	rows, _ = st.SystemGamesWithMeta("nes")
+	for _, r := range rows {
+		if r.RelPath == "Starlit Vault (USA).nes" && r.Description == "" {
+			t.Fatal("empty cache pass wiped a previously stored description")
+		}
+	}
+}
