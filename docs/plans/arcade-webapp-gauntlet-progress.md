@@ -5,8 +5,7 @@ The live heartbeat of the builder/critic loop driving
 every critic verdict. Screenshots (when they exist) land under
 `arcade-webapp-gauntlet/` next to this file.
 
-- **Phase:** 2-4 building — **P1–P5 won** (blind critics) · P6 in review
-  (builder loop 1 + adversarial reconciliation done, critic next)
+- **Phase:** 2-4 complete — **P1–P6 won** (blind critics) · P7 next
 - **Branch:** `arcade/webapp-gauntlet`
 - **ADR:** [ADR-0002 — custom, not RomM](../adr/0002-arcade-webapp-custom-vs-romm.md)
   (D1 research-confirmed 2026-08-21; D2–D4 accepted)
@@ -21,7 +20,7 @@ every critic verdict. Screenshots (when they exist) land under
 | P3 — Verify & organize | **won** — 1 loop + adversarial reconciliation | 1 (real-igir bring-up: 3 root-caused VM failures, 0 masked) + adversarial review pending | **ours** (blind; A=RomM demo DOM, B=our /verify page with a real igir run — snes/gb green, nes red-unmatched, segacd unknown) | unmatched files not drillable in-page + no run history w/ deltas (carry to P4) | commits `ca09507` (Go half) + `b1809bc`/`ce84fde` (real-igir refinements + wiring); VM smoke 27 steps green ×2 consecutive incl. REAL igir amber-extra → green zero-unmatched on a fresh promotion (log excerpt in the Phase 3 verification section); `p3-ours-verify.html`, `p3-ours-verify.png` |
 | P4 — Library browsing | **won** — 1 loop + adversarial micro-audits | 1 (2 VM bring-up failures, both root-caused: pagination + missing awk) | **ours** (blind; A=anonymized RomM gallery home DOM, B=our /library grid + detail over the fixture store w/ generated SVG posters) | detail lacks CRC/SHA1 checksum rows + persistent report link (carry to P5) | `p4-ours-library.html`, `p4-ours-detail.html`, `p4-ours-library.png`, `p4-bar-romm-gallery.html`; critic: "findability exists only in B — A's home has zero input/select elements… B puts verification state on every card" |
 | P5 — Metadata engine control | **won** — 1 loop + adversarial reconciliation (2 HIGH fixed incl cache-key drift + secret-tail redaction) | 1 (VM bring-up runs 1–2 clean after the stub argv-journal fix, per `bb465d5`; post-push runs 3–4 flaked TEST-side races → completion-gated + slot-free wait in `108beae`, final PASS fresh below) | **ours** (blind; A=anonymized RomM home DOM + its published metadata docs — deep pages don't render headless, B=our /metadata + game detail after a real igir verify) | scrape run-history/deltas not visible post-run + no hash value displayed on detail (carry to P6) | commits `c94be34` (shared cache parser/CacheID/ApplyCacheFlags) `f01bcc3` `2663eb7` `ccb057f` (/metadata UI, serialized Driver) `449cd97` (module wiring) `bb465d5` (stubbed-Skyscraper smoke) + hardening `108beae`; reconciliation `0722aa7`…`c9241fc`; VM smoke: nes desc/cover 0→100 through the real driver→store→ApplyCacheFlags stack; `p5-ours-metadata.html`, `p5-ours-detail.html`, `p5-bar-romm-metadata-docs.html`; critic: "B renders a real per-system table… A's library DOM contains zero rendered content" |
-| P6 — Launcher DB generator | **review** | 1 (VM bring-up: 1 root-caused igir-semantics regression + 3 smoke-side defects, 0 masked; 7 VM runs) + adversarial reconciliation | — | — | commits `2c6c70f` `ea841ac` `a3b20c7` `91b3dc6` `61e2ec0` `6ff8479`; two consecutive clean PASSes (runs 6+7) with the P6 block: launch line + relative paths + byte-stability + strict-parser validation + hidden exclusion both ways + pending split; reconciliation `2d62bdd` `1a2f4b0` `92f4a50` `545cee4`, fresh `-count=5 -race` all-green (below) |
+| P6 — Launcher DB generator | **won** — 1 loop + adversarial reconciliation (2 MED fixed: second-truncation test flake root-caused to store pruning precision; crash-window temp residue sweep) | 1 (VM bring-up: 1 root-caused igir-semantics regression + 3 smoke-side defects, 0 masked; 7 VM runs) + adversarial reconciliation | **ours** (blind; A=anonymized RomM pegasus_exporter.py source, B=our real generated metadata files for nes+snes) | enrichment not demonstrated end-to-end (no description/assets lines from scraped data in evidence) — carry to P7/P8 e2e | commits `2c6c70f` `ea841ac` `a3b20c7` `91b3dc6` `61e2ec0` `6ff8479`; two consecutive clean PASSes (runs 6+7) with the P6 block: launch line + relative paths + byte-stability + strict-parser validation + hidden exclusion both ways + pending split; reconciliation `2d62bdd` `1a2f4b0` `92f4a50` `545cee4`, fresh `-count=5 -race` all-green (below); `p6-ours-generated/`, `p6-bar-exporter-source.py`; critic: "only B has it: launch: … A's exporter never emits a launch: field anywhere… every entry is unbootable shelf decoration" |
 | P7 — Curation | pending | 0 | — | — | — |
 | P8 — eXo integration + sprawl retirement | pending | 0 | — | — | — |
 
@@ -395,5 +394,5 @@ generator change by instruction). None rejected. Piece stays in
 
 ## Gauntlet scoreboard
 
-**5 won / 3 remaining (P1-P5)**. Exit (AC-10) = every piece P1–P8 won with the final
+**6 won / 2 remaining (P1-P6)**. Exit (AC-10) = every piece P1–P8 won with the final
 named-gap=null or an accepted-residual note recorded in the piece table.
