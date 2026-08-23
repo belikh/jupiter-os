@@ -912,8 +912,13 @@ let
     # stubbed Skyscraper cache carries description TEXT keyed by ROM
     # sha1; the scrape ingest landed it in games.description and this
     # generation must have emitted it verbatim into the served file.
-    grep -q '^description: stubbed description of Starlit Vault \(USA\)$' "$md" \
-      || fail "served metadata lacks the ingested description — enrichment is not wired end to end"
+    # (All five promoted nes ROMs were described by every stub pass.)
+    n=$(grep -c '^description: ' "$md")
+    [ "$n" = "5" ] || fail "nes metadata carries $n description lines, want 5 (one per game)"
+    # -xF on purpose: a BRE \(…\) group would strip the literal parens
+    # from the region tag and never match the real line.
+    grep -qxF 'description: stubbed description of Starlit Vault (USA)' "$md" \
+      || fail "served metadata lacks the expected Starlit Vault description verbatim"
     echo "smoke: scraped cache description reached the served launcher DB (enrichment e2e)"
 
     # Byte stability: regenerating over unchanged state must reproduce
