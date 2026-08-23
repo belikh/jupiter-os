@@ -41,8 +41,14 @@
 # the launcher-DB block: Regenerate renders each populated system dir's
 # metadata.pegasus.txt from the store — launch lines, relative paths,
 # byte stability across two runs, hidden exclusion both directions
-# (games.hidden seeded via the sqlite3 CLI; the curation UI is P7), and
-# a zeroed .chd landing in the "(Pending)" not-launchable collection.
+# (through the REAL hide/show endpoint since P7), and a zeroed .chd
+# landing in the "(Pending)" not-launchable collection. P7 adds the
+# curation block: endpoint-driven hide/unhide both directions, the bulk
+# show-all-hidden, and a cross-system custom collection whose block
+# lands in BOTH member systems' generated files (hidden members
+# excluded), plus the P6-critic carry-in: the stubbed Skyscraper cache
+# now carries real description TEXT, so scrape → generate must emit
+# description: lines into the served file.
 # The driver (scripts/test-arcade-webapp.sh) greps the serial log for
 # the marker.
 #
@@ -220,7 +226,12 @@ let
           *) continue ;;
         esac
         id="$(sha1sum "$f" | cut -d' ' -f1)"
-        echo "  <resource id=\"$id\" type=\"description\" source=\"stub\" timestamp=\"1\">stub</resource>"
+        # The description resource carries REAL per-game text (not a fixed
+        # token): the P7 enrichment assertion greps the SERVED launcher-DB
+        # file for this exact prose, so the ingest path must carry the
+        # cache's actual payload end to end.
+        base="$(basename "$f")"
+        echo "  <resource id=\"$id\" type=\"description\" source=\"stub\" timestamp=\"1\">stubbed description of ''${base%.*}</resource>"
         echo "  <resource id=\"$id\" type=\"cover\" source=\"stub\" timestamp=\"1\">covers/stub.png</resource>"
       done
       echo '</db>'
@@ -897,6 +908,14 @@ let
     if grep -q '/var/lib/' "$md"; then fail "absolute path leaked into the launcher DB"; fi
     echo "smoke: generated nes metadata carries catalogue launch line + relative files"
 
+    # P6-critic carry-in (P7): enrichment demonstrated END TO END. The
+    # stubbed Skyscraper cache carries description TEXT keyed by ROM
+    # sha1; the scrape ingest landed it in games.description and this
+    # generation must have emitted it verbatim into the served file.
+    grep -q '^description: stubbed description of Starlit Vault \(USA\)$' "$md" \
+      || fail "served metadata lacks the ingested description — enrichment is not wired end to end"
+    echo "smoke: scraped cache description reached the served launcher DB (enrichment e2e)"
+
     # Byte stability: regenerating over unchanged state must reproduce
     # identical bytes (kiosk re-reads stay cheap; AC-5).
     h1=$(sha256sum "$md" | cut -d' ' -f1)
@@ -915,22 +934,111 @@ let
       || fail "generate run detail does not show the validation verdict"
     echo "smoke: generate run recorded + strict-parser validated"
 
-    # Curation semantics: a hidden game is EXCLUDED from generation.
-    # There is no hide endpoint yet (P7 owns curation UI), so the smoke
-    # seeds the flag directly the way the DB-of-truth contract promises:
-    # whatever holds games.hidden drives the next generation.
-    sqlite3 /var/lib/arcade-webapp-state/arcade-webapp.db \
-      "UPDATE games SET hidden=1 WHERE system_key='nes' AND rel_path='Mecha Garden (Japan).nes';" \
-      || fail "could not seed the hidden flag"
-    curl -s -o /dev/null -H "$HX" -X POST "$base/generate"
+    # ---- P7: curation ----
+    #
+    # Hide/show through the REAL toggle endpoint (the affordance an
+    # operator clicks), replacing the P6 smoke's direct sqlite seeding.
+    # The regeneration each mutation triggers runs asynchronously through
+    # the shared pipeline slot, so an immediate Regenerate may honestly
+    # 409 — gen_now retries exactly like an operator's second click.
+    gen_now() {
+      local attempt code
+      for attempt in 1 2 3 4 5; do
+        code=$(curl -s -o /dev/null -w '%{http_code}' -H "$HX" -X POST "$base/generate")
+        case "$code" in
+          200) return 0 ;;
+          409) sleep 2 ;; # the async curation regen still holds the slot
+          *) fail "POST /generate -> $code, want 200" ;;
+        esac
+      done
+      fail "POST /generate kept answering $code (async regen never freed the slot)"
+    }
+
+    echo "smoke: P7 hide/show via the toggle endpoint"
+    page=$(curl -sf "$base/library?q=Mecha&system=nes" || fail "GET /library?q=Mecha")
+    mhref=$(awk '
+      /class="gcard" href="/ { match($0, /href="[^"]*"/); h = substr($0, RSTART + 6, RLENGTH - 7) }
+      /gcard-title" title="Mecha Garden/ { print h; exit }
+    ' <<<"$page")
+    [ -n "$mhref" ] || fail "no Mecha Garden card link found for the hide step"
+    case "$mhref" in /systems/nes/games/*) ;; *) fail "hide target href '$mhref' is not a detail-route link" ;; esac
+    mid=$(sed -n 's|.*/games/\([0-9]*\).*|\1|p' <<<"$mhref")
+    [ -n "$mid" ] || fail "could not parse Mecha Garden id from '$mhref'"
+    code=$(curl -s -o /tmp/hide.out -w '%{http_code}' -H "$HX" \
+      -X POST "$base/systems/nes/games/$mid/hide")
+    [ "$code" = 200 ] || fail "POST hide -> $code, want 200"
+    grep -q 'Show</button>' /tmp/hide.out \
+      || fail "hide response did not re-render its button flipped to Show"
+    code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$base/systems/nes/games/$mid/hide")
+    [ "$code" = 403 ] || fail "bare POST hide -> $code, want 403 (CSRF posture)"
+    gen_now
     grep -q 'Mecha Garden' "$md" && fail "hidden game leaked into the generated file"
-    sqlite3 /var/lib/arcade-webapp-state/arcade-webapp.db \
-      "UPDATE games SET hidden=0 WHERE system_key='nes' AND rel_path='Mecha Garden (Japan).nes';" \
-      || fail "could not clear the hidden flag"
-    curl -s -o /dev/null -H "$HX" -X POST "$base/generate"
-    grep -q 'file: Mecha Garden (Japan).nes' "$md" \
+    curl -s -o /dev/null -H "$HX" -X POST "$base/systems/nes/games/$mid/hide"
+    gen_now
+    grep -q '^file: Mecha Garden (Japan).nes$' "$md" \
       || fail "unhidden game never returned to the generated file"
-    echo "smoke: hidden exclusion works both directions"
+    echo "smoke: hide/show toggles both directions through the endpoint"
+
+    echo "smoke: P7 custom collections CRUD + launcher surfacing"
+    code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$base/collections/create")
+    [ "$code" = 403 ] || fail "bare POST /collections/create -> $code, want 403"
+    resp=$(curl -sf -H "$HX" --data-urlencode 'name=Kitchen quick-play' \
+      --data-urlencode 'summary=pick up and play' -X POST "$base/collections/create") \
+      || fail "collection create failed"
+    cid=$(sed -n 's|.*href="/collections/\([0-9]*\)".*|\1|p' <<<"$resp" | head -1)
+    [ -n "$cid" ] || fail "created collection id not found in the refreshed panel"
+
+    # Members: the nes game ($gid from the P4 step) + a snes game — one
+    # collection spanning TWO systems.
+    page=$(curl -sf "$base/library?system=snes&q=Astral" || fail "GET snes library search")
+    shref=$(awk '
+      /class="gcard" href="/ { match($0, /href="[^"]*"/); h = substr($0, RSTART + 6, RLENGTH - 7) }
+      /gcard-title" title="Astral Almari/ { print h; exit }
+    ' <<<"$page")
+    [ -n "$shref" ] || fail "no Astral Almari card link for the collection step"
+    sid=$(sed -n 's|.*/games/\([0-9]*\).*|\1|p' <<<"$shref")
+    [ -n "$sid" ] || fail "could not parse Astral Almari id from '$shref'"
+    curl -s -o /dev/null -H "$HX" -X POST "$base/collections/$cid/add?system=nes&game=$gid"
+    resp=$(curl -sf -H "$HX" -X POST "$base/collections/$cid/add?system=snes&game=$sid") \
+      || fail "collection add (snes) failed"
+    grep -q 'Astral Almari' <<<"$resp" || fail "added member missing from the editor panel"
+
+    gen_now
+    grep -q '^# jupiter-custom-collection' "$md" || fail "custom-collection marker missing from nes file"
+    grep -q '^collection: Kitchen quick-play$' "$md" || fail "custom collection title missing from nes file"
+    grep -q '^shortname: kitchen-quick-play$' "$md" || fail "custom shortname missing from nes file"
+    n=$(grep -c '^launch: jupiter-retroarch -L fceumm "{file.path}"$' "$md")
+    [ "$n" = "2" ] || fail "nes launch lines = $n, want 2 (main + custom block)"
+    n=$(grep -c '^file: Starlit Vault (USA).nes$' "$md")
+    [ "$n" = "2" ] || fail "starlit entries = $n, want 2 (main + custom membership)"
+    awk '/^shortname: kitchen-quick-play$/{k=NR}
+         /^file: Starlit Vault \(USA\).nes$/{s=NR}
+         END { exit !(k && s && s > k) }' "$md" \
+      || fail "member block not listed INSIDE the custom collection section"
+    smd="${gamesRoot}/cartridge/snes/metadata.pegasus.txt"
+    grep -q '^collection: Kitchen quick-play$' "$smd" \
+      || fail "same collection name must recur in the SNES file (cross-file merge)"
+    n=$(grep -c '^file: Astral Almari (USA).sfc$' "$smd")
+    [ "$n" = "2" ] || fail "snes astral entries = $n, want 2 (main + custom membership)"
+    status=$(curl -sf "$base/partials/status" || true)
+    grep -A6 '<td>generate</td>' <<<"$status" | grep -q 'collections' \
+      || fail "generate run detail does not report collection counts"
+    echo "smoke: cross-system collection live in BOTH system files (+ counts in run detail)"
+
+    # Hidden members are excluded from the custom block too; the bulk
+    # show-all-hidden then restores everything in one action.
+    curl -s -o /dev/null -H "$HX" -X POST "$base/systems/nes/games/$gid/hide"
+    gen_now
+    n=$(grep -c 'Starlit Vault' "$md")
+    [ "$n" = "0" ] || fail "hidden member still listed $n time(s), want 0"
+    code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$base/systems/nes/unhide-all")
+    [ "$code" = 403 ] || fail "bare POST unhide-all -> $code, want 403"
+    code=$(curl -s -o /dev/null -w '%{http_code}' -H "$HX" -X POST "$base/systems/nes/unhide-all")
+    [ "$code" = 200 ] || fail "unhide-all -> $code, want 200"
+    gen_now
+    n=$(grep -c '^file: Starlit Vault (USA).nes$' "$md")
+    [ "$n" = "2" ] || fail "starlit entries after unhide-all = $n, want 2 (restored everywhere)"
+    echo "smoke: hidden member excluded from collections; bulk unhide restores both surfaces"
 
     # Pending split: a zeroed .chd models aria2's preallocated in-flight
     # download (the rom_complete sniff's whole reason). It must scan as a
@@ -945,7 +1053,7 @@ let
       sleep 1
     done
     [ "$ok" = 1 ] || fail "rescan never picked up the zeroed .chd as a segacd game"
-    curl -s -o /dev/null -H "$HX" -X POST "$base/generate"
+    gen_now
     sd="${gamesRoot}/optical/segacd/metadata.pegasus.txt"
     [ -f "$sd" ] || fail "segacd metadata missing after regeneration"
     grep -q '^launch: jupiter-retroarch -L genesis-plus-gx "{file.path}"$' "$sd" \
@@ -1185,8 +1293,7 @@ in
       curl
       gnugrep
       gnused
-      gawk # P4: pair each library card's href with its title; P6: pending-section line-order checks
-      sqlite # P6: seed/clear games.hidden directly (curation UI lands in P7)
+      gawk # P4: pair each library card's href with its title; P6/P7: pending-section + collection line-order checks
       systemd
       coreutils
       procps # ps: the P3 verify DEBUG hang-check

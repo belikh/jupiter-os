@@ -38,7 +38,11 @@
 # served trees (catalogue launch lines, relative paths, hidden-game
 # exclusion, pending split for incomplete downloads) — temp+fsync+rename
 # only, strict-parser validated before any swap, byte-stable for
-# unchanged state, serialized through the shared pipeline lock.
+# unchanged state, serialized through the shared pipeline lock. P7 adds
+# curation: per-game hide/show toggles, bulk unhide, and custom
+# cross-system collections whose CRUD edits trigger an asynchronous
+# regeneration through the same lock — no new write surfaces beyond the
+# trees and state dir already listed below.
 #
 # LAN-only by design (like suno-web): no reverse-proxy exposure, no tunnel
 # wiring — flip <option>openFirewall</option> for trusted-LAN access.
