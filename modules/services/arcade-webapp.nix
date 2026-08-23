@@ -20,14 +20,15 @@
 # logged), the downloads page (2s-polled queue + the system-centric join
 # against verify state + per-system torrent acquire into
 # incomingDir/<sys>). P3 adds verify & organize + DAT currency: an igir
-# runner exec'ing cartridge-verify.sh's flag set (+ the aria2-metadata
+# runner exec'ing the retired cartridge-verify.sh's flag set (scripts/
+# deprecated/; + the aria2-metadata
 # input exclusion, D-P3e: COPY promotion, .aria2 in-flight skip, per-bucket routing, promote-unchecked when the
 # DAT is missing), a Fresh1G1R McLean DAT manager (on demand + on a
 # schedule), report ingestion into SQLite, and the zero-unmatched
 # indicator — plus torrent staging (upload a .torrent / paste a
 # magnet-URL) closing the P2 critic's acquire dead-end. P5 adds the
 # metadata-engine control surface: a Skyscraper driver exec'ing
-# cartridge-scrape.sh's three-pass flow (ScreenScraper primary /
+# the retired cartridge-scrape.sh's three-pass flow (ScreenScraper primary /
 # configured-source onlymissing gap-fill / Pegasus compose, offscreen,
 # credential FILES read at call time), a serialized scrape queue with
 # per-system + per-game actions on the /metadata page, run history with
@@ -60,12 +61,14 @@ let
   pkg = pkgs.callPackage ../../pkgs/arcade-webapp { };
 
   # The committed TSV, copied into the store so the Go scanner parses the
-  # same rows every consumer derives from (rom-scraper.nix pattern).
+  # same rows every consumer derives from (the retired rom-scraper.nix
+  # pioneered the pattern; see scripts/deprecated/ for its era).
   catalogueTsv = pkgs.writeText "cartridge-catalogue.tsv" (
     builtins.readFile ../../scripts/cartridge-catalogue.tsv
   );
 
-  # Pool paths the unit must not start before (rom-acquire.nix pattern).
+  # Pool paths the unit must not start before (the retired
+  # rom-acquire.nix established the pattern).
   # torrentDir is covered transitively on europa today (it sits under the
   # same dataset as datDir/skyscraperCacheDir) but the ordering INTENT is
   # per-path: the downloads page stats it at render time, so it belongs
@@ -81,7 +84,8 @@ let
     cfg.torrentDir
     cfg.scratchDir
     cfg.stateDir
-  ] ++ lib.optionals (cfg.exoRoot != null) [ cfg.exoRoot ];
+  ]
+  ++ lib.optionals (cfg.exoRoot != null) [ cfg.exoRoot ];
 in
 {
   options.jupiter.services.arcadeWebapp = {
@@ -132,7 +136,8 @@ in
       description = ''
         Cartridge-bucket games root. Each catalogue system lives at
         <literal>&lt;root&gt;/&lt;system&gt;/</literal>; missing systems read
-        as empty. Mirrors <option>jupiter.services.romAcquire.cartridgeDir</option>.
+        as empty. Same path the retired rom-acquire module called
+        <literal>cartridgeDir</literal>.
       '';
     };
 
@@ -156,7 +161,7 @@ in
         per catalogue system. The scanner reads each DAT's Logiqx header
         (name/version/date) for the DAT-currency card; a missing DAT renders
         as "no dat". Mirrors
-        <option>jupiter.services.romAcquire.datDir</option>.
+        the retired rom-acquire module's <literal>datDir</literal>.
       '';
     };
 
@@ -164,7 +169,8 @@ in
       type = lib.types.str;
       default = "/tank/archive/retro/metadata/skyscraper-cache";
       description = ''
-        Skyscraper resource cache root (rom-scraper.nix's cacheDir). The
+        Skyscraper resource cache root (the retired rom-scraper.nix called
+        this cacheDir). The
         scanner counts distinct game ids in each platform's
         <literal>&lt;dir&gt;/&lt;skyPlatform&gt;/db.xml</literal> for the
         coverage card; the P5 scrape driver WRITES the same cache (gather
@@ -237,7 +243,7 @@ in
         --inputs-from . nixpkgs#igir</command>), so no store-path
         workaround is needed. Verify runs
         <literal>igir copy test report</literal> with
-        scripts/cartridge-verify.sh's flag set plus an
+        scripts/deprecated/cartridge-verify.sh's flag set plus an
         input-anchored <literal>--input-exclude
         &lt;input&gt;/**/*.torrent</literal> (aria2's infohash metadata
         companions in the download tree — see the runner's D-P3e note).
@@ -252,7 +258,8 @@ in
         Defaults to <literal>pkgs.skyscraper</literal> — 3.18.5 is IN the
         fleet's pinned nixpkgs (verified the same way as igir, D-P3a), so
         no store-path workaround is needed and no new flake input is
-        added (AC-9). Scrape runs the cartridge-scrape.sh three-pass flow
+        added (AC-9). Scrape runs the retired cartridge-scrape.sh's
+        three-pass flow
         per system (ScreenScraper primary via
         <option>screenscraperCredsFile</option>, configured-source
         onlymissing gap-fill via <option>tgdbApikeyFile</option>, Pegasus
@@ -280,7 +287,8 @@ in
       default = "https://raw.githubusercontent.com/UnluckyForSome/Fresh1G1R/main/daily-1g1r-dat/McLean";
       description = ''
         Base URL of the Fresh1G1R McLean 1G1R DAT tree the DAT manager
-        fetches per-system DATs from (fetch-mclean-1g1r-dats.sh's URL
+        fetches per-system DATs from (scripts/deprecated/fetch-mclean-
+        1g1r-dats.sh's URL
         family). Overridable so the VM test stubs the host — tests never
         touch GitHub.
       '';
@@ -464,7 +472,7 @@ in
       // lib.optionalAttrs (cfg.inventoryFile != null) {
         ARCADE_WEBAPP_INVENTORY_FILE = cfg.inventoryFile;
       }
-      // P8 eXo import: read-only curated-collection root.
+      # P8 eXo import: read-only curated-collection root.
       // lib.optionalAttrs (cfg.exoRoot != null) {
         ARCADE_WEBAPP_EXO_ROOT = cfg.exoRoot;
       }

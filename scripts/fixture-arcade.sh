@@ -24,7 +24,8 @@
 #
 # Gate (exits non-zero on any failure):
 #   * `igir copy test report` per system with the exact flag set of
-#     scripts/cartridge-verify.sh (the pipeline this fixture models);
+#     scripts/deprecated/cartridge-verify.sh (the retired pipeline this
+#     fixture models; the webapp's igir runner carries the flags now);
 #   * every DAT game FOUND (matched + written + checksum-retested);
 #   * zero UNUSED rows in the report CSV (= zero unmatched input files).
 #   igir's report CSV has no quoting needs here: fixture names are
@@ -64,7 +65,7 @@ fi
 
 # 2. Per-system igir gate. process_system runs in a subshell so a hard
 #    failure on one system is reported and skipped without aborting the
-#    whole run (cartridge-verify.sh pattern).
+#    whole run (the retired cartridge-verify.sh's pattern).
 process_system() (
   local sys="$1"
   local dat="$DAT_DIR/$sys.dat"
@@ -77,7 +78,8 @@ process_system() (
   mkdir -p "$cartridge" "$REPORTS"
 
   log "$sys: igir copy test report against $dat"
-  # Same combination and flags as cartridge-verify.sh: copy writes DAT-matched
+  # Same combination and flags as the retired cartridge-verify.sh (now
+  # also pinned by the webapp's igir runner): copy writes DAT-matched
   # ROMs to the output dir, test re-checks each written file's size+checksum,
   # report emits the audit CSV. --dir-game-subdir never keeps single-ROM
   # cartridge games flat; CRC32-max input hashing matches the HDD-friendly

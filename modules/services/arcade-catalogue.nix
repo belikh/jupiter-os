@@ -7,23 +7,24 @@
 # THE console-system catalogue — the single source of truth for every fact
 # about the jupiterOS Arcade's console systems: scripts/cartridge-catalogue.tsv.
 # This module parses that file into the jupiter.arcade.catalogue option;
-# rom-acquire (torrents), rom-scraper (platforms + buckets),
-# arcade-inventory (file patterns), cartridges (collections/cores/mounts) all
-# derive from the option, and scripts/cartridge-scrape.sh parses the same TSV
-# at runtime for its LAUNCH/SKYPLATFORM/COLLECTIONS maps + ROM_RE.
+# today's consumers are the kiosk mounts (modules/desktop/cartridges.nix)
+# and the arcade webapp, which embeds the same TSV (its Go scanner parses
+# the identical row semantics).
 #
-# Historically this data lived in FIVE hand-copied places and DID drift (an
-# 'acorn' system once existed only in rom-acquire: it would have promoted to
-# the pool invisible — never scraped, mounted, inventoried or launchable).
-# Now adding/removing a system is ONE TSV row and everything follows.
+# Historically this data lived in FIVE hand-copied places and DID drift (a
+# 'acorn' system once existed only in one consumer script: it would have
+# promoted to the pool invisible — never scraped, mounted, inventoried or
+# launchable). Now adding/removing a system is ONE TSV row and everything
+# follows.
 #
 # Fact columns (see the TSV header for the full contract):
 #   collection  Pegasus collection display title
 #   bucket      which europa dataset (NFS export + recordsize) it lives on
 #   core        libretro core basename ('jupiter-retroarch -L <core>')
 #   emulator    standalone emulator when core is null (currently only Wii U)
-#   extensions  ROM file extensions (drives inventory patterns and, as their
-#               union + zip + bin, cartridge-scrape.sh's global ROM regex)
+#   extensions  ROM file extensions (drives inventory patterns; their
+#               union + zip + bin was cartridge-scrape.sh's global ROM regex,
+#               now scripts/deprecated/)
 #   skyHandle   Skyscraper -p platform handle when it differs from the key
 #   torrent     Minerva/Myrient torrent basename for bulk acquisition
 #

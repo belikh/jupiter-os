@@ -155,7 +155,7 @@ in
     # Nintendo cartridge console collections (No-Intro NES/SNES/GB/GBC/GBA/N64)
     # in the arcade session: read-only NFS mount of europa's scraped cartridge
     # tree + retroarch with the needed libretro cores + per-kiosk saves.
-    # ROMs + metadata are bulk-staged/scraped on europa (rom-acquire/rom-scraper);
+    # ROMs + metadata are bulk-staged/scraped on europa (arcade-webapp);
     # this module only consumes them. See modules/desktop/cartridges.nix.
     jupiter.cartridges.enable = true;
 

@@ -41,9 +41,6 @@
     ../../modules/services/iscsi-target.nix
     ../../modules/services/headscale.nix
     ../../modules/services/tailscale.nix
-    ../../modules/services/rom-acquire.nix
-    ../../modules/services/rom-scraper.nix
-    ../../modules/services/arcade-inventory.nix
     ../../modules/services/arcade-webapp.nix
     ../../modules/services/suno-backup.nix
     ../../modules/services/suno-web.nix
@@ -503,26 +500,26 @@
     initiatorIqn = "iqn.2026-07.au.jupiter:callisto";
   };
 
-  # ---- jupiterOS Arcade (europa-side cartridge pipeline) ------------------
-  # Bulk-stage No-Intro Nintendo cartridge ROMs via Minerva torrents, verify
-  # against DATs with igir, scrape Pegasus metadata with Skyscraper, and emit
-  # a periodic library inventory. Acquisition/verify are manual oneshots (no
-  # timer — start them explicitly); scraping runs daily; inventory hourly
-  # (arcade-inventory.nix: OnBootSec=2m, OnUnitActiveSec=1h — a full walk
-  # stats every file on multi-TB trees, so it is deliberately not frequent).
-  # Kiosks mount /tank/archive/retro/games/cartridge read-only.
-  jupiter.services.romAcquire.enable = true;
-  jupiter.services.romScraper.enable = true;
-  jupiter.services.arcadeInventory.enable = true;
-
-  # Arcade pipeline dashboard (gauntlet plan Phase 1 / P1, ADR-0002) — the
-  # webapp that will own the whole pipeline. Phase 1: scanner + dashboard
-  # (per-system ROM counts/sizes, DAT currency, verify state unknown until
-  # P3, Skyscraper cache coverage, rescan button, htmx 10s polling). Reads
-  # the retro trees read-only; its one write is the SQLite state file at
-  # /tank/archive/retro/state/arcade-webapp.db. LAN-only like suno-web (no
-  # tunnel exposure); secret-file options stay null until the P2/P5 pieces
-  # that consume them land.
+  # ---- jupiterOS Arcade (europa-side pipeline) ----------------------------
+  # The arcade-webapp owns the whole cartridge-ROM pipeline since the
+  # gauntlet (docs/plans/arcade-webapp-gauntlet.md): DAT currency, aria2
+  # download control, igir verify/organize, Skyscraper scraping, launcher-DB
+  # generation, curation, and the fleet inventory JSON
+  # (http://<europa>:8094/inventory.json — field-for-field parity with the
+  # retired unit's file). The old sprawl is retired repo-side here:
+  #   * jupiter-rom-acquire / jupiter-rom-dats / jupiter-rom-verify oneshots
+  #     (modules/services/rom-acquire.nix — removed),
+  #   * jupiter-rom-scrape daily timer (modules/services/rom-scraper.nix —
+  #     removed; the webapp carries the cadence in-process),
+  #   * jupiter-arcade-inventory hourly timer (modules/services/
+  #     arcade-inventory.nix — removed; the webapp serves the JSON).
+  # scripts/cartridge-{verify,scrape}.sh + fetch-mclean-1g1r-dats.sh moved
+  # to scripts/deprecated/. NOTE: this takes effect at europa's NEXT
+  # nixos-rebuild switch (coordinator-gated cutover, post-merge) — until
+  # then the live host still runs the old units alongside the webapp.
+  # aria2 + AriaNg STAY (general-purpose daemon; the webapp is its
+  # ROM-facing front end and links AriaNg for non-arcade downloads), and
+  # keep the incoming root writable so partial downloads resume in place.
   jupiter.services.arcadeWebapp = {
     enable = true;
     openFirewall = true;
@@ -558,10 +555,12 @@
     rpcHost = "rpc.jupiter.au";
     rpcProtocol = "wss";
     rpcWebPort = 443;
-    # The arcade's rom-acquire submits its per-system torrents with
+    # The arcade webapp submits its per-system torrents with
     # dir=<incomingDir>/<sys> (fire-and-forget via the JSON-RPC endpoint), so
-    # the daemon needs the incoming root writable to resume partials in place.
-    extraWritableDirs = [ config.jupiter.services.romAcquire.incomingDir ];
+    # the daemon needs the incoming root writable to resume partials in
+    # place. Literal path: rom-acquire.nix (which owned the option) is
+    # retired with the P8 sprawl removal.
+    extraWritableDirs = [ "/tank/archive/retro/cache/incoming/nointro-nintendo" ];
     # Enable IPv6 DHT (--enable-dht6). Bind to europa's stable global unicast
     # address (the mngtmpaddr EUI-64 one, not the rotating temporaries).
     dhtListenAddr6 = "2402:1060:2305:0:d267:26ff:fed3:b0a5";
