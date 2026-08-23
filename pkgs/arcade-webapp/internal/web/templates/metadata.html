@@ -149,6 +149,8 @@
       {{end}}
     </h2>
 
+    {{if .RegenAlert}}<div class="action-error" role="status">{{.RegenAlert}}</div>{{end}}
+
     <p class="sub">The database is the source of truth: one metadata.pegasus.txt per system dir
       in the served trees — catalogue collection header + launch line, game/file blocks with
       relative paths, enrichment and media refs when present. Hidden games are excluded;

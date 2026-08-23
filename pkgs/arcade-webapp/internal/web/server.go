@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/aria2"
@@ -56,6 +57,31 @@ type Server struct {
 	sc *scrape.Driver
 	// Launcher-DB generator (P6): nil = not configured. See generate.go.
 	gen *generate.Generator
+
+	// Curation-regeneration coordination (P7 / ADV-P7-03): ONE worker
+	// goroutine drains a dirty flag instead of every mutation spawning
+	// its own regeneration goroutine; guarded by regenMu, started once.
+	regenOnce sync.Once
+	regenMu   sync.Mutex
+	regen     regenState
+}
+
+// regenState is the coordinator's bookkeeping (see generate.go):
+// dirty = a regeneration was requested and not yet run; origins = the
+// pending triggers' provenance (deferred-row labeling); deferredRow =
+// this episode already wrote its coalesced "skipped" row; failMsg =
+// the operator-facing marker for a FAILED regeneration (ADV-P7-01b);
+// lastRequestAt feeds the burst-coalescing quiet gate; passActive =
+// a claimed pass is between claim and its outcome being recorded (the
+// observable quiescence point — failMsg lands under the same unlock).
+type regenState struct {
+	dirty         bool
+	origins       map[string]bool
+	deferredRow   bool
+	failMsg       string
+	lastRequestAt time.Time
+	passActive    bool
+	wake          chan struct{} // cap-1 wake semaphore (set under regenOnce)
 }
 
 // New builds the webapp's HTTP handler over an opened store and scanner,

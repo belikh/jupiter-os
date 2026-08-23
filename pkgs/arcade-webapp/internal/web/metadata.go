@@ -86,8 +86,11 @@ type metadataVM struct {
 	// kind=generate run history. Lives here because regeneration is
 	// metadata-tree news and the fragment is the shared swap target.
 	GenLog genLogVM
-	Meta   pageMeta
-	Now    time.Time
+	// RegenAlert: the last failed regeneration surfaced where its log
+	// lives (ADV-P7-01b). "" = healthy.
+	RegenAlert string
+	Meta       pageMeta
+	Now        time.Time
 }
 
 // metaCoveragePct renders covered*100/total, -1 when nothing can be
@@ -114,6 +117,7 @@ func (s *Server) fetchMetadata() metadataVM {
 	}
 	vm.Meta = pageMeta{Title: "metadata", Sub: "metadata & scraping", ActiveMeta: true}
 	vm.GenLog = s.fetchGenLog()
+	vm.RegenAlert = s.regenAlert()
 
 	rows, err := s.st.ScrapeSummary()
 	if err != nil {
@@ -304,13 +308,18 @@ type gameActionsVM struct {
 	Hidden    bool
 	CanScrape bool
 	Running   bool
+	// RegenAlert: the hide toggle's regeneration runs in the background;
+	// when it failed, the refreshed region says so (ADV-P7-01b) instead
+	// of the failure living only in journal+run rows. "" = healthy.
+	RegenAlert string
 }
 
 func (s *Server) fetchGameActions(g *store.GameDetail) gameActionsVM {
 	vm := gameActionsVM{
-		SystemKey: g.SystemKey,
-		GameID:    g.ID,
-		Hidden:    g.Hidden,
+		SystemKey:  g.SystemKey,
+		GameID:     g.ID,
+		Hidden:     g.Hidden,
+		RegenAlert: s.regenAlert(),
 	}
 	if s.sc != nil {
 		st := s.sc.State()

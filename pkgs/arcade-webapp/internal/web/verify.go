@@ -449,8 +449,8 @@ func (s *Server) handleVerifySystem(w http.ResponseWriter, r *http.Request) {
 // handleSystemUnhideAll is the P7 bulk action: every hidden game of one
 // system becomes visible again ("show all hidden" on the worklist row).
 // Mutating endpoint: htmx-only. The flip is a single UPDATE that claims
-// no pipeline slot; the launcher-DB regeneration follows asynchronously
-// through regenerateLauncherDBAsync. The answer swaps the verify panel,
+// no pipeline slot; the launcher-DB regeneration is requested through
+// the shared coordinator (ADV-P7-03). The answer swaps the verify panel,
 // so the affordance disappears the moment its count reads zero.
 func (s *Server) handleSystemUnhideAll(w http.ResponseWriter, r *http.Request) {
 	if !hxRequestOK(r) {
@@ -470,7 +470,7 @@ func (s *Server) handleSystemUnhideAll(w http.ResponseWriter, r *http.Request) {
 	}
 	if n > 0 {
 		log.Printf("web: unhide-all %s: %d game(s) shown; regenerating launcher DB", sys, n)
-		s.regenerateLauncherDBAsync()
+		s.requestRegeneration(regenOriginCuration)
 	}
 	vm := s.fetchVerify()
 	s.render(w, http.StatusOK, "partial-verify", vm)

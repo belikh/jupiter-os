@@ -13,7 +13,7 @@
 //   - POST create/update/delete/add/remove: all mutating endpoints are
 //     htmx-only (D-P2c). Every membership/identity edit triggers one
 //     asynchronous launcher-DB regeneration through
-//     regenerateLauncherDBAsync (creation does not — a brand-new empty
+//     requestRegeneration (creation does not — a brand-new empty
 //     collection is provably output-neutral, so there is nothing to
 //     regenerate yet).
 package web
@@ -47,8 +47,12 @@ type collectionCardVM struct {
 type collectionsVM struct {
 	Collections []collectionCardVM
 	Error       string
-	Meta        pageMeta
-	Now         time.Time
+	// RegenAlert is the visible warning when the last automatic
+	// launcher-DB regeneration failed (ADV-P7-01b) — without it a failed
+	// async pass lived only in journal+run rows. "" = healthy.
+	RegenAlert string
+	Meta       pageMeta
+	Now        time.Time
 }
 
 type collectionMemberVM struct {
@@ -71,6 +75,7 @@ type collectionEditorVM struct {
 	Q          string
 	Results    []collectionSearchVM
 	Error      string
+	RegenAlert string // last failed regeneration marker (ADV-P7-01b); "" = healthy
 	Meta       pageMeta
 	Now        time.Time
 }
@@ -92,7 +97,7 @@ func cardOf(c store.CollectionRow, now time.Time) collectionCardVM {
 
 // fetchCollections assembles the list page's view model.
 func (s *Server) fetchCollections() collectionsVM {
-	vm := collectionsVM{Meta: collectionsPageMeta(), Now: time.Now()}
+	vm := collectionsVM{Meta: collectionsPageMeta(), Now: time.Now(), RegenAlert: s.regenAlert()}
 	cols, err := s.st.Collections()
 	if err != nil {
 		log.Printf("web: collections: %v", err)
@@ -119,8 +124,9 @@ const (
 // emptier page with the error surfaced, never a 500 wall.
 func (s *Server) fetchCollectionEditor(r *http.Request, id int64) (collectionEditorVM, editorStatus) {
 	vm := collectionEditorVM{
-		Meta: pageMeta{Title: "collection", Sub: "custom collections", ActiveCollections: true},
-		Now:  time.Now(),
+		Meta:       pageMeta{Title: "collection", Sub: "custom collections", ActiveCollections: true},
+		Now:        time.Now(),
+		RegenAlert: s.regenAlert(),
 	}
 	col, err := s.st.Collection(id)
 	if err != nil {
@@ -316,7 +322,7 @@ func (s *Server) handleCollectionUpdate(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "update failed", http.StatusInternalServerError)
 		return
 	}
-	s.regenerateLauncherDBAsync()
+	s.requestRegeneration(regenOriginCuration)
 	s.renderCollectionEditor(w, r, id)
 }
 
@@ -346,7 +352,7 @@ func (s *Server) handleCollectionDelete(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	log.Printf("web: collection %q deleted; regenerating launcher DB", col.Name)
-	s.regenerateLauncherDBAsync()
+	s.requestRegeneration(regenOriginCuration)
 	vm := s.fetchCollections()
 	s.render(w, http.StatusOK, "partial-collections", vm)
 }
@@ -374,7 +380,7 @@ func (s *Server) handleCollectionAddGame(w http.ResponseWriter, r *http.Request)
 		s.render(w, http.StatusOK, "partial-collection", vm)
 		return
 	}
-	s.regenerateLauncherDBAsync()
+	s.requestRegeneration(regenOriginCuration)
 	s.renderCollectionEditor(w, r, id)
 }
 
@@ -397,7 +403,7 @@ func (s *Server) handleCollectionRemoveGame(w http.ResponseWriter, r *http.Reque
 		http.Error(w, "remove failed", http.StatusInternalServerError)
 		return
 	}
-	s.regenerateLauncherDBAsync()
+	s.requestRegeneration(regenOriginCuration)
 	s.renderCollectionEditor(w, r, id)
 }
 

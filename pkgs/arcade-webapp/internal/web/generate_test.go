@@ -3,6 +3,7 @@ package web
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -155,6 +156,7 @@ func TestPostVerifyTriggersGeneration(t *testing.T) {
 		{Sys: "nes", Outcome: igir.OutcomeVerified},
 		{Sys: "gb", Outcome: igir.OutcomeSkippedEmpty},
 	}, nil)
+	waitRegenSettled(t, h.srv, 1)
 	if got := countRuns(); got != before+1 {
 		t.Fatalf("verified verify did not trigger generation: %d runs, want %d", got, before+1)
 	}
@@ -164,29 +166,17 @@ func TestPostVerifyTriggersGeneration(t *testing.T) {
 	}
 }
 
-// TestPostVerifyGenerationBusyRecordsSkipAndRetries pins ADV-P6-03: a
-// regeneration that finds the pipeline slot busy is not silent — an
-// explicit kind=generate run row marked "skipped" lands in the history
-// naming the reason, and exactly ONE deferred retry follows once the
-// slot frees (the accepted residual is only a retry that finds it busy
-// again).
+// TestPostVerifyGenerationBusyRecordsSkipAndRetries pins the deferral
+// contract as refined by ADV-P7-03: a regeneration that finds the
+// pipeline slot busy is not silent — ONE coalesced kind=generate run row
+// marked "skipped" lands in the history naming the reason AND its
+// post-verify provenance, and the worker keeps retrying until the slot
+// frees (no more per-click rows, no more single AfterFunc).
 func TestPostVerifyGenerationBusyRecordsSkipAndRetries(t *testing.T) {
 	h := newGenServer(t)
-	old := postVerifyRetryDelay
-	postVerifyRetryDelay = 50 * time.Millisecond
-	t.Cleanup(func() { postVerifyRetryDelay = old })
-
-	genRuns := func() []store.Run {
-		t.Helper()
-		var out []store.Run
-		runs, _ := h.srv.st.RecentRuns(50)
-		for _, r := range runs {
-			if r.Kind == "generate" {
-				out = append(out, r)
-			}
-		}
-		return out
-	}
+	old := regenBusyBackoff
+	regenBusyBackoff = 50 * time.Millisecond
+	t.Cleanup(func() { regenBusyBackoff = old })
 
 	// Hold the shared pipeline slot exactly like a running scrape would.
 	if !h.gen.Pipeline.TryAcquire() {
@@ -196,34 +186,33 @@ func TestPostVerifyGenerationBusyRecordsSkipAndRetries(t *testing.T) {
 		{Sys: "nes", Outcome: igir.OutcomeVerified},
 	}, nil)
 
-	runs := genRuns()
-	if len(runs) != 1 || runs[0].Status != "skipped" {
-		t.Fatalf("busy trigger recorded %+v, want exactly one skipped run", runs)
-	}
-	if !strings.Contains(runs[0].Detail, "pipeline busy") {
-		t.Errorf("skip detail = %q, want the pipeline-busy reason (history must be legible)", runs[0].Detail)
-	}
-
-	// Free the slot; the single deferred retry lands one more run. Wait
-	// for a FINISHED run ("running" rows appear at StartRun time) so no
-	// generation goroutine leaks past the test's teardown.
-	h.gen.Pipeline.Release()
-	finished := func() bool {
-		for _, r := range genRuns() {
-			if r.Status == "ok" || r.Status == "error" {
-				return true
+	var skipped *store.Run
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) && skipped == nil {
+		time.Sleep(20 * time.Millisecond)
+		runs := generateRunsOf(t, h.srv)
+		for i := range runs {
+			if runs[i].Status == "skipped" {
+				skipped = &runs[i]
 			}
 		}
-		return false
 	}
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) && !finished() {
-		time.Sleep(20 * time.Millisecond)
+	if skipped == nil {
+		t.Fatal("busy trigger recorded no skipped run row")
 	}
-	runs = genRuns()
-	if !finished() {
-		t.Fatalf("deferred retry never finished: %+v", runs)
+	if len(generateRunsOf(t, h.srv)) != 1 {
+		t.Fatalf("generate runs while busy = %+v, want exactly one skipped row", generateRunsOf(t, h.srv))
 	}
+	if !strings.Contains(skipped.Detail, "pipeline busy") || !strings.Contains(skipped.Detail, regenOriginPostVerify) {
+		t.Errorf("skip detail = %q, want the pipeline-busy reason with post-verify provenance (history must be legible)", skipped.Detail)
+	}
+
+	// Free the slot; the worker's retry lands one more run. Wait for a
+	// FINISHED ok/error row ("running" rows appear at StartRun time) so
+	// no generation goroutine leaks past the test's teardown.
+	h.gen.Pipeline.Release()
+	waitRegenSettled(t, h.srv, 1)
+	runs := generateRunsOf(t, h.srv)
 	if len(runs) != 2 {
 		t.Fatalf("generate runs after retry = %d (%+v), want 2 (skipped + deferred ok)", len(runs), runs)
 	}
@@ -334,6 +323,222 @@ func TestGenerateRunDetailRendering(t *testing.T) {
 	for _, want := range []string{"nes: generated", "5 games", "segacd: generated", "1 pending"} {
 		if !strings.Contains(html, want) {
 			t.Errorf("detail cell missing %q in %q", want, html)
+		}
+	}
+}
+
+// ---- ADV-P7-03 coordinator helpers + tests ----------------------------------
+
+// generateRunsOf returns every kind=generate run, newest first.
+func generateRunsOf(t *testing.T, srv *Server) []store.Run {
+	t.Helper()
+	runs, err := srv.st.RecentRuns(200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []store.Run
+	for _, r := range runs {
+		if r.Kind == "generate" {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// waitRegenSettled waits until the coordinator has no pending work AND
+// at least minRuns finished ok/error generate runs exist (a "running"
+// row means a pass is mid-flight; skipped rows never count toward
+// minRuns). The quiescence point is the coordinator's own passActive
+// flag: the failure marker lands under the same unlock that clears it,
+// so "settled" guarantees every page render sees the final outcome.
+func waitRegenSettled(t *testing.T, srv *Server, minRuns int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+		srv.regenMu.Lock()
+		pending := srv.regen.dirty || srv.regen.passActive
+		srv.regenMu.Unlock()
+		if pending {
+			continue
+		}
+		n, running := 0, 0
+		for _, r := range generateRunsOf(t, srv) {
+			switch {
+			case r.Status == "running":
+				running++
+			case r.FinishedAt != "" && (r.Status == "ok" || r.Status == "error"):
+				n++
+			}
+		}
+		if n >= minRuns && running == 0 {
+			return
+		}
+	}
+	t.Fatalf("regeneration never settled within the deadline (runs: %+v)", generateRunsOf(t, srv))
+}
+
+// TestRegenBurstCoalescing pins ADV-P7-03's core claim: 50 rapid
+// curation toggles cost 1–2 generations — not 50 goroutines, 50 run rows
+// and a flooded history. The final toggle's state must be what the last
+// generation served.
+func TestRegenBurstCoalescing(t *testing.T) {
+	h := newGenServer(t)
+	handler := h.srv.Handler()
+
+	games, _ := h.srv.st.ListGames(store.GameListOpts{SystemKey: "nes", Limit: 1})
+	if len(games.Games) != 1 {
+		t.Fatal("no nes fixture game found")
+	}
+	g := games.Games[0]
+	ep := fmt.Sprintf("/systems/%s/games/%d/hide", g.SystemKey, g.ID)
+
+	for i := 0; i < 50; i++ {
+		if rec := postHX(t, handler, ep); rec.Code != http.StatusOK {
+			t.Fatalf("toggle %d = %d, want 200", i, rec.Code)
+		}
+	}
+
+	waitRegenSettled(t, h.srv, 1)
+
+	var finished, running int
+	for _, r := range generateRunsOf(t, h.srv) {
+		switch {
+		case r.Status == "running":
+			running++
+		case r.Status == "ok" || r.Status == "error":
+			finished++
+		default:
+			t.Fatalf("unexpected run row %+v (slot was never contended — no skips allowed)", r)
+		}
+	}
+	if running != 0 {
+		t.Fatalf("%d generation(s) still running after settle", running)
+	}
+	if finished < 1 || finished > 2 {
+		t.Fatalf("50 rapid toggles produced %d generations, want 1–2 (coalescing broken)", finished)
+	}
+
+	// The final toggle (even count = visible again) is what's served.
+	pg, _ := h.srv.st.ListGames(store.GameListOpts{SystemKey: g.SystemKey})
+	for _, row := range pg.Games {
+		if row.ID == g.ID && row.Hidden {
+			t.Fatal("final state lost: game still hidden after an even number of toggles")
+		}
+	}
+	b, err := os.ReadFile(filepath.Join(h.root, "games", "cartridge", "nes", "metadata.pegasus.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(b), "file: "+g.RelPath+"\n") {
+		t.Fatalf("served tree does not reflect the final toggle state:\n%s", b)
+	}
+}
+
+// TestRegenDeferralCoalescedPerEpisode pins the deferral contract: while
+// a verify holds the slot, N mutations + a post-verify trigger produce
+// exactly ONE skipped row per episode, labeled accurately ("regeneration
+// deferred — pipeline busy") with BOTH provenances named; when the slot
+// frees, exactly one more generation lands.
+func TestRegenDeferralCoalescedPerEpisode(t *testing.T) {
+	h := newGenServer(t)
+	old := regenBusyBackoff
+	regenBusyBackoff = 20 * time.Millisecond
+	t.Cleanup(func() { regenBusyBackoff = old })
+
+	if !h.gen.Pipeline.TryAcquire() {
+		t.Fatal("could not hold the idle pipeline mutex")
+	}
+
+	ep := func(id int64) string {
+		return fmt.Sprintf("/systems/nes/games/%d/hide", id)
+	}
+	games, _ := h.srv.st.ListGames(store.GameListOpts{SystemKey: "nes", Limit: 3})
+	if len(games.Games) < 3 {
+		t.Fatal("fixture nes games missing")
+	}
+	for _, g := range games.Games { // three curation clicks against a busy slot
+		if rec := postHX(t, h.srv.Handler(), ep(g.ID)); rec.Code != http.StatusOK {
+			t.Fatalf("hide %d = %d", g.ID, rec.Code)
+		}
+	}
+	h.srv.maybeGenerateAfterVerify([]igir.SystemOutcome{
+		{Sys: "nes", Outcome: igir.OutcomeVerified},
+	}, nil) // …plus the post-verify trigger
+
+	// Let several backoff cycles elapse, then demand ONE deferral row.
+	time.Sleep(150 * time.Millisecond)
+	var skips []store.Run
+	for _, r := range generateRunsOf(t, h.srv) {
+		if r.Status == "skipped" {
+			skips = append(skips, r)
+		}
+	}
+	if len(skips) != 1 {
+		t.Fatalf("skipped rows during one busy episode = %d (%+v), want 1 (coalesced)", len(skips), skips)
+	}
+	for _, want := range []string{"regeneration deferred — pipeline busy", regenOriginCuration, regenOriginPostVerify} {
+		if !strings.Contains(skips[0].Detail, want) {
+			t.Errorf("deferral detail %q missing %q (labels must be accurate)", skips[0].Detail, want)
+		}
+	}
+
+	h.gen.Pipeline.Release()
+	waitRegenSettled(t, h.srv, 1)
+	total := len(generateRunsOf(t, h.srv))
+	if total != 2 {
+		t.Fatalf("generate runs after episode = %d, want 2 (one coalesced skip + one deferred pass)", total)
+	}
+}
+
+// TestRegenFailureMarkerSurfacesToPages pins ADV-P7-01(b): when a
+// hide-toggle's background regeneration ends in failure, the next page
+// renders carry a visible warning marker (collections panel, metadata
+// panel, game actions); the next fully-ok generation clears it.
+func TestRegenFailureMarkerSurfacesToPages(t *testing.T) {
+	h := newGenServer(t)
+	handler := h.srv.Handler()
+
+	games, _ := h.srv.st.ListGames(store.GameListOpts{SystemKey: "nes", Limit: 1})
+	g := games.Games[0]
+
+	// Sabotage the served tree: the generator fails this system loudly
+	// ("games dir missing") instead of writing anything.
+	nesDir := filepath.Join(h.root, "games", "cartridge", "nes")
+	if err := os.RemoveAll(nesDir); err != nil {
+		t.Fatal(err)
+	}
+
+	if rec := postHX(t, handler, fmt.Sprintf("/systems/%s/games/%d/hide", g.SystemKey, g.ID)); rec.Code != http.StatusOK {
+		t.Fatalf("hide = %d, want 200", rec.Code)
+	}
+	waitRegenSettled(t, h.srv, 1) // settled with an ERROR-status run
+
+	marker := "launcher-DB regeneration failed"
+	for path, frag := range map[string]string{
+		"/partials/collections": "partial-collections",
+		"/partials/metadata":    "partial-metadata",
+	} {
+		body := get(t, handler, path).Body.String()
+		if !strings.Contains(body, marker) {
+			t.Errorf("%s missing the regeneration-failure marker:\n%s", frag, body)
+		}
+	}
+	detail := get(t, handler, fmt.Sprintf("/systems/%s/games/%d", g.SystemKey, g.ID)).Body.String()
+	if !strings.Contains(detail, marker) {
+		t.Error("game page missing the regeneration-failure marker after its hide regenerated into failure")
+	}
+
+	// Recovery: restore the dir and regenerate manually → marker clears.
+	if err := os.MkdirAll(nesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if rec := postHX(t, handler, "/generate"); rec.Code != http.StatusOK {
+		t.Fatalf("manual regenerate after recovery = %d, want 200", rec.Code)
+	}
+	for _, path := range []string{"/partials/collections", "/partials/metadata"} {
+		if body := get(t, handler, path).Body.String(); strings.Contains(body, marker) {
+			t.Errorf("%s still shows the failure marker after a clean generation:\n%s", path, body)
 		}
 	}
 }

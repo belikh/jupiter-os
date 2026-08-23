@@ -115,8 +115,10 @@ func TestHideToggleEndpoint(t *testing.T) {
 		t.Fatalf("unhide did not clear the flag: %+v", pg.Games)
 	}
 
-	// Each toggle triggered one background regeneration (2 total).
-	waitGenerateRuns(t, h.srv, 2)
+	// Each toggle requested a regeneration through the coordinator; a
+	// burst coalesces (ADV-P7-03), so assert eventual consistency: at
+	// least one finished run and the final toggle's effect settled.
+	waitRegenSettled(t, h.srv, 1)
 }
 
 func boolPtr(b bool) *bool { return &b }

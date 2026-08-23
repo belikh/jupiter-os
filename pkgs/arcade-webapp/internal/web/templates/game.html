@@ -63,6 +63,7 @@
       flipped label and triggers an async launcher-DB regeneration. */ -}}
 {{define "game-actions"}}
 <div id="game-actions" class="actions">
+  {{if .RegenAlert}}<div class="action-error" role="status" style="flex-basis: 100%;">{{.RegenAlert}}</div>{{end}}
   <button class="mini" hx-post="/systems/{{.SystemKey}}/games/{{.GameID}}/hide"
     hx-target="#game-actions" hx-swap="outerHTML"
     title="{{if .Hidden}}show this game in the library and the launcher DB{{else}}hide this game from the library and the launcher DB{{end}}">

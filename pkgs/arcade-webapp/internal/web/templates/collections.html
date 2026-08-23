@@ -30,6 +30,7 @@
 <div id="collections-panel" role="region" aria-label="custom collections" aria-live="polite">
 
   {{if .Error}}<div class="action-error" role="alert">{{.Error}}</div>{{end}}
+  {{if .RegenAlert}}<div class="action-error" role="status">{{.RegenAlert}}</div>{{end}}
 
   <section>
     <h2>Collections <span class="chip">{{len .Collections}}</span></h2>
@@ -104,6 +105,7 @@
 <div id="collection-panel" role="region" aria-label="collection editor" aria-live="polite">
 
   {{if .Error}}<div class="action-error" role="alert">{{.Error}}</div>{{end}}
+  {{if .RegenAlert}}<div class="action-error" role="status">{{.RegenAlert}}</div>{{end}}
 
   <p><a class="back-link" href="/collections">‹ back to collections</a></p>
 

@@ -231,10 +231,10 @@ func (s *Server) handleLibraryPage(w http.ResponseWriter, r *http.Request) {
 // when visible, show when hidden — one endpoint, the toggle IS the API.
 // Mutating endpoint: htmx-only (D-P2c). The write itself is a cheap
 // indexed UPDATE that deliberately does NOT claim the pipeline slot; the
-// launcher-DB regeneration it causes runs afterwards in the background
-// through regenerateLauncherDBAsync (serialized by the shared heavy-job
-// lock there). The answer swaps #game-actions with its refreshed self,
-// so the button flips Hide↔Show without a reload.
+// launcher-DB regeneration it causes is requested through the shared
+// coordinator (requestRegeneration — one worker, coalesced; ADV-P7-03).
+// The answer swaps #game-actions with its refreshed self, so the button
+// flips Hide↔Show without a reload.
 func (s *Server) handleGameHideToggle(w http.ResponseWriter, r *http.Request) {
 	if !hxRequestOK(r) {
 		http.Error(w, "htmx requests only", http.StatusForbidden)
@@ -261,7 +261,7 @@ func (s *Server) handleGameHideToggle(w http.ResponseWriter, r *http.Request) {
 		log.Printf("web: game hide %s/%s: %v", sys, g.RelPath, err)
 		return
 	}
-	s.regenerateLauncherDBAsync()
+	s.requestRegeneration(regenOriginCuration)
 	ng, err := s.st.GetGame(sys, id)
 	if err != nil || ng == nil {
 		// The row existed a moment ago; a re-read failure here would make
