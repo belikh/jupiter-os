@@ -9,7 +9,7 @@ every critic verdict. Screenshots (when they exist) land under
 - **Branch:** `arcade/webapp-gauntlet`
 - **ADR:** [ADR-0002 — custom, not RomM](../adr/0002-arcade-webapp-custom-vs-romm.md)
   (D1 research-confirmed 2026-08-21; D2–D4 accepted)
-- **Last update:** 2026-08-23 22:00 AEST
+- **Last update:** 2026-08-23 23:05 AEST
 
 ## Piece table
 
@@ -493,6 +493,18 @@ intended argv — had the quoting been wrong anywhere, word-splitting would
 have mangled the final argument and the probe journal would differ. The
 CommandTokenizer-equivalence premise is anchored at its designated gate;
 no generator churn remains justified.
+
+Verification (2026-08-23, three VM runs on this tree): run 1 FAILED
+loudly AT the new block — root-caused test-side: a script's `"$@"`
+excludes argv[0] (the interpreter strips it into `$0`), so the journal
+opened at `-L`; the shim now journals `"${0##*/}"` first. Runs 2–3 =
+clean PASSes with both probe cases green (`launch probe ok — argv
+survived real sh parsing byte-exact`, nes fceumm + snes snes9x).
+Negative control: final-argv assertion inverted → run died at the block
+with an explicit marker (`ARCADE-WEBAPP-VM: FAIL: NEGATIVE-CONTROL
+inverted assertion reached its fail branch`) + make exit 1; restored →
+PASS. `go build/vet/test -count=1 ./...` green (14 packages);
+`make check`/`make fmt-check` per the standing gate below.
 
 ## Decision log
 

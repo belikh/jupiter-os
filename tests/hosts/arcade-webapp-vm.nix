@@ -55,7 +55,16 @@
 # generator PROVEN not to touch the kiosk-owned file even when an exo
 # game sits in a custom collection, and the P7-critic carry-in chips
 # ("N tracked / M playable" + the hidden member chip) visible in the
-# collection editor.
+# collection editor. The final-audit fix (FIN-01 / AC-8c Tier-1) adds
+# what all that TEXT-assertion coverage never had: EXECUTION. A probe
+# shim named jupiter-retroarch (no real one exists in this VM's
+# closure) is on PATH from boot and journals its argv per invocation;
+# after the scrape→generate assertions the smoke reads each served
+# metadata file's exact `launch:` line, substitutes {file.path} like
+# the frontend does (a real spaced ROM path relative to the metadata
+# file), runs the result through /bin/sh -c EXACTLY as emitted, and
+# asserts the recovered argv (argv[0], -L <core>, final arg) plus that
+# the path stat()s to an existing regular file in the served tree.
 # The driver (scripts/test-arcade-webapp.sh) greps the serial log for
 # the marker.
 #
@@ -250,6 +259,24 @@ let
       done
       echo '</db>'
     } > "$d/db.xml"
+  '';
+
+  # AC-8c Tier-1 launch probe (FIN-01): stands in for the kiosk's real
+  # retroarch wrapper during the VM smoke — nothing named
+  # jupiter-retroarch exists anywhere else in this test host's closure,
+  # so PATH resolution is unambiguous. It journals its FULL argv, one
+  # shell-escaped (%q) line per invocation, then exits 0: there is no
+  # display to draw on, and what is under test is how a real shell
+  # tokenized the generated `launch:` bytes — recoverable exactly by
+  # eval'ing each journaled line back in bash. Bring-up note: "$@"
+  # alone is NOT the full argv — the kernel/interpreter strip argv[0]
+  # into $0, so the invoked NAME is journaled from "${0##*/}" first.
+  launchProbe = pkgs.writeShellScriptBin "jupiter-retroarch" ''
+    log=/tmp/launch-probe.log
+    line=
+    printf -v line ' %q' "''${0##*/}" "$@"
+    printf '%s\n' "''${line# }" >> "$log"
+    exit 0
   '';
 
   # In-VM assertions. Failures print FAIL lines (the driver shows the log
@@ -953,6 +980,66 @@ let
       || fail "generate run detail does not show the validation verdict"
     echo "smoke: generate run recorded + strict-parser validated"
 
+    # ---- AC-8c Tier-1: the launch probe (FIN-01) ----
+    #
+    # Everything before this point proved the pipeline WRITES
+    # launchable-looking files; this block proves a generated `launch:`
+    # line actually LAUNCHES. The command is executed through the real
+    # shell EXACTLY as emitted — that is the whole point (ADV-P6-05 /
+    # D-P6e): if the emitted quoting were wrong, sh would word-split a
+    # spaced ROM path and the probe's recovered argv would differ from
+    # intent. The shim (systemPackages + unit path, no real
+    # jupiter-retroarch in this closure) journals argv one %-q-escaped
+    # line per invocation; assertions read it back via eval.
+    launch_probe() { # $1 metadata file  $2 expected core  $3 rom path relative to $1's dir
+      local md="$1" core="$2" rel="$3" raw cmd execline pline abs n L C a rc
+      local -a pargs
+      echo "smoke: launch probe [$core] $(basename "$md") <- '$rel'"
+      raw=$(grep -m1 '^launch: ' "$md")
+      case "$raw" in "launch: "*) ;; *) fail "launch probe: no launch: line in $md" ;; esac
+      cmd=''${raw#launch: }
+      case "$cmd" in *"{file.path}"*) ;; *) fail "launch probe: '{file.path}' missing from: $cmd" ;; esac
+      grep -qxF "file: $rel" "$md" \
+        || fail "launch probe: '$rel' not listed as a file: entry in $md"
+      abs="$(dirname "$md")/$rel"
+      [ -f "$abs" ] && [ "$(stat -c %F "$abs")" = "regular file" ] \
+        || fail "launch probe: '$abs' does not resolve to a regular file in the served tree"
+      # Substitute exactly like the frontend does — {file.path} becomes
+      # a path RELATIVE TO THE METADATA FILE'S DIRECTORY — then execute
+      # the resulting bytes verbatim through sh.
+      execline=''${cmd/\{file.path\}/$rel}
+      rm -f /tmp/launch-probe.log
+      /bin/sh -c "$execline"
+      rc=$?
+      [ "$rc" = 0 ] || fail "launch probe: sh -c '$execline' exited $rc"
+      [ -f /tmp/launch-probe.log ] || fail "launch probe: shim never journaled the invocation"
+      n=$(wc -l < /tmp/launch-probe.log)
+      [ "$n" = 1 ] || fail "launch probe: want exactly 1 journal line, got $n"
+      pline=$(cat /tmp/launch-probe.log)
+      pargs=()
+      eval "pargs=($pline)"
+      n=''${#pargs[@]}
+      [ "$n" -ge 4 ] || fail "launch probe: argv too short ($n): $pline"
+      [ "''${pargs[0]}" = "jupiter-retroarch" ] \
+        || fail "launch probe: argv[0]=[ ''${pargs[0]} ], want [ jupiter-retroarch ] ($pline)"
+      L=0
+      C=0
+      for a in "''${pargs[@]}"; do
+        [ "$a" = "-L" ] && L=1
+        [ "$a" = "$core" ] && C=1
+      done
+      [ "$L" = 1 ] || fail "launch probe: '-L' absent from argv: $pline"
+      [ "$C" = 1 ] || fail "launch probe: core '$core' absent from argv: $pline"
+      [ "''${pargs[$((n - 1))]}" = "$rel" ] \
+        || fail "launch probe: final argv=[ ''${pargs[$((n - 1))]} ], want [ $rel ] — quote shape did not survive sh ($pline)"
+      echo "smoke: launch probe ok — argv survived real sh parsing byte-exact"
+    }
+
+    launch_probe "${gamesRoot}/cartridge/nes/metadata.pegasus.txt" \
+      fceumm "Crystal Carp (USA) (Rev A).nes"
+    launch_probe "${gamesRoot}/cartridge/snes/metadata.pegasus.txt" \
+      snes9x "Astral Almari (USA).sfc"
+
     # ---- P7: curation ----
     #
     # Hide/show through the REAL toggle endpoint (the affordance an
@@ -1257,6 +1344,12 @@ in
     tgdbApikeyFile = "/dev/null";
   };
 
+  # AC-8c Tier-1 (FIN-01): the launch-probe shim is on the system PATH
+  # from boot — any consumer resolving jupiter-retroarch gets the probe
+  # (nothing real by that name exists in this closure); the smoke unit
+  # additionally carries it explicitly on its own unit PATH below.
+  environment.systemPackages = [ launchProbe ];
+
   # P5 probe: the stub journals its argv here, and the smoke greps it
   # for the game-scrape windowing proof. scratch/ exists via the
   # module's tmpfiles rule + materialize's mkdir.
@@ -1391,16 +1484,19 @@ in
       StandardOutput = "console";
       StandardError = "console";
     };
-    path = with pkgs; [
+    path = [
+      launchProbe
+    ]
+    ++ (with pkgs; [
       curl
       gnugrep
       gnused
       gawk # P4: pair each library card's href with its title; P6/P7: pending-section + collection line-order checks
       jq # P8: /inventory.json legacy-shape assertions
       systemd
-      coreutils
+      coreutils # stat: the AC-8c launch probe resolves the substituted ROM path in the served tree
       procps # ps: the P3 verify DEBUG hang-check
-    ];
+    ]);
   };
 
   # Minimal VM shape for `nixos-rebuild build-vm` / the driver script.
