@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 #
 # Async cache drainer for CI — two-threaded version.
-#   fast drainer:  short timeout (15s) — a quick classifier: small NARs land
-#   almost instantly; anything slower graduates to the slow queue
+#   fast drainer:  short timeout (300s), handles small/normal NARs
 #   slow drainer:  long timeout (1200s), handles paths that timed out in fast
 # Both read from the post-build-hook FIFO; fast drainer is the primary consumer.
 # Slow drainer reads from a second FIFO that fast drainer writes timeouts to.
@@ -13,6 +12,12 @@
 #
 # Runs as root on GitHub runners (sudo). SSH config/keys at /root/.ssh/.
 # Start BEFORE `nix build` (nohup ... &) so FIFO has a reader immediately.
+#
+# LOGGING DISCIPLINE: quiet by default. Successful pushes log nothing; all
+# activity collapses into one summary line every SUMMARY_EVERY seconds. Only
+# failures log immediately (status + one truncated err line + ssh probe).
+# History: per-event logging produced a wall of near-identical lines that hid
+# the one line that mattered.
 set -uo pipefail
 umask 000
 
@@ -25,36 +30,30 @@ store="${EUROPA_STORE:-ssh-ng://europa-ci}"
 log_path="/var/log/jupiter-ci/cache-drainer.log"
 nix_bin="${NIX_BIN:-nix}"
 
-FAST_TIMEOUT=15
+FAST_TIMEOUT=300
 SLOW_TIMEOUT=1200
+SUMMARY_EVERY=120
 
 # Lines logged before tailnet join (startup, config) cannot ship — ssh to
 # europa is unroutable then. Buffer them and flush on first successful ship,
-# otherwise the europa-side log permanently lacks the startup/self-description
-# block and looks like the drainer misconfigured itself.
+# otherwise the europa-side log permanently lacks the startup block.
 _buffer="${TMPDIR:-/tmp}/cache-drainer-unshipped"
-
-_ship_b64() {
-  local b64="$1"
-  echo "$b64" | ssh -o ControlPath="$cm/%r@%h:%p" -o ConnectTimeout=10 "$ssh" \
-    "mkdir -p /var/log/jupiter-ci && base64 -d >> $log_path" 2>/dev/null
-}
 
 log_to_europa() {
   local msg="$1"
-  # base64 round-trip: the old `echo \"$msg\"` broke on any line containing
-  # quotes/$/backticks (remote shell syntax error, swallowed by ||true) —
-  # which is exactly what nix error lines contain. That is why logs showed
-  # "copying N paths..." and never the actual failure reason.
+  # base64 round-trip: `echo "$msg"` breaks on any line containing quotes,
+  # $ or backticks (remote shell syntax error, swallowed by || true) — exactly
+  # what nix error lines contain, so real failure reasons never landed.
   local b64
   b64=$(printf '%s\n' "$msg" | base64 -w0) || return 0
-  # Flush anything buffered from the pre-connectivity window first.
   if [ -s "$_buffer" ]; then
     ssh -o ControlPath="$cm/%r@%h:%p" -o ConnectTimeout=10 "$ssh" \
       "mkdir -p /var/log/jupiter-ci && cat >> $log_path" <"$_buffer" 2>/dev/null \
       && : > "$_buffer"
   fi
-  _ship_b64 "$b64" || printf '%s\n' "$msg" >> "$_buffer"
+  printf '%s\n' "$b64" | ssh -o ControlPath="$cm/%r@%h:%p" -o ConnectTimeout=10 \
+    "$ssh" "mkdir -p /var/log/jupiter-ci && base64 -d >> $log_path" 2>/dev/null \
+    || printf '%s\n' "$msg" >> "$_buffer"
 }
 
 log() {
@@ -67,7 +66,6 @@ log() {
 [[ -p "$SLOW_FIFO" ]] || mkfifo -m 666 "$SLOW_FIFO"
 
 log "drainer started (fast: ${FAST_TIMEOUT}s, slow: ${SLOW_TIMEOUT}s)"
-log "config: store=$store ssh=$ssh key=$key cm=$cm nix=$nix_bin fifo=$FAST_FIFO slow_fifo=$SLOW_FIFO"
 
 total_pushed=0
 enqueue_cnt="${ENQUEUE_CNT:-/var/run/nix-push-enqueued}"
@@ -86,42 +84,33 @@ flush() {
   local timeout_sec="$2"
   local tag="$3"
   [ -z "$path" ] && return 0
-  status_line "$tag: pushing $path (timeout ${timeout_sec}s)"
 
   local err_file; err_file="$(mktemp)"
   # Direct exec, NO xargs: we push exactly one path per call, and xargs
   # rewrites every child exit code in 1-125 to 123 — which is how the old
   # logs showed an undiagnosable wall of rc=123. Here rc is honest:
   # 124 = our timeout fired (candidate for the slow queue), anything else
-  # is nix's/ssh's own failure code with the stderr below. stdout is
-  # captured too: nothing the push prints may escape diagnosis.
+  # is nix's/ssh's own failure code.
   if timeout "$timeout_sec" env \
       NIX_SSHOPTS="-i $key -o ControlPath=$cm/%r@%h:%p -o StrictHostKeyChecking=accept-new" \
-      "$nix_bin" copy --to "$store" "$path" >"$err_file" 2>&1; then
+      "$nix_bin" copy --to "$store" "$path" >/dev/null 2>"$err_file"; then
     total_pushed=$((total_pushed + 1))
-    status_line "$tag: pushed $path"
     rm -f "$err_file"
     return 0
   else
+    # rc MUST be captured in the else branch: after a taken-then/untaken-else
+    # `fi`, $? resets to 0 and every failure would log as rc=0.
     local rc=$?
-    status_line "$tag: push failed (rc=$rc)"
-    while IFS= read -r line; do log "  out: $line"; done < "$err_file"
+    status_line "$tag: push failed (rc=$rc) $path"
+    # ONE line, not a per-line ssh flood; tail keeps the actual nix/ssh error
+  # and drops the "copying path ..." progress noise above it.
+    local err_tail; err_tail=$(tail -n 3 "$err_file" | tr '\n' ' ' | cut -c1-500)
+    [ -n "$err_tail" ] && log "  err: $err_tail"
     rm -f "$err_file"
-    # One-shot probe on failure: separates auth/network breakage from
-    # store-protocol rejection (e.g. require-sigs) in one log line.
+    # One-shot probe: separates auth/network breakage from store-protocol
+    # rejection (e.g. require-sigs) without re-running the transfer.
     ssh -o ControlPath="$cm/%r@%h:%p" -o ConnectTimeout=10 "$ssh" true 2>/dev/null
     log "  probe: ssh $ssh -> rc=$?"
-    # Diagnostic re-attempt with ssh -vv: shows exactly WHERE the transfer
-    # dies (master-socket reuse, channel open, auth, protocol). Capped so
-    # the log doesn't explode.
-    local diag_file; diag_file="$(mktemp)"
-    timeout 60 env \
-      NIX_SSHOPTS="-i $key -o ControlPath=$cm/%r@%h:%p -o StrictHostKeyChecking=accept-new -vv" \
-      "$nix_bin" copy --to "$store" "$path" >"$diag_file" 2>&1
-    local drc=$?
-    log "  diag: rc=$drc path_exists=$([ -e "$path" ] && echo yes || echo NO)"
-    log "  diag-tail: $(tail -c 1500 "$diag_file" | tr '\n' ' ')"
-    rm -f "$err_file" "$diag_file"
     return "$rc"
   fi
 }
@@ -130,6 +119,7 @@ exec 3<>"$FAST_FIFO"
 exec 4<>"$SLOW_FIFO"
 
 requeue=()
+declare -A attempts
 
 slow_drainer() {
   log "slow drainer started (reading from $SLOW_FIFO)"
@@ -139,20 +129,20 @@ slow_drainer() {
       idle=0
       [ -z "${STORE_PATH:-}" ] && continue
       if flush "$STORE_PATH" "$SLOW_TIMEOUT" "slow"; then
-        :
+        unset "attempts[$STORE_PATH]"
       else
         # Backoff before re-queuing: an instantly-failing path must not
         # hot-spin this loop against europa.
-        log "slow: $STORE_PATH failed even at ${SLOW_TIMEOUT}s; re-queuing after 60s"
+        status_line "slow: $STORE_PATH failed at ${SLOW_TIMEOUT}s; retry in 60s"
         sleep 60
         printf '%s\n' "$STORE_PATH" >&4
       fi
     else
-      # Heartbeat every ~2min of idleness: proves the subshell is alive and
-      # the queue is genuinely empty (vs. this process being wedged).
+      # Heartbeat: proves the subshell is alive and the queue genuinely empty
+      # (vs. this process wedged). Rate-limited to once per SUMMARY_EVERY.
       idle=$((idle + 1))
-      if [ "$idle" -ge 24 ]; then
-        status_line "slow: idle, queue empty"
+      if [ "$idle" -ge $((SUMMARY_EVERY / 5)) ]; then
+        status_line "slow: idle"
         idle=0
       fi
     fi
@@ -161,36 +151,50 @@ slow_drainer() {
 
 slow_drainer &
 SLOW_PID=$!
-log "slow drainer PID: $SLOW_PID"
-# A dead slow-drainer is silent by construction (empty queue = no logs), and
-# its first log call once hung forever on pre-tailnet ssh. Verify it actually
-# came up; if it dies later the heartbeat below stops and the fast loop's
-# status lines make the stall visible in pending counts.
-sleep 1
 if ! kill -0 "$SLOW_PID" 2>/dev/null; then
   log "ERROR: slow drainer (PID $SLOW_PID) died at startup — timeouts will pile up unread"
 fi
 
 # Classify a failed fast push: genuine timeout (rc=124) graduates to the slow
-# FIFO; any other failure stays in the fast requeue list. Top-level loop, so
-# NO `local` here — bash only allows it inside functions, and referencing the
-# unset var under set -u would kill the drainer on the first failure.
+# FIFO; any other failure stays in the fast requeue list with escalating
+# backoff. Top-level loop helpers use NO `local` outside functions — under
+# set -u an unset var here would kill the drainer on the first failure.
 handle_fast_failure() {
   local path="$1" rc="$2"
   if [ "$rc" -eq 124 ]; then
-    log "fast: $path timed out after ${FAST_TIMEOUT}s -> slow FIFO"
     printf '%s\n' "$path" >&4
   else
+    attempts[$path]=$(( ${attempts[$path]:-0} + 1 ))
     requeue+=("$path")
   fi
 }
 
+last_summary=$(date +%s)
 while true; do
   if IFS=$'\t' read -r -t 3 STATUS STORE_PATH DERIVATION TIMESTAMP <&3; then
     [ -z "${STORE_PATH:-}" ] && continue
-    flush "$STORE_PATH" "$FAST_TIMEOUT" "fast" || handle_fast_failure "$STORE_PATH" "$?"
+    flush "$STORE_PATH" "$FAST_TIMEOUT" "fast" \
+      && unset "attempts[$STORE_PATH]" \
+      || handle_fast_failure "$STORE_PATH" "$?"
+    last_summary=$(date +%s)
   elif [ "${#requeue[@]}" -gt 0 ]; then
-    retry="${requeue[0]}"; requeue=("${requeue[@]:1}")
-    flush "$retry" "$FAST_TIMEOUT" "fast-retry" || handle_fast_failure "$retry" "$?"
+    # Backoff: don't hammer a failing path every 3s read-timeout tick.
+    retry="${requeue[0]}"
+    wait_secs=$(( ${attempts[$retry]:-1} * 30 )); [ "$wait_secs" -gt 600 ] && wait_secs=600
+    now=$(date +%s)
+    if [ $((now - last_summary)) -lt "$wait_secs" ]; then sleep 3; continue; fi
+    requeue=("${requeue[@]:1}")
+    flush "$retry" "$FAST_TIMEOUT" "fast-retry" \
+      && unset "attempts[$retry]" \
+      || handle_fast_failure "$retry" "$?"
+    last_summary=$(date +%s)
+  else
+    # Fully idle: one summary line per SUMMARY_EVERY instead of silence.
+    now=$(date +%s)
+    if [ $((now - last_summary)) -ge "$SUMMARY_EVERY" ]; then
+      status_line "idle"
+      last_summary=$now
+    fi
+    sleep 3
   fi
 done
