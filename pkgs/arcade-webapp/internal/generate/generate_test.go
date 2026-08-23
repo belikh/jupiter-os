@@ -650,3 +650,177 @@ func TestMissingDirFailsLoudly(t *testing.T) {
 		}
 	}
 }
+
+// ---- P7: custom-collection emission ----------------------------------------
+
+// TestGenerateCustomCollectionCrossSystem is the P7 golden: one custom
+// collection spanning nes+wiiu emits a block in EACH system's file —
+// same collection name across the two FILES (the documented Pegasus
+// cross-file merge), each with its own system-inherited launch line and
+// full game blocks. Byte-exact on both.
+func TestGenerateCustomCollectionCrossSystem(t *testing.T) {
+	g, st, root := newGenHarness(t)
+	seedNES(t, st)
+	if err := st.ReplaceSystemGames("wiiu", []store.GameRow{
+		{RelPath: "Game.rpx", SizeBytes: 4},
+	}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	opts := Options{CustomCollections: []CustomCollection{{
+		Title:     "Kitchen Quick-Play",
+		Shortname: "kitchen-quick-play",
+		Summary:   "pick up and play",
+		Members: []CollectionMember{
+			{SystemKey: "nes", RelPath: "Astral Alpha (USA).nes"},
+			{SystemKey: "wiiu", RelPath: "Game.rpx"},
+			// A hidden member must not emit anywhere:
+			{SystemKey: "nes", RelPath: "Hidden Gem (Europe).nes"},
+		},
+	}}}
+	res, err := g.GenerateOptions(false, opts)
+	if err != nil {
+		t.Fatalf("GenerateOptions: %v", err)
+	}
+	assertOutcome(t, res, "nes", OutcomeGenerated)
+	assertOutcome(t, res, "wiiu", OutcomeGenerated)
+
+	nesOut, err := os.ReadFile(filepath.Join(root, "games", "cartridge", "nes", "metadata.pegasus.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantNes := wantNesGolden + `
+# jupiter-custom-collection (managed by arcade-webapp)
+collection: Kitchen Quick-Play
+shortname: kitchen-quick-play
+summary: pick up and play
+launch: jupiter-retroarch -L fceumm "{file.path}"
+
+game: Astral Alpha (USA)
+file: Astral Alpha (USA).nes
+description: A vault in space.
+release: 1987
+developer: Fixture Dev
+publisher: Fixture Pub
+genre: Platform
+rating: E
+`
+	if string(nesOut) != wantNes {
+		t.Fatalf("nes golden mismatch:\n--- got ---\n%s\n--- want ---\n%s", nesOut, wantNes)
+	}
+	if strings.Contains(string(nesOut), "Hidden Gem") {
+		t.Error("hidden member leaked into the custom collection block")
+	}
+
+	wiiuOut, err := os.ReadFile(filepath.Join(root, "games", "modern", "wiiu", "metadata.pegasus.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantWiiu := `collection: Nintendo Wii U
+shortname: wiiu
+launch: jupiter-cemu "{file.path}"
+
+game: Game
+file: Game.rpx
+
+# jupiter-custom-collection (managed by arcade-webapp)
+collection: Kitchen Quick-Play
+shortname: kitchen-quick-play
+summary: pick up and play
+launch: jupiter-cemu "{file.path}"
+
+game: Game
+file: Game.rpx
+`
+	if string(wiiuOut) != wantWiiu {
+		t.Fatalf("wiiu golden mismatch:\n--- got ---\n%s\n--- want ---\n%s", wiiuOut, wantWiiu)
+	}
+
+	// Both files pass the strict parser; each carries TWO collections,
+	// and the run outcome counts the emitted custom blocks per system.
+	for name, out := range map[string][]byte{"nes": nesOut, "wiiu": wiiuOut} {
+		f, perr := pegasus.Parse(strings.NewReader(string(out)))
+		if perr != nil || f.Validate() != nil {
+			t.Fatalf("%s file rejected by the strict parser: %v / %v", name, perr, f.Validate())
+		}
+	}
+	for _, oc := range res.Systems {
+		if oc.Collections != 1 {
+			t.Errorf("%s outcome Collections = %d, want 1", oc.Sys, oc.Collections)
+		}
+	}
+}
+
+// TestGenerateCustomCollectionExcludesPendingMembers: a member that
+// fails the completeness sniff stays in the pending section only — a
+// zeroed ROM inside a LAUNCHED collection would be a dead entry.
+func TestGenerateCustomCollectionExcludesPendingMembers(t *testing.T) {
+	g, st, root := newGenHarness(t)
+	dir := filepath.Join(root, "games", "cartridge", "nes")
+	writeROMBytes(t, filepath.Join(dir, "Zero Disc (USA).chd"), make([]byte, 64))
+	writeROM(t, filepath.Join(dir, "Raw Optimist (USA).nes"), "raw")
+	if err := st.ReplaceSystemGames("nes", []store.GameRow{
+		{RelPath: "Raw Optimist (USA).nes", SizeBytes: 3},
+		{RelPath: "Zero Disc (USA).chd", SizeBytes: 64},
+	}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	opts := Options{CustomCollections: []CustomCollection{{
+		Title: "Kitchen Quick-Play", Shortname: "kitchen-quick-play",
+		Members: []CollectionMember{{SystemKey: "nes", RelPath: "Zero Disc (USA).chd"}},
+	}}}
+	res, err := g.GenerateOptions(false, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertOutcome(t, res, "nes", OutcomeGenerated)
+	b, err := os.ReadFile(filepath.Join(dir, "metadata.pegasus.txt"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := string(b)
+	if strings.Contains(out, CustomCollectionMarker) {
+		t.Fatalf("a collection whose only members are pending must emit NO block:\n%s", out)
+	}
+	for _, oc := range res.Systems {
+		if oc.Collections != 0 {
+			t.Errorf("Collections = %d, want 0", oc.Collections)
+		}
+	}
+}
+
+// TestGenerateCustomCollectionsSortedAndStable: multiple collections
+// emit in shortname order regardless of options order, and regeneration
+// over unchanged state reproduces identical bytes.
+func TestGenerateCustomCollectionsSortedAndStable(t *testing.T) {
+	g, st, root := newGenHarness(t)
+	seedNES(t, st)
+	opts := Options{CustomCollections: []CustomCollection{
+		{Title: "Zebra Set", Shortname: "zebra-set",
+			Members: []CollectionMember{{SystemKey: "nes", RelPath: "Beta Garden (Japan).nes"}}},
+		{Title: "Alpha Set", Shortname: "alpha-set", Summary: "first",
+			Members: []CollectionMember{{SystemKey: "nes", RelPath: "Astral Alpha (USA).nes"}}},
+	}}
+	if _, err := g.GenerateOptions(false, opts); err != nil {
+		t.Fatal(err)
+	}
+	nesFile := filepath.Join(root, "games", "cartridge", "nes", "metadata.pegasus.txt")
+	first, err := os.ReadFile(nesFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ai, zi := strings.Index(string(first), "shortname: alpha-set"), strings.Index(string(first), "shortname: zebra-set")
+	if ai < 0 || zi < 0 || ai > zi {
+		t.Fatalf("custom sections not in shortname order (alpha@%d zebra@%d):\n%s", ai, zi, first)
+	}
+	for i := 0; i < 2; i++ {
+		if _, err := g.GenerateOptions(false, opts); err != nil {
+			t.Fatal(err)
+		}
+		again, _ := os.ReadFile(nesFile)
+		if string(again) != string(first) {
+			t.Fatalf("collection emission not byte-stable:\n%s\nwas:\n%s", again, first)
+		}
+	}
+}

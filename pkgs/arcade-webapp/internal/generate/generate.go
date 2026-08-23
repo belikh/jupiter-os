@@ -61,6 +61,10 @@ const (
 // tooling match on.
 const PendingMarker = "# jupiter-pending-section"
 
+// CustomCollectionMarker opens each trailing custom-collection section
+// (P7). The full marker LINE carries a manager suffix.
+const CustomCollectionMarker = "# jupiter-custom-collection"
+
 // pendingSummary is split_pending's exact wording — listed but not yet
 // playable ("coming soon", never a dead black-screen launch).
 const pendingSummary = "Still downloading or incomplete - listed but not yet playable."
@@ -79,20 +83,23 @@ const (
 	zipPKMagic    = "PK"       // every zip starts PK
 )
 
-// Options carries generation knobs later phases widen. Custom
-// collections (P7) will render as their own Pegasus collection blocks;
-// today the field is a declared seam only.
+// Options carries generation knobs. CustomCollections (P7) render as
+// their own Pegasus collection blocks appended after the main+pending
+// sections of EVERY member system's file — the D-P6b seam, now live.
 type Options struct {
-	// CustomCollections lands with P7 curation: named member lists
-	// emitted as first-class Pegasus collections. Passing any today is
-	// rejected loudly rather than silently ignored (D-P6b).
+	// CustomCollections are the operator-defined collections: named
+	// member lists keyed by (system, rel_path). Members that are hidden
+	// or fail the completeness sniff never emit (hidden games are
+	// excluded from generation by contract; a pending ROM inside a
+	// launched collection would be a dead entry).
 	CustomCollections []CustomCollection
 }
 
-// CustomCollection is one named collection's membership (P7 seam).
+// CustomCollection is one named collection's membership.
 type CustomCollection struct {
 	Title     string
-	Shortname string
+	Shortname string // stable identity; unique across collections
+	Summary   string // optional; omitted from the block when empty
 	Members   []CollectionMember
 }
 
@@ -104,11 +111,12 @@ type CollectionMember struct {
 
 // SystemOutcome is one system's result — the run detail's JSON shape.
 type SystemOutcome struct {
-	Sys     string `json:"Sys"`
-	Outcome string `json:"Outcome"`
-	Err     string `json:"Err,omitempty"`
-	Games   int    `json:"Games"`   // main-collection blocks
-	Pending int    `json:"Pending"` // pending-collection blocks
+	Sys         string `json:"Sys"`
+	Outcome     string `json:"Outcome"`
+	Err         string `json:"Err,omitempty"`
+	Games       int    `json:"Games"`       // main-collection blocks
+	Pending     int    `json:"Pending"`     // pending-collection blocks
+	Collections int    `json:"Collections"` // custom-collection blocks emitted for this system
 }
 
 // Result summarizes one Generate pass.
@@ -178,9 +186,6 @@ func (g *Generator) GenerateOptions(dryRun bool, opts Options) (Result, error) {
 	if !g.Configured() {
 		return Result{}, errors.New("generate: not configured")
 	}
-	if len(opts.CustomCollections) > 0 {
-		return Result{}, errors.New("generate: custom collections render lands with P7 (D-P6b)")
-	}
 	g.mu.Lock()
 	if g.running {
 		g.mu.Unlock()
@@ -216,6 +221,7 @@ func (g *Generator) GenerateOptions(dryRun bool, opts Options) (Result, error) {
 		oc    SystemOutcome
 	}
 	var payloads []payload
+	customs := customViewsBySystem(opts.CustomCollections)
 	systems, serr := g.St.Systems()
 	if serr != nil {
 		res.Validated = false
@@ -241,7 +247,7 @@ func (g *Generator) GenerateOptions(dryRun bool, opts Options) (Result, error) {
 				Outcome: OutcomeFailed, Err: fmt.Sprintf("games dir missing: %s", sysDir)})
 			continue
 		}
-		data, oc, berr := g.renderSystem(sys, games, sysDir)
+		data, oc, berr := g.renderSystem(sys, games, sysDir, customs[sys.Key])
 		oc.Sys = sys.Key
 		if berr != nil {
 			oc.Outcome = OutcomeFailed
@@ -354,10 +360,55 @@ func (g *Generator) finishRun(runID int64, res *Result) string {
 	return status
 }
 
+// customView is one custom collection's per-system projection: the
+// header facts plus the member rel_paths that belong to THIS system.
+type customView struct {
+	title     string
+	shortname string
+	summary   string
+	members   map[string]bool
+}
+
+// customViewsBySystem groups options' collections into per-system views,
+// each sorted by shortname (byte-stable emission order). A collection
+// with no member in a system produces no view there.
+func customViewsBySystem(colls []CustomCollection) map[string][]customView {
+	out := map[string][]customView{}
+	for _, c := range colls {
+		bySys := map[string]map[string]bool{}
+		for _, m := range c.Members {
+			set := bySys[m.SystemKey]
+			if set == nil {
+				set = map[string]bool{}
+				bySys[m.SystemKey] = set
+			}
+			set[m.RelPath] = true
+		}
+		for sys, set := range bySys {
+			out[sys] = append(out[sys], customView{
+				title: c.Title, shortname: c.Shortname, summary: c.Summary, members: set,
+			})
+		}
+	}
+	for sys := range out {
+		vs := out[sys]
+		sort.Slice(vs, func(i, j int) bool { return vs[i].shortname < vs[j].shortname })
+	}
+	return out
+}
+
+// section is one trailing collection group: header lines plus game
+// blocks (the pending split and each custom collection).
+type section struct {
+	header []string
+	blocks [][]string
+}
+
 // renderSystem builds one system's full file bytes: main collection
 // header + complete-game blocks, then the pending section when any game
-// failed the completeness sniff. Deterministic by construction.
-func (g *Generator) renderSystem(sys store.SystemRow, games []store.GameMetaRow, sysDir string) ([]byte, SystemOutcome, error) {
+// failed the completeness sniff, then one section per custom collection
+// with members here. Deterministic by construction.
+func (g *Generator) renderSystem(sys store.SystemRow, games []store.GameMetaRow, sysDir string, customs []customView) ([]byte, SystemOutcome, error) {
 	var oc SystemOutcome
 
 	// Launch mapping mirrors scrape.go exactly: retroarch+core wins,
@@ -380,38 +431,17 @@ func (g *Generator) renderSystem(sys store.SystemRow, games []store.GameMetaRow,
 		`launch: ` + launch + ` "{file.path}"`,
 	}
 
+	blocks := make([][]string, len(games))
+	playable := make([]bool, len(games))
 	var mainBlocks, pendBlocks [][]string
-	for _, gm := range games {
-		base := filepath.Base(gm.RelPath)
-		title := sanitizeValue(strings.TrimSuffix(base, filepath.Ext(base)))
-		if title == "" { // degenerate name (.nes alone): still list the file
-			title = sanitizeValue(base)
-		}
-		block := []string{
-			"game: " + title,
-			"file: " + sanitizeValue(gm.RelPath),
-		}
-		addField := func(key, val string) {
-			if val = sanitizeValue(val); val != "" {
-				block = append(block, key+": "+val)
-			}
-		}
-		addField("description", gm.Description)
-		addField("release", gm.Release)
-		addField("developer", gm.Developer)
-		addField("publisher", gm.Publisher)
-		addField("genre", gm.Genre)
-		addField("rating", gm.Rating)
-		for _, a := range mediaAssets(sysDir, strings.TrimSuffix(base, filepath.Ext(base))) {
-			block = append(block, "assets."+a.key+": "+a.value)
-		}
-		// Completeness sniff (rom_complete port): zeroed preallocation
-		// goes to the pending section, everything else stays playable.
-		if romComplete(filepath.Join(sysDir, gm.RelPath)) {
-			mainBlocks = append(mainBlocks, block)
+	for i, gm := range games {
+		blocks[i] = gameBlock(gm, sysDir)
+		playable[i] = romComplete(filepath.Join(sysDir, gm.RelPath))
+		if playable[i] {
+			mainBlocks = append(mainBlocks, blocks[i])
 			oc.Games++
 		} else {
-			pendBlocks = append(pendBlocks, block)
+			pendBlocks = append(pendBlocks, blocks[i])
 			oc.Pending++
 		}
 	}
@@ -422,13 +452,80 @@ func (g *Generator) renderSystem(sys store.SystemRow, games []store.GameMetaRow,
 		"shortname: " + sys.Key + "-pending",
 		"summary: " + pendingSummary,
 	}
-	return assemble(header, mainBlocks, pendHeader, pendBlocks), oc, nil
+	var sections []section
+	if len(pendBlocks) > 0 {
+		sections = append(sections, section{header: pendHeader, blocks: pendBlocks})
+	}
+
+	// Custom collections (P7): one section per collection with visible
+	// AND playable members in this system, each carrying this system's
+	// launch line so its entries are launchable (Pegasus associates a
+	// game block with the last-declared collection; repeating the member
+	// block under the new header is the documented multi-membership
+	// idiom). Hidden members never reach `games`, so they are excluded
+	// by construction; pending members are skipped — listed-not-playable
+	// belongs to the pending section only.
+	for _, cv := range customs {
+		var memberBlocks [][]string
+		for i, gm := range games {
+			if cv.members[gm.RelPath] && playable[i] {
+				memberBlocks = append(memberBlocks, blocks[i])
+			}
+		}
+		if len(memberBlocks) == 0 {
+			continue // no live members here: no churn, no empty shell block
+		}
+		colHeader := []string{
+			CustomCollectionMarker + " (managed by arcade-webapp)",
+			"collection: " + sanitizeValue(cv.title),
+			"shortname: " + cv.shortname,
+		}
+		if s := sanitizeValue(cv.summary); s != "" {
+			colHeader = append(colHeader, "summary: "+s)
+		}
+		colHeader = append(colHeader, `launch: `+launch+` "{file.path}"`)
+		sections = append(sections, section{header: colHeader, blocks: memberBlocks})
+		oc.Collections++
+	}
+
+	return assemble(header, mainBlocks, sections), oc, nil
+}
+
+// gameBlock renders one game's entry lines: title/file plus enrichment
+// and media refs when present. Shared by the main collection and every
+// custom-collection repeat so the two can never disagree.
+func gameBlock(gm store.GameMetaRow, sysDir string) []string {
+	base := filepath.Base(gm.RelPath)
+	title := sanitizeValue(strings.TrimSuffix(base, filepath.Ext(base)))
+	if title == "" { // degenerate name (.nes alone): still list the file
+		title = sanitizeValue(base)
+	}
+	block := []string{
+		"game: " + title,
+		"file: " + sanitizeValue(gm.RelPath),
+	}
+	addField := func(key, val string) {
+		if val = sanitizeValue(val); val != "" {
+			block = append(block, key+": "+val)
+		}
+	}
+	addField("description", gm.Description)
+	addField("release", gm.Release)
+	addField("developer", gm.Developer)
+	addField("publisher", gm.Publisher)
+	addField("genre", gm.Genre)
+	addField("rating", gm.Rating)
+	for _, a := range mediaAssets(sysDir, strings.TrimSuffix(base, filepath.Ext(base))) {
+		block = append(block, "assets."+a.key+": "+a.value)
+	}
+	return block
 }
 
 // assemble joins blocks with blank-line separators (Pegasus entry
-// terminator), appends the pending section when present, and terminates
-// the file with exactly one newline — byte-stable by shape.
-func assemble(header []string, main [][]string, pendHeader []string, pend [][]string) []byte {
+// terminator), appends the trailing sections (pending first, then custom
+// collections), and terminates the file with exactly one newline —
+// byte-stable by shape.
+func assemble(header []string, main [][]string, sections []section) []byte {
 	var b strings.Builder
 	b.WriteString(strings.Join(header, "\n"))
 	emit := func(blocks [][]string) {
@@ -438,10 +535,10 @@ func assemble(header []string, main [][]string, pendHeader []string, pend [][]st
 		}
 	}
 	emit(main)
-	if len(pend) > 0 {
+	for _, sec := range sections {
 		b.WriteString("\n\n")
-		b.WriteString(strings.Join(pendHeader, "\n"))
-		emit(pend)
+		b.WriteString(strings.Join(sec.header, "\n"))
+		emit(sec.blocks)
 	}
 	b.WriteString("\n")
 	return []byte(b.String())
