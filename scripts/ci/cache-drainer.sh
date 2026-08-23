@@ -13,11 +13,11 @@
 # Runs as root on GitHub runners (sudo). SSH config/keys at /root/.ssh/.
 # Start BEFORE `nix build` (nohup ... &) so FIFO has a reader immediately.
 #
-# LOGGING DISCIPLINE: quiet by default. Successful pushes log nothing; all
-# activity collapses into one summary line every SUMMARY_EVERY seconds. Only
-# failures log immediately (status + one truncated err line + ssh probe).
-# History: per-event logging produced a wall of near-identical lines that hid
-# the one line that mattered.
+# LOGGING DISCIPLINE: log events, not state. One completion line per push
+# (with duration); failures log immediately with their real error. NO idle
+# heartbeat — liveness is observable from completion timestamps (and the
+# workflow's final nix copy is the completeness backstop), and periodic
+# "still alive" lines were flooding the log while proving nothing.
 set -uo pipefail
 umask 000
 
@@ -32,7 +32,6 @@ nix_bin="${NIX_BIN:-nix}"
 
 FAST_TIMEOUT=300
 SLOW_TIMEOUT=1200
-SUMMARY_EVERY=120
 
 # Lines logged before tailnet join (startup, config) cannot ship — ssh to
 # europa is unroutable then. Buffer them and flush on first successful ship,
@@ -67,16 +66,29 @@ log() {
 
 log "drainer started (fast: ${FAST_TIMEOUT}s, slow: ${SLOW_TIMEOUT}s)"
 
-total_pushed=0
+# Both counters live in files so the fast drainer and the slow drainer (a
+# forked subshell) report the SAME numbers. History: total_pushed was a plain
+# variable, so the slow drainer's status lines showed "enqueued: N, pushed: 0"
+# forever — it could never see the fast drainer's successes.
 enqueue_cnt="${ENQUEUE_CNT:-/var/run/nix-push-enqueued}"
+pushed_cnt="${PUSHED_CNT:-/var/run/nix-push-pushed}"
+[[ -f "$pushed_cnt" ]] || echo 0 > "$pushed_cnt"
 enqueue_count() { cat "$enqueue_cnt" 2>/dev/null || echo 0; }
+record_push() {
+  # flock subshell: `local` is illegal outside a function, so use a plain var.
+  ( flock 9
+    n=$(cat "$pushed_cnt" 2>/dev/null); n=${n:-0}
+    echo $((n + 1)) > "$pushed_cnt" ) 9>"$pushed_cnt.lock"
+}
+pushed_count() { cat "$pushed_cnt" 2>/dev/null || echo 0; }
 
 status_line() {
   local note="$1"
   local enq; enq=$(enqueue_count)
-  local pending=$((enq - total_pushed)); [ "$pending" -lt 0 ] && pending=0
-  local pct="-"; [ "$enq" -gt 0 ] && pct=$(( (total_pushed * 100) / enq ))
-  log "$note | enqueued: $enq | pushed: $total_pushed | pending: $pending | progress: ${pct}%"
+  local pushed; pushed=$(pushed_count)
+  local pending=$((enq - pushed)); [ "$pending" -lt 0 ] && pending=0
+  local pct="-"; [ "$enq" -gt 0 ] && pct=$(( (pushed * 100) / enq ))
+  log "$note | enqueued: $enq | pushed: $pushed | pending: $pending | progress: ${pct}%"
 }
 
 flush() {
@@ -84,6 +96,7 @@ flush() {
   local timeout_sec="$2"
   local tag="$3"
   [ -z "$path" ] && return 0
+  local started=$SECONDS
 
   local err_file; err_file="$(mktemp)"
   # Direct exec, NO xargs: we push exactly one path per call, and xargs
@@ -94,8 +107,9 @@ flush() {
   if timeout "$timeout_sec" env \
       NIX_SSHOPTS="-i $key -o ControlPath=$cm/%r@%h:%p -o StrictHostKeyChecking=accept-new" \
       "$nix_bin" copy --to "$store" "$path" >/dev/null 2>"$err_file"; then
-    total_pushed=$((total_pushed + 1))
+    record_push
     rm -f "$err_file"
+    log "$tag: pushed $path ($(( SECONDS - started ))s)"
     return 0
   else
     # rc MUST be captured in the else branch: after a taken-then/untaken-else
@@ -120,13 +134,12 @@ exec 4<>"$SLOW_FIFO"
 
 requeue=()
 declare -A attempts
+retry_not_before=0
 
 slow_drainer() {
   log "slow drainer started (reading from $SLOW_FIFO)"
-  local idle=0
   while true; do
     if IFS= read -r -t 5 STORE_PATH <&4; then
-      idle=0
       [ -z "${STORE_PATH:-}" ] && continue
       if flush "$STORE_PATH" "$SLOW_TIMEOUT" "slow"; then
         unset "attempts[$STORE_PATH]"
@@ -136,14 +149,6 @@ slow_drainer() {
         status_line "slow: $STORE_PATH failed at ${SLOW_TIMEOUT}s; retry in 60s"
         sleep 60
         printf '%s\n' "$STORE_PATH" >&4
-      fi
-    else
-      # Heartbeat: proves the subshell is alive and the queue genuinely empty
-      # (vs. this process wedged). Rate-limited to once per SUMMARY_EVERY.
-      idle=$((idle + 1))
-      if [ "$idle" -ge $((SUMMARY_EVERY / 5)) ]; then
-        status_line "slow: idle"
-        idle=0
       fi
     fi
   done
@@ -169,32 +174,24 @@ handle_fast_failure() {
   fi
 }
 
-last_summary=$(date +%s)
 while true; do
   if IFS=$'\t' read -r -t 3 STATUS STORE_PATH DERIVATION TIMESTAMP <&3; then
     [ -z "${STORE_PATH:-}" ] && continue
     flush "$STORE_PATH" "$FAST_TIMEOUT" "fast" \
       && unset "attempts[$STORE_PATH]" \
       || handle_fast_failure "$STORE_PATH" "$?"
-    last_summary=$(date +%s)
   elif [ "${#requeue[@]}" -gt 0 ]; then
     # Backoff: don't hammer a failing path every 3s read-timeout tick.
     retry="${requeue[0]}"
     wait_secs=$(( ${attempts[$retry]:-1} * 30 )); [ "$wait_secs" -gt 600 ] && wait_secs=600
     now=$(date +%s)
-    if [ $((now - last_summary)) -lt "$wait_secs" ]; then sleep 3; continue; fi
+    if [ $((now - retry_not_before)) -lt "$wait_secs" ]; then sleep 3; continue; fi
     requeue=("${requeue[@]:1}")
     flush "$retry" "$FAST_TIMEOUT" "fast-retry" \
       && unset "attempts[$retry]" \
       || handle_fast_failure "$retry" "$?"
-    last_summary=$(date +%s)
+    retry_not_before=$(date +%s)
   else
-    # Fully idle: one summary line per SUMMARY_EVERY instead of silence.
-    now=$(date +%s)
-    if [ $((now - last_summary)) -ge "$SUMMARY_EVERY" ]; then
-      status_line "idle"
-      last_summary=$now
-    fi
     sleep 3
   fi
 done
