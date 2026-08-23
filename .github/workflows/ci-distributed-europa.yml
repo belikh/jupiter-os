@@ -1055,8 +1055,9 @@ jobs:
 
           exit $BUILD_EXIT
 
-      # When the build finishes, stop the coordinator's incremental drainer so
-      # the final push lands unobstructed. During the build the coordinator's
+      # The cache fill is THE deliverable of this run, so the ordering here is:
+      # final authoritative push FIRST while the incremental pusher is still
+      # alive as a backstop; only then is it asked (SIGTERM) to stop. During the build the coordinator's
       # cache-drainer pushed each path one at a time as the post-build-hook
       # fired; left running, it would contend with this step's `nix copy` at
       # europa's nix-daemon/SSH. Kill it, then ONE authoritative `nix copy` of
@@ -1064,27 +1065,20 @@ jobs:
       # host's full closure (streamed back from the builders over ssh-ng). nix
       # copy is idempotent, so paths the drainer already landed are skipped;
       # this fills any gaps and guarantees the closures are complete on europa.
-      - name: Stop drainer, final push to europa
+      - name: Final push to europa, then stop pusher
         if: always()
         env:
           RUN_ID: ${{ github.run_id }}
           EUROPA_SSH_KEY: ${{ secrets.EUROPA_SSH_KEY }}
         run: |
           set +e
-          # 1. Stop the coordinator's cache-drainer (the sole incremental
-          #    pusher) so it isn't contending with the final nix copy.
-          pkill -f /usr/local/bin/cache-drainer 2>/dev/null \
-            && echo "stopped coordinator cache-drainer" \
-            || echo "(no coordinator cache-drainer running)"
-
-          # 2. Final authoritative push of every toplevel that built.
+          # 1. Final authoritative push of every toplevel that built.
           OUT_PATHS="/tmp/outpaths-${RUN_ID}"
           if [ ! -s "$OUT_PATHS" ]; then
             echo "no out paths ($OUT_PATHS empty/missing) — build produced nothing to push"
-            exit 0
-          fi
+          else
           n=$(wc -l < "$OUT_PATHS")
-          echo "final push: $n toplevel(s) -> root@europa (drainer stopped)"
+          echo "final push: $n toplevel(s) -> root@europa (incremental pusher still running)"
 
           # Re-stage the root->europa key + controlmasters dir (the push-system
           # step also stages these, but this step is `if: always()` — be
@@ -1110,6 +1104,27 @@ jobs:
           if [ "$ok" != 1 ]; then
             echo "::error::final push to europa failed after 5 attempts — cache not updated"
             exit 1
+          fi
+          fi
+
+          # 2. NOW stop the incremental pusher — gracefully. SIGTERM lets it
+          #    finish its in-flight transfer and log an exit summary; wait up
+          #    to 60s, then fall back to the pattern kill.
+          if [ -n "${DRAINER_PID:-}" ] && kill -0 "$DRAINER_PID" 2>/dev/null; then
+            echo "stopping pusher (pid $DRAINER_PID) with SIGTERM"
+            kill -TERM "$DRAINER_PID" 2>/dev/null
+            for i in $(seq 1 30); do
+              kill -0 "$DRAINER_PID" 2>/dev/null || { echo "pusher exited cleanly"; break; }
+              sleep 2
+            done
+            kill -0 "$DRAINER_PID" 2>/dev/null && {
+              echo "pusher still alive after 60s; pkill fallback"
+              pkill -f /usr/local/bin/cache-drainer 2>/dev/null
+            }
+          else
+            pkill -f /usr/local/bin/cache-drainer 2>/dev/null \
+              && echo "stopped coordinator cache-drainer (fallback pattern kill)" \
+              || echo "(no coordinator cache-drainer running)"
           fi
 
   # Aggregation has to be its own job: the builders deliberately outlive the

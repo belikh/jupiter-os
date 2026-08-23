@@ -1,43 +1,84 @@
 #!/usr/bin/env bash
 #
-# Async cache drainer for CI — two-threaded version.
-#   fast drainer:  short timeout (300s), handles small/normal NARs
-#   slow drainer:  long timeout (1200s), handles paths that timed out in fast
-# Both read from the post-build-hook FIFO; fast drainer is the primary consumer.
-# Slow drainer reads from a second FIFO that fast drainer writes timeouts to.
+# Async binary-cache pusher for CI ("cache-drainer" for historical reasons —
+# it drains the post-build-hook FIFO INTO europa's cache; it fills, not drains).
+#   fast thread:  short timeout (300s), primary consumer of the FIFO
+#   slow thread:  long timeout (1200s), handles paths that timed out in fast
 #
 # INPUT FIFO (/var/run/nix-push-fifo): tab-delimited lines from post-build-hook:
 #   STATUS  STORE_PATH  DERIVATION  TIMESTAMP
 # SLOW FIFO (/var/run/nix-push-fifo.slow): newline-separated store paths.
 #
-# Runs as root on GitHub runners (sudo). SSH config/keys at /root/.ssh/.
-# Start BEFORE `nix build` (nohup ... &) so FIFO has a reader immediately.
-#
-# LOGGING DISCIPLINE: quiet by default. Successful pushes log nothing; all
-# activity collapses into one summary line every SUMMARY_EVERY seconds. Only
-# failures log immediately (status + one truncated err line + ssh probe).
-# History: per-event logging produced a wall of near-identical lines that hid
-# the one line that mattered.
+# BOMB-PROOFING RULES (learned from run 32646367507):
+# 1. No silent defaults: EUROPA_SSH / EUROPA_KEY / EUROPA_STORE must be set or
+#    we refuse to start. The old default alias `europa-ci` was never defined
+#    anywhere and made every push fail invisibly.
+# 2. All drainer-WRITTEN state lives in a directory WE verify is writable.
+#    /var/run is root-owned on GH runners; the pushed-counter silently failing
+#    to write there pinned progress at 0% for entire runs. Root-written files
+#    (the FIFO and ENQUEUE_CNT) are only ever READ by us.
+# 3. Single-instance guard: a pidfile with a live-check refuses to start twice.
+#    A stale twin shares the FIFO and halves throughput while corrupting the
+#    counters of both instances.
+# 4. Failures are NEVER silent: nix's stdout+stderr are captured and shipped,
+#    and every 10th consecutive failure ships a host snapshot (disk/mem/inodes)
+#    so environment death (disk-full/OOM) is diagnosable from europa alone —
+#    GH job logs die with the runner ("BlobNotFound").
+# 5. SIGTERM/SIGINT finish the in-flight push and log an exit summary instead
+#    of dying mid-transfer.
 set -uo pipefail
 umask 000
 
 FAST_FIFO="${FAST_FIFO:-/var/run/nix-push-fifo}"
 SLOW_FIFO="${SLOW_FIFO:-/var/run/nix-push-fifo.slow}"
-ssh="${EUROPA_SSH:-europa-ci}"
-key="${EUROPA_KEY:-$HOME/.ssh/europa_ci}"
-cm="${EUROPA_CONTROLMASTERS:-$HOME/.ssh/controlmasters}"
-store="${EUROPA_STORE:-ssh-ng://europa-ci}"
+
+# -- REQUIRED configuration (rule 1) -----------------------------------------
+ssh="${EUROPA_SSH:-}"
+key="${EUROPA_KEY:-}"
+store="${EUROPA_STORE:-}"
+nix_bin="${NIX_BIN:-$(command -v nix || true)}"
+missing=""
+[ -z "$ssh" ] && missing="$missing EUROPA_SSH"
+[ -z "$key" ] && missing="$missing EUROPA_KEY"
+[ -z "$store" ] && missing="$missing EUROPA_STORE"
+[ -z "$nix_bin" ] && missing="$missing NIX_BIN"
+if [ -n "$missing" ]; then
+  echo "FATAL: pusher refusing to start, missing env:$missing (no silent defaults)" >&2
+  exit 2
+fi
+[ -r "$key" ] || { echo "FATAL: EUROPA_KEY not readable: $key" >&2; exit 2; }
+[ -x "$nix_bin" ] || { echo "FATAL: NIX_BIN not executable: $nix_bin" >&2; exit 2; }
+
+# -- Writable state dir (rule 2) ----------------------------------------------
+# Root-written inputs are read from their canonical /var/run locations; anything
+# WE write goes to a directory proven writable at startup.
+ENQUEUE_CNT="${ENQUEUE_CNT:-/var/run/nix-push-enqueued}"
+state="${PUSHER_STATE_DIR:-}"
+if [ -z "$state" ]; then
+  for cand in /var/run/jupiter-ci-push "${TMPDIR:-/tmp}/jupiter-ci-push"; do
+    if mkdir -p "$cand" 2>/dev/null && [ -w "$cand" ]; then state="$cand"; break; fi
+  done
+fi
+if [ -z "$state" ] || [ ! -w "$state" ]; then
+  echo "FATAL: no writable state dir found (tried /var/run/jupiter-ci-push, ${TMPDIR:-/tmp}/jupiter-ci-push)" >&2
+  exit 2
+fi
+
+pidfile="$state/pusher.pid"
+pushed_cnt="$state/pushed"
+
 log_path="/var/log/jupiter-ci/cache-drainer.log"
-nix_bin="${NIX_BIN:-nix}"
+cm="${EUROPA_CONTROLMASTERS:-$HOME/.ssh/controlmasters}"
 
 FAST_TIMEOUT=300
 SLOW_TIMEOUT=1200
 SUMMARY_EVERY=120
+SNAPSHOT_EVERY=10   # ship df/free snapshot on every Nth consecutive failure
 
 # Lines logged before tailnet join (startup, config) cannot ship — ssh to
 # europa is unroutable then. Buffer them and flush on first successful ship,
 # otherwise the europa-side log permanently lacks the startup block.
-_buffer="${TMPDIR:-/tmp}/cache-drainer-unshipped"
+_buffer="${state}/unshipped"
 
 log_to_europa() {
   local msg="$1"
@@ -57,19 +98,29 @@ log_to_europa() {
 }
 
 log() {
-  local msg="[drainer $(date -u +%H:%M:%S)] $*"
+  local msg="[cache-push $(date -u +%H:%M:%S)] $*"
   echo "$msg"
   log_to_europa "$msg"
 }
 
-[[ -p "$FAST_FIFO" ]] || mkfifo -m 666 "$FAST_FIFO"
-[[ -p "$SLOW_FIFO" ]] || mkfifo -m 666 "$SLOW_FIFO"
+# -- Single-instance guard (rule 3) -------------------------------------------
+if [ -f "$pidfile" ]; then
+  old=$(cat "$pidfile" 2>/dev/null || true)
+  if [ -n "$old" ] && [ "$old" != "$$" ] && kill -0 "$old" 2>/dev/null; then
+    log "FATAL: another pusher (pid $old) is already running — refusing to start a twin"
+    exit 3
+  fi
+fi
+echo $$ > "$pidfile" 2>/dev/null || { echo "FATAL: cannot write pidfile $pidfile" >&2; exit 2; }
+[[ -f "$pushed_cnt" ]] || echo 0 > "$pushed_cnt"
 
-log "drainer started (fast: ${FAST_TIMEOUT}s, slow: ${SLOW_TIMEOUT}s)"
+# -- Graceful shutdown (rule 5) ------------------------------------------------
+STOP_REQUESTED=0
+on_stop_signal() { STOP_REQUESTED=1; }
+trap on_stop_signal TERM INT
 
 total_pushed=0
-enqueue_cnt="${ENQUEUE_CNT:-/var/run/nix-push-enqueued}"
-enqueue_count() { cat "$enqueue_cnt" 2>/dev/null || echo 0; }
+enqueue_count() { cat "$ENQUEUE_CNT" 2>/dev/null || echo 0; }
 
 status_line() {
   local note="$1"
@@ -79,34 +130,50 @@ status_line() {
   log "$note | enqueued: $enq | pushed: $total_pushed | pending: $pending | progress: ${pct}%"
 }
 
+host_snapshot() {
+  # One compact line each: what died-with-the-runner incidents need.
+  log "SNAPSHOT disk: $(df -h / /tmp 2>/dev/null | tail -n +2 | tr '\n' ' ') inodes: $(df -i / /tmp 2>/dev/null | tail -n +2 | awk '{print $5}' | tr '\n' ' ') mem: $(free -m 2>/dev/null | awk '/Mem:|Swap:/{printf "%s=%s/%s ", $1, $3, $2}') load: $(uptime | sed 's/.*load average/load average/')"
+}
+
 flush() {
   local path="$1"
   local timeout_sec="$2"
   local tag="$3"
   [ -z "$path" ] && return 0
 
-  local err_file; err_file="$(mktemp)"
+  local err_file; err_file="$(mktemp "${state}/pusherr.XXXXXX")"
   # Direct exec, NO xargs: we push exactly one path per call, and xargs
-  # rewrites every child exit code in 1-125 to 123 — which is how the old
-  # logs showed an undiagnosable wall of rc=123. Here rc is honest:
+  # rewrites every child exit code in 1-125 to 123 — which is how old logs
+  # showed an undiagnosable wall of rc=123. Here rc is honest:
   # 124 = our timeout fired (candidate for the slow queue), anything else
-  # is nix's/ssh's own failure code.
+  # is nix's/ssh's own failure code. BOTH stdout and stderr are captured
+  # (rule 4): nix occasionally reports fatal errors on stdout.
   if timeout "$timeout_sec" env \
       NIX_SSHOPTS="-i $key -o ControlPath=$cm/%r@%h:%p -o StrictHostKeyChecking=accept-new" \
-      "$nix_bin" copy --to "$store" "$path" >/dev/null 2>"$err_file"; then
+      "$nix_bin" copy --to "$store" "$path" >"$err_file.out" 2>"$err_file.err"; then
     total_pushed=$((total_pushed + 1))
-    rm -f "$err_file"
+    consecutive_failures=0
+    rm -f "$err_file" "$err_file.out" "$err_file.err"
     return 0
   else
     # rc MUST be captured in the else branch: after a taken-then/untaken-else
     # `fi`, $? resets to 0 and every failure would log as rc=0.
     local rc=$?
     status_line "$tag: push failed (rc=$rc) $path"
-    # ONE line, not a per-line ssh flood; tail keeps the actual nix/ssh error
-  # and drops the "copying path ..." progress noise above it.
-    local err_tail; err_tail=$(tail -n 3 "$err_file" | tr '\n' ' ' | cut -c1-500)
-    [ -n "$err_tail" ] && log "  err: $err_tail"
-    rm -f "$err_file"
+    local err_tail
+    err_tail=$(cat "$err_file.err" "$err_file.out" 2>/dev/null | tr '\n' ' ' | cut -c1-500)
+    if [ -n "$err_tail" ]; then
+      log "  err: $err_tail"
+    else
+      # Empty output AND failed = the most suspicious class of failure
+      # (environment dying under us). Say so explicitly.
+      log "  err: <EMPTY> nix produced no output at all — host likely starving (disk/mem); see SNAPSHOT lines"
+    fi
+    consecutive_failures=$((consecutive_failures + 1))
+    if [ $((consecutive_failures % SNAPSHOT_EVERY)) -eq 0 ]; then
+      host_snapshot
+    fi
+    rm -f "$err_file" "$err_file.out" "$err_file.err"
     # One-shot probe: separates auth/network breakage from store-protocol
     # rejection (e.g. require-sigs) without re-running the transfer.
     ssh -o ControlPath="$cm/%r@%h:%p" -o ConnectTimeout=10 "$ssh" true 2>/dev/null
@@ -114,6 +181,7 @@ flush() {
     return "$rc"
   fi
 }
+consecutive_failures=0
 
 exec 3<>"$FAST_FIFO"
 exec 4<>"$SLOW_FIFO"
@@ -122,11 +190,12 @@ requeue=()
 declare -A attempts
 
 slow_drainer() {
-  log "slow drainer started (reading from $SLOW_FIFO)"
-  local idle=0
+  log "slow thread started (reading from $SLOW_FIFO)"
+  # NO idle heartbeat: liveness is observable from push timestamps and the
+  # exit summary; periodic "still alive" lines were pure log spam.
   while true; do
+    if [ "$STOP_REQUESTED" = 1 ]; then exit 0; fi
     if IFS= read -r -t 5 STORE_PATH <&4; then
-      idle=0
       [ -z "${STORE_PATH:-}" ] && continue
       if flush "$STORE_PATH" "$SLOW_TIMEOUT" "slow"; then
         unset "attempts[$STORE_PATH]"
@@ -137,14 +206,6 @@ slow_drainer() {
         sleep 60
         printf '%s\n' "$STORE_PATH" >&4
       fi
-    else
-      # Heartbeat: proves the subshell is alive and the queue genuinely empty
-      # (vs. this process wedged). Rate-limited to once per SUMMARY_EVERY.
-      idle=$((idle + 1))
-      if [ "$idle" -ge $((SUMMARY_EVERY / 5)) ]; then
-        status_line "slow: idle"
-        idle=0
-      fi
     fi
   done
 }
@@ -152,13 +213,13 @@ slow_drainer() {
 slow_drainer &
 SLOW_PID=$!
 if ! kill -0 "$SLOW_PID" 2>/dev/null; then
-  log "ERROR: slow drainer (PID $SLOW_PID) died at startup — timeouts will pile up unread"
+  log "ERROR: slow thread (PID $SLOW_PID) died at startup — timeouts will pile up unread"
 fi
 
 # Classify a failed fast push: genuine timeout (rc=124) graduates to the slow
 # FIFO; any other failure stays in the fast requeue list with escalating
 # backoff. Top-level loop helpers use NO `local` outside functions — under
-# set -u an unset var here would kill the drainer on the first failure.
+# set -u an unset var here would kill the pusher on the first failure.
 handle_fast_failure() {
   local path="$1" rc="$2"
   if [ "$rc" -eq 124 ]; then
@@ -171,6 +232,12 @@ handle_fast_failure() {
 
 last_summary=$(date +%s)
 while true; do
+  if [ "$STOP_REQUESTED" = 1 ]; then
+    status_line "stop signal received — exiting after ${total_pushed} pushes; requeue backlog: ${#requeue[@]} (final completeness push is the workflow's job)"
+    rm -f "$pidfile"
+    kill "$SLOW_PID" 2>/dev/null
+    exit 0
+  fi
   if IFS=$'\t' read -r -t 3 STATUS STORE_PATH DERIVATION TIMESTAMP <&3; then
     [ -z "${STORE_PATH:-}" ] && continue
     flush "$STORE_PATH" "$FAST_TIMEOUT" "fast" \
@@ -189,12 +256,8 @@ while true; do
       || handle_fast_failure "$retry" "$?"
     last_summary=$(date +%s)
   else
-    # Fully idle: one summary line per SUMMARY_EVERY instead of silence.
-    now=$(date +%s)
-    if [ $((now - last_summary)) -ge "$SUMMARY_EVERY" ]; then
-      status_line "idle"
-      last_summary=$now
-    fi
+    # Fully idle: silence. Liveness is observable from push timestamps and
+    # the exit summary; periodic "still alive" lines were pure log spam.
     sleep 3
   fi
 done
