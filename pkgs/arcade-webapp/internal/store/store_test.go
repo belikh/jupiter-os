@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -1474,5 +1475,158 @@ func TestSetSystemHiddenAll(t *testing.T) {
 	counts, _ = s.HiddenCountsBySystem()
 	if counts["nes"] != 3 {
 		t.Fatalf("hidden count = %d, want 3", counts["nes"])
+	}
+}
+
+// TestCollectionShortnameRejectsCatalogueIdentities pins ADV-P7-01: a
+// name whose derived shortname is a catalogue system key (or a system's
+// "-pending" section shortname) is rejected at create AND rename with an
+// error naming the collision — such a collection could never be emitted
+// (the strict parser rejects duplicate shortnames in one file), so the
+// old success-while-generation-refuses behavior is the bug.
+func TestCollectionShortnameRejectsCatalogueIdentities(t *testing.T) {
+	s := seedP6Store(t)
+	// UpsertSystems REPLACES the table (absent keys are deleted), so the
+	// second system rides along with nes — never instead of it.
+	if err := s.UpsertSystems([]SystemRow{
+		{Key: "nes", Collection: "Nintendo Entertainment System", Bucket: "cartridge", Core: "fceumm", SortOrder: 1, Extensions: `["nes"]`},
+		{Key: "snes", Collection: "Super NES", Bucket: "cartridge", Core: "snes9x", SortOrder: 2, Extensions: `["sfc"]`},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	collides := func(name string) *ReservedShortnameError {
+		t.Helper()
+		_, err := s.CreateCollection(name, "")
+		var rerr *ReservedShortnameError
+		if !errors.As(err, &rerr) {
+			t.Fatalf("CreateCollection(%q) err = %v, want ReservedShortnameError", name, err)
+		}
+		return rerr
+	}
+
+	// Main-collection identity collision ("NES" → "nes").
+	e := collides("NES")
+	if e.Shortname != "nes" || e.SystemKey != "nes" || e.Pending {
+		t.Fatalf("NES collision = %+v, want shortname/system nes non-pending", e)
+	}
+	// Derivation is lowercased — "SNES" must collide exactly the same way.
+	if e := collides("SNES"); e.Shortname != "snes" || e.SystemKey != "snes" {
+		t.Fatalf("SNES collision = %+v, want snes/snes", e)
+	}
+	// Pending-section collision ("NES Pending" → "nes-pending").
+	e = collides("NES Pending")
+	if !e.Pending || e.Shortname != "nes-pending" || e.SystemKey != "nes" {
+		t.Fatalf("pending collision = %+v, want nes-pending via nes", e)
+	}
+	// The error text names the collision (the operator-facing bar).
+	if msg := e.Error(); !strings.Contains(msg, "nes-pending") || !strings.Contains(msg, `"NES Pending"`) {
+		t.Fatalf("collision error must name both sides, got %q", msg)
+	}
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM collections`).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("rejected creates left %d rows behind (%v)", n, err)
+	}
+
+	// Non-colliding names still land with their derived identity.
+	id, err := s.CreateCollection("Kitchen Quick-Play", "")
+	if err != nil {
+		t.Fatalf("non-colliding create rejected: %v", err)
+	}
+	col, _ := s.Collection(id)
+	if col == nil || col.Shortname != "kitchen-quick-play" {
+		t.Fatalf("non-colliding create wrong: %+v", col)
+	}
+
+	// Rename is probed symmetrically (ADV-P7-01): onto a catalogue
+	// identity → rejected; onto a free name → allowed (self-healing for
+	// pre-fix rows whose stored shortname already collided).
+	if err := s.UpdateCollection(id, "Snes", ""); !errors.As(err, new(*ReservedShortnameError)) {
+		t.Fatalf("rename to SNES = %v, want ReservedShortnameError", err)
+	}
+	if err := s.UpdateCollection(id, "Late Night Set", ""); err != nil {
+		t.Fatalf("free rename rejected: %v", err)
+	}
+	col, _ = s.Collection(id)
+	if col.Name != "Late Night Set" || col.Shortname != "kitchen-quick-play" {
+		t.Fatalf("rename mangled the collection: %+v", col)
+	}
+}
+
+// TestGameDeleteCascadesCollectionMembership pins ADV-P7-05: deleting a
+// game row removes its memberships (collection_games.game_id ON DELETE
+// CASCADE), via BOTH production paths — the scan-time prune that replaces
+// a vanished file set, and a direct row deletion.
+func TestGameDeleteCascadesCollectionMembership(t *testing.T) {
+	s := seedP6Store(t)
+	// A second system+game so each membership sits under a different
+	// system key (the prune below must remove exactly ONE of them).
+	// UpsertSystems replaces the table — nes rides along.
+	if err := s.UpsertSystems([]SystemRow{
+		{Key: "nes", Collection: "Nintendo Entertainment System", Bucket: "cartridge", Core: "fceumm", SortOrder: 1, Extensions: `["nes"]`},
+		{Key: "snes", Collection: "Super NES", Bucket: "cartridge", Core: "snes9x", SortOrder: 2, Extensions: `["sfc"]`},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ReplaceSystemGames("snes", []GameRow{
+		{RelPath: "D Snes Game (USA).sfc", SizeBytes: 4},
+	}, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+
+	memberships := func() int {
+		t.Helper()
+		var n int
+		if err := s.db.QueryRow(`SELECT COUNT(*) FROM collection_games`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+
+	id, err := s.CreateCollection("Cascade Probe", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	games, err := s.ListGames(GameListOpts{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var first, second GameSummary
+	for _, g := range games.Games {
+		switch g.RelPath {
+		case "A First (USA).nes":
+			first = g
+		case "D Snes Game (USA).sfc":
+			second = g
+		}
+	}
+	if first.ID == 0 || second.ID == 0 {
+		t.Fatal("fixture games missing")
+	}
+	if err := s.AddCollectionGame(id, first.SystemKey, first.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.AddCollectionGame(id, second.SystemKey, second.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := memberships(); got != 2 {
+		t.Fatalf("memberships before cascade = %d, want 2", got)
+	}
+
+	// Path 1: the scan-time prune (game vanished from the tree).
+	later := time.Now().Add(time.Minute)
+	if err := s.ReplaceSystemGames(first.SystemKey, nil, later); err != nil {
+		t.Fatal(err)
+	}
+	if got := memberships(); got != 1 {
+		t.Fatalf("memberships after game prune = %d, want 1", got)
+	}
+
+	// Path 2: direct row deletion (same FK cascade).
+	if _, err := s.db.Exec(`DELETE FROM games WHERE id=?`, second.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := memberships(); got != 0 {
+		t.Fatalf("memberships after game delete = %d, want 0 (cascade broken)", got)
 	}
 }

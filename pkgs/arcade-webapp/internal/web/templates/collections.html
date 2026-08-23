@@ -8,6 +8,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- ADV-P7-01: create/rename collisions answer 409 with a re-rendered
+       panel naming the collision; stock responseHandling never swaps
+       4xx bodies, so this page opts 409 in (first match wins). -->
+  <meta name="htmx-config" content='{"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"409","swap":true},{"code":"[45]..","swap":false,"error":true}]}'>
   <title>jupiterOS Arcade — {{.Meta.Title}}</title>
   <link rel="stylesheet" href="/static/app.css">
   <script src="/static/htmx.min.js"></script>
@@ -80,6 +84,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- ADV-P7-01: same 409-swap opt-in as the collections list page. -->
+  <meta name="htmx-config" content='{"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"409","swap":true},{"code":"[45]..","swap":false,"error":true}]}'>
   <title>jupiterOS Arcade — {{.Meta.Title}}</title>
   <link rel="stylesheet" href="/static/app.css">
   <script src="/static/htmx.min.js"></script>

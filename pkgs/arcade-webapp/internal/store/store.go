@@ -1673,6 +1673,81 @@ type CollectionMemberRow struct {
 	AddedAt   string
 }
 
+// pendingShortnameSuffix is the pending section's shortname shape the
+// generator emits for EVERY system ("shortname: <key>-pending" — see
+// generate.renderSystem; pegasus.IsPending matches the suffix). Duplicated
+// here rather than imported because the store must not depend on the
+// generator (the dependency points the other way).
+const pendingShortnameSuffix = "-pending"
+
+// ReservedShortnameError reports a collection NAME whose derived
+// launcher-DB identity is owned by a catalogue system: the generated file
+// declares "shortname: <sys.Key>" for the main collection and
+// "<sys.Key>-pending" for its trailing pending section, and the strict
+// parser rejects duplicate shortnames within one file — so a colliding
+// collection could never be emitted for that system at all (ADV-P7-01:
+// create/add kept answering success while every regeneration failed).
+type ReservedShortnameError struct {
+	Name      string // the rejected collection name
+	Shortname string // the derived (colliding) shortname
+	SystemKey string // the catalogue system owning that identity
+	Pending   bool   // collision is with the system's "-pending" section
+}
+
+func (e *ReservedShortnameError) Error() string {
+	what := fmt.Sprintf("catalogue system %q", e.SystemKey)
+	if e.Pending {
+		what = fmt.Sprintf("catalogue system %q's pending section", e.SystemKey)
+	}
+	return fmt.Sprintf("collection %q derives shortname %q, which is reserved by %s — pick another name",
+		e.Name, e.Shortname, what)
+}
+
+// reservedSystemCollision probes a derived shortname against the
+// catalogue identities every generated file already claims (system keys
+// plus their "-pending" sections). The systems table IS the catalogue
+// copy (the scanner upserts it from the TSV), so this is a plain store
+// query — no injected list, nothing to drift. nil error = available.
+func (s *Store) reservedSystemCollision(shortname string) (*ReservedShortnameError, error) {
+	rows, err := s.db.Query(`SELECT key FROM systems`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			return nil, err
+		}
+		switch shortname {
+		case key:
+			return &ReservedShortnameError{Shortname: shortname, SystemKey: key}, nil
+		case key + pendingShortnameSuffix:
+			return &ReservedShortnameError{Shortname: shortname, SystemKey: key, Pending: true}, nil
+		}
+	}
+	return nil, rows.Err()
+}
+
+// checkCollectionName rejects a name whose derived shortname would
+// collide with a catalogue identity. Both create AND rename go through
+// this (ADV-P7-01): a rename keeps the row's stored shortname so it
+// cannot break generation by itself, but names derive identities in this
+// UI's mental model and a rename to "NES" would read as claiming that
+// block — refusing it keeps create/rename symmetric and self-healing
+// ("NES" → "NES Games" renames fine).
+func (s *Store) checkCollectionName(name string) error {
+	collision, err := s.reservedSystemCollision(collectionShortname(name))
+	if err != nil {
+		return fmt.Errorf("store: probe shortname for collection %q: %w", name, err)
+	}
+	if collision != nil {
+		collision.Name = name
+		return collision
+	}
+	return nil
+}
+
 // collectionShortname derives the stable launcher-DB identity for a
 // collection name: lowercase alphanumerics joined by single dashes,
 // trimmed. A name with no usable characters ("★!!") falls back to
@@ -1701,7 +1776,10 @@ func collectionShortname(name string) string {
 }
 
 // CreateCollection inserts one collection, deriving its unique shortname
-// from the name (deterministic -2/-3… probing on collision). The row's
+// from the name (deterministic -2/-3… probing on collision with OTHER
+// collections). Names deriving a catalogue system identity are rejected
+// outright (ADV-P7-01) — no suffix probe can rescue "nes": it is the
+// main collection's shortname in nes's generated file forever. The row's
 // ID is returned.
 func (s *Store) CreateCollection(name, summary string) (int64, error) {
 	name = strings.TrimSpace(name)
@@ -1709,6 +1787,9 @@ func (s *Store) CreateCollection(name, summary string) (int64, error) {
 		return 0, fmt.Errorf("store: collection name required")
 	}
 	base := collectionShortname(name)
+	if err := s.checkCollectionName(name); err != nil {
+		return 0, err
+	}
 	for attempt := 1; ; attempt++ {
 		sn := base
 		if attempt > 1 {
@@ -1734,10 +1815,18 @@ func (s *Store) CreateCollection(name, summary string) (int64, error) {
 }
 
 // UpdateCollection renames/re-summaries one collection (shortname stays —
-// see CollectionRow). Unknown ids are a no-op.
+// see CollectionRow). The new name is probed against the catalogue
+// identities like a create (ADV-P7-01). Unknown ids are a no-op.
 func (s *Store) UpdateCollection(id int64, name, summary string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return fmt.Errorf("store: collection name required")
+	}
+	if err := s.checkCollectionName(name); err != nil {
+		return err
+	}
 	_, err := s.db.Exec(`UPDATE collections SET name=?, summary=?, updated_at=? WHERE id=?`,
-		strings.TrimSpace(name), strings.TrimSpace(summary), nowUTC(), id)
+		name, strings.TrimSpace(summary), nowUTC(), id)
 	return err
 }
 

@@ -250,6 +250,23 @@ func TestCollectionsCRUDUI(t *testing.T) {
 	}
 	cid := cols[0].ID
 
+	// ADV-P7-01: a name deriving a catalogue identity is refused with a
+	// 409 that NAMES the collision (main-collection shortname and
+	// "-pending" section alike) — never a success-shaped response while
+	// every future regeneration of that system would fail validation.
+	rec = postHXForm(t, handler, "/collections/create", url.Values{"name": {"NES"}})
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "identity &#34;nes&#34;") {
+		t.Fatalf("create NES = %d, want 409 naming the nes collision:\n%s", rec.Code, rec.Body)
+	}
+	rec = postHXForm(t, handler, "/collections/create", url.Values{"name": {"NES Pending"}})
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "nes-pending") {
+		t.Fatalf("create 'NES Pending' = %d, want 409 naming the nes-pending collision:\n%s", rec.Code, rec.Body)
+	}
+	cols, _ = srv.st.Collections()
+	if len(cols) != 1 {
+		t.Fatalf("rejected creates left %d rows, want 1", len(cols))
+	}
+
 	// Editor page renders.
 	editorURL := fmt.Sprintf("/collections/%d", cid)
 	if rec := get(t, handler, editorURL); rec.Code != 200 {
@@ -284,6 +301,14 @@ func TestCollectionsCRUDUI(t *testing.T) {
 		url.Values{"name": {"Late Night Set"}, "summary": {"after dark"}})
 	if !strings.Contains(rec.Body.String(), "Late Night Set") || !strings.Contains(rec.Body.String(), "kitchen-quick-play") {
 		t.Fatalf("rename mangled the collection:\n%s", rec.Body)
+	}
+
+	// ADV-P7-01: renaming onto a catalogue identity is refused like a
+	// create (409 naming the collision), while free names still land.
+	rec = postHXForm(t, handler, fmt.Sprintf("/collections/%d/update", cid),
+		url.Values{"name": {"SNES"}})
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "identity &#34;snes&#34;") {
+		t.Fatalf("rename to SNES = %d, want 409 naming the snes collision:\n%s", rec.Code, rec.Body)
 	}
 
 	// Remove drops exactly the member.

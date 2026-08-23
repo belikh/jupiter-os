@@ -19,6 +19,8 @@
 package web
 
 import (
+	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -235,9 +237,24 @@ func (s *Server) requireHX(w http.ResponseWriter, r *http.Request) bool {
 	return true
 }
 
+// reservedShortnameMessage renders the store's collision error for the
+// operator, NAMING the colliding identity (ADV-P7-01) — a bare "invalid
+// name" would send them hunting through the catalogue TSV.
+func reservedShortnameMessage(e *store.ReservedShortnameError) string {
+	what := fmt.Sprintf("catalogue system %q", e.SystemKey)
+	if e.Pending {
+		what = fmt.Sprintf("the pending section of catalogue system %q", e.SystemKey)
+	}
+	return fmt.Sprintf("the name %q derives the launcher-DB identity %q, which belongs to %s — choose another name.",
+		e.Name, e.Shortname, what)
+}
+
 // handleCollectionCreate inserts a collection (shortname derived once by
 // the store) and answers the refreshed list panel. No regeneration: a
 // new collection has zero members, so the served trees cannot change.
+// A name deriving a catalogue identity answers 409 with the collision
+// named (ADV-P7-01) — never a success-shaped 200; the page's htmx-config
+// swaps 409 bodies so the inline error is visible to the operator too.
 func (s *Server) handleCollectionCreate(w http.ResponseWriter, r *http.Request) {
 	if !s.requireHX(w, r) {
 		return
@@ -252,6 +269,12 @@ func (s *Server) handleCollectionCreate(w http.ResponseWriter, r *http.Request) 
 	if _, err := s.st.CreateCollection(name, r.FormValue("summary")); err != nil {
 		log.Printf("web: collection create %q: %v", name, err)
 		vm := s.fetchCollections()
+		var rerr *store.ReservedShortnameError
+		if errors.As(err, &rerr) {
+			vm.Error = reservedShortnameMessage(rerr)
+			s.render(w, http.StatusConflict, "partial-collections", vm)
+			return
+		}
 		vm.Error = "could not create the collection."
 		s.render(w, http.StatusOK, "partial-collections", vm)
 		return
@@ -264,6 +287,8 @@ func (s *Server) handleCollectionCreate(w http.ResponseWriter, r *http.Request) 
 // handleCollectionUpdate renames / re-summaries one collection. The
 // shortname deliberately stays (it is the block identity across the
 // generated files); the regeneration refreshes name/summary everywhere.
+// A rename onto a catalogue-derived identity answers 409 like a create
+// (ADV-P7-01).
 func (s *Server) handleCollectionUpdate(w http.ResponseWriter, r *http.Request) {
 	if !s.requireHX(w, r) {
 		return
@@ -281,6 +306,13 @@ func (s *Server) handleCollectionUpdate(w http.ResponseWriter, r *http.Request) 
 	}
 	if err := s.st.UpdateCollection(id, name, r.FormValue("summary")); err != nil {
 		log.Printf("web: collection %d update: %v", id, err)
+		var rerr *store.ReservedShortnameError
+		if errors.As(err, &rerr) {
+			vm, _ := s.fetchCollectionEditor(r, id)
+			vm.Error = reservedShortnameMessage(rerr)
+			s.render(w, http.StatusConflict, "partial-collection", vm)
+			return
+		}
 		http.Error(w, "update failed", http.StatusInternalServerError)
 		return
 	}
