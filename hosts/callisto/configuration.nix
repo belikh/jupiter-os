@@ -241,6 +241,11 @@
   environment.systemPackages = [
     pkgs.vulkan-tools
     pkgs.gh
+    # Node.js 24 for the per-user remote-opencode Discord bridge (io's
+    # ~/.local npm prefix) — the bridge requires Node >= 22. Added 2026-08-24
+    # when the agent rig (opencode + hyperresearch) moved off the laptop
+    # onto this host; the v3-tuned closure means this builds locally.
+    pkgs.nodejs
   ];
 
   # ---- GitHub token (dsh) ----------------------------------------------------
