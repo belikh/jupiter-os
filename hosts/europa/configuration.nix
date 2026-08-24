@@ -273,18 +273,14 @@
   # it's only a transitive build dependency of something else in the
   # closure.
   #
-  # harmonia: ranged NAR requests always answer 200 instead of 206, so a
-  # client that trusts Content-Range but checks status literally can accept
-  # a truncated body as the full NAR -- silent corruption, not just a slow
-  # cache miss. Fixed upstream in nix-community/harmonia#1139 (open,
-  # mergeable, unmerged as of 2026-08-09). Carries the fix as a local patch
-  # against the pinned harmonia-v3.1.0 source rather than pulling the PR's
-  # branch: upstream main is 252 commits ahead of v3.1.0 (crate rename
-  # harmonia_nar -> harmonia_file_nar and friends), so the PR's own diff
-  # doesn't apply to this pin -- the one-line fix does, unchanged, since the
-  # surrounding ranged-response code is untouched by that refactor. Drop
-  # this overlay entry once a harmonia release containing #1139 is pulled
-  # in via a nixpkgs bump.
+  # harmonia: the pr1139 ranged-206 patch overlay was REMOVED 2026-08-25.
+  # It was written against harmonia-v3.1.0 because nix-community/harmonia#1139
+  # (ranged NAR requests answering 200 instead of 206) was still unmerged;
+  # a nixpkgs bump since brought harmonia-3.2.0, whose source already contains
+  # the fix — patch(1) failed with "Reversed (or previously applied) patch
+  # detected!" in CI, breaking the europa closure build. Exactly the drop
+  # condition the removed comment named: a release containing #1139 arrived
+  # via the pin bump.
   nixpkgs.overlays = [
     (_final: prev: {
       bmake = prev.bmake.overrideAttrs { doCheck = false; };
@@ -292,9 +288,6 @@
         doCheck = false;
         doInstallCheck = false;
       };
-      harmonia = prev.harmonia.overrideAttrs (old: {
-        patches = (old.patches or [ ]) ++ [ ./patches/harmonia-pr1139-ranged-206.patch ];
-      });
     })
     # stdenv-wide doCheck=false overlay: REMOVED 2026-08-16. 7efc8c4
     # re-introduced it (europa-only) for the bdver4 local-build era, when

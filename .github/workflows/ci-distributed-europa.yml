@@ -197,6 +197,14 @@ jobs:
             substituters = https://cache.nixos.org https://cache.jupiter.au
             trusted-public-keys = ${{ secrets.HARMONIA_PUBLIC_KEY }} cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
             connect-timeout = 60
+            # Build scratch goes on nothing-but-nix's BTRFS volume, not /tmp:
+            # nix defaults build-dir to /tmp on the ~20GB root fs, so multi-GB
+            # builds ENOSPC'd every remote builder mid-run ("creating directory
+            # /tmp/nix-*: No space left on device"). nothing-but-nix pre-creates
+            # /nix/build for exactly this (see its README, "Configure Nix to
+            # use /nix/build"). Applies to the daemon on THIS machine — for the
+            # builder jobs that is where ssh-ng-dispatched builds run.
+            build-dir = /nix/build
             # Auto-GC before the run drowns the disk: full-fleet closures plus
             # their substitutions overflow a ~60GB runner partway through.
             # Active derivations are GC-rooted, so this only prunes paths we
@@ -426,6 +434,14 @@ jobs:
             substituters = https://cache.nixos.org https://cache.jupiter.au
             trusted-public-keys = ${{ secrets.HARMONIA_PUBLIC_KEY }} cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=
             connect-timeout = 60
+            # Build scratch goes on nothing-but-nix's BTRFS volume, not /tmp:
+            # nix defaults build-dir to /tmp on the ~20GB root fs, so multi-GB
+            # builds ENOSPC'd every remote builder mid-run ("creating directory
+            # /tmp/nix-*: No space left on device"). nothing-but-nix pre-creates
+            # /nix/build for exactly this (see its README, "Configure Nix to
+            # use /nix/build"). Applies to the daemon on THIS machine — for the
+            # builder jobs that is where ssh-ng-dispatched builds run.
+            build-dir = /nix/build
             # Auto-GC before the run drowns the disk: full-fleet closures plus
             # their substitutions overflow a ~60GB runner partway through.
             # Active derivations are GC-rooted, so this only prunes paths we
