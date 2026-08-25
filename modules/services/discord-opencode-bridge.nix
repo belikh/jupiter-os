@@ -62,10 +62,10 @@ let
       --argjson allowedUserIds "$allowed" \
       '{
         # Upstream reads creds via loadConfig().bot (configStore.js
-        # getBotConfig/hasBotConfig) — the README''s FLAT example
-        # {discordToken, clientId, …} does NOT match the shipped code
-        # and yields "No bot configuration found" at start (observed
-        # live 2026-08-26).
+        # getBotConfig/hasBotConfig) — the flat example in the upstream
+        # README {discordToken, clientId, …} does NOT match the shipped
+        # code and yields "No bot configuration found" at start
+        # (observed live 2026-08-26).
         bot: {
           discordToken: $discordToken,
           clientId: $clientId,
