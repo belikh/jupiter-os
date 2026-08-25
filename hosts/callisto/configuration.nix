@@ -246,6 +246,10 @@
     # when the agent rig (opencode + hyperresearch) moved off the laptop
     # onto this host; the v3-tuned closure means this builds locally.
     pkgs.nodejs
+    # Python 3 for hyperresearch's virtualenv (the rig's research CLI is
+    # pip-installed into ~/Projects/hyperresearch-opencode/.venv as io).
+    # Added alongside nodejs when the agent rig moved off the laptop.
+    pkgs.python3
   ];
 
   # ---- GitHub token (dsh) ----------------------------------------------------
