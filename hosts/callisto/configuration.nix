@@ -35,6 +35,9 @@
     ../../modules/services/nom-web.nix
     # DeepSeek Harness (dsh): agent harness web UI on :3080
     ../../modules/services/dsh.nix
+    # remote-opencode: Discord ↔ opencode bridge, runs as io (Phase-2 item
+    # pulled forward 2026-08-26; Node 24 above was committed for it)
+    ../../modules/services/discord-opencode-bridge.nix
     # Dedicated Cloudflare tunnel for this host's public hostnames
     # (dsh.jupiter.au → loopbound-bound dsh via cloudflared running here)
     ../../modules/services/cloudflare-tunnel.nix
@@ -537,6 +540,14 @@
     group = "users";
     mode = "0440";
   };
+
+  # ---- Discord ↔ opencode bridge (remote-opencode) --------------------------
+  # io's Discord slash commands drive THIS host's opencode rig. Credentials
+  # in the discord_bridge_env sops secret (token/client/guild/allowlist);
+  # config.json is rendered 0600 by the module's preStart, never stored.
+  # Allowlist keeps at least io's own user id — upstream treats an empty
+  # list as "anyone in the guild".
+  jupiter.services.discordOpencodeBridge.enable = true;
 
   # ---- PostgreSQL -----------------------------------------------------------
   # First fleet SQL database (modules/services/postgres.nix). Assumptions

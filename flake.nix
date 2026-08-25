@@ -410,6 +410,22 @@
         }
       );
 
+      # remote-opencode — Discord bot bridging a local OpenCode CLI (see
+      # pkgs/discord-opencode-bridge). Built from the published npm tarball
+      # with a generated prod-only lockfile; exposed standalone (untuned
+      # legacyPackages, like dsh above) so the npm lock hash can be
+      # recomputed via `nix build .#discord-opencode-bridge` without pulling
+      # callisto's whole v3-tuned closure. Consumed by the host via
+      # modules/services/discord-opencode-bridge.nix's pkgs.callPackage.
+      packages.x86_64-linux.discord-opencode-bridge = (
+        import ./pkgs/discord-opencode-bridge {
+          lib = nixpkgs.lib;
+          buildNpmPackage = nixpkgs.legacyPackages.x86_64-linux.buildNpmPackage;
+          nodejs = nixpkgs.legacyPackages.x86_64-linux.nodejs;
+          fetchurl = nixpkgs.legacyPackages.x86_64-linux.fetchurl;
+        }
+      );
+
       # ariang — AriaNg web UI for aria2, built from source at the commit
       # the in-tree task-name patch targets (upstream master d6a7653). Exposed
       # standalone (untuned legacyPackages, same as dsh) so the npm lock hash
