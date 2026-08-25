@@ -14,10 +14,15 @@ GHA ubuntu-latest ──WG(UDM)──▶ europa:22 (jupiter-ci) ──nix copy�
 
 Push is **main-only** (PRs build + boot-smoke but never push — unreviewed code
 must not reach the cache). The push is incremental via a Nix `post-build-hook`
-(`scripts/ci/post-build-hook.sh` + `scripts/ci/cache-drainer.sh`, ported from
-pallene's `build-server.nix`), and the last 3 main builds per host are pinned
-as GC roots by `scripts/ci/retain-recent.sh` so europa's `nix.gc` doesn't evict
-what CI just populated.
+(`scripts/ci/post-build-hook.sh`): every hook invocation signs the just-built
+paths, checks whether a full-store push is already running (flock on
+`/var/run/nix-copy-all.lock`), and — if none is — detaches one background
+`nix copy --to … --all` of the whole local store. Concurrent hooks collapse
+into that single in-flight copy; anything built after the sweep started is
+picked up by the next hook invocation's trigger, and the workflow's final
+explicit `nix copy` of the toplevels guarantees completeness. The last 3 main
+builds per host are pinned as GC roots by `scripts/ci/retain-recent.sh` so
+europa's `nix.gc` doesn't evict what CI just populated.
 
 ## Prerequisites (ops — do once, before first deploy)
 

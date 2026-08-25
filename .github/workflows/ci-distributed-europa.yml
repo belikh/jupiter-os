@@ -83,14 +83,15 @@ name: CI (distributed builders) — europa
 # ---------------------------------------------------------------------------
 # COORDINATOR-ONLY PUSH: builders do not drain to europa
 # ---------------------------------------------------------------------------
-# ci.yml's build-host job stages scripts/ci/post-build-hook.sh +
-# cache-drainer.sh so the job pushes each output as it's built. Builders here
-# don't: with the ssh-ng remote-build protocol every output a builder produces
-# is streamed back to the COORDINATOR's own store, so the coordinator is the
-# single node holding every host's full closure. Its post-build-hook +
-# cache-drainer (see "Install async push system") drain to root@europa
-# one path at a time as the hook fires, and a final `nix copy` of the
-# toplevels ("Stop drainer, final push") guarantees completeness.
+# ci.yml's build-host job stages scripts/ci/post-build-hook.sh so the job
+# pushes as it builds. Builders here don't: with the ssh-ng remote-build
+# protocol every output a builder produces is streamed back to the
+# COORDINATOR's own store, so the coordinator is the single node holding every
+# host's full closure. Its post-build-hook opportunistically triggers full-store
+# `nix copy --to ssh-ng://root@europa --all` sweeps (at most one in flight —
+# each invocation checks a lock and skips if a copy is already running), and a
+# final `nix copy` of the toplevels ("Final push to europa") guarantees
+# completeness.
 #
 # History: an earlier version wired cache-drainers onto all 19 builders too.
 # That meant up to 19 concurrent `nix copy` sessions hitting jupiter-ci@europa,
@@ -226,9 +227,8 @@ jobs:
             cores = 4
             max-jobs = 1
             # No post-build-hook: builders don't push. The coordinator is the
-            # sole pusher (its post-build-hook + cache-drainer drain to europa).
-            # A hook here would write to a FIFO nothing reads, and once the pipe
-            # buffer fills it would block nix's build loop.
+            # sole pusher (its post-build-hook triggers lock-guarded
+            # `nix copy --all` sweeps to europa as results stream back).
             fallback = true
 
       - name: Join tailnet under deterministic hostname
@@ -268,9 +268,9 @@ jobs:
           echo "builder ci-b${{ matrix.idx }}-${{ github.run_id }} ready: $(tailscale ip -4)"
 
       # Builders do NOT drain to europa — the coordinator is the sole pusher.
-      # (The steps that used to stage cache-drainer.sh + europa SSH and launch a
-      # per-builder drainer lived here; removed when pushing moved to the
-      # coordinator. See the header's "coordinator-only push" note.)
+      # (The steps that used to stage a per-builder pusher + europa SSH lived
+      # here; removed when pushing moved to the coordinator. See the header's
+      # "coordinator-only push" note.)
 
       # Sampler runs for the whole window the coordinator is dispatching to
       # us. /proc/stat is the only honest source here: `nix build` output
@@ -463,7 +463,7 @@ jobs:
             max-jobs = 2
             cores = 4
 
-      - name: Install async push system (post-build-hook + cache-drainer)
+      - name: Install async push system (post-build-hook)
         env:
           EUROPA_SSH_KEY: ${{ secrets.EUROPA_SSH_KEY }}
           # The Harmonia cache SECRET key (secret-key:...:<base32>) — same key
@@ -474,8 +474,13 @@ jobs:
         run: |
           # The coordinator is the SOLE pusher. Its post-build-hook fires once
           # per path built (the remote builders stream results back here over
-          # ssh-ng, the hook fires as each lands), writing each path to a FIFO
-          # that cache-drainer.sh drains one path at a time to root@europa.
+          # ssh-ng, the hook fires as each lands). Each invocation signs the
+          # new paths, then checks whether a full-store push is already
+          # running: if not, it detaches ONE background
+          # `nix copy --to ssh-ng://root@europa --all` (flock-guarded, so
+          # concurrent hooks collapse into a single copy); if yes, it exits
+          # immediately — the in-flight sweep plus later hook fires pick up
+          # everything newer. No FIFO, no per-path queue, no drainer daemon.
           # Builders do NOT push — they only build what the coordinator
           # dispatches. (The old push-daemon.sh targeted europa-build, an alias
           # never defined in this workflow, so it never pushed anything; the 19
@@ -485,23 +490,33 @@ jobs:
           # Pushes as root, not jupiter-ci: the jupiter-ci key was never offered
           # by ssh on the coordinator (every push failed auth, nothing landed),
           # whereas root->europa already works — the nom log streams over that
-          # exact path. cache-drainer.sh's target/alias/key come from EUROPA_*.
+          # exact path. The hook's target/key/ssh-options come from the env
+          # file staged below.
           sudo install -m 755 ${{ github.workspace }}/scripts/ci/post-build-hook.sh /usr/local/bin/nix-post-build-hook
-          sudo install -m 755 ${{ github.workspace }}/scripts/ci/cache-drainer.sh /usr/local/bin/cache-drainer
 
-          # FIFO mode 666: the hook runs as root (via nix-daemon), the drainer
-          # as the runner user — both must open it (mirrors post-build-hook.sh).
-          sudo mkdir -p /var/run /var/log
-          sudo mkfifo -m 666 /var/run/nix-push-fifo 2>/dev/null || true
+          # Push config the hook reads (root-only; it runs via nix-daemon as
+          # root). NIX_BIN pins nix's absolute path because the daemon's
+          # secure_path has no nix; NIX_SSHOPTS is what nix's embedded ssh
+          # needs to reach raw hostname "europa" as root (no ssh_config stanza
+          # covers it in the root context) — same options the old drainer and
+          # the final-push step use.
+          sudo tee /etc/nix/europa-push.env > /dev/null <<EOF
+          NIX_BIN="$(command -v nix)"
+          EUROPA_STORE="ssh-ng://root@europa"
+          NIX_SSHOPTS="-i $HOME/.ssh/europa_ci -o StrictHostKeyChecking=accept-new -o ControlMaster=auto -o ControlPath=$HOME/.ssh/controlmasters/%r@%h:%p -o ControlPersist=30m"
+          EOF
+          sudo chmod 600 /etc/nix/europa-push.env
+
+          sudo mkdir -p /var/log
           sudo touch /var/log/nix-push-hook.log
           sudo chmod 644 /var/log/nix-push-hook.log
 
-          # root->europa key + alias for cache-drainer.sh. The key lives at
-          # $HOME/.ssh/europa_ci (same path the Build step uses for nom-log
-          # streaming — re-staged here so it exists when the drainer launches,
-          # before the Build step runs). No pre-warm: this step runs before
-          # tailnet join, so europa isn't reachable yet — cache-drainer opens its
-          # ControlMaster on the first push during the build. (The Build step
+          # root->europa key + alias for the hook's NIX_SSHOPTS above. The key
+          # lives at $HOME/.ssh/europa_ci (same path the Build step uses for
+          # nom-log streaming — re-staged here so it exists before the first
+          # build fires the hook). No pre-warm: this step runs before
+          # tailnet join, so europa isn't reachable yet — the first triggered
+          # copy opens its ControlMaster during the build. (The Build step
           # sets up the same Host europa-log block again — harmless duplicate.)
           install -m 700 -d "$HOME/.ssh" "$HOME/.ssh/controlmasters"
           printf '%s\n' "$EUROPA_SSH_KEY" > "$HOME/.ssh/europa_ci"
@@ -518,10 +533,10 @@ jobs:
           } >> "$HOME/.ssh/config"
 
           # Stage the cache signing key root-readable: the post-build-hook
-          # runs via nix-daemon (as root) and signs every path before it is
-          # queued (europa enforces require-sigs=true — unsigned pushes are
-          # rejected). systemctl set-environment is how the restarted daemon
-          # (and thus the hook) receives HARMONIA_SIGNING_KEY_FILE.
+          # runs via nix-daemon (as root) and signs every path before
+          # triggering the drain (europa enforces require-sigs=true — unsigned
+          # pushes are rejected). systemctl set-environment is how the
+          # restarted daemon (and thus the hook) receives HARMONIA_SIGNING_KEY_FILE.
           if [ -n "$HARMONIA_SECRET_KEY" ]; then
             # Sanitize ONLY — never reformat. Proven on europa (Nix 2.34):
             #   nix store sign -k expects the RAW generate-binary-cache-key
@@ -560,18 +575,10 @@ jobs:
             || { echo "::error::Signing preflight FAILED — europa require-sigs will reject all pushes. check HARMONIA_SECRET_KEY (raw '<name>:<base64>' form) and daemon env."; exit 1; }
           echo "::notice::Signing preflight OK ($SIGNCHECK_P signed)"
 
-          # Launch the drainer (runner user). It holds the FIFO open on fd 3 and
-          # loops for the whole build, so it must outlive this step (nohup + &).
-          # EUROPA_STORE/EUROPA_SSH/EUROPA_KEY point cache-drainer.sh at root@europa
-          # (overriding its jupiter-ci defaults); NIX_BIN pins nix's path in case
-          # the background shell's PATH differs from this step's.
-          NIX_BIN="$(command -v nix)" \
-            EUROPA_STORE="ssh-ng://root@europa" \
-            EUROPA_SSH="europa-log" \
-            EUROPA_KEY="$HOME/.ssh/europa_ci" \
-            nohup /usr/local/bin/cache-drainer >/tmp/cache-drainer.log 2>&1 &
-          echo "DRAINER_PID=$!" >> $GITHUB_ENV
-          echo "cache-drainer started (PID $!) — sole pusher to root@europa"
+          # Nothing to launch here anymore: the hook self-triggers each
+          # full-store copy, so there is no drainer daemon to keep alive.
+          # A sanity probe that the staged env file parses as shell:
+          sudo bash -n /etc/nix/europa-push.env && echo "europa-push.env OK"
 
       - name: Join tailnet
         run: |
@@ -993,8 +1000,8 @@ jobs:
           # then stdout (--print-out-paths) aside to a file. Order matters.
           # --max-jobs 0: force EVERY derivation onto the 5 remote builders in
           # /etc/nix/machines. The coordinator is dispatch-only — it orchestrates
-          # the build, streams the nom log, and runs the sole cache-drainer +
-          # final push to europa, so its CPU stays free for that rather than
+          # the build, streams the nom log, and runs the final push to europa,
+          # so its CPU stays free for that rather than
           # joining the build pool. (Historically max-jobs=0 also avoided
           # building locally because the local push path was broken; that's
           # fixed now — see "Install async push system" — but dispatch-only is
@@ -1072,16 +1079,13 @@ jobs:
           exit $BUILD_EXIT
 
       # The cache fill is THE deliverable of this run, so the ordering here is:
-      # final authoritative push FIRST while the incremental pusher is still
-      # alive as a backstop; only then is it asked (SIGTERM) to stop. During the build the coordinator's
-      # cache-drainer pushed each path one at a time as the post-build-hook
-      # fired; left running, it would contend with this step's `nix copy` at
-      # europa's nix-daemon/SSH. Kill it, then ONE authoritative `nix copy` of
-      # every toplevel from the coordinator — the single node holding each
-      # host's full closure (streamed back from the builders over ssh-ng). nix
-      # copy is idempotent, so paths the drainer already landed are skipped;
-      # this fills any gaps and guarantees the closures are complete on europa.
-      - name: Final push to europa, then stop pusher
+      # give any in-flight hook-triggered `nix copy --all` a short grace window
+      # to finish (so two copies don't contend at europa), then ONE
+      # authoritative `nix copy` of every toplevel from the coordinator — the
+      # single node holding each host's full closure, streamed back from the
+      # builders over ssh-ng. Both are idempotent (paths already present are
+      # skipped); this step is what guarantees completeness on europa.
+      - name: Final push to europa
         if: always()
         env:
           RUN_ID: ${{ github.run_id }}
@@ -1094,12 +1098,12 @@ jobs:
             echo "no out paths ($OUT_PATHS empty/missing) — build produced nothing to push"
           else
           n=$(wc -l < "$OUT_PATHS")
-          echo "final push: $n toplevel(s) -> root@europa (incremental pusher still running)"
+          echo "final push: $n toplevel(s) -> root@europa"
 
           # Re-stage the root->europa key + controlmasters dir (the push-system
           # step also stages these, but this step is `if: always()` — be
           # self-contained in case that step didn't run). Same NIX_SSHOPTS
-          # pattern as cache-drainer.sh.
+          # pattern as the hook's europa-push.env.
           install -m 700 -d "$HOME/.ssh" "$HOME/.ssh/controlmasters"
           printf '%s\n' "$EUROPA_SSH_KEY" > "$HOME/.ssh/europa_ci"
           chmod 600 "$HOME/.ssh/europa_ci"
@@ -1123,24 +1127,16 @@ jobs:
           fi
           fi
 
-          # 2. NOW stop the incremental pusher — gracefully. SIGTERM lets it
-          #    finish its in-flight transfer and log an exit summary; wait up
-          #    to 60s, then fall back to the pattern kill.
-          if [ -n "${DRAINER_PID:-}" ] && kill -0 "$DRAINER_PID" 2>/dev/null; then
-            echo "stopping pusher (pid $DRAINER_PID) with SIGTERM"
-            kill -TERM "$DRAINER_PID" 2>/dev/null
-            for i in $(seq 1 30); do
-              kill -0 "$DRAINER_PID" 2>/dev/null || { echo "pusher exited cleanly"; break; }
+          # 2. Give any in-flight hook-triggered `nix copy --all` up to 120s
+          #    to finish so the final push doesn't contend with it at europa.
+          #    (No daemon to stop anymore — the hook spawns lock-guarded
+          #    one-shot copies. If one is still mid-flight after the grace
+          #    period we simply proceed: nix copy is idempotent.)
+          if [ -e /var/run/nix-copy-all.lock ]; then
+            for i in $(seq 1 60); do
+              flock -n /var/run/nix-copy-all.lock true 2>/dev/null && break
               sleep 2
             done
-            kill -0 "$DRAINER_PID" 2>/dev/null && {
-              echo "pusher still alive after 60s; pkill fallback"
-              pkill -f /usr/local/bin/cache-drainer 2>/dev/null
-            }
-          else
-            pkill -f /usr/local/bin/cache-drainer 2>/dev/null \
-              && echo "stopped coordinator cache-drainer (fallback pattern kill)" \
-              || echo "(no coordinator cache-drainer running)"
           fi
 
   # Aggregation has to be its own job: the builders deliberately outlive the

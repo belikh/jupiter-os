@@ -22,8 +22,8 @@ ssh="${EUROPA_SSH:-europa-ci}"
 out="$(nix path-info ".#nixosConfigurations.${host}.config.system.build.toplevel")"
 
 # Idempotent safety net: guarantee the pinned target is in europa's store even
-# if the drainer lagged behind the hook. (Incremental deps were pushed
-# per-package by the drainer; this nails down the one path we root.)
+# if the async hook-triggered push hasn't landed it yet. (Dependencies ride
+# along with any nix copy of a closure; this nails down the one path we root.)
 timeout 900 nix copy --to "ssh-ng://$ssh" "$out"
 
 # Pin + rotate on europa as jupiter-ci.

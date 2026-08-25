@@ -248,8 +248,8 @@ in
           this list empty the only relay is home DERP, which on europa is also
           the DESTINATION: the same two 1.6GHz Excavator cores then do DERP
           TLS, WireGuard crypto, sshd, NAR decompression and ZFS writes at
-          once. Measured consequence: `nix copy` pushes exceeding
-          cache-drainer.sh's 600s timeout in a steady 10m00s-12s cadence.
+          once. Measured consequence: `nix copy` pushes exceeding 600s,
+          arriving in a steady 10m00s-12s cadence.
 
           This URL is headscale's documented magic value that fetches
           Tailscale's real global DERP map over plain HTTPS (no IPv6/UDP

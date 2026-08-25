@@ -71,7 +71,7 @@ jobs:
       - name: Stage CI cache scripts
         run: |
           sudo install -d -m 755 /opt/ci
-          sudo cp scripts/ci/post-build-hook.sh scripts/ci/cache-drainer.sh scripts/ci/retain-recent.sh /opt/ci/
+          sudo cp scripts/ci/post-build-hook.sh scripts/ci/retain-recent.sh /opt/ci/
           sudo chmod 755 /opt/ci/*.sh
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
         with:
@@ -124,8 +124,8 @@ jobs:
           sudo apt-get -o DPkg::Lock::Timeout=300 install -y qemu-user-static binfmt-support
           sudo update-binfmts --enable qemu-i386 || true
 
-      # ---- Tailscale + cache drainer + build ----
-      - name: Tailscale up + build + drainer
+      # ---- Tailscale + build ----
+      - name: Tailscale up + build
         env:
           EUROPA_SSH: europa-ci
           BUILD_SHA: ${{ github.sha }}
@@ -229,17 +229,20 @@ jobs:
           echo "SSH daemon started on port 22 (PID: $SSHD_PID)"
           echo "Connect via: ssh runner@$(tailscale ip -4)"
 
-          # Start drainer in background as root (uses root's SSH ControlMaster sockets).
-          # `sudo` resets PATH to its own secure_path by default, which does
-          # NOT include wherever install-nix-action put the nix binary —
-          # confirmed live via the drainer's own diagnostic logging:
-          # "env: 'nix': No such file or directory", every single attempt.
-          # Resolve nix's absolute path in THIS (unprivileged, correct-PATH)
-          # context and pass it through explicitly rather than depend on
-          # sudo's PATH policy at all.
-          sudo NIX_BIN="$(command -v nix)" /opt/ci/cache-drainer.sh 2>&1 | sudo tee /tmp/ci-drainer.log &
-          DRAINER_PID=$!
-          echo "Started cache drainer as root (PID: $DRAINER_PID)"
+          # Stage the push config the post-build-hook reads (it runs as root
+          # via nix-daemon): each hook invocation checks whether a full-store
+          # push is already running and, if not, detaches ONE background
+          # `nix copy --to ssh-ng://europa-ci --all` (flock-guarded). No FIFO,
+          # no per-path queue, no drainer daemon. NIX_BIN must be absolute —
+          # `sudo`/the daemon's secure_path does NOT include wherever
+          # install-nix-action put the nix binary ("env: 'nix': No such file
+          # or directory", confirmed live). EUROPA_STORE is root's ssh-config
+          # alias (key + ControlMaster staged above).
+          sudo tee /etc/nix/europa-push.env > /dev/null <<EOF
+          NIX_BIN="$(command -v nix)"
+          EUROPA_STORE="ssh-ng://europa-ci"
+          EOF
+          sudo chmod 600 /etc/nix/europa-push.env
 
           # Build each host in this group
           BUILD_EXIT=0
@@ -256,12 +259,16 @@ jobs:
             BUILD_HOST=$host /opt/ci/retain-recent.sh
           done
 
-          # Wait a bit for drainer to finish processing queue
-          sleep 10
-
-          # Stop drainer
-          kill $DRAINER_PID 2>/dev/null || true
-          pkill -f cache-drainer.sh 2>/dev/null || true
+          # Give any in-flight hook-triggered `nix copy --all` up to 60s to
+          # finish before tearing down the tunnel (the per-host pushes above
+          # already guarantee completeness; the sweeps are opportunistic
+          # backfill — if one is still running, dropping it is harmless).
+          if [ -e /var/run/nix-copy-all.lock ]; then
+            for i in $(seq 1 30); do
+              flock -n /var/run/nix-copy-all.lock true 2>/dev/null && break
+              sleep 2
+            done
+          fi
 
           # Stop SSH daemon
           kill $SSHD_PID 2>/dev/null || true
