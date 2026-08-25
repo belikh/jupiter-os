@@ -163,6 +163,11 @@
 
   jupiter.build.microarch = "x86-64-v3";
 
+  # opencode agent rig (modules/core/opencode.nix): wrapped launcher +
+  # canonical activation-installed config. Binary itself is installed
+  # per-user by the official installer pinned to V1 1.18.x.
+  jupiter.core.opencode.enable = true;
+
   # Symmetric peer-to-peer build pool: callisto + 4 kiosks
   jupiter.core.buildMachines = {
     enable = true;
@@ -524,7 +529,14 @@
 
   # Keys for the providers above (same values as the crush/zed secrets,
   # packed as one env file — restic_env pattern).
-  sops.secrets.dsh_env = { };
+  # Group widened 2026-08-25 for the opencode rig: modules/core/opencode.nix's
+  # launcher seds OPENCODE_API_KEY out of this file as io, so io needs read
+  # access. Owner stays root — dsh's systemd unit reads EnvironmentFile as
+  # root before dropping privileges, so the service is unaffected.
+  sops.secrets.dsh_env = {
+    group = "users";
+    mode = "0440";
+  };
 
   # ---- PostgreSQL -----------------------------------------------------------
   # First fleet SQL database (modules/services/postgres.nix). Assumptions

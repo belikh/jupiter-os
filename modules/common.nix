@@ -22,6 +22,7 @@
     ./core/ecc.nix
     ./core/zed.nix
     ./core/crush.nix
+    ./core/opencode.nix
     ./core/lix.nix
     ./boot/fallout-splash.nix
     ./core/build-tuning.nix
