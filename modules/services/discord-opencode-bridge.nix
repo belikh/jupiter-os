@@ -60,7 +60,19 @@ let
       --arg clientId "$(get CLIENT_ID)" \
       --arg guildId "$(get GUILD_ID)" \
       --argjson allowedUserIds "$allowed" \
-      '{discordToken: $discordToken, clientId: $clientId, guildId: $guildId, allowedUserIds: $allowedUserIds}' \
+      '{
+        # Upstream reads creds via loadConfig().bot (configStore.js
+        # getBotConfig/hasBotConfig) — the README''s FLAT example
+        # {discordToken, clientId, …} does NOT match the shipped code
+        # and yields "No bot configuration found" at start (observed
+        # live 2026-08-26).
+        bot: {
+          discordToken: $discordToken,
+          clientId: $clientId,
+          guildId: $guildId
+        },
+        allowedUserIds: $allowedUserIds
+      }' \
       > "$cfgDir/.config.json.rendered"
     chmod 0600 "$cfgDir/.config.json.rendered"
     mv -f "$cfgDir/.config.json.rendered" "$cfgDir/config.json"
@@ -108,6 +120,9 @@ in
         # update-notifier wants a writable config home; HOME is set by
         # systemd from the io passwd entry anyway, pinned here for clarity.
         HOME = "/home/io";
+        # The npm update check writes under ~/.config and spams the journal
+        # when it can't; irrelevant for a pinned Nix package.
+        NO_UPDATE_NOTIFIER = "1";
       };
 
       serviceConfig = {
