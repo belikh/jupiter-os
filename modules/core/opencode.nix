@@ -195,6 +195,13 @@ in
   config = lib.mkIf cfg.enable {
     environment.systemPackages = [ opencode-wrapped ];
 
+    # The installer binary at ~/.opencode/bin/opencode is upstream's
+    # dynamically-linked generic-Linux build (needs only libc/libm/pthread/
+    # dl per its NEEDED list). nix-ld provides the /lib64 loader stub +
+    # NIX_LD_LIBRARY_PATH session vars that make such binaries run on
+    # NixOS; the module default library set covers it.
+    programs.nix-ld.enable = true;
+
     sops.secrets.zai_api_key = {
       owner = "io";
       mode = "0400";
