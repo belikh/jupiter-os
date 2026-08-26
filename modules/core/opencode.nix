@@ -60,50 +60,14 @@ let
           "**/research/raw/**"
         ];
       };
-      permission = {
-        "*" = "allow";
-        read = {
-          "*" = "allow";
-          "*.env" = "deny";
-          "*.env.*" = "deny";
-          "*.env.example" = "allow";
-        };
-        bash = {
-          "*" = "allow";
-          "git push" = "ask";
-          "git push *" = "ask";
-          "curl * -X POST *" = "ask";
-          "curl * -X PUT *" = "ask";
-          "curl * -X PATCH *" = "ask";
-          "curl * -X DELETE *" = "ask";
-          "curl * -d *" = "ask";
-          "curl * --data*" = "ask";
-          "curl * -F *" = "ask";
-          "curl * --form *" = "ask";
-          "curl * -T *" = "ask";
-          "curl * --request POST *" = "ask";
-          "curl * --request PUT *" = "ask";
-          "curl * --request PATCH *" = "ask";
-          "curl * --request DELETE *" = "ask";
-          "ssh *" = "ask";
-          "scp *" = "ask";
-          "sftp *" = "ask";
-          "rsync *" = "ask";
-          "rm -rf /*" = "deny";
-          "rm -rf ~*" = "deny";
-          "sudo rm *" = "deny";
-          "nixos-rebuild *" = "ask";
-        };
-        task = {
-          "*" = "allow";
-          "open-ultracode-*" = "deny";
-          "ultracode-fusion-*" = "deny";
-        };
-        external_directory = "ask";
-        webfetch = "allow";
-        doom_loop = "ask";
-        cloudflare_execute = "ask";
-      };
+      # Permission posture — io's explicit call 2026-08-26: wide open, same
+      # as the proven laptop rig ("never needs permission for anything").
+      # The plan §4b ask-gate lockdown is superseded: this rig is driven
+      # headless via the Discord bridge, where any ask/deny prompt deadlocks
+      # the session forever (observed live: external_directory=ask hung a
+      # build-agent thread on ~/.config/opencode). io accepts the tradeoff
+      # on a serving host; git pushes are still reviewed post-hoc by io.
+      permission = "allow";
       provider = {
         # Same endpoint/account as dsh settingsFile + crush.json; keys come
         # from the environment the wrapper exports (never stored in JSON).
