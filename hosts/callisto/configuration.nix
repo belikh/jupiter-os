@@ -41,6 +41,8 @@
     # Dedicated Cloudflare tunnel for this host's public hostnames
     # (dsh.jupiter.au → loopbound-bound dsh via cloudflared running here)
     ../../modules/services/cloudflare-tunnel.nix
+    # opencode web UI: one serve behind the tunnel at opencode.jupiter.au
+    ../../modules/services/opencode-web.nix
     # jupiterOS Arcade: boots straight into the gamescope/Pegasus session on
     # tty1 (modules/desktop/arcade-console.nix) with full kiosk collection
     # parity — console ROMs (modules/desktop/cartridges.nix) + eXo DOS/Win
@@ -170,6 +172,10 @@
   # canonical activation-installed config. Binary itself is installed
   # per-user by the official installer pinned to V1 1.18.x.
   jupiter.core.opencode.enable = true;
+
+  # Web UI for the rig (modules/services/opencode-web.nix): one opencode serve
+  # behind the cloudflare tunnel at opencode.jupiter.au (basic-auth + Access).
+  jupiter.services.opencodeWeb.enable = true;
 
   # Symmetric peer-to-peer build pool: callisto + 4 kiosks
   jupiter.core.buildMachines = {
@@ -616,6 +622,12 @@
         # cloudflared runs here; dsh is loopback-only. host defaults to
         # localhost, which is exactly right.
         port = 3080;
+      }
+      {
+        hostname = "opencode.jupiter.au";
+        # opencode web UI (modules/services/opencode-web.nix). host defaults to
+        # localhost; the serve binds 127.0.0.1:4096.
+        port = 4096;
       }
     ];
   };
