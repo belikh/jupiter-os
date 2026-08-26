@@ -32,18 +32,23 @@ in
       default = /home/io/projects;
       description = "Directory the web UI opens projects from; any subdir is one click away.";
     };
+
+    # Path to a file containing the opencode HTTP basic-auth password
+    # (user: opencode). If null, the serve runs WITHOUT basic auth and MUST be
+    # gated by Cloudflare Access (or another edge auth) on the public hostname
+    # — do not expose it to the internet without one of the two. Wire a sops
+    # secret here later, e.g. serverPasswordFile = config.sops.secrets.X.path.
+    serverPasswordFile = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
+      default = null;
+      description = "File with OPENCODE_SERVER_PASSWORD; null = rely on Cloudflare Access.";
+    };
   };
 
   config = lib.mkIf cfg.enable {
-    # HTTP basic-auth password for the opencode server (user: opencode).
-    sops.secrets.opencode_server_password = {
-      owner = "io";
-      mode = "0400";
-    };
-
     systemd.services.opencode-web = {
       description = "opencode web UI (serve)";
-      after = [ "network-online.target" "sops-nix.service" ];
+      after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
       wantedBy = [ "multi-user.target" ];
       serviceConfig = {
@@ -52,9 +57,12 @@ in
         Group = "users";
         WorkingDirectory = cfg.rootDir;
         # Keys come from the pinned wrapper at /run/current-system/sw/bin/opencode
-        # (which execs the chmod-0555 1.18.22 binary). OPENCODE_SERVER_PASSWORD
-        # turns on HTTP basic auth so the tunnel-facing UI isn't open.
-        ExecStart = "${pkgs.bash}/bin/bash -c 'export OPENCODE_SERVER_PASSWORD=\"$(cat ${config.sops.secrets.opencode_server_password.path})\"; exec /run/current-system/sw/bin/opencode serve --port ${toString cfg.port} --hostname 127.0.0.1'";
+        # (which execs the chmod-0555 1.18.22 binary). With serverPasswordFile
+        # set, OPENCODE_SERVER_PASSWORD turns on HTTP basic auth.
+        ExecStart =
+          if cfg.serverPasswordFile != null
+          then "${pkgs.bash}/bin/bash -c 'export OPENCODE_SERVER_PASSWORD=\"$(cat ${cfg.serverPasswordFile})\"; exec /run/current-system/sw/bin/opencode serve --port ${toString cfg.port} --hostname 127.0.0.1'"
+          else "/run/current-system/sw/bin/opencode serve --port ${toString cfg.port} --hostname 127.0.0.1";
         Restart = "on-failure";
         RestartSec = 5;
       };
