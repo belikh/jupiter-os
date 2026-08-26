@@ -205,17 +205,21 @@ in
     # chmod 0555 so the self-updater can't silently drift to V2 again — that
     # drift on 2026-08-26 broke the Discord bridge's serve readiness. The
     # installer resolves the exact asset for --version; the marker guards
-    # against re-downloading on every switch. 0555 (owner non-writable) is the
-    # actual guard: the updater replaces the binary in place, which 0555 blocks.
+    # against re-downloading on every switch. Activation runs as root, so we
+    # set HOME=/home/io for the installer (it targets $HOME/.opencode) and fix
+    # ownership afterward; 0555 (owner non-writable) is the real guard — the
+    # updater replaces the binary in place, which 0555 blocks. `su` is avoided
+    # because activation has no tty.
     system.activationScripts.opencodeBinary = lib.stringAfter [ "users" "opencodeConfig" ] ''
+      export HOME=/home/io
       BIN=/home/io/.opencode/bin/opencode
       MARKER=/home/io/.opencode/.pinned-version
       if [ ! -x "$BIN" ] || [ "$(cat "$MARKER" 2>/dev/null)" != "1.18.22" ]; then
         echo "opencode: (re)installing pinned 1.18.22"
-        su io -c 'curl -fsSL https://opencode.ai/install | bash -s -- --version 1.18.22'
+        curl -fsSL https://opencode.ai/install | bash -s -- --version 1.18.22
         echo "1.18.22" > "$MARKER"
-        chown io:users "$MARKER"
       fi
+      chown -R io:users /home/io/.opencode
       chmod 0555 "$BIN"
     '';
   };
