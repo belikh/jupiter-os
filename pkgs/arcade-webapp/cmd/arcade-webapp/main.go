@@ -294,13 +294,16 @@ func main() {
 	// last scan recorded while the fresh walk runs (R5: never block boot
 	// on a full multi-TB tree walk).
 	go func() {
+		started := time.Now() // the duration IS the fix's proof (issue #81):
+		// a warm boot must land in minutes, a cold backfill reports hours.
 		res, err := scan.Scan()
 		if err != nil {
 			log.Printf("arcade-webapp: startup scan: %v", err)
 			return
 		}
-		log.Printf("arcade-webapp: startup scan done: %d systems, %d games (%s), %d warnings",
-			res.Systems, res.Games, web.HumanBytes(res.Bytes), len(res.Warnings))
+		log.Printf("arcade-webapp: startup scan done in %s: %d systems, %d games (%s), %d warnings",
+			time.Since(started).Round(time.Second), res.Systems, res.Games,
+			web.HumanBytes(res.Bytes), len(res.Warnings))
 	}()
 
 	httpSrv := &http.Server{

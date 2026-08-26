@@ -415,6 +415,20 @@ func scanSystemDir(dir string, sys catalogue.System) ([]store.GameRow, error) {
 //     verify ingest is the authority.
 //   - Files above romHashSizeLimit stay NULL (CacheID's own cap — same
 //     false-negative direction ApplyCacheFlags accepts).
+//   - Progress is durable (issue #81): checksums flush in bounded
+//     batches DURING the walk, so a restart/redeploy mid-system loses at
+//     most one batch's work instead of rehashing the whole system on the
+//     next boot (europa's first boot spent ~40 CPU-minutes inside nds —
+//     2143 zips / 52 GiB — all of which a monolithic end-of-loop commit
+//     would have discarded).
+//   - The fill announces itself in the journal (issue #81): between
+//     "listening" and "startup scan done" a multi-hour backfill must be
+//     distinguishable from a hang. The paired DONE line keeps that
+//     signal honest across boots: systems whose candidates are ALL
+//     permanent misses (oversized/corrupt — the rows stay NULL forever)
+//     still print the fill line every scan, but their "0 hashed,
+//     n skipped" outcome marks them as no-op retries rather than real
+//     hashing work.
 func (s *Scanner) persistSHA1s(sys catalogue.System, sysDir string, res *Result) {
 	missing, err := s.st.GamesMissingSHA1(sys.Key)
 	if err != nil || len(missing) == 0 {
@@ -423,8 +437,34 @@ func (s *Scanner) persistSHA1s(sys catalogue.System, sysDir string, res *Result)
 		}
 		return
 	}
-	cks := make([]store.GameChecksum, 0, len(missing))
+	log.Printf("scanner: %s: filling sha1 for %d new game file(s)", sys.Key, len(missing))
+
 	skipped := 0
+	hashed := 0
+	defer func() {
+		if skipped > 0 {
+			log.Printf("scanner: %s: %d game file(s) not hashed for sha1 (size/read limits)", sys.Key, skipped)
+		}
+	}()
+	cks := make([]store.GameChecksum, 0, sha1FlushBatch)
+	// flush persists what accumulated; false = the store rejected a
+	// batch, and continuing would only pile more hashes onto a broken
+	// writer (the pre-batching code abandoned the rest on error too).
+	// The abort is LOUD (issue #81's whole theme is journal silence):
+	// an interrupted fill must never masquerade as a completed one.
+	flush := func() bool {
+		if len(cks) == 0 {
+			return true
+		}
+		if err := sha1Flush(s.st, sys.Key, cks); err != nil {
+			res.Warnings = append(res.Warnings, fmt.Sprintf("%s: persist sha1: %v", sys.Key, err))
+			log.Printf("scanner: %s: sha1 fill aborted after %d hashed: %v", sys.Key, hashed, err)
+			return false
+		}
+		hashed += len(cks)
+		cks = cks[:0]
+		return true
+	}
 	for _, rel := range missing {
 		id, err := CacheID(filepath.Join(sysDir, rel))
 		if err != nil {
@@ -432,16 +472,14 @@ func (s *Scanner) persistSHA1s(sys catalogue.System, sysDir string, res *Result)
 			continue
 		}
 		cks = append(cks, store.GameChecksum{RelPath: rel, SHA1: id})
-	}
-	if len(cks) > 0 {
-		if err := s.st.SetGameChecksums(sys.Key, cks); err != nil {
-			res.Warnings = append(res.Warnings, fmt.Sprintf("%s: persist sha1: %v", sys.Key, err))
+		if len(cks) >= sha1FlushBatch && !flush() {
 			return
 		}
 	}
-	if skipped > 0 {
-		log.Printf("scanner: %s: %d game file(s) not hashed for sha1 (size/read limits)", sys.Key, skipped)
+	if !flush() {
+		return
 	}
+	log.Printf("scanner: %s: sha1 fill done: %d hashed, %d skipped", sys.Key, hashed, skipped)
 }
 
 // logiqxHeader captures the Logiqx <datafile><header> fields the DAT
@@ -613,6 +651,19 @@ func ReadCacheCoverage(cacheDir string) (*CacheCoverage, error) {
 		}
 	}
 	return cc, nil
+}
+
+// sha1FlushBatch bounds how many freshly computed checksums accumulate
+// before persistSHA1s commits them to the store (issue #81). A var, not a
+// const, so tests can shrink it — same pattern as romHashSizeLimit.
+var sha1FlushBatch = 32
+
+// sha1Flush persists one batch. A var so tests can fault-inject flush
+// failures (the abort path's preserve-prior-batches-and-stop contract is
+// otherwise unobservable — SetGameChecksums cannot be made to fail on
+// demand against a healthy store). Production always sees the real writer.
+var sha1Flush = func(st *store.Store, systemKey string, cks []store.GameChecksum) error {
+	return st.SetGameChecksums(systemKey, cks)
 }
 
 // romHashSizeLimit caps what CacheID will hash: multi-hundred-MB optical

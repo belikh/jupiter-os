@@ -6,6 +6,8 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"errors"
+	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -538,5 +540,387 @@ func TestApplyCacheEnrichmentTruncatesHugeDescriptions(t *testing.T) {
 	}
 	if got["Normal Blurb (USA).nes"] != "A perfectly ordinary blurb." {
 		t.Fatalf("normal description must stay verbatim: %q", got["Normal Blurb (USA).nes"])
+	}
+}
+
+// ---- Issue #81: restart-safe sha1 fill (observability + abort durability) --
+
+// captureLog redirects the standard logger into a buffer for the duration
+// of f and returns what was written (the scanner's fill/skip lines are its
+// only restart-skip observable; tests run sequentially — nothing in this
+// package calls t.Parallel).
+func captureLog(t *testing.T, f func()) string {
+	t.Helper()
+	var buf strings.Builder
+	old := log.Writer()
+	log.SetOutput(&buf)
+	defer log.SetOutput(old)
+	f()
+	return buf.String()
+}
+
+// buildTestZip writes one valid single-entry zip and returns the SHA1 of
+// the INNER contents (CacheID's zip keying).
+func buildTestZip(t *testing.T, path, innerName string, body []byte) string {
+	t.Helper()
+	zf, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer zf.Close() //nolint:errcheck // test
+	zw := zip.NewWriter(zf)
+	w, err := zw.Create(innerName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Write(body); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return sha1Hex(t, body)
+}
+
+// gameSHA1 fetches one system game's stored sha1 by rel path ("" when the
+// row is absent or unhashed).
+func gameSHA1(t *testing.T, st *store.Store, systemKey, relPath string) string {
+	t.Helper()
+	page, err := st.ListGames(store.GameListOpts{SystemKey: systemKey})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, g := range page.Games {
+		if g.RelPath == relPath {
+			d, err := st.GetGame(systemKey, g.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if d == nil {
+				return ""
+			}
+			return d.SHA1
+		}
+	}
+	return "\x00absent" // distinct from "present but NULL"
+}
+
+// TestScanSHA1RestartLifecycle pins the restart behavior the europa
+// backfill made urgent (issue #81): across service restarts (fresh Scanner
+// over the same store), unchanged files are never re-hashed, added files
+// are hashed exactly once, removed files prune with their stale rows, and
+// every fill announces itself in the journal (the ~2h silent window during
+// europa's first boot was indistinguishable from a recurring cost).
+//
+// The skip proof is mechanical, not stylistic: A's CONTENT is replaced
+// between scan 2's neighbors under an identical stat tuple — any re-hash
+// attempt would persist the new id and fail the wantA assertions below.
+func TestScanSHA1RestartLifecycle(t *testing.T) {
+	root := t.TempDir()
+	st, err := store.Open(filepath.Join(root, "arcade.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close() //nolint:errcheck // test
+
+	tsv := filepath.Join(root, "cat.tsv")
+	if err := os.WriteFile(tsv, []byte("nes\tNES\tfceumm\t-\tnes\t-\tcartridge\t-\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sysDir := filepath.Join(root, "games", "nes")
+	if err := os.MkdirAll(sysDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cfg := Config{
+		CatalogueTsv:  tsv,
+		CartridgeRoot: filepath.Join(root, "games"),
+		DBPath:        "unused",
+	}
+
+	bodyA1 := bytes.Repeat([]byte("a-first-"), 16) // 8-byte unit
+	bodyA2 := bytes.Repeat([]byte("a-SECOND"), 16) // same length as bodyA1
+	if len(bodyA1) != len(bodyA2) {
+		t.Fatal("test bug: bodies must share one size to isolate content drift")
+	}
+	bodyB := bytes.Repeat([]byte("b-body--"), 16)
+	bodyC := bytes.Repeat([]byte("c-body--"), 16)
+	if err := os.WriteFile(filepath.Join(sysDir, "A (USA).nes"), bodyA1, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sysDir, "B (USA).nes"), bodyB, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wantA := sha1Hex(t, bodyA1)
+
+	// Scan 1 (first boot): both files hashed; the fill announces itself.
+	var logs string
+	logs = captureLog(t, func() {
+		if _, err := New(cfg, st).Scan(); err != nil {
+			t.Fatalf("scan 1: %v", err)
+		}
+	})
+	if !strings.Contains(logs, "nes: filling sha1 for 2 new game file(s)") {
+		t.Fatalf("scan 1 logged %q, want the nes fill line for 2 files", logs)
+	}
+	if got := gameSHA1(t, st, "nes", "A (USA).nes"); got != wantA {
+		t.Fatalf("A sha1 = %q, want %q", got, wantA)
+	}
+	wantB := sha1Hex(t, bodyB)
+	if got := gameSHA1(t, st, "nes", "B (USA).nes"); got != wantB {
+		t.Fatalf("B sha1 = %q, want %q", got, wantB)
+	}
+
+	// Scan 2 (simulated restart): fresh Scanner over the same store. A's
+	// bytes changed in place at an unchanged path and size (mtime moves,
+	// but the fill gate keys on sha1 IS NULL, never stat) — if anything
+	// re-attempted it, the new id would land below. Nothing is missing,
+	// so no fill line may appear.
+	if err := os.WriteFile(filepath.Join(sysDir, "A (USA).nes"), bodyA2, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	logs = captureLog(t, func() {
+		if _, err := New(cfg, st).Scan(); err != nil {
+			t.Fatalf("scan 2: %v", err)
+		}
+	})
+	if strings.Contains(logs, "filling sha1") {
+		t.Fatalf("restart rescan re-entered hashing: %q", logs)
+	}
+	if got := gameSHA1(t, st, "nes", "A (USA).nes"); got != wantA {
+		t.Fatalf("unchanged-path sha1 moved to %q after restart scan — fill-once violated", got)
+	}
+	if got := gameSHA1(t, st, "nes", "B (USA).nes"); got != wantB {
+		t.Fatalf("B sha1 disturbed without cause: %q", got)
+	}
+
+	// Scan 3 (restart, one added file): only C hashes; siblings untouched.
+	wantC := buildTestZip(t, filepath.Join(sysDir, "C (USA).zip"), "Inner (USA).nds", bodyC)
+	logs = captureLog(t, func() {
+		if _, err := New(cfg, st).Scan(); err != nil {
+			t.Fatalf("scan 3: %v", err)
+		}
+	})
+	if !strings.Contains(logs, "nes: filling sha1 for 1 new game file(s)") {
+		t.Fatalf("scan 3 logged %q, want the nes fill line for exactly 1 file", logs)
+	}
+	if got := gameSHA1(t, st, "nes", "C (USA).zip"); got != wantC {
+		t.Fatalf("C zip sha1 = %q, want inner %q", got, wantC)
+	}
+	if got := gameSHA1(t, st, "nes", "A (USA).nes"); got != wantA {
+		t.Fatalf("A sha1 = %q after scan 3, want untouched %q", got, wantA)
+	}
+
+	// Scan 4 (removal): B vanishes from disk, its row prunes with it.
+	if err := os.Remove(filepath.Join(sysDir, "B (USA).nes")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := New(cfg, st).Scan(); err != nil {
+		t.Fatalf("scan 4: %v", err)
+	}
+	switch got := gameSHA1(t, st, "nes", "B (USA).nes"); got {
+	case "\x00absent":
+		// pruned, as required
+	case "":
+		t.Fatal("B row survived removal with a NULL sha1 (prune missed it)")
+	default:
+		t.Fatal("B row survived removal with a live sha1 (prune missed it)")
+	}
+	if got := gameSHA1(t, st, "nes", "A (USA).nes"); got != wantA {
+		t.Fatalf("A sha1 = %q after B's prune scan, want %q", got, wantA)
+	}
+}
+
+// TestPersistSHA1FlushSurvivesHashFailures pins the batched flush contract
+// (issue #81): checksums land in bounded batches DURING the walk, so one
+// unhashable file neither blocks its successors nor discards the batches
+// already persisted — the property that bounds an interrupted scan's lost
+// work to at most one batch instead of a whole system.
+func TestPersistSHA1FlushSurvivesHashFailures(t *testing.T) {
+	root := t.TempDir()
+	st, err := store.Open(filepath.Join(root, "arcade.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close() //nolint:errcheck // test
+	tsv := filepath.Join(root, "cat.tsv")
+	if err := os.WriteFile(tsv, []byte("nes\tNES\tfceumm\t-\tnes\t-\tcartridge\t-\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sysDir := filepath.Join(root, "games", "nes")
+	if err := os.MkdirAll(sysDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bodies := map[string][]byte{
+		"F1 (USA).nes": bytes.Repeat([]byte("one"), 8),
+		"F2 (USA).nes": bytes.Repeat([]byte("two"), 8),
+		"F4 (USA).nes": bytes.Repeat([]byte("four"), 8),
+	}
+	for name, body := range bodies {
+		if err := os.WriteFile(filepath.Join(sysDir, name), body, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// F3 is a corrupt zip: CacheID fails on open, the documented skip path.
+	if err := os.WriteFile(filepath.Join(sysDir, "F3 (USA).zip"), []byte("not a zip file"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	old := sha1FlushBatch
+	shrunk := 1 // flush after EVERY success: maximal batching exercise
+	sha1FlushBatch = shrunk
+	defer func() { sha1FlushBatch = old }()
+
+	var logs string
+	logs = captureLog(t, func() {
+		if _, err := New(Config{
+			CatalogueTsv:  tsv,
+			CartridgeRoot: filepath.Join(root, "games"),
+			DBPath:        "unused",
+		}, st).Scan(); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+	})
+	for name, body := range bodies {
+		if got := gameSHA1(t, st, "nes", name); got != sha1Hex(t, body) {
+			t.Fatalf("%s sha1 = %q, want %q (a later failure must not discard earlier batches)", name, got, sha1Hex(t, body))
+		}
+	}
+	if got := gameSHA1(t, st, "nes", "F3 (USA).zip"); got != "" {
+		t.Fatalf("corrupt zip persisted sha1 %q, want empty", got)
+	}
+	if !strings.Contains(logs, "not hashed for sha1") {
+		t.Fatalf("skipped-file log missing from %q (documented misses must stay visible)", logs)
+	}
+}
+
+// TestPersistSHA1FlushFailureStopsAndPreserves pins the abort contract the
+// batching exists for (issue #81, ADV-01): when the store rejects a batch,
+// every EARLIER batch stays persisted, hashing STOPS (later candidates are
+// never even read), the abort is loud on the journal, and the run carries
+// a warning — a mid-backfill interruption must be visible and cheap.
+func TestPersistSHA1FlushFailureStopsAndPreserves(t *testing.T) {
+	root := t.TempDir()
+	st, err := store.Open(filepath.Join(root, "arcade.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close() //nolint:errcheck // test
+	tsv := filepath.Join(root, "cat.tsv")
+	if err := os.WriteFile(tsv, []byte("nes\tNES\tfceumm\t-\tnes\t-\tcartridge\t-\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sysDir := filepath.Join(root, "games", "nes")
+	if err := os.MkdirAll(sysDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bodies := map[string][]byte{
+		"G1 (USA).nes": bytes.Repeat([]byte("one"), 8),
+		"G2 (USA).nes": bytes.Repeat([]byte("two"), 8),
+		"G3 (USA).nes": bytes.Repeat([]byte("three"), 8),
+		"G4 (USA).nes": bytes.Repeat([]byte("four"), 8),
+	}
+	for name, body := range bodies {
+		if err := os.WriteFile(filepath.Join(sysDir, name), body, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	oldBatch := sha1FlushBatch
+	oldFlush := sha1Flush
+	sha1FlushBatch = 1 // one file per flush: precise call accounting
+	flushCalls := 0
+	sha1Flush = func(st *store.Store, systemKey string, cks []store.GameChecksum) error {
+		flushCalls++
+		if flushCalls >= 2 {
+			return fmt.Errorf("injected store failure #%d", flushCalls)
+		}
+		return st.SetGameChecksums(systemKey, cks)
+	}
+	defer func() { sha1FlushBatch = oldBatch; sha1Flush = oldFlush }()
+
+	var res Result
+	var logs string
+	logs = captureLog(t, func() {
+		// Scan returns nil error (the abort is a warning, not a failure —
+		// same resilience posture as any per-system warning).
+		r, err := New(Config{
+			CatalogueTsv:  tsv,
+			CartridgeRoot: filepath.Join(root, "games"),
+			DBPath:        "unused",
+		}, st).Scan()
+		if err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		res = r
+	})
+	if flushCalls != 2 {
+		t.Fatalf("flush called %d times, want exactly 2 (one success, one failure) — hashing must STOP after a failed flush", flushCalls)
+	}
+	if got := gameSHA1(t, st, "nes", "G1 (USA).nes"); got != sha1Hex(t, bodies["G1 (USA).nes"]) {
+		t.Fatalf("G1 sha1 = %q, want the pre-abort batch preserved", got)
+	}
+	for _, name := range []string{"G2 (USA).nes", "G3 (USA).nes", "G4 (USA).nes"} {
+		if got := gameSHA1(t, st, "nes", name); got != "" {
+			t.Fatalf("%s sha1 = %q, want NULL (aborted fill must not half-persist)", name, got)
+		}
+	}
+	warned := false
+	for _, w := range res.Warnings {
+		if strings.Contains(w, "persist sha1") && strings.Contains(w, "injected store failure") {
+			warned = true
+		}
+	}
+	if !warned {
+		t.Fatalf("no persist-sha1 warning among %v", res.Warnings)
+	}
+	if !strings.Contains(logs, "sha1 fill aborted after 1 hashed") {
+		t.Fatalf("abort not logged in %q", logs)
+	}
+}
+
+// TestScanSHA1AllSkippedLogsDoneLine pins the honest-outcome half of the
+// observability fix (issue #81, ADV-02): systems whose only candidates are
+// permanent misses (oversized here; corrupt in the wild) reprint the fill
+// line every boot — the paired done line is what marks those boots as
+// no-op retries instead of real hashing work.
+func TestScanSHA1AllSkippedLogsDoneLine(t *testing.T) {
+	root := t.TempDir()
+	st, err := store.Open(filepath.Join(root, "arcade.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close() //nolint:errcheck // test
+	tsv := filepath.Join(root, "cat.tsv")
+	if err := os.WriteFile(tsv, []byte("nes\tNES\tfceumm\t-\tnes\t-\tcartridge\t-\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	sysDir := filepath.Join(root, "games", "nes")
+	if err := os.MkdirAll(sysDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	body := bytes.Repeat([]byte("over-the-line"), 64)
+	if err := os.WriteFile(filepath.Join(sysDir, "Huge (USA).nes"), body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	old := romHashSizeLimit
+	romHashSizeLimit = 16 // everything in this tree exceeds the cap
+	defer func() { romHashSizeLimit = old }()
+
+	var logs string
+	logs = captureLog(t, func() {
+		if _, err := New(Config{
+			CatalogueTsv:  tsv,
+			CartridgeRoot: filepath.Join(root, "games"),
+			DBPath:        "unused",
+		}, st).Scan(); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+	})
+	if !strings.Contains(logs, "filling sha1 for 1 new game file(s)") ||
+		!strings.Contains(logs, "sha1 fill done: 0 hashed, 1 skipped") {
+		t.Fatalf("all-skipped fill logged %q, want the fill+done pair with 0 hashed", logs)
+	}
+	if got := gameSHA1(t, st, "nes", "Huge (USA).nes"); got != "" {
+		t.Fatalf("oversized row persisted sha1 %q", got)
 	}
 }
