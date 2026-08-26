@@ -398,9 +398,9 @@
                 - id: llama-3.3-70b-versatile
                   contextWindow: 131072
                   maxTokens: 32768
-                - id: llama-3.1-8b-instant
-                  contextWindow: 131072
-                  maxTokens: 131072
+                # llama-3.1-8b-instant removed 2026-08-26: dropped from this
+                # key's live /models catalog (rotation confirmed by API).
+                - id: openai/gpt-oss-20b
                 - id: openai/gpt-oss-120b
                   contextWindow: 131072
                   maxTokens: 65536

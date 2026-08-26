@@ -29,14 +29,11 @@
 #      extracted from the packed dsh_env env file, which callisto already
 #      provisions — widened there to group users/0440 so io can read it.
 #
-# Model ids verified against live catalogs 2026-08-25: `opencode models`
-# on 1.18.22 + the opencode zen gateway's /models + dsh settingsFile
-# spelling all agree on glm-5.3, llama-3.1-8b-instant, kimi-k2.7-code,
-# minimax-m3. Limit numbers follow dsh settingsFile / live models.dev —
-# llama-3.1-8b-instant output is 131072 per BOTH (the plan draft's 32768
-# was stale), minimax-m3 keeps dsh's field-proven 1000000/131072 even
-# though models.dev currently lists 512000/128000 (dsh has run that cap
-# as its per-request default against this same gateway since 2026-08-20).
+# Model ids verified against live catalogs 2026-08-25, re-verified 2026-08-26:
+# `opencode models` on 1.18.x + the opencode zen gateway's /models + dsh
+# settingsFile spelling all agree on glm-5.3, kimi-k2.7-code, minimax-m3.
+# groq rotated its catalog under us on 2026-08-26 — llama-3.1-8b-instant
+# vanished from this key's /models; title-gen now rides openai/gpt-oss-20b.
 let
   cfg = config.jupiter.core.opencode;
 
@@ -47,9 +44,13 @@ let
     builtins.toJSON {
       "$schema" = "https://opencode.ai/config.json";
       # Pinned routing: big model for work, groq instant for title-gen
-      # (closes the main-model title-gen leak on this box).
+      # (closes the main-model title-gen leak on this box). small_model
+      # rotated 2026-08-26: groq dropped llama-3.1-8b-instant from this
+      # key's live catalog ("does not exist or you do not have access"),
+      # gpt-oss-20b is the verified replacement (live /models + dsh's
+      # field-proven limits table).
       model = "zai-coding/glm-5.3";
-      small_model = "groq/llama-3.1-8b-instant";
+      small_model = "groq/openai/gpt-oss-20b";
       # V1 construct; required by open-ultracode. Inert on V2 (Phase 2).
       subagent_depth = 2;
       watcher = {
@@ -130,10 +131,10 @@ let
             apiKey = "{env:GROQ_API_KEY}";
           };
           models = {
-            "llama-3.1-8b-instant" = {
+            "openai/gpt-oss-20b" = {
               limit = {
                 context = 131072;
-                output = 131072;
+                output = 65536;
               };
             };
           };
