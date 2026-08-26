@@ -5,7 +5,7 @@
   ...
 }:
 
-# opencode (PINNED 1.18.22 — the last V1) agent rig — the remote coding-agent
+# opencode (tracks latest upstream) agent rig — the remote coding-agent
 # harness on the serving host, migrated off io's laptop (2026-08-24 planning
 # session, docs/plans/2026-08-24-001-callisto-opencode-rig-deployment.md).
 #
@@ -13,15 +13,14 @@
 #   1. `opencode-wrapped` launcher: exports provider keys from sops secrets
 #      into the environment, then execs the PER-USER binary at
 #      ~/.opencode/bin/opencode (installed by the official installer as io).
-#      That binary is pinned to 1.18.22 by an activation script and then made
-#      non-writable (chmod 0555) so its built-in self-updater CANNOT rewrite
-#      it. Without that guard it silently drifted to V2 1.18.23 on 2026-08-26
-#      and broke remote-opencode 1.5.3's serve lifecycle (the Discord bridge
-#      started hanging on "Waiting for OpenCode server..."). 1.18.22 is the
-#      immediate predecessor of the V2 bump and is what the rig was proven on.
-#      Deliberately NOT a nixpkgs package: opencode's plugin host and the
-#      pinned-user layout assume ~/.opencode/bin, and V2 must stay out until
-#      plugin-API parity.
+#      That binary SELF-UPDATES to the latest opencode release; we let it
+#      track latest rather than pinning. (An earlier attempt to pin 1.18.22
+#      was based on a mistaken belief that the 1.18.22→1.18.23 bump was a V2
+#      break — it was just a patch bump, and the Discord bridge's failures
+#      were the 2000-char stream-edit bug + the model's idle-wait on a
+#      clarifying question, not the version.) Deliberately NOT a nixpkgs
+#      package: opencode's plugin host and the per-user layout assume
+#      ~/.opencode/bin.
 #   2. ONE canonical /home/io/.config/opencode/opencode.json,
 #      activation-installed from the Nix store on every switch (crush.nix
 #      pattern) — local edits made through the TUI are re-synced away, so
@@ -201,26 +200,5 @@ in
       install -D -m 0644 -o io -g users ${builtinConfig} /home/io/.config/opencode/opencode.json
     '';
 
-    # Pin the per-user opencode binary to 1.18.22 (last V1) and LOCK it with
-    # chmod 0555 so the self-updater can't silently drift to V2 again — that
-    # drift on 2026-08-26 broke the Discord bridge's serve readiness. The
-    # installer resolves the exact asset for --version; the marker guards
-    # against re-downloading on every switch. Activation runs as root, so we
-    # set HOME=/home/io for the installer (it targets $HOME/.opencode) and fix
-    # ownership afterward; 0555 (owner non-writable) is the real guard — the
-    # updater replaces the binary in place, which 0555 blocks. `su` is avoided
-    # because activation has no tty.
-    system.activationScripts.opencodeBinary = lib.stringAfter [ "users" "opencodeConfig" ] ''
-      export HOME=/home/io
-      BIN=/home/io/.opencode/bin/opencode
-      MARKER=/home/io/.opencode/.pinned-version
-      if [ ! -x "$BIN" ] || [ "$(cat "$MARKER" 2>/dev/null)" != "1.18.22" ]; then
-        echo "opencode: (re)installing pinned 1.18.22"
-        curl -fsSL https://opencode.ai/install | bash -s -- --version 1.18.22
-        echo "1.18.22" > "$MARKER"
-      fi
-      chown -R io:users /home/io/.opencode
-      chmod 0555 "$BIN"
-    '';
   };
 }
