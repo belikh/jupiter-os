@@ -31,6 +31,17 @@ buildNpmPackage rec {
   # + fetchNpmDeps have a deterministic tree to work from.
   postPatch = ''
     cp ${./package-lock.json} package-lock.json
+
+    # Discord hard-rejects message edits past 2000 chars (BASE_TYPE_MAX_LENGTH).
+    # Upstream's 1-second stream ticker feeds UNCHUNKED formatOutput() into a
+    # single message.edit, so any reply longer than ~2k chars fails every tick
+    # ("Failed to edit stream message" spam) and the live view never updates —
+    # observed live on callisto 2026-08-26. Keep the TAIL (freshest tokens)
+    # inside the limit; final delivery already chunks via
+    # formatOutputForMobile()/splitIntoChunks(1900). Reported upstream.
+    substituteInPlace dist/src/services/executionService.js \
+      --replace-fail "const newContent = formatted || 'Processing...';" \
+        "const newContent = (formatted && formatted.length > 1700) ? '…' + formatted.slice(-1680) : (formatted || 'Processing...');"
   '';
 
   npmInstallFlags = [ "--omit=dev" ];
