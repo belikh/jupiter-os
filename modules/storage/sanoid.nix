@@ -66,6 +66,19 @@
         recursive = true;
       };
 
+      # callisto's iSCSI-root zvol (hosts/callisto/configuration.nix): the
+      # diskless host's ENTIRE persistent state lives here — nix store, fleet
+      # Postgres, MQTT config, the opencode/hyperresearch rig. Hourly
+      # `important` snapshots are the cheapest insurance against a bad
+      # activation or rm on a box that cannot boot without this very volume.
+      # NOTE 2026-08-26: the live target-served volume is on rpool — older
+      # docs/plans saying tank/services/callisto-root describe a pre-migration
+      # leftover (both zvols exist; only rpool is LIO-backed).
+      "rpool/services/callisto-root" = {
+        useTemplate = [ "important" ];
+        recursive = true;
+      };
+
       # tank/surveillance, tank/downloads, tank/junk:
       # no snapshots (churny/disposable/in-flight).
     };
