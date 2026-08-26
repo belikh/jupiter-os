@@ -176,10 +176,14 @@ let
 
   # Keys enter the environment only here — never in any file on disk.
   # dsh_env packs KEY=value lines; sed pulls just the one we need.
+  # The browser-lane pair (WP7-lite) has no consumer yet — upstream
+  # belikh/hyperresearch-opencode#2 lights it up when it merges.
   opencode-wrapped = pkgs.writeShellScriptBin "opencode" ''
     export Z_AI_API_KEY="$(cat ${config.sops.secrets.zai_api_key.path})"
     export GROQ_API_KEY="$(cat ${config.sops.secrets.groq_api_key.path})"
     export OPENCODE_API_KEY="$(sed -n 's/^OPENCODE_API_KEY=//p' ${config.sops.secrets.dsh_env.path})"
+    export CLOUDFLARE_BROWSER_RUN_TOKEN="$(cat ${config.sops.secrets.cloudflare_browser_run_token.path})"
+    export CF_ACCOUNT_ID="19f62c2ef7861336d274166233ba3a17"
     exec "$HOME/.opencode/bin/opencode" "$@"
   '';
 in
@@ -208,6 +212,13 @@ in
     };
 
     sops.secrets.groq_api_key = {
+      owner = "io";
+      mode = "0400";
+    };
+
+    # Browser-lane prep (WP7-lite): random token generated blind into sops
+    # (never displayed); consumed only when upstream issue #2 merges.
+    sops.secrets.cloudflare_browser_run_token = {
       owner = "io";
       mode = "0400";
     };
