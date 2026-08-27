@@ -77,10 +77,12 @@ let
       # shows both Build and Plan. Without this, the new layout (v1.18.1+)
       # hides the toggle and only Plan appears. Build was being overridden
       # by the ultracode plugin's subagent definition (mode=subagent), so we
-      # force it back to primary with an explicit prompt and hidden=false.
+      # force it back to primary with an explicit prompt and hidden=false,
+      # and also add a dedicated "code" primary as a fallback that the
+      # plugin does not define.
       agent = {
         build = {
-          mode = "primary";
+          mode = "all";
           hidden = false;
           description = "Build — full tool access for implementation";
           prompt = "You are the build agent. You have full tool access to read, edit, and execute commands. Implement the requested changes directly.";
@@ -97,6 +99,16 @@ let
           permission = {
             edit = "ask";
             bash = "ask";
+          };
+        };
+        code = {
+          mode = "primary";
+          hidden = false;
+          description = "Code — full implementation (Build fallback)";
+          prompt = "You are the code agent. You have full tool access to read, edit, and execute commands. Implement the requested changes directly.";
+          permission = {
+            edit = "allow";
+            bash = "allow";
           };
         };
       };
