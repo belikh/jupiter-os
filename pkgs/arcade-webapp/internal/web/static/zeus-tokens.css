@@ -1,0 +1,36 @@
+/* ZEUS tokens — night glass (dark) + day log (light) per docs/style-guide.md §3-4.
+   This file owns every hex: components consume var(--ze-*) only (style-guide §14 anti-pattern gate). */
+:root {
+  /* night glass — app default */
+  --ze-bg: #08090D;
+  --ze-panel: #10131B;
+  --ze-raised: #151926;
+  --ze-line: #222839;
+  --ze-line-strong: #34405C;
+  --ze-fg: #E2E8F4;
+  --ze-fg2: #AAB4CC;
+  --ze-muted: #697492;
+  --ze-pos: #9CFF57;
+  --ze-warn: #FFB642;
+  --ze-info: #42B6FF;
+  --ze-media: #C77DFF;
+  --ze-ok: #57E389;
+  --ze-alert: #FF5C47;
+  --ze-storm: #C8502E;
+  --ze-storm-deep: #7E2C11;
+  --ze-radius: 4px;
+  /* day log tokens (for print/export) */
+  --ze-paper-hi: #EFE6CF;
+  --ze-paper: #E9DFC4;
+  --ze-rule: rgba(80,60,25,.16);
+  --ze-ink: #241C0E;
+  --ze-ink2: #57472C;
+  --ze-ink-mut: #8A6D34;
+  --ze-rust: #7C3018;
+  --ze-ochre: #A3762C;
+  --ze-pos-d: #256B2A;
+  --ze-warn-d: #8C5E00;
+  --ze-info-d: #1D5FA0;
+  --ze-media-d: #7A3FB8;
+  --ze-alert-d: #B32318;
+}

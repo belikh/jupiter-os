@@ -99,7 +99,7 @@ func TestHideToggleEndpoint(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("hide POST = %d, want 200", rec.Code)
 	}
-	if !strings.Contains(rec.Body.String(), `id="game-actions"`) || !strings.Contains(rec.Body.String(), "Show</button>") {
+	if !strings.Contains(rec.Body.String(), `id="game-actions"`) || !strings.Contains(rec.Body.String(), "Show") {
 		t.Fatalf("hide response must re-render the region with the flipped label:\n%s", rec.Body)
 	}
 	pg, _ := h.srv.st.ListGames(store.GameListOpts{SystemKey: g.SystemKey, Hidden: boolPtr(true)})
@@ -109,7 +109,7 @@ func TestHideToggleEndpoint(t *testing.T) {
 
 	// Toggle back: same endpoint shows it again.
 	rec = postHX(t, handler, ep)
-	if !strings.Contains(rec.Body.String(), "Hide</button>") {
+	if !strings.Contains(rec.Body.String(), "Hide") {
 		t.Fatalf("toggle must flip the label back:\n%s", rec.Body)
 	}
 	pg, _ = h.srv.st.ListGames(store.GameListOpts{SystemKey: g.SystemKey, Hidden: boolPtr(true)})

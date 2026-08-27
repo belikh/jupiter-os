@@ -313,6 +313,20 @@ func (s *Server) viewModel() (dashboardVM, error) {
 	if vm.Runs, err = s.st.RecentRuns(8); err != nil {
 		return vm, err
 	}
+	// Dedupe by ID (morph stability) and cap to 8 — the dashboard stays bounded and scannable.
+	seen := map[int64]bool{}
+	uniq := make([]store.Run, 0, len(vm.Runs))
+	for _, r := range vm.Runs {
+		if seen[r.ID] {
+			continue
+		}
+		seen[r.ID] = true
+		uniq = append(uniq, r)
+		if len(uniq) >= 8 {
+			break
+		}
+	}
+	vm.Runs = uniq
 
 	// Overall health, most urgent first: scan in flight, failed run,
 	// warned run (part of the library state is unknown right now — e.g. an
@@ -416,13 +430,20 @@ func (s *Server) handleRescan(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "htmx requests only", http.StatusForbidden)
 		return
 	}
+	// Surface busy as 409 so the pressed button's disabled+spinner is honest (not swallowed in goroutine).
+	if s.scan.State().Running {
+		http.Error(w, "a scan is already running", http.StatusConflict)
+		return
+	}
 	go func() {
 		res, err := s.scan.Scan()
 		if err != nil && err != scanner.ErrBusy {
 			log.Printf("web: rescan: %v", err)
 			return
 		}
-		log.Printf("web: rescan complete: %d systems, %d games, %d warnings", res.Systems, res.Games, len(res.Warnings))
+		if err == nil {
+			log.Printf("web: rescan complete: %d systems, %d games, %d warnings", res.Systems, res.Games, len(res.Warnings))
+		}
 	}()
 	vm, err := s.viewModel()
 	if err != nil {
@@ -430,6 +451,7 @@ func (s *Server) handleRescan(w http.ResponseWriter, r *http.Request) {
 		log.Printf("web: viewModel: %v", err)
 		return
 	}
+	w.Header().Set("HX-Trigger", `{"toast":"scan started"}`)
 	s.render(w, http.StatusAccepted, "partial-status", vm)
 }
 

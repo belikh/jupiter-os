@@ -8,17 +8,42 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="htmx-config" content='{"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"409","swap":true},{"code":"[45]..","swap":false,"error":true}]}'>
   <title>jupiterOS Arcade — {{.Meta.Title}}</title>
+  <link rel="stylesheet" href="/static/zeus-tokens.css">
   <link rel="stylesheet" href="/static/app.css">
   <script src="/static/htmx.min.js"></script>
   <script src="/static/idiomorph.min.js"></script>
 </head>
 <body hx-ext="morph">
+  <div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
   {{template "topbar" .Meta}}
   <main class="wrap">
     {{template "partial-metadata" .}}
     {{template "foot"}}
   </main>
+  <script>
+  (function(){
+    function showToast(msg, kind){
+      var c=document.getElementById('toast'); if(!c) return;
+      var d=document.createElement('div'); d.className='toast '+(kind||'info'); d.setAttribute('role','status');
+      d.textContent=msg; c.appendChild(d);
+      setTimeout(function(){ d.style.opacity='0'; d.style.transition='opacity 400ms'; setTimeout(function(){d.remove();},420); }, 4000);
+    }
+    document.body.addEventListener('htmx:responseError', function(e){
+      var xhr=e.detail.xhr; var msg=(xhr && xhr.responseText || '').trim();
+      if(!msg) msg='request failed ('+(xhr?xhr.status:'?')+')';
+      if(msg.length>220) msg=msg.slice(0,219)+'…';
+      showToast(msg, xhr && xhr.status===409 ? 'warn' : 'error');
+    });
+    document.body.addEventListener('htmx:afterRequest', function(e){
+      if(e.detail.failed) return;
+      var xhr=e.detail.xhr;
+      var hdr = xhr && xhr.getResponseHeader('HX-Trigger');
+      if(hdr) try{ var o=JSON.parse(hdr); if(o.toast) showToast(o.toast, o.toastKind||'ok'); }catch(_){}
+    });
+  })();
+  </script>
 </body>
 </html>
 {{end}}
@@ -66,9 +91,9 @@
       successful pass. One job at a time: a second submit while one runs is refused.</p>
 
     <div class="actions">
-      <button class="primary" hx-post="/metadata/scrape" hx-target="#metadata-panel" hx-swap="morph:innerHTML"
+      <button class="primary" hx-post="/metadata/scrape" hx-target="#metadata-panel" hx-swap="morph:innerHTML" hx-indicator="closest button" hx-disabled-elt="this"
               {{if or (not .Configured) .State.Running}}disabled{{end}}>
-        {{if .State.Running}}scraping…{{else}}Scrape all{{end}}</button>
+        <span>{{if .State.Running}}scraping…{{else}}Scrape all{{end}}</span> <span class="htmx-indicator spinner" aria-hidden="true"></span></button>
     </div>
   </section>
 
@@ -108,24 +133,27 @@
             {{if .LastOutcome}}
               {{if eq .LastOutcome "failed"}}
                 <span class="pill error" title="{{.LastErr}}">failed</span>
+                {{if .LastErr}}<br><span class="sub" style="color: var(--ze-alert);">{{.LastErr}}</span>{{end}}
               {{else if eq .LastOutcome "skipped-empty"}}
                 <span class="pill warn">skipped-empty</span>
               {{else}}
                 <span class="pill ok">scraped</span>
               {{end}}
               <span class="sub">{{.LastAgo}}</span>
+              <br><span class="sub">{{.Games}} games · {{.Desc}} desc · {{.Cover}} cover</span>
             {{else}}<span class="sub">never</span>{{end}}
+            {{if .SampleDesc}}<br><span class="sub" title="ingested description sample">“{{.SampleDesc}}”</span>{{end}}
+            {{if .Launchable}}<span class="pill ok" title="metadata.pegasus.txt has launch line">launchable</span>{{else if .Games}}<span class="pill warn" title="no launch line yet">not launchable</span>{{end}}
             {{if .History}}
             <details class="stage"><summary class="sub">run history ({{len .History}})</summary>
-              <ul>{{range .History}}<li class="sub">{{.FinishedHuman}} — {{.Outcome}}{{if eq .Outcome "scraped"}} desc={{.Desc}} cover={{.Cover}}{{end}}{{if .DeltaCovered}} (Δ{{.DeltaCovered}} covered){{end}}{{if eq .Status "error"}} · batch had failures{{end}}</li>{{end}}</ul>
+              <ul>{{range .History}}<li class="sub">{{.FinishedHuman}} — {{.Outcome}}{{if eq .Outcome "scraped"}} desc={{.Desc}} cover={{.Cover}}{{end}}{{if .DeltaCovered}} (Δ{{.DeltaCovered}} covered){{end}}{{if eq .Status "error"}} · batch had failures{{end}}{{if .Err}} — {{.Err}}{{end}}</li>{{end}}</ul>
             </details>
             {{end}}
           </td>
           <td>
-            <button class="mini primary" hx-post="/systems/{{.Key}}/scrape"
-              hx-target="#metadata-panel" hx-swap="morph:innerHTML"
+            <button class="mini primary" hx-post="/systems/{{.Key}}/scrape" hx-target="#metadata-panel" hx-swap="morph:innerHTML" hx-indicator="this" hx-disabled-elt="this"
               {{if not .CanScrape}}disabled{{end}}
-              title="run the three-pass Skyscraper flow for this system now">scrape</button>
+              title="run the three-pass Skyscraper flow for this system now">scrape <span class="htmx-indicator spinner" aria-hidden="true"></span></button>
           </td>
         </tr>
         {{end}}
@@ -160,9 +188,9 @@
       kiosks never see a half-written tree.</p>
 
     <div class="actions">
-      <button class="primary" hx-post="/generate" hx-target="#metadata-panel" hx-swap="morph:innerHTML"
+      <button class="primary" hx-post="/generate" hx-target="#metadata-panel" hx-swap="morph:innerHTML" hx-indicator="closest button" hx-disabled-elt="this"
               title="regenerate every populated system's metadata.pegasus.txt now">
-        Regenerate</button>
+        Regenerate <span class="htmx-indicator spinner" aria-hidden="true"></span></button>
     </div>
 
     {{if .GenLog.Runs}}

@@ -70,13 +70,10 @@
           <td class="num">{{.CompletedHuman}} / {{if eq .TotalHuman "0 B"}}?{{else}}{{.TotalHuman}}{{end}}</td>
           <td class="num">{{.SpeedHuman}}</td>
           <td class="acts">
-            {{if .CanPause}}<button class="mini" hx-post="/downloads/{{.GID}}/pause"
-              hx-target="#downloads-panel" hx-swap="morph:innerHTML">pause</button>{{end}}
-            {{if .CanResume}}<button class="mini" hx-post="/downloads/{{.GID}}/resume"
-              hx-target="#downloads-panel" hx-swap="morph:innerHTML">resume</button>{{end}}
-            {{if .CanRemove}}<button class="mini danger" hx-post="/downloads/{{.GID}}/remove"
-              hx-target="#downloads-panel" hx-swap="morph:innerHTML"
-              hx-confirm="Remove {{.Name}} from the queue? (partial files stay for resume)">remove</button>{{end}}
+            {{if .CanPause}}<button class="mini" hx-post="/downloads/{{.GID}}/pause" hx-target="#downloads-panel" hx-swap="morph:innerHTML" hx-indicator="this" hx-disabled-elt="this"><span>pause</span> <span class="htmx-indicator spinner" aria-hidden="true"></span></button>{{end}}
+            {{if .CanResume}}<button class="mini" hx-post="/downloads/{{.GID}}/resume" hx-target="#downloads-panel" hx-swap="morph:innerHTML" hx-indicator="this" hx-disabled-elt="this"><span>resume</span> <span class="htmx-indicator spinner" aria-hidden="true"></span></button>{{end}}
+            {{if .CanRemove}}<button class="mini danger" hx-post="/downloads/{{.GID}}/remove" hx-target="#downloads-panel" hx-swap="morph:innerHTML" hx-indicator="this" hx-disabled-elt="this"
+              hx-confirm="Remove {{.Name}} from the queue? (partial files stay for resume)"><span>remove</span> <span class="htmx-indicator spinner" aria-hidden="true"></span></button>{{end}}
           </td>
         </tr>
         {{end}}
@@ -116,9 +113,8 @@
           <td class="num">{{.GameCount}}</td>
           <td>
             {{if .TorrentOK}}
-            <button class="mini primary" hx-post="/systems/{{.Key}}/acquire"
-              hx-target="#downloads-panel" hx-swap="morph:innerHTML"
-              title="submit {{.TorrentName}} into incoming/{{.Key}} with aria2-rpc.sh resume semantics">acquire</button>
+            <button class="mini primary" hx-post="/systems/{{.Key}}/acquire" hx-target="#downloads-panel" hx-swap="morph:innerHTML"
+              title="submit {{.TorrentName}} into incoming/{{.Key}} with aria2-rpc.sh resume semantics"><span>acquire</span> <span class="htmx-indicator spinner" aria-hidden="true"></span></button>
             {{else if .TorrentName}}
             {{/* P2 critic's named gap: the acquire dead-end when the
                    torrent is not staged. Stage it here — upload the
@@ -127,17 +123,17 @@
                    with the acquire option shape). */}}
             <details class="stage">
               <summary class="mini" title="{{.TorrentName}} not staged in torrentDir">stage torrent…</summary>
-              <form hx-post="/systems/{{.Key}}/stage-torrent" hx-target="#downloads-panel" hx-swap="morph:innerHTML"
+              <form hx-post="/systems/{{.Key}}/stage-torrent" hx-target="#downloads-panel" hx-swap="morph:innerHTML" hx-indicator="closest form" hx-disabled-elt="closest form"
                     hx-encoding="multipart/form-data" class="stage-form">
                 <input type="file" name="torrent" accept=".torrent" required
                        aria-label="torrent file for {{.Key}}">
-                <button class="mini" type="submit">upload .torrent</button>
+                <button class="mini" type="submit"><span>upload .torrent</span> <span class="htmx-indicator spinner" aria-hidden="true"></span></button>
               </form>
-              <form hx-post="/systems/{{.Key}}/stage-uri" hx-target="#downloads-panel" hx-swap="morph:innerHTML"
+              <form hx-post="/systems/{{.Key}}/stage-uri" hx-target="#downloads-panel" hx-swap="morph:innerHTML" hx-indicator="closest form" hx-disabled-elt="closest form"
                     class="stage-form">
                 <input type="text" name="uri" placeholder="magnet:?xt=… or https://…/set.torrent"
                        maxlength="8192" required aria-label="magnet or URL for {{.Key}}">
-                <button class="mini" type="submit">queue URI</button>
+                <button class="mini" type="submit"><span>queue URI</span> <span class="htmx-indicator spinner" aria-hidden="true"></span></button>
               </form>
             </details>
             {{else}}<span class="sub">—</span>{{end}}

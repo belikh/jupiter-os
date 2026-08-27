@@ -13,16 +13,40 @@
        4xx bodies, so this page opts 409 in (first match wins). -->
   <meta name="htmx-config" content='{"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"409","swap":true},{"code":"[45]..","swap":false,"error":true}]}'>
   <title>jupiterOS Arcade — {{.Meta.Title}}</title>
+  <link rel="stylesheet" href="/static/zeus-tokens.css">
   <link rel="stylesheet" href="/static/app.css">
   <script src="/static/htmx.min.js"></script>
   <script src="/static/idiomorph.min.js"></script>
 </head>
 <body hx-ext="morph">
+  <div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
   {{template "topbar" .Meta}}
   <main class="wrap">
     {{template "partial-collections" .}}
     {{template "foot"}}
   </main>
+  <script>
+  (function(){
+    function showToast(msg, kind){
+      var c=document.getElementById('toast'); if(!c) return;
+      var d=document.createElement('div'); d.className='toast '+(kind||'info'); d.setAttribute('role','status');
+      d.textContent=msg; c.appendChild(d);
+      setTimeout(function(){ d.style.opacity='0'; d.style.transition='opacity 400ms'; setTimeout(function(){d.remove();},420); }, 4000);
+    }
+    document.body.addEventListener('htmx:responseError', function(e){
+      var xhr=e.detail.xhr; var msg=(xhr && xhr.responseText || '').trim();
+      if(!msg) msg='request failed ('+(xhr?xhr.status:'?')+')';
+      if(msg.length>220) msg=msg.slice(0,219)+'…';
+      showToast(msg, xhr && xhr.status===409 ? 'warn' : 'error');
+    });
+    document.body.addEventListener('htmx:afterRequest', function(e){
+      if(e.detail.failed) return;
+      var xhr=e.detail.xhr;
+      var hdr = xhr && xhr.getResponseHeader('HX-Trigger');
+      if(hdr) try{ var o=JSON.parse(hdr); if(o.toast) showToast(o.toast, o.toastKind||'ok'); }catch(_){}
+    });
+  })();
+  </script>
 </body>
 </html>
 {{end}}
@@ -42,10 +66,10 @@
       the log lives on the Metadata page).</p>
 
     <form class="filter-bar" aria-label="create a collection"
-          hx-post="/collections/create" hx-target="#collections-panel" hx-swap="morph:innerHTML">
+          hx-post="/collections/create" hx-target="#collections-panel" hx-swap="morph:innerHTML" hx-indicator="closest form" hx-disabled-elt="closest form">
       <input type="text" name="name" required maxlength="80" placeholder="collection name…" aria-label="collection name">
       <input type="text" name="summary" maxlength="200" placeholder="summary (optional)" aria-label="collection summary">
-      <button type="submit">create</button>
+      <button type="submit"><span>create</span> <span class="htmx-indicator spinner" aria-hidden="true"></span></button>
     </form>
 
     {{if .Collections}}
@@ -61,9 +85,8 @@
           <td><code class="sub">{{.Shortname}}</code></td>
           <td class="num">{{.Games}}{{if .UpdatedAgo}} <span class="sub" title="last edited">{{.UpdatedAgo}}</span>{{end}}</td>
           <td>
-            <button class="mini danger" hx-post="/collections/{{.ID}}/delete"
-              hx-target="#collections-panel" hx-swap="morph:innerHTML" hx-confirm="Delete “{{.Name}}”?"
-              title="delete this collection (its members stay in the library)">delete</button>
+            <button class="mini danger" hx-post="/collections/{{.ID}}/delete" hx-target="#collections-panel" hx-swap="morph:innerHTML" hx-indicator="this" hx-disabled-elt="this" hx-confirm="Delete “{{.Name}}”?"
+              title="delete this collection (its members stay in the library)"><span>delete</span> <span class="htmx-indicator spinner" aria-hidden="true"></span></button>
           </td>
         </tr>
         {{end}}
@@ -89,16 +112,40 @@
   <!-- ADV-P7-01: same 409-swap opt-in as the collections list page. -->
   <meta name="htmx-config" content='{"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"409","swap":true},{"code":"[45]..","swap":false,"error":true}]}'>
   <title>jupiterOS Arcade — {{.Meta.Title}}</title>
+  <link rel="stylesheet" href="/static/zeus-tokens.css">
   <link rel="stylesheet" href="/static/app.css">
   <script src="/static/htmx.min.js"></script>
   <script src="/static/idiomorph.min.js"></script>
 </head>
 <body hx-ext="morph">
+  <div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
   {{template "topbar" .Meta}}
   <main class="wrap">
     {{template "partial-collection" .}}
     {{template "foot"}}
   </main>
+  <script>
+  (function(){
+    function showToast(msg, kind){
+      var c=document.getElementById('toast'); if(!c) return;
+      var d=document.createElement('div'); d.className='toast '+(kind||'info'); d.setAttribute('role','status');
+      d.textContent=msg; c.appendChild(d);
+      setTimeout(function(){ d.style.opacity='0'; d.style.transition='opacity 400ms'; setTimeout(function(){d.remove();},420); }, 4000);
+    }
+    document.body.addEventListener('htmx:responseError', function(e){
+      var xhr=e.detail.xhr; var msg=(xhr && xhr.responseText || '').trim();
+      if(!msg) msg='request failed ('+(xhr?xhr.status:'?')+')';
+      if(msg.length>220) msg=msg.slice(0,219)+'…';
+      showToast(msg, xhr && xhr.status===409 ? 'warn' : 'error');
+    });
+    document.body.addEventListener('htmx:afterRequest', function(e){
+      if(e.detail.failed) return;
+      var xhr=e.detail.xhr;
+      var hdr = xhr && xhr.getResponseHeader('HX-Trigger');
+      if(hdr) try{ var o=JSON.parse(hdr); if(o.toast) showToast(o.toast, o.toastKind||'ok'); }catch(_){}
+    });
+  })();
+  </script>
 </body>
 </html>
 {{end}}
@@ -123,10 +170,10 @@
       from generation until fixed.</p>
 
     <form class="filter-bar" aria-label="rename collection"
-          hx-post="/collections/{{.Collection.ID}}/update" hx-target="#collection-panel" hx-swap="morph:innerHTML">
+          hx-post="/collections/{{.Collection.ID}}/update" hx-target="#collection-panel" hx-swap="morph:innerHTML" hx-indicator="closest form" hx-disabled-elt="closest form">
       <input type="text" name="name" required maxlength="80" value="{{.Collection.Name}}" aria-label="collection name">
       <input type="text" name="summary" maxlength="200" value="{{.Collection.Summary}}" placeholder="summary (optional)" aria-label="collection summary">
-      <button type="submit">save</button>
+      <button type="submit"><span>save</span> <span class="htmx-indicator spinner" aria-hidden="true"></span></button>
     </form>
 
     {{if .Members}}
@@ -140,9 +187,8 @@
           <td>{{.Title}}{{if .Hidden}} <span class="chip hidden-chip" title="hidden games are excluded from the generated launcher DB">hidden</span>{{else if .Pending}} <span class="chip pending-chip" title="file incomplete (completeness sniff) — lands in the system's (Pending) collection, not launchable yet">pending</span>{{end}}</td>
           <td><span class="chip">{{.SystemKey}}</span></td>
           <td>
-            <button class="mini danger" hx-post="/collections/{{$.Collection.ID}}/remove?system={{.SystemKey}}&game={{.GameID}}"
-              hx-target="#collection-panel" hx-swap="morph:innerHTML"
-              title="remove from this collection (stays in the library)">remove</button>
+            <button class="mini danger" hx-post="/collections/{{$.Collection.ID}}/remove?system={{.SystemKey}}&game={{.GameID}}" hx-target="#collection-panel" hx-swap="morph:innerHTML" hx-indicator="this" hx-disabled-elt="this"
+              title="remove from this collection (stays in the library)"><span>remove</span> <span class="htmx-indicator spinner" aria-hidden="true"></span></button>
           </td>
         </tr>
         {{end}}
@@ -164,9 +210,8 @@
       {{range .Results}}
       <li data-candidate="{{.GameID}}">
         {{.Title}} <span class="chip">{{.SystemKey}}</span>
-        <button class="mini primary" hx-post="/collections/{{$.Collection.ID}}/add?system={{.SystemKey}}&game={{.GameID}}"
-          hx-target="#collection-panel" hx-swap="morph:innerHTML"
-          title="add to this collection">add</button>
+        <button class="mini primary" hx-post="/collections/{{$.Collection.ID}}/add?system={{.SystemKey}}&game={{.GameID}}" hx-target="#collection-panel" hx-swap="morph:innerHTML" hx-indicator="this" hx-disabled-elt="this"
+          title="add to this collection"><span>add</span> <span class="htmx-indicator spinner" aria-hidden="true"></span></button>
       </li>
       {{end}}
     </ul>

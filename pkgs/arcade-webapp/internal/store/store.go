@@ -2212,3 +2212,19 @@ func ftsMatchQuery(q string) string {
 	}
 	return strings.Join(parts, " ")
 }
+
+// GameSampleDescription returns the first non-empty description for the system (truncated caller-side), or "".
+func (s *Store) GameSampleDescription(systemKey string) (string, error) {
+	var desc sql.NullString
+	err := s.db.QueryRow(`SELECT description FROM games WHERE system_key=? AND description IS NOT NULL AND description != '' ORDER BY rel_path LIMIT 1`, systemKey).Scan(&desc)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", nil
+		}
+		return "", err
+	}
+	if desc.Valid {
+		return desc.String, nil
+	}
+	return "", nil
+}

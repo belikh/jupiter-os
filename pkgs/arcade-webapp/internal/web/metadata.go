@@ -27,7 +27,9 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/scrape"
@@ -58,6 +60,8 @@ type metaRowVM struct {
 	LastOutcome string // "" never scraped
 	LastAgo     string
 	LastErr     string
+	SampleDesc  string // ingested description sample (first game with description)
+	Launchable  bool   // metadata.pegasus.txt has launch line (P6)
 	History     []metaPointVM
 	CanScrape   bool
 }
@@ -69,6 +73,7 @@ type metaPointVM struct {
 	FinishedHuman string
 	Status        string
 	Outcome       string
+	Err           string
 	Desc, Cover   int64
 	DeltaCovered  string // "" on the oldest point (no prior run to diff)
 }
@@ -148,6 +153,7 @@ func (s *Server) fetchMetadata() metadataVM {
 					FinishedHuman: relTime(vm.Now, p.FinishedAt),
 					Status:        p.Status,
 					Outcome:       p.Outcome,
+					Err:           p.Err,
 					Desc:          p.Desc,
 					Cover:         p.Cover,
 				}
@@ -165,6 +171,11 @@ func (s *Server) fetchMetadata() metadataVM {
 		} else {
 			log.Printf("web: metadata history %s: %v", r.Key, herr)
 		}
+		// Ingested metadata sample (first game's description) — shows the pipeline's real output, not just counts.
+		if sample, err := s.sampleDescription(r.Key); err == nil {
+			row.SampleDesc = sample
+		}
+		row.Launchable = s.isLaunchable(r.Key, r.Bucket)
 		row.CanScrape = vm.Configured && !vm.State.Running
 
 		switch {
@@ -181,6 +192,35 @@ func (s *Server) fetchMetadata() metadataVM {
 		vm.Rows = append(vm.Rows, row)
 	}
 	return vm
+}
+
+// sampleDescription returns a truncated description of the first game with a description for the system.
+func (s *Server) sampleDescription(systemKey string) (string, error) {
+	row, err := s.st.GameSampleDescription(systemKey)
+	if err != nil {
+		return "", err
+	}
+	if row == "" {
+		return "", nil
+	}
+	if len(row) > 120 {
+		return row[:119] + "…", nil
+	}
+	return row, nil
+}
+
+// isLaunchable checks whether the generated metadata.pegasus.txt for the system contains a launch line.
+func (s *Server) isLaunchable(systemKey, bucket string) bool {
+	root := s.gameRoots.forBucket(bucket)
+	if root == "" {
+		return false
+	}
+	p := root + "/" + systemKey + "/metadata.pegasus.txt"
+	data, err := os.ReadFile(p)
+	if err != nil {
+		return false
+	}
+	return len(data) > 0 && strings.Contains(string(data), "launch:")
 }
 
 // ---- handlers ---------------------------------------------------------------

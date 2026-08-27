@@ -10,12 +10,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="htmx-config" content='{"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"409","swap":true},{"code":"[45]..","swap":false,"error":true}]}'>
   <title>jupiterOS Arcade — {{.Meta.Title}}</title>
+  <link rel="stylesheet" href="/static/zeus-tokens.css">
   <link rel="stylesheet" href="/static/app.css">
   <script src="/static/htmx.min.js"></script>
   <script src="/static/idiomorph.min.js"></script>
 </head>
 <body hx-ext="morph">
+  <div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
   {{template "topbar" .Meta}}
   <main class="wrap">
     <p><a class="back-link" href="{{.BackHref}}">‹ back to library</a></p>
@@ -53,6 +56,28 @@
     </div>
     {{template "foot"}}
   </main>
+  <script>
+  (function(){
+    function showToast(msg, kind){
+      var c=document.getElementById('toast'); if(!c) return;
+      var d=document.createElement('div'); d.className='toast '+(kind||'info'); d.setAttribute('role','status');
+      d.textContent=msg; c.appendChild(d);
+      setTimeout(function(){ d.style.opacity='0'; d.style.transition='opacity 400ms'; setTimeout(function(){d.remove();},420); }, 4000);
+    }
+    document.body.addEventListener('htmx:responseError', function(e){
+      var xhr=e.detail.xhr; var msg=(xhr && xhr.responseText || '').trim();
+      if(!msg) msg='request failed ('+(xhr?xhr.status:'?')+')';
+      if(msg.length>220) msg=msg.slice(0,219)+'…';
+      showToast(msg, xhr && xhr.status===409 ? 'warn' : 'error');
+    });
+    document.body.addEventListener('htmx:afterRequest', function(e){
+      if(e.detail.failed) return;
+      var xhr=e.detail.xhr;
+      var hdr = xhr && xhr.getResponseHeader('HX-Trigger');
+      if(hdr) try{ var o=JSON.parse(hdr); if(o.toast) showToast(o.toast, o.toastKind||'ok'); }catch(_){}
+    });
+  })();
+  </script>
 </body>
 </html>
 {{end}}
@@ -65,15 +90,13 @@
 {{define "game-actions"}}
 <div id="game-actions" class="actions">
   {{if .RegenAlert}}<div class="action-error" role="status" style="flex-basis: 100%;">{{.RegenAlert}}</div>{{end}}
-  <button class="mini" hx-post="/systems/{{.SystemKey}}/games/{{.GameID}}/hide"
-    hx-target="#game-actions" hx-swap="morph:innerHTML"
+  <button class="mini" hx-post="/systems/{{.SystemKey}}/games/{{.GameID}}/hide" hx-target="#game-actions" hx-swap="morph:innerHTML" hx-indicator="this" hx-disabled-elt="this"
     title="{{if .Hidden}}show this game in the library and the launcher DB{{else}}hide this game from the library and the launcher DB{{end}}">
-    {{if .Hidden}}Show{{else}}Hide{{end}}</button>
-  <button class="mini primary" hx-post="/systems/{{.SystemKey}}/games/{{.GameID}}/scrape"
-    hx-target="#game-actions" hx-swap="morph:innerHTML"
+    <span>{{if .Hidden}}Show{{else}}Hide{{end}}</span> <span class="htmx-indicator spinner" aria-hidden="true"></span></button>
+  <button class="mini primary" hx-post="/systems/{{.SystemKey}}/games/{{.GameID}}/scrape" hx-target="#game-actions" hx-swap="morph:innerHTML" hx-indicator="this" hx-disabled-elt="this"
     {{if not .CanScrape}}disabled{{end}}
     title="re-run Skyscraper for this ROM now (gather passes windowed to it)">
-    {{if .Running}}scraping…{{else if .CanScrape}}re-scrape{{else}}re-scrape (unconfigured){{end}}</button>
+    <span>{{if .Running}}scraping…{{else if .CanScrape}}re-scrape{{else}}re-scrape (unconfigured){{end}}</span> <span class="htmx-indicator spinner" aria-hidden="true"></span></button>
   {{if .Running}}<span class="pill running">a scrape is running — this page reflects results on reload</span>{{end}}
 </div>
 {{end}}

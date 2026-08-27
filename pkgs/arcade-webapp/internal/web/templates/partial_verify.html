@@ -49,12 +49,12 @@
       files present) skips; a missing DAT degrades to promote-unchecked, never a block.</p>
 
     <div class="actions">
-      <button class="primary" hx-post="/verify" hx-target="#verify-panel" hx-swap="morph:innerHTML"
+      <button class="primary" hx-post="/verify" hx-target="#verify-panel" hx-swap="morph:innerHTML" hx-indicator="closest button" hx-disabled-elt="this"
               {{if or (not .Configured) .Runner.Running}}disabled{{end}}>
-        {{if .Runner.Running}}verifying…{{else}}Verify all{{end}}</button>
-      <button hx-post="/dats/refresh" hx-target="#verify-panel" hx-swap="morph:innerHTML"
+        <span>{{if .Runner.Running}}verifying…{{else}}Verify all{{end}}</span> <span class="htmx-indicator spinner" aria-hidden="true"></span></button>
+      <button hx-post="/dats/refresh" hx-target="#verify-panel" hx-swap="morph:innerHTML" hx-indicator="closest button" hx-disabled-elt="this"
               {{if .DATsRunning}}disabled{{end}}>
-        {{if .DATsRunning}}fetching DATs…{{else}}Refresh all DATs{{end}}</button>
+        <span>{{if .DATsRunning}}fetching DATs…{{else}}Refresh all DATs{{end}}</span> <span class="htmx-indicator spinner" aria-hidden="true"></span></button>
     </div>
   </section>
 
@@ -77,9 +77,8 @@
             {{else}}<span class="pill unknown">no dat</span>{{end}}
             {{if .DATMapped}}
             {{if $.DATsConfigured}}
-            <button class="mini" hx-post="/systems/{{.Key}}/dat-refresh"
-              hx-target="#verify-panel" hx-swap="morph:innerHTML"
-              title="fetch this system's McLean 1G1R DAT now">↻ dat</button>
+            <button class="mini" hx-post="/systems/{{.Key}}/dat-refresh" hx-target="#verify-panel" hx-swap="morph:innerHTML" hx-indicator="this" hx-disabled-elt="this"
+              title="fetch this system's McLean 1G1R DAT now">↻ dat <span class="htmx-indicator spinner" aria-hidden="true"></span></button>
             {{end}}
             {{else}}<span class="sub" title="no McLean DAT exists for this system — verify degrades to promote-unchecked">unmapped</span>{{end}}
           </td>
@@ -104,14 +103,12 @@
           <td class="num">{{if .Counts.PromotedBytes}}{{.PromotedHuman}}{{else if eq .State "unchecked"}}0 B re-run{{else}}<span class="sub">—</span>{{end}}</td>
           <td>{{if .HasReport}}<a href="/verify/reports/{{.Key}}.csv">csv</a>{{else}}<span class="sub">—</span>{{end}}</td>
           <td>
-            <button class="mini primary" hx-post="/systems/{{.Key}}/verify"
-              hx-target="#verify-panel" hx-swap="morph:innerHTML"
+            <button class="mini primary" hx-post="/systems/{{.Key}}/verify" hx-target="#verify-panel" hx-swap="morph:innerHTML" hx-indicator="this" hx-disabled-elt="this"
               {{if not .CanVerify}}disabled{{end}}
-              title="igir copy test report: verify + promote this system now">verify</button>
+              title="igir copy test report: verify + promote this system now"><span>verify</span> <span class="htmx-indicator spinner" aria-hidden="true"></span></button>
             {{if .HiddenCount}}
-            <button class="mini" hx-post="/systems/{{.Key}}/unhide-all"
-              hx-target="#verify-panel" hx-swap="morph:innerHTML"
-              title="show every hidden game of this system again (regenerates the launcher DB)">show {{.HiddenCount}} hidden</button>
+            <button class="mini" hx-post="/systems/{{.Key}}/unhide-all" hx-target="#verify-panel" hx-swap="morph:innerHTML" hx-indicator="this" hx-disabled-elt="this"
+              title="show every hidden game of this system again (regenerates the launcher DB)">show {{.HiddenCount}} hidden <span class="htmx-indicator spinner" aria-hidden="true"></span></button>
             {{end}}
           </td>
         </tr>

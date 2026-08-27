@@ -25,8 +25,9 @@
     <div class="stat"><span class="k">incoming</span><span class="v">{{.Incoming.Files}} files · {{.Incoming.BytesHuman}}</span></div>
     <span class="spacer"></span>
     <button class="primary" hx-post="/rescan" hx-target="#status-panel" hx-swap="morph:innerHTML"
+            hx-indicator="closest button" hx-disabled-elt="this"
             {{if .Scan.Running}}disabled{{end}}>
-      {{if .Scan.Running}}scanning&hellip;{{else}}Rescan{{end}}
+      <span>{{if .Scan.Running}}scanning&hellip;{{else}}Rescan{{end}}</span> <span class="htmx-indicator spinner" aria-hidden="true"></span>
     </button>
   </div>
 </div>
@@ -34,10 +35,10 @@
 <section>
   <h2>Recent runs</h2>
   {{if .Runs}}
-  <table class="runs">
+  <table class="runs" aria-live="polite">
     <tr><th>kind</th><th>started</th><th>duration</th><th>status</th><th>detail</th></tr>
     {{range .Runs}}
-    <tr>
+    <tr id="run-{{.ID}}" data-run-id="{{.ID}}">
       <td>{{.Kind}}</td>
       <td title="{{.StartedAt}}">{{.StartedAt}}</td>
       <td>{{runDuration .}}</td>

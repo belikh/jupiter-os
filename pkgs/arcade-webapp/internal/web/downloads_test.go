@@ -238,7 +238,7 @@ func TestDownloadsPageRendersQueueAndJoin(t *testing.T) {
 		`hx-post="/downloads/abcdef0123456789/pause"`,
 		`aria2 1.37.0`, // getVersion surfaced
 		"1 active",     // global stat chips
-		`>acquire</button>`,
+		`acquire`,
 		">unknown</span>", // verify join renders the DB's (unknown) state
 	} {
 		if !strings.Contains(body, marker) {

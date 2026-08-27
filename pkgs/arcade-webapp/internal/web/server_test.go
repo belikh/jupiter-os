@@ -233,8 +233,12 @@ func TestStaticAssetsServed(t *testing.T) {
 	}
 
 	css := get(t, srv.Handler(), "/static/app.css")
-	if css.Code != 200 || !strings.Contains(css.Body.String(), "--mauve") {
-		t.Errorf("app.css served = %d, Catppuccin tokens missing", css.Code)
+	if css.Code != 200 || !strings.Contains(css.Body.String(), "--ze-bg") {
+		t.Errorf("app.css served = %d, ZEUS tokens missing", css.Code)
+	}
+	zeus := get(t, srv.Handler(), "/static/zeus-tokens.css")
+	if zeus.Code != 200 || !strings.Contains(zeus.Body.String(), "--ze-bg") {
+		t.Errorf("zeus-tokens.css served = %d, tokens missing", zeus.Code)
 	}
 }
 

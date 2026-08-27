@@ -432,10 +432,19 @@ func (s *Server) handleVerifyAll(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "verify not configured (igir binary missing)", http.StatusServiceUnavailable)
 		return
 	}
+	if s.ig.State().Running {
+		http.Error(w, "a verify is already running", http.StatusConflict)
+		return
+	}
+	if s.ig.Pipeline != nil && !s.ig.Pipeline.TryAcquire() {
+		http.Error(w, "a pipeline job holds the slot (verify/scrape/generate)", http.StatusConflict)
+		return
+	}
+	if s.ig.Pipeline != nil {
+		s.ig.Pipeline.Release()
+	}
 	go func() {
 		outcomes, err := s.ig.VerifyAll()
-		// P6 trigger point: promotions changed the served trees, so the
-		// launcher DB follows (best-effort, logged — see generate.go).
 		s.maybeGenerateAfterVerify(outcomes, err)
 		if err != nil && !errors.Is(err, igir.ErrBusy) {
 			log.Printf("web: verify-all: %v", err)
@@ -444,6 +453,7 @@ func (s *Server) handleVerifyAll(w http.ResponseWriter, r *http.Request) {
 		log.Printf("web: verify-all: %d systems", len(outcomes))
 	}()
 	vm := s.fetchVerify()
+	w.Header().Set("HX-Trigger", `{"toast":"verify started"}`)
 	s.render(w, http.StatusAccepted, "partial-verify", vm)
 }
 
@@ -453,9 +463,6 @@ func (s *Server) handleVerifySystem(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "htmx requests only", http.StatusForbidden)
 		return
 	}
-	// P8: eXo refusal precedes the configuration check — an imported
-	// collection gets a NAMED 400 even on hosts where verify is down,
-	// never a misleading "not configured".
 	sys := r.PathValue("system")
 	if !s.systemExists(sys) {
 		http.Error(w, "unknown system "+sys, http.StatusNotFound)
@@ -468,6 +475,17 @@ func (s *Server) handleVerifySystem(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "verify not configured (igir binary missing)", http.StatusServiceUnavailable)
 		return
 	}
+	if s.ig.State().Running {
+		http.Error(w, "a verify is already running", http.StatusConflict)
+		return
+	}
+	if s.ig.Pipeline != nil && !s.ig.Pipeline.TryAcquire() {
+		http.Error(w, "a pipeline job holds the slot (verify/scrape/generate)", http.StatusConflict)
+		return
+	}
+	if s.ig.Pipeline != nil {
+		s.ig.Pipeline.Release()
+	}
 	go func() {
 		outcomes, err := s.ig.Verify([]string{sys})
 		s.maybeGenerateAfterVerify(outcomes, err)
@@ -476,6 +494,7 @@ func (s *Server) handleVerifySystem(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 	vm := s.fetchVerify()
+	w.Header().Set("HX-Trigger", `{"toast":"verify started for `+sys+`"}`)
 	s.render(w, http.StatusAccepted, "partial-verify", vm)
 }
 
@@ -525,6 +544,10 @@ func (s *Server) handleDATRefresh(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "DAT manager not configured", http.StatusServiceUnavailable)
 		return
 	}
+	if s.df.Running() {
+		http.Error(w, "a DAT refresh is already running", http.StatusConflict)
+		return
+	}
 	systems, err := s.st.Systems()
 	if err != nil {
 		http.Error(w, "system lookup failed", http.StatusInternalServerError)
@@ -535,6 +558,7 @@ func (s *Server) handleDATRefresh(w http.ResponseWriter, r *http.Request) {
 		log.Printf("web: dat refresh: %d fetched, %d unmapped, %d warnings", res.Fetched, res.Unmapped, len(res.Warnings))
 	}()
 	vm := s.fetchVerify()
+	w.Header().Set("HX-Trigger", `{"toast":"DAT refresh started"}`)
 	s.render(w, http.StatusAccepted, "partial-verify", vm)
 }
 

@@ -9,12 +9,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="htmx-config" content='{"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"409","swap":true},{"code":"[45]..","swap":false,"error":true}]}'>
   <title>jupiterOS Arcade — {{.Meta.Title}}</title>
+  <link rel="stylesheet" href="/static/zeus-tokens.css">
   <link rel="stylesheet" href="/static/app.css">
   <script src="/static/htmx.min.js"></script>
   <script src="/static/idiomorph.min.js"></script>
 </head>
 <body hx-ext="morph">
+  <div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
   {{template "topbar" .Meta}}
   <main class="wrap">
     <section>
@@ -53,6 +56,28 @@
     </section>
     {{template "foot"}}
   </main>
+  <script>
+  (function(){
+    function showToast(msg, kind){
+      var c=document.getElementById('toast'); if(!c) return;
+      var d=document.createElement('div'); d.className='toast '+(kind||'info'); d.setAttribute('role','status');
+      d.textContent=msg; c.appendChild(d);
+      setTimeout(function(){ d.style.opacity='0'; d.style.transition='opacity 400ms'; setTimeout(function(){d.remove();},420); }, 4000);
+    }
+    document.body.addEventListener('htmx:responseError', function(e){
+      var xhr=e.detail.xhr; var msg=(xhr && xhr.responseText || '').trim();
+      if(!msg) msg='request failed ('+(xhr?xhr.status:'?')+')';
+      if(msg.length>220) msg=msg.slice(0,219)+'…';
+      showToast(msg, xhr && xhr.status===409 ? 'warn' : 'error');
+    });
+    document.body.addEventListener('htmx:afterRequest', function(e){
+      if(e.detail.failed) return;
+      var xhr=e.detail.xhr;
+      var hdr = xhr && xhr.getResponseHeader('HX-Trigger');
+      if(hdr) try{ var o=JSON.parse(hdr); if(o.toast) showToast(o.toast, o.toastKind||'ok'); }catch(_){}
+    });
+  })();
+  </script>
 </body>
 </html>
 {{end}}
