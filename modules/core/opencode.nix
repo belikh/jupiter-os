@@ -68,11 +68,30 @@ let
       # Permission posture — io's explicit call 2026-08-26: wide open, same
       # as the proven laptop rig ("never needs permission for anything").
       # The plan §4b ask-gate lockdown is superseded: this rig is driven
-      # headless via the Discord bridge, where any ask/deny prompt deadlocks
+      # headless via the web UI, where any ask/deny prompt deadlocks
       # the session forever (observed live: external_directory=ask hung a
       # build-agent thread on ~/.config/opencode). io accepts the tradeoff
       # on a serving host; git pushes are still reviewed post-hoc by io.
       permission = "allow";
+      # Explicit primary agents so the web UI's "Show agent Picker" actually
+      # shows both Build and Plan. Without this, the new layout (v1.18.1+)
+      # hides the toggle and only Plan appears.
+      agent = {
+        build = {
+          mode = "primary";
+          permission = {
+            edit = "allow";
+            bash = "allow";
+          };
+        };
+        plan = {
+          mode = "primary";
+          permission = {
+            edit = "ask";
+            bash = "ask";
+          };
+        };
+      };
       provider = {
         # Same endpoint/account as dsh settingsFile + crush.json; keys come
         # from the environment the wrapper exports (never stored in JSON).
