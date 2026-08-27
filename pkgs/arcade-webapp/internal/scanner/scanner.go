@@ -672,6 +672,14 @@ var sha1Flush = func(st *store.Store, systemKey string, cks []store.GameChecksum
 // never a false positive). A var, not a const, so tests can shrink it.
 var romHashSizeLimit int64 = 512 << 20 // 512 MiB
 
+// readCacheCoverageFn parses the cache; a var so tests can count parses
+// (same pattern as sha1Flush/romHashSizeLimit for fault injection).
+var readCacheCoverageFn = ReadCacheCoverage
+
+// cacheIDFn computes the cache id; a var so tests can count hashes
+// (same pattern as sha1Flush).
+var cacheIDFn = CacheID
+
 // ErrROMTooLarge reports that a game file exceeded romHashSizeLimit and
 // was therefore left unmapped (errors.Is-able).
 var ErrROMTooLarge = errors.New("scanner: rom exceeds hashing size limit")
@@ -746,6 +754,126 @@ func CacheDirFor(cacheRoot string, sys store.SystemRow) string {
 	return filepath.Join(cacheRoot, sys.Key)
 }
 
+// applyCache is the single-parse, single-hash engine for the scrape
+// cache flow (issue #81 follow-up). It parses <cacheDir>/db.xml once,
+// lists games once, and hashes each game file at most once, producing
+// both the has_description/has_cover flags and the games.description
+// enrichment from that single hash map. doFlags/doEnrich select which
+// writes occur; the per-system log lines and error prefixes stay exactly
+// as the two separate callers had (coverage vs enrichment), and the
+// selective-write contracts are preserved (empty description never wipes,
+// oversized/unreadable stays false-negative-safe).
+//
+// The scrape path calls it with both true (ApplyCacheBoth), while the
+// two exported wrappers keep exact API stability for existing callers and
+// tests by calling it with one side true.
+func applyCache(st *store.Store, sys store.SystemRow, sysDir, cacheDir string, doFlags, doEnrich bool) (enriched int, covErr error, enrichErr error) {
+	cc, err := readCacheCoverageFn(cacheDir)
+	if err != nil {
+		if doFlags {
+			covErr = fmt.Errorf("scanner: coverage %s: %w", sys.Key, err)
+		}
+		if doEnrich {
+			enrichErr = fmt.Errorf("scanner: enrichment %s: %w", sys.Key, err)
+		}
+		return 0, covErr, enrichErr
+	}
+	if doFlags {
+		if err := st.SetScrapeCoverage(sys.Key, cc.Entries); err != nil {
+			covErr = fmt.Errorf("scanner: coverage persist %s: %w", sys.Key, err)
+		}
+	}
+	if !doFlags && doEnrich && len(cc.DescriptionsIDs) == 0 {
+		return 0, covErr, nil
+	}
+	needGames := doFlags || (doEnrich && len(cc.DescriptionsIDs) > 0)
+	if !needGames {
+		return 0, covErr, nil
+	}
+	page, err := st.ListGames(store.GameListOpts{SystemKey: sys.Key})
+	if err != nil {
+		if doFlags && covErr == nil {
+			covErr = fmt.Errorf("scanner: games %s: %w", sys.Key, err)
+		}
+		if doEnrich && enrichErr == nil {
+			enrichErr = fmt.Errorf("scanner: enrichment games %s: %w", sys.Key, err)
+		}
+		return 0, covErr, enrichErr
+	}
+	flagsEarlyClear := doFlags && (len(cc.DescIDs)+len(cc.CoverIDs) == 0 || len(page.Games) == 0)
+	flagsNeedHash := doFlags && !flagsEarlyClear
+	enrichNeedHash := doEnrich && len(cc.DescriptionsIDs) > 0
+	needHash := flagsNeedHash || enrichNeedHash
+
+	var flags []store.GameScrapeFlag
+	if flagsNeedHash {
+		flags = make([]store.GameScrapeFlag, 0, len(page.Games))
+	}
+	var metas []store.GameMeta
+	if enrichNeedHash {
+		metas = make([]store.GameMeta, 0, len(page.Games))
+	}
+	skipped := 0
+	truncated := 0
+	if needHash {
+		for _, g := range page.Games {
+			id, err := cacheIDFn(filepath.Join(sysDir, g.RelPath))
+			if err != nil {
+				if flagsNeedHash {
+					skipped++
+				}
+				continue
+			}
+			if flagsNeedHash {
+				_, desc := cc.DescIDs[id]
+				_, cover := cc.CoverIDs[id]
+				if desc || cover {
+					flags = append(flags, store.GameScrapeFlag{RelPath: g.RelPath, Description: desc, Cover: cover})
+				}
+			}
+			if enrichNeedHash {
+				if text, ok := cc.DescriptionsIDs[id]; ok {
+					text = strings.TrimSpace(text)
+					if r := []rune(text); len(r) > maxIngestDescription {
+						text = string(r[:maxIngestDescription])
+						truncated++
+					}
+					metas = append(metas, store.GameMeta{RelPath: g.RelPath, Description: text})
+				}
+			}
+		}
+		if flagsNeedHash && skipped > 0 {
+			log.Printf("scanner: %s: %d game file(s) not keyed for coverage (size/read limits)", sys.Key, skipped)
+		}
+		if enrichNeedHash && truncated > 0 {
+			log.Printf("scanner: %s: %d description(s) exceeded %d chars — truncated at ingest",
+				sys.Key, truncated, maxIngestDescription)
+		}
+	}
+	if doFlags {
+		var ferr error
+		if flagsEarlyClear {
+			ferr = st.SetSystemScrapeFlags(sys.Key, nil)
+		} else {
+			ferr = st.SetSystemScrapeFlags(sys.Key, flags)
+		}
+		if ferr != nil && covErr == nil {
+			covErr = ferr
+		}
+	}
+	if doEnrich && len(cc.DescriptionsIDs) > 0 {
+		if len(metas) == 0 {
+			return 0, covErr, enrichErr
+		}
+		if err := st.SetGameMeta(sys.Key, metas); err != nil && enrichErr == nil {
+			enrichErr = fmt.Errorf("scanner: enrichment persist %s: %w", sys.Key, err)
+			return 0, covErr, enrichErr
+		}
+		return len(metas), covErr, enrichErr
+	}
+	return 0, covErr, enrichErr
+}
+
 // ApplyCacheFlags recomputes one system's scrape coverage after a run
 // (gauntlet plan §2 P5): the scrape_coverage aggregate is refreshed from
 // a single ReadCacheCoverage parse of the platform's db.xml, and each
@@ -758,40 +886,22 @@ func CacheDirFor(cacheRoot string, sys store.SystemRow) string {
 //
 // sysDir is the system's games-tree directory (files are hashed there);
 // cacheDir is the PLATFORM cache dir (CacheDirFor).
+//
+// Thin wrapper over the single-parse engine (issue #81 follow-up): one
+// parse and at most one hash per game per call, same observable semantics.
 func ApplyCacheFlags(st *store.Store, sys store.SystemRow, sysDir, cacheDir string) error {
-	cc, err := ReadCacheCoverage(cacheDir)
-	if err != nil {
-		return fmt.Errorf("scanner: coverage %s: %w", sys.Key, err)
-	}
-	if err := st.SetScrapeCoverage(sys.Key, cc.Entries); err != nil {
-		return fmt.Errorf("scanner: coverage persist %s: %w", sys.Key, err)
-	}
-	page, err := st.ListGames(store.GameListOpts{SystemKey: sys.Key})
-	if err != nil {
-		return fmt.Errorf("scanner: games %s: %w", sys.Key, err)
-	}
-	// Nothing to match against (or no games): clear and stop — no hashing.
-	if len(cc.DescIDs)+len(cc.CoverIDs) == 0 || len(page.Games) == 0 {
-		return st.SetSystemScrapeFlags(sys.Key, nil)
-	}
-	flags := make([]store.GameScrapeFlag, 0, len(page.Games))
-	skipped := 0
-	for _, g := range page.Games {
-		id, err := CacheID(filepath.Join(sysDir, g.RelPath))
-		if err != nil {
-			skipped++ // oversized/unreadable: flag stays false (documented miss)
-			continue
-		}
-		_, desc := cc.DescIDs[id]
-		_, cover := cc.CoverIDs[id]
-		if desc || cover {
-			flags = append(flags, store.GameScrapeFlag{RelPath: g.RelPath, Description: desc, Cover: cover})
-		}
-	}
-	if skipped > 0 {
-		log.Printf("scanner: %s: %d game file(s) not keyed for coverage (size/read limits)", sys.Key, skipped)
-	}
-	return st.SetSystemScrapeFlags(sys.Key, flags)
+	_, covErr, _ := applyCache(st, sys, sysDir, cacheDir, true, false)
+	return covErr
+}
+
+// ApplyCacheBoth is the scrape-hot-path combined helper (issue #81
+// follow-up): one ReadCacheCoverage parse and at most one CacheID per
+// game for the whole system, doing both flag and enrichment writes.
+// It preserves the two separate error prefixes so scrape can log
+// "coverage refresh" and "enrichment ingest" exactly as before, and
+// returns the enrichment count (games.description rows set/refreshed).
+func ApplyCacheBoth(st *store.Store, sys store.SystemRow, sysDir, cacheDir string) (enriched int, covErr error, enrichErr error) {
+	return applyCache(st, sys, sysDir, cacheDir, true, true)
 }
 
 // maxIngestDescription bounds ONE cache-ingested description (ADV-P7-04):
@@ -815,46 +925,13 @@ const maxIngestDescription = 4000
 // from titles.
 //
 // Returns the number of games whose description was set/refreshed.
+//
+// Thin wrapper over the single-parse engine (issue #81 follow-up).
 func ApplyCacheEnrichment(st *store.Store, sys store.SystemRow, sysDir, cacheDir string) (int, error) {
-	cc, err := ReadCacheCoverage(cacheDir)
-	if err != nil {
-		return 0, fmt.Errorf("scanner: enrichment %s: %w", sys.Key, err)
-	}
-	if len(cc.DescriptionsIDs) == 0 {
-		return 0, nil
-	}
-	page, err := st.ListGames(store.GameListOpts{SystemKey: sys.Key})
-	if err != nil {
-		return 0, fmt.Errorf("scanner: enrichment games %s: %w", sys.Key, err)
-	}
-	metas := make([]store.GameMeta, 0, len(page.Games))
-	truncated := 0
-	for _, g := range page.Games {
-		id, err := CacheID(filepath.Join(sysDir, g.RelPath))
-		if err != nil {
-			continue // oversized/unreadable: stays unenriched (documented miss)
-		}
-		if text, ok := cc.DescriptionsIDs[id]; ok {
-			text = strings.TrimSpace(text)
-			if r := []rune(text); len(r) > maxIngestDescription {
-				text = string(r[:maxIngestDescription])
-				truncated++
-			}
-			metas = append(metas, store.GameMeta{RelPath: g.RelPath, Description: text})
-		}
-	}
-	if truncated > 0 {
-		log.Printf("scanner: %s: %d description(s) exceeded %d chars — truncated at ingest",
-			sys.Key, truncated, maxIngestDescription)
-	}
-	if len(metas) == 0 {
-		return 0, nil
-	}
-	if err := st.SetGameMeta(sys.Key, metas); err != nil {
-		return 0, fmt.Errorf("scanner: enrichment persist %s: %w", sys.Key, err)
-	}
-	return len(metas), nil
+	n, _, err := applyCache(st, sys, sysDir, cacheDir, false, true)
+	return n, err
 }
+
 
 // size mirrors one inventory JSON per-system entry.
 type size struct {

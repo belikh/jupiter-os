@@ -60,9 +60,10 @@ in
         # (which execs the chmod-0555 1.18.22 binary). With serverPasswordFile
         # set, OPENCODE_SERVER_PASSWORD turns on HTTP basic auth.
         ExecStart =
-          if cfg.serverPasswordFile != null
-          then "${pkgs.bash}/bin/bash -c 'export OPENCODE_SERVER_PASSWORD=\"$(cat ${cfg.serverPasswordFile})\"; exec /run/current-system/sw/bin/opencode serve --port ${toString cfg.port} --hostname 127.0.0.1'"
-          else "/run/current-system/sw/bin/opencode serve --port ${toString cfg.port} --hostname 127.0.0.1";
+          if cfg.serverPasswordFile != null then
+            "${pkgs.bash}/bin/bash -c 'export OPENCODE_SERVER_PASSWORD=\"$(cat ${cfg.serverPasswordFile})\"; exec /run/current-system/sw/bin/opencode serve --port ${toString cfg.port} --hostname 127.0.0.1'"
+          else
+            "/run/current-system/sw/bin/opencode serve --port ${toString cfg.port} --hostname 127.0.0.1";
         Restart = "on-failure";
         RestartSec = 5;
       };

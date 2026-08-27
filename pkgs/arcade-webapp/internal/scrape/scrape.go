@@ -515,11 +515,14 @@ func (d *Driver) scrapeOutcome(systemKey, startAt string) (string, error) {
 	// ingest (P7 / P6-critic carry-in) rides the same single parse of the
 	// cache: description TEXT lands in games.description so the generator
 	// emits real `description:` lines into the launcher DB.
-	if err := scanner.ApplyCacheFlags(d.Store, sys, dir, cache); err != nil {
-		logf("%s: coverage refresh: %v", systemKey, err)
+	// Single-parse helper (issue #81 follow-up): one ReadCacheCoverage +
+	// at most one CacheID per game for both flag and enrichment writes.
+	n, covErr, enrichErr := scanner.ApplyCacheBoth(d.Store, sys, dir, cache)
+	if covErr != nil {
+		logf("%s: coverage refresh: %v", systemKey, covErr)
 	}
-	if n, err := scanner.ApplyCacheEnrichment(d.Store, sys, dir, cache); err != nil {
-		logf("%s: enrichment ingest: %v", systemKey, err)
+	if enrichErr != nil {
+		logf("%s: enrichment ingest: %v", systemKey, enrichErr)
 	} else if n > 0 {
 		logf("%s: ingested %d description(s) from the cache", systemKey, n)
 	}
