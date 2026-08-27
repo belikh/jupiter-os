@@ -1,0 +1,120 @@
+# Deploy — europa: run `nixos-rebuild switch` on europa from CI.
+#
+# Why this exists (2026-08-27): the canonical deploy is ON-HOST
+# (`ssh root@europa 'nixos-rebuild switch --flake github:belikh/jupiter-os#europa'`,
+# CLAUDE.md), but the operator shells that hold a europa-root identity are not
+# always available (io's key lives on the laptop; the root@callisto
+# coordinator key lives in /root). The CI coordinator ALREADY holds a
+# root→europa path for every build — ci-distributed-europa.yml joins the
+# tailnet (TAILSCALE_CI_AUTHKEY) and SSHes as root@europa (EUROPA_SSH_KEY)
+# for nix-copy drains and nom-log streaming. This workflow reuses that exact
+# mechanism for the one thing CI deliberately didn't do: the switch itself.
+#
+# Capability note: this adds NO new secret and NO new access — the same
+# runner-side key already authenticates as root on europa in every CI build.
+# The delta is only "and then run nixos-rebuild switch". Dispatch is limited
+# to users with write access to the repo (GitHub workflow_dispatch default);
+# no push trigger, ever, so a merge can never auto-deploy.
+#
+# Extend later: add hosts to the `host` choice list + a per-host hostname
+# map. Kiosks are NOT on the tailnet as reachable SSH targets today, so
+# europa (and callisto, if ever needed) are the only valid entries.
+name: Deploy — europa
+
+on:
+  workflow_dispatch:
+    inputs:
+      host:
+        description: "Host to switch"
+        type: choice
+        options: [europa]
+        default: europa
+        required: true
+
+concurrency:
+  # One deploy at a time per host: two concurrent `nixos-rebuild switch` on
+  # the same host race switch-to-configuration and can abort each other
+  # mid-activation (observed class: callisto's wait-online hang killed
+  # switches MID-ACTIVATION).
+  group: deploy-${{ inputs.host }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: switch ${{ inputs.host }} @ ${{ github.sha }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Join tailnet
+        run: |
+          # Same retry-loop rationale as ci-distributed-europa.yml: apt/dpkg
+          # on the runner races the tailscale installer; fetch-to-file first,
+          # verify the binary exists, no curl|sh pipelines.
+          TS_OK=0
+          for _ in $(seq 1 30); do
+            if curl -fsSL -o /tmp/ts-install.sh https://tailscale.com/install.sh \
+               && sudo sh /tmp/ts-install.sh \
+               && command -v tailscale >/dev/null; then
+              TS_OK=1; break
+            fi
+            echo "tailscale install failed (dpkg busy / network?); retrying in 10s"; sleep 10
+          done
+          [ "$TS_OK" = 1 ] || { echo "::error::tailscale install never succeeded"; exit 1; }
+          sudo tailscale up \
+            --login-server=https://neptune.jupiter.au:8080 \
+            --authkey=${{ secrets.TAILSCALE_CI_AUTHKEY }} \
+            --hostname="ci-deploy-${{ github.run_id }}" \
+            --accept-routes
+
+      - name: Stage root@europa identity
+        run: |
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "${{ secrets.EUROPA_SSH_KEY }}" > "$HOME/.ssh/europa_ci"
+          chmod 600 "$HOME/.ssh/europa_ci"
+          {
+            echo "Host europa"
+            echo "  HostName europa"
+            echo "  User root"
+            echo "  IdentityFile $HOME/.ssh/europa_ci"
+            echo "  StrictHostKeyChecking accept-new"
+            echo "  ServerAliveInterval 30"
+          } >> "$HOME/.ssh/config"
+
+      - name: Probe root@europa reachability
+        run: |
+          # Fail FAST with the discriminating diagnostics (same W1/W2/W3
+          # ambiguity documented in ci-distributed-europa.yml) instead of
+          # letting the switch step hang on DNS.
+          tailscale ip -4 || { echo "::error::never registered on tailnet"; exit 1; }
+          ssh -o ConnectTimeout=20 root@europa 'echo reachable: $(hostname) / $(readlink /run/current-system)'
+
+      - name: Switch
+        id: switch
+        run: |
+          # Canonical on-host command (CLAUDE.md deploy discipline), pinned
+          # to the dispatched SHA so the deployed generation is exactly the
+          # commit that triggered this run — main can move on mid-deploy
+          # without changing what lands.
+          REF="github:belikh/jupiter-os/${GITHUB_SHA}"
+          echo "switching ${{ inputs.host }} to $REF"
+          ssh root@europa "nixos-rebuild switch --flake $REF#${{ inputs.host }}"
+
+      - name: Verify by observation
+        if: always()
+        run: |
+          set -x
+          # Never assert from the switch exit code alone (fable-domain rule):
+          # read the live state back.
+          ssh root@europa 'readlink /run/current-system; nixos-rebuild list-generations | tail -3'
+          ssh root@europa 'systemctl is-active jupiter-suno-web.service'
+          ssh root@europa 'curl -sS -o /dev/null -w "suno-web local: %{http_code}\n" http://localhost:8093/'
+          # The tunnel service: unit name is cloudflared-tunnel-<tunnelId>.service
+          # (nixpkgs module naming for services.cloudflared.tunnels.<id>).
+          ssh root@europa 'systemctl is-active cloudflared-tunnel-aa1088b8-a0e1-4073-8567-6a9bf5fb4bd7.service'
+          # The rendered ingress must contain the suno route:
+          ssh root@europa 'grep -B1 -A2 suno.jupiter.au /etc/cloudflared/*/*.yml /etc/cloudflared/*.yml 2>/dev/null || grep -R -B1 -A2 suno.jupiter.au /etc/cloudflared/'
+          # And the connector must have re-registered its ingress without error:
+          ssh root@europa 'journalctl -u cloudflared-tunnel-aa1088b8-a0e1-4073-8567-6a9bf5fb4bd7.service --since "-10 min" --no-pager | tail -20'
