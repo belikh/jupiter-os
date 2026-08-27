@@ -108,13 +108,17 @@ jobs:
           set -x
           # Never assert from the switch exit code alone (fable-domain rule):
           # read the live state back.
-          ssh root@europa 'readlink /run/current-system; nixos-rebuild list-generations | tail -3'
+          # (list-generations sorts newest-first — head, not tail.)
+          ssh root@europa 'readlink /run/current-system; nixos-rebuild list-generations | head -3'
           ssh root@europa 'systemctl is-active jupiter-suno-web.service'
           ssh root@europa 'curl -sS -o /dev/null -w "suno-web local: %{http_code}\n" http://localhost:8093/'
           # The tunnel service: unit name is cloudflared-tunnel-<tunnelId>.service
           # (nixpkgs module naming for services.cloudflared.tunnels.<id>).
           ssh root@europa 'systemctl is-active cloudflared-tunnel-aa1088b8-a0e1-4073-8567-6a9bf5fb4bd7.service'
-          # The rendered ingress must contain the suno route:
-          ssh root@europa 'grep -B1 -A2 suno.jupiter.au /etc/cloudflared/*/*.yml /etc/cloudflared/*.yml 2>/dev/null || grep -R -B1 -A2 suno.jupiter.au /etc/cloudflared/'
+          # The rendered ingress must contain the suno route. The yml lives at
+          # a STORE path (nixpkgs renders it via pkgs.writers — there is no
+          # /etc/cloudflared on the host), so take the path from the unit's own
+          # ExecStart instead of guessing:
+          ssh root@europa 'CFG=$(systemctl cat cloudflared-tunnel-aa1088b8-a0e1-4073-8567-6a9bf5fb4bd7.service | grep -o "/nix/store/[^ ]*cloudflared[^ ]*\.yml" | head -1); echo "config: $CFG"; test -n "$CFG" && grep -B1 -A2 suno.jupiter.au "$CFG"'
           # And the connector must have re-registered its ingress without error:
           ssh root@europa 'journalctl -u cloudflared-tunnel-aa1088b8-a0e1-4073-8567-6a9bf5fb4bd7.service --since "-10 min" --no-pager | tail -20'
