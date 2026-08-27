@@ -1650,6 +1650,14 @@ type GameListOpts struct {
 	Sort        string
 	Limit       int
 	Offset      int
+	// Metadata filters (the library's "filter by any of the metadata"):
+	// HasDescription/HasCover filter on the scrape-coverage flags
+	// (nil = any), Genre exact-matches the ingested genre ("" = any).
+	// eXo imports carry genre via SetGameMeta; Skyscraper scrapes fill
+	// the flags via the coverage refresh.
+	HasDescription *bool
+	HasCover       *bool
+	Genre          string
 }
 
 // GamePage is one page of results plus the unpaginated total matching the
@@ -1758,6 +1766,18 @@ func (s *Store) ListGames(opts GameListOpts) (GamePage, error) {
 		where = append(where, `g.hidden = ?`)
 		args = append(args, boolInt(*opts.Hidden))
 	}
+	if opts.HasDescription != nil {
+		where = append(where, `COALESCE(g.has_description, 0) = ?`)
+		args = append(args, boolInt(*opts.HasDescription))
+	}
+	if opts.HasCover != nil {
+		where = append(where, `COALESCE(g.has_cover, 0) = ?`)
+		args = append(args, boolInt(*opts.HasCover))
+	}
+	if opts.Genre != "" {
+		where = append(where, `COALESCE(g.genre, '') = ?`)
+		args = append(args, opts.Genre)
+	}
 	// Title matching (P8): eXo conf paths carry no title bytes, so EVERY
 	// backend additionally substring-matches the optional stored title
 	// (case-folded LIKE — same semantics on FTS and non-FTS builds).
@@ -1830,6 +1850,27 @@ func gameOrderBy(sort string) (string, error) {
 	default:
 		return "", fmt.Errorf("store: unknown game sort %q (want title|size|recent)", sort)
 	}
+}
+
+// Genres returns the distinct non-empty ingested genres, sorted — the
+// library filter's genre select options. Only rows enriched via
+// SetGameMeta (eXo imports, future scrape enrichment) contribute; the
+// empty majority of catalogue rows never widens the list.
+func (s *Store) Genres() ([]string, error) {
+	rows, err := s.db.Query(`SELECT DISTINCT genre FROM games WHERE genre IS NOT NULL AND genre != '' ORDER BY genre`)
+	if err != nil {
+		return nil, fmt.Errorf("store: genres: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	var out []string
+	for rows.Next() {
+		var g string
+		if err := rows.Scan(&g); err != nil {
+			return nil, err
+		}
+		out = append(out, g)
+	}
+	return out, rows.Err()
 }
 
 // GetGame returns one game joined with its system (the detail-page query),

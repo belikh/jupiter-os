@@ -44,6 +44,23 @@
           <option value="0"{{if eq $hd "0"}} selected{{end}}>visible only</option>
           <option value="1"{{if eq $hd "1"}} selected{{end}}>hidden only</option>
         </select>
+        <select name="desc" aria-label="description filter">
+          {{$df := .DescFilter}}
+          <option value=""{{if eq $df ""}} selected{{end}}>any description</option>
+          <option value="yes"{{if eq $df "yes"}} selected{{end}}>has description</option>
+          <option value="no"{{if eq $df "no"}} selected{{end}}>no description</option>
+        </select>
+        <select name="cover" aria-label="cover art filter">
+          {{$cf := .CoverFilter}}
+          <option value=""{{if eq $cf ""}} selected{{end}}>any cover art</option>
+          <option value="yes"{{if eq $cf "yes"}} selected{{end}}>has cover art</option>
+          <option value="no"{{if eq $cf "no"}} selected{{end}}>no cover art</option>
+        </select>
+        <select name="genre" aria-label="genre filter">
+          {{$gf := .Genre}}
+          <option value=""{{if eq $gf ""}} selected{{end}}>any genre</option>
+          {{range .Genres}}<option value="{{.}}"{{if eq . $gf}} selected{{end}}>{{.}}</option>{{end}}
+        </select>
         <select name="sort" aria-label="sort by">
           {{$so := .Sort}}
           <option value="title"{{if or (eq $so "") (eq $so "title")}} selected{{end}}>sort: title</option>

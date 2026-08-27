@@ -71,7 +71,7 @@ func displayTitle(stored, relPath string) string {
 // libURL rebuilds a /library URL with only the non-default params, in a
 // deterministic key order (url.Values.Encode sorts) — pager hrefs and
 // tests depend on that shape.
-func libURL(q, system, state, sort, hidden string, page int) string {
+func libURL(q, system, state, sort, hidden, desc, cover, genre string, page int) string {
 	vals := url.Values{}
 	if q != "" {
 		vals.Set("q", q)
@@ -87,6 +87,15 @@ func libURL(q, system, state, sort, hidden string, page int) string {
 	}
 	if hidden != "" {
 		vals.Set("hidden", hidden)
+	}
+	if desc != "" {
+		vals.Set("desc", desc)
+	}
+	if cover != "" {
+		vals.Set("cover", cover)
+	}
+	if genre != "" {
+		vals.Set("genre", genre)
 	}
 	if page > 1 {
 		vals.Set("page", strconv.Itoa(page))
@@ -112,16 +121,19 @@ type gameCardVM struct {
 }
 
 type libraryVM struct {
-	Q, System, State, Sort string
-	HiddenFilter           string // "" both | "1" hidden only | "0" visible only
-	Page, TotalPages       int
-	Total                  int64
-	CountShown             int
-	Games                  []gameCardVM
-	Systems                []store.SystemRow // filter select options
-	PrevURL, NextURL       string            // "" = no such page
-	BackHere               string            // library URL the cards link back to
-	Meta                   pageMeta
+	Q, System, State, Sort  string
+	HiddenFilter            string   // "" both | "1" hidden only | "0" visible only
+	DescFilter, CoverFilter string   // "" any | "yes" has | "no" missing
+	Genre                   string   // exact ingested genre, "" any
+	Genres                  []string // distinct ingested genres (select options)
+	Page, TotalPages        int
+	Total                   int64
+	CountShown              int
+	Games                   []gameCardVM
+	Systems                 []store.SystemRow // filter select options
+	PrevURL, NextURL        string            // "" = no such page
+	BackHere                string            // library URL the cards link back to
+	Meta                    pageMeta
 }
 
 // fetchLibrary parses the URL params, clamps them to safe values and runs
@@ -148,6 +160,20 @@ func (s *Server) fetchLibrary(r *http.Request) (libraryVM, error) {
 	if hiddenFilter != "0" && hiddenFilter != "1" {
 		hiddenFilter = "" // both
 	}
+	// Metadata filters (the yes/no tri-state keeps "" = any so a hand-typed
+	// URL can never produce an impossible combination).
+	descFilter := qp.Get("desc")
+	if descFilter != "yes" && descFilter != "no" {
+		descFilter = ""
+	}
+	coverFilter := qp.Get("cover")
+	if coverFilter != "yes" && coverFilter != "no" {
+		coverFilter = ""
+	}
+	genre := strings.TrimSpace(qp.Get("genre"))
+	if utf8.RuneCountInString(genre) > 60 {
+		genre = string([]rune(genre)[:60])
+	}
 	page := 1
 	if p, err := strconv.Atoi(qp.Get("page")); err == nil && p > 1 {
 		page = p
@@ -160,7 +186,13 @@ func (s *Server) fetchLibrary(r *http.Request) (libraryVM, error) {
 	vm := libraryVM{
 		Q: q, System: system, State: state, Sort: sort,
 		HiddenFilter: hiddenFilter,
-		Meta:         pageMeta{Title: "library", Sub: "game library", ActiveLibrary: true},
+		DescFilter:   descFilter, CoverFilter: coverFilter, Genre: genre,
+		Meta: pageMeta{Title: "library", Sub: "game library", ActiveLibrary: true},
+	}
+	if genres, err := s.st.Genres(); err == nil {
+		vm.Genres = genres
+	} else {
+		log.Printf("web: library genres: %v", err) // select degrades to empty
 	}
 	vm.BackHere = "/library"
 	if rq := r.URL.RawQuery; rq != "" {
@@ -184,6 +216,23 @@ func (s *Server) fetchLibrary(r *http.Request) (libraryVM, error) {
 		f := false
 		opts.Hidden = &f
 	}
+	switch descFilter {
+	case "yes":
+		t := true
+		opts.HasDescription = &t
+	case "no":
+		f := false
+		opts.HasDescription = &f
+	}
+	switch coverFilter {
+	case "yes":
+		t := true
+		opts.HasCover = &t
+	case "no":
+		f := false
+		opts.HasCover = &f
+	}
+	opts.Genre = genre
 	pg, err := s.st.ListGames(opts)
 	if err != nil {
 		return vm, err
@@ -223,10 +272,10 @@ func (s *Server) fetchLibrary(r *http.Request) (libraryVM, error) {
 		})
 	}
 	if page > 1 {
-		vm.PrevURL = libURL(q, system, state, sort, hiddenFilter, page-1)
+		vm.PrevURL = libURL(q, system, state, sort, hiddenFilter, descFilter, coverFilter, genre, page-1)
 	}
 	if page < totalPages {
-		vm.NextURL = libURL(q, system, state, sort, hiddenFilter, page+1)
+		vm.NextURL = libURL(q, system, state, sort, hiddenFilter, descFilter, coverFilter, genre, page+1)
 	}
 	return vm, nil
 }
