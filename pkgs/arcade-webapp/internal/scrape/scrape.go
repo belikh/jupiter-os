@@ -672,11 +672,6 @@ func (d *Driver) runPass(systemKey, name string, args []string, sec *secrets) er
 	cmd := exec.CommandContext(ctx, d.BinPath, args...)
 	// Skyscraper is Qt6; a headless service cannot construct a platform
 	// surface without offscreen (cartridge-scrape.sh's unit environment).
-	if _, err := exec.LookPath("7z"); err != nil {
-		logf("%s: 7z not in PATH=%q: %v", systemKey, os.Getenv("PATH"), err)
-	} else {
-		logf("%s: 7z found via PATH=%q", systemKey, os.Getenv("PATH"))
-	}
 	cmd.Env = append(os.Environ(), "QT_QPA_PLATFORM=offscreen")
 	out, err := cmd.CombinedOutput()
 	tail := strings.TrimSpace(sec.apply(string(out))) // THE redaction choke point

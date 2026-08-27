@@ -430,7 +430,10 @@ in
     systemd.services.jupiter-arcade-webapp = {
       description = "jupiterOS Arcade pipeline webapp (scanner + dashboard)";
       wantedBy = [ "multi-user.target" ];
-      path = [ pkgs.p7zip ];
+      path = [
+        pkgs.p7zip
+        pkgs.which
+      ];
       after = [
         "network.target"
         # tmpfiles must have created the state dir before this unit's
