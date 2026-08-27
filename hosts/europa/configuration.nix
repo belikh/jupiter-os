@@ -450,6 +450,20 @@
         hostname = "rpc.jupiter.au";
         port = 6800;
       }
+      {
+        # suno-web (Suno archive browser UI, this host :8093 —
+        # modules/services/suno-web.nix). Overrides the earlier LAN-only
+        # stance (io, 2026-08-27): the library is now playable away from
+        # home, with the trade-off accepted knowingly — the masters are
+        # 35-45MB WAVs, so remote seeks/streaming are slow and heavy (no
+        # transcoding layer exists). The UI has NO AUTH: anyone who finds
+        # this hostname can browse, stream, and edit playlists. Put
+        # Cloudflare Access (Zero Trust → Access → Applications, hostname
+        # policy on suno.jupiter.au — dashboard-side, no repo change)
+        # in front of it before sharing the URL around.
+        hostname = "suno.jupiter.au";
+        port = 8093;
+      }
     ];
   };
   services.harmonia.cache.enable = true;
@@ -540,12 +554,13 @@
   # key) before this activates.
   jupiter.services.sunoBackup.enable = true;
 
-  # Browser UI over that archive, on the LAN at http://10.1.1.2:8093. Indexes
-  # the archive's meta.json files in memory (~40MB for the current ~18.7k
-  # clips) and refreshes every 5m to pick up whatever the backfill has just
-  # pulled down. LAN-only on purpose: it streams the 35-45MB lossless masters
-  # directly, so putting it behind the Cloudflare Tunnel would want on-the-fly
-  # transcoding first.
+  # Browser UI over that archive. Two doors: direct LAN at
+  # http://10.1.1.2:8093 (the fast path — streams the 35-45MB lossless
+  # masters at wire speed) and the Cloudflare Tunnel at suno.jupiter.au
+  # (extraIngress above) for remote playback, added 2026-08-27 after
+  # originally shipping LAN-only. Indexes the archive's meta.json files in
+  # memory (~40MB for the current ~18.7k clips) and refreshes every 5m to
+  # pick up whatever the backfill has just pulled down.
   jupiter.services.sunoWeb = {
     enable = true;
     openFirewall = true;

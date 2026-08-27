@@ -79,10 +79,14 @@ in
       type = lib.types.bool;
       default = false;
       description = ''
-        Open `port` in the firewall for the trusted LAN. Left off by default:
-        the WAV masters are 35-45MB each, so this is a LAN-first service —
-        exposing it through the Cloudflare Tunnel would want on-the-fly
-        transcoding first.
+        Open `port` in the firewall for the trusted LAN — the fast path:
+        the WAV masters are 35-45MB each, so direct-LAN playback (and its
+        Range seeks) stay quick, while the public Cloudflare Tunnel route
+        (suno.jupiter.au via europa's cloudflareTunnel.extraIngress, added
+        2026-08-27 after this service originally shipped LAN-only) pays
+        edge egress for every seek of the same masters. Both doors serve
+        the same unauthenticated UI — see the ingress note in
+        hosts/europa/configuration.nix before sharing the hostname.
       '';
     };
   };
