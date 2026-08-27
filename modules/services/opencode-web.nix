@@ -51,6 +51,24 @@ in
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
       wantedBy = [ "multi-user.target" ];
+      # opencode spawns arbitrary user tools (git, bash, nix, ...) for its
+      # bash tool. Without this the unit inherits systemd's minimal default
+      # PATH (coreutils/grep/sed store paths only) and even `git` is
+      # unrunnable (observed live 2026-08-28 on the serve process). Mirror
+      # io's interactive login PATH — the NixOS symlink farms are stable
+      # across switches, so anything in systemPackages / per-user packages
+      # stays visible without touching this module.
+      environment.PATH = lib.mkForce (
+        lib.concatStringsSep ":" [
+          "/run/wrappers/bin"
+          "/home/io/.nix-profile/bin"
+          "/nix/profile/bin"
+          "/home/io/.local/state/nix/profile/bin"
+          "/etc/profiles/per-user/io/bin"
+          "/nix/var/nix/profiles/default/bin"
+          "/run/current-system/sw/bin"
+        ]
+      );
       serviceConfig = {
         Type = "simple";
         User = "io";
