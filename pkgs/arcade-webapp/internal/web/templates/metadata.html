@@ -11,8 +11,9 @@
   <title>jupiterOS Arcade — {{.Meta.Title}}</title>
   <link rel="stylesheet" href="/static/app.css">
   <script src="/static/htmx.min.js"></script>
+  <script src="/static/idiomorph.min.js"></script>
 </head>
-<body>
+<body hx-ext="morph">
   {{template "topbar" .Meta}}
   <main class="wrap">
     {{template "partial-metadata" .}}
@@ -24,7 +25,7 @@
 
 {{define "partial-metadata"}}
 <div id="metadata-panel"
-     {{if .State.Running}}hx-get="/partials/metadata" hx-trigger="every 3s" {{end}}hx-swap="outerHTML"
+     {{if .State.Running}}hx-get="/partials/metadata" hx-trigger="every 3s" {{end}}hx-swap="morph:innerHTML"
      role="region" aria-label="metadata coverage and scraping" aria-live="polite"
      {{if .Configured}}data-scrape="ok"{{else}}data-scrape="unconfigured"{{end}}>
 
@@ -65,7 +66,7 @@
       successful pass. One job at a time: a second submit while one runs is refused.</p>
 
     <div class="actions">
-      <button class="primary" hx-post="/metadata/scrape" hx-target="#metadata-panel" hx-swap="outerHTML"
+      <button class="primary" hx-post="/metadata/scrape" hx-target="#metadata-panel" hx-swap="morph:innerHTML"
               {{if or (not .Configured) .State.Running}}disabled{{end}}>
         {{if .State.Running}}scraping…{{else}}Scrape all{{end}}</button>
     </div>
@@ -122,7 +123,7 @@
           </td>
           <td>
             <button class="mini primary" hx-post="/systems/{{.Key}}/scrape"
-              hx-target="#metadata-panel" hx-swap="outerHTML"
+              hx-target="#metadata-panel" hx-swap="morph:innerHTML"
               {{if not .CanScrape}}disabled{{end}}
               title="run the three-pass Skyscraper flow for this system now">scrape</button>
           </td>
@@ -159,7 +160,7 @@
       kiosks never see a half-written tree.</p>
 
     <div class="actions">
-      <button class="primary" hx-post="/generate" hx-target="#metadata-panel" hx-swap="outerHTML"
+      <button class="primary" hx-post="/generate" hx-target="#metadata-panel" hx-swap="morph:innerHTML"
               title="regenerate every populated system's metadata.pegasus.txt now">
         Regenerate</button>
     </div>

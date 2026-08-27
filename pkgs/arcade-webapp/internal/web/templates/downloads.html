@@ -11,8 +11,9 @@
   <title>jupiterOS Arcade — {{.Meta.Title}}</title>
   <link rel="stylesheet" href="/static/app.css">
   <script src="/static/htmx.min.js"></script>
+  <script src="/static/idiomorph.min.js"></script>
 </head>
-<body>
+<body hx-ext="morph">
   {{template "topbar" .Meta}}
   <main class="wrap">
     {{template "partial-downloads" .}}

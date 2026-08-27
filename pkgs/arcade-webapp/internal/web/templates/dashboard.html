@@ -5,7 +5,7 @@
       then the per-system card wall (polled). */ -}}
 {{define "content"}}
 {{template "partial-status" .}}
-<div id="downloads-summary" hx-get="/partials/downloads-summary" hx-trigger="load, every 5s" hx-swap="outerHTML"
+<div id="downloads-summary" hx-get="/partials/downloads-summary" hx-trigger="load, every 5s" hx-swap="morph:innerHTML"
      role="region" aria-label="download queue summary" aria-live="polite">
   <div class="status-strip"><div class="stat"><span class="k">downloads</span><span class="v">…</span></div></div>
 </div>

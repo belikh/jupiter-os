@@ -13,8 +13,9 @@
   <title>jupiterOS Arcade — {{.Meta.Title}}</title>
   <link rel="stylesheet" href="/static/app.css">
   <script src="/static/htmx.min.js"></script>
+  <script src="/static/idiomorph.min.js"></script>
 </head>
-<body>
+<body hx-ext="morph">
   {{template "topbar" .Meta}}
   <main class="wrap">
     <p><a class="back-link" href="{{.BackHref}}">‹ back to library</a></p>
@@ -65,11 +66,11 @@
 <div id="game-actions" class="actions">
   {{if .RegenAlert}}<div class="action-error" role="status" style="flex-basis: 100%;">{{.RegenAlert}}</div>{{end}}
   <button class="mini" hx-post="/systems/{{.SystemKey}}/games/{{.GameID}}/hide"
-    hx-target="#game-actions" hx-swap="outerHTML"
+    hx-target="#game-actions" hx-swap="morph:innerHTML"
     title="{{if .Hidden}}show this game in the library and the launcher DB{{else}}hide this game from the library and the launcher DB{{end}}">
     {{if .Hidden}}Show{{else}}Hide{{end}}</button>
   <button class="mini primary" hx-post="/systems/{{.SystemKey}}/games/{{.GameID}}/scrape"
-    hx-target="#game-actions" hx-swap="outerHTML"
+    hx-target="#game-actions" hx-swap="morph:innerHTML"
     {{if not .CanScrape}}disabled{{end}}
     title="re-run Skyscraper for this ROM now (gather passes windowed to it)">
     {{if .Running}}scraping…{{else if .CanScrape}}re-scrape{{else}}re-scrape (unconfigured){{end}}</button>

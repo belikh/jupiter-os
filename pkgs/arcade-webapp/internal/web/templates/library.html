@@ -12,14 +12,15 @@
   <title>jupiterOS Arcade — {{.Meta.Title}}</title>
   <link rel="stylesheet" href="/static/app.css">
   <script src="/static/htmx.min.js"></script>
+  <script src="/static/idiomorph.min.js"></script>
 </head>
-<body>
+<body hx-ext="morph">
   {{template "topbar" .Meta}}
   <main class="wrap">
     <section>
       <h2>Library</h2>
       <form class="filter-bar" method="get" action="/library" aria-label="library filters"
-            hx-get="/partials/library" hx-target="#library-grid" hx-swap="outerHTML"
+            hx-get="/partials/library" hx-target="#library-grid" hx-swap="morph:innerHTML"
             hx-trigger="input changed delay:300ms, change delay:300ms">
         <input type="search" name="q" value="{{.Q}}" placeholder="search titles…" aria-label="search titles">
         <select name="system" aria-label="system">

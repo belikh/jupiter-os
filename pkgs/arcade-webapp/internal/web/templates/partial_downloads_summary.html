@@ -6,7 +6,7 @@
       are announced. */ -}}
 {{define "partial-downloads-summary"}}
 {{if .Configured}}
-<div id="downloads-summary" hx-get="/partials/downloads-summary" hx-trigger="every 5s" hx-swap="outerHTML"
+<div id="downloads-summary" hx-get="/partials/downloads-summary" hx-trigger="every 5s" hx-swap="morph:innerHTML"
      role="region" aria-label="download queue summary" aria-live="polite"
      data-aria2="{{if .Reachable}}ok{{else}}unreachable{{end}}">
   <div class="status-strip">

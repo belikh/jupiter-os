@@ -932,7 +932,6 @@ func ApplyCacheEnrichment(st *store.Store, sys store.SystemRow, sysDir, cacheDir
 	return n, err
 }
 
-
 // size mirrors one inventory JSON per-system entry.
 type size struct {
 	Count     int64 `json:"count"`

@@ -6,7 +6,7 @@
       announced. Unconfigured igir / DAT manager = state chips, never a
       500. */ -}}
 {{define "partial-verify"}}
-<div id="verify-panel" hx-get="/partials/verify" hx-trigger="every 2s" hx-swap="outerHTML"
+<div id="verify-panel" hx-get="/partials/verify" hx-trigger="every 2s" hx-swap="morph:innerHTML"
      role="region" aria-label="verify and DAT currency" aria-live="polite"
      {{if .Configured}}data-igir="ok"{{else}}data-igir="unconfigured"{{end}}>
 
@@ -49,10 +49,10 @@
       files present) skips; a missing DAT degrades to promote-unchecked, never a block.</p>
 
     <div class="actions">
-      <button class="primary" hx-post="/verify" hx-target="#verify-panel" hx-swap="outerHTML"
+      <button class="primary" hx-post="/verify" hx-target="#verify-panel" hx-swap="morph:innerHTML"
               {{if or (not .Configured) .Runner.Running}}disabled{{end}}>
         {{if .Runner.Running}}verifying…{{else}}Verify all{{end}}</button>
-      <button hx-post="/dats/refresh" hx-target="#verify-panel" hx-swap="outerHTML"
+      <button hx-post="/dats/refresh" hx-target="#verify-panel" hx-swap="morph:innerHTML"
               {{if .DATsRunning}}disabled{{end}}>
         {{if .DATsRunning}}fetching DATs…{{else}}Refresh all DATs{{end}}</button>
     </div>
@@ -78,7 +78,7 @@
             {{if .DATMapped}}
             {{if $.DATsConfigured}}
             <button class="mini" hx-post="/systems/{{.Key}}/dat-refresh"
-              hx-target="#verify-panel" hx-swap="outerHTML"
+              hx-target="#verify-panel" hx-swap="morph:innerHTML"
               title="fetch this system's McLean 1G1R DAT now">↻ dat</button>
             {{end}}
             {{else}}<span class="sub" title="no McLean DAT exists for this system — verify degrades to promote-unchecked">unmapped</span>{{end}}
@@ -105,12 +105,12 @@
           <td>{{if .HasReport}}<a href="/verify/reports/{{.Key}}.csv">csv</a>{{else}}<span class="sub">—</span>{{end}}</td>
           <td>
             <button class="mini primary" hx-post="/systems/{{.Key}}/verify"
-              hx-target="#verify-panel" hx-swap="outerHTML"
+              hx-target="#verify-panel" hx-swap="morph:innerHTML"
               {{if not .CanVerify}}disabled{{end}}
               title="igir copy test report: verify + promote this system now">verify</button>
             {{if .HiddenCount}}
             <button class="mini" hx-post="/systems/{{.Key}}/unhide-all"
-              hx-target="#verify-panel" hx-swap="outerHTML"
+              hx-target="#verify-panel" hx-swap="morph:innerHTML"
               title="show every hidden game of this system again (regenerates the launcher DB)">show {{.HiddenCount}} hidden</button>
             {{end}}
           </td>
