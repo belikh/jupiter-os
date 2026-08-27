@@ -4,7 +4,7 @@
      cards would bury the signal). Polled every 10s; id="system-cards"
      is the hx target. */ -}}
 {{define "partial-systems"}}
-<div id="system-cards" hx-get="/partials/systems" hx-trigger="every 10s" hx-swap="morph:innerHTML"
+<div id="system-cards" hx-get="/partials/systems" hx-trigger="every 10s" hx-swap="morph:outerHTML"
      role="region" aria-label="system cards" aria-live="polite">
   <div class="cards">
     {{range .Cards}}

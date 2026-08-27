@@ -101,10 +101,10 @@
 {{define "game-actions"}}
 <div id="game-actions" class="actions">
   {{if .RegenAlert}}<div class="action-error" role="status" style="flex-basis: 100%;">{{.RegenAlert}}</div>{{end}}
-  <button class="mini" hx-post="/systems/{{.SystemKey}}/games/{{.GameID}}/hide" hx-target="#game-actions" hx-swap="morph:innerHTML" hx-indicator="this" hx-disabled-elt="this"
+  <button class="mini" hx-post="/systems/{{.SystemKey}}/games/{{.GameID}}/hide" hx-target="#game-actions" hx-swap="morph:outerHTML" hx-indicator="this" hx-disabled-elt="this"
     title="{{if .Hidden}}show this game in the library and the launcher DB{{else}}hide this game from the library and the launcher DB{{end}}">
     <span>{{if .Hidden}}Show{{else}}Hide{{end}}</span> <span class="htmx-indicator spinner" aria-hidden="true"></span></button>
-  <button class="mini primary" hx-post="/systems/{{.SystemKey}}/games/{{.GameID}}/scrape" hx-target="#game-actions" hx-swap="morph:innerHTML" hx-indicator="this" hx-disabled-elt="this"
+  <button class="mini primary" hx-post="/systems/{{.SystemKey}}/games/{{.GameID}}/scrape" hx-target="#game-actions" hx-swap="morph:outerHTML" hx-indicator="this" hx-disabled-elt="this"
     {{if not .CanScrape}}disabled{{end}}
     title="re-run Skyscraper for this ROM now (gather passes windowed to it)">
     <span>{{if .Running}}scraping…{{else if .CanScrape}}re-scrape{{else}}re-scrape (unconfigured){{end}}</span> <span class="htmx-indicator spinner" aria-hidden="true"></span></button>

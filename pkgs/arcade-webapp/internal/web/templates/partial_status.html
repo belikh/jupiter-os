@@ -1,8 +1,12 @@
 {{/* Status fragment: scan state, rescan button, totals, incoming staging,
-     recent runs. Polled every 10s; the rescan POST returns this same
-     fragment refreshed. id="status-panel" is the hx target. */ -}}
+     recent runs — ALL inside the single #status-panel root. The response
+     IS the panel element, so every swap against it must be outer-style
+     (morph:outerHTML): an inner-style swap would nest a copy of the panel
+     inside itself on every tick (duplicate ids, self-amplifying triggers,
+     vanishing DOM). Polled every 10s; the rescan POST returns this same
+     fragment refreshed. */ -}}
 {{define "partial-status"}}
-<div id="status-panel" hx-get="/partials/status" hx-trigger="every 10s" hx-swap="morph:innerHTML"
+<div id="status-panel" hx-get="/partials/status" hx-trigger="every 10s" hx-swap="morph:outerHTML"
      role="region" aria-label="pipeline status" aria-live="polite">
   <div class="status-strip">
     <div class="stat">
@@ -24,31 +28,31 @@
     <div class="stat"><span class="k">systems</span><span class="v">{{.Totals.ActiveSystems}} active / {{.Totals.Systems}}</span></div>
     <div class="stat"><span class="k">incoming</span><span class="v">{{.Incoming.Files}} files · {{.Incoming.BytesHuman}}</span></div>
     <span class="spacer"></span>
-    <button class="primary" hx-post="/rescan" hx-target="#status-panel" hx-swap="morph:innerHTML"
+    <button class="primary" hx-post="/rescan" hx-target="#status-panel" hx-swap="morph:outerHTML"
             hx-indicator="closest button" hx-disabled-elt="this"
             {{if .Scan.Running}}disabled{{end}}>
       <span>{{if .Scan.Running}}scanning&hellip;{{else}}Rescan{{end}}</span> <span class="htmx-indicator spinner" aria-hidden="true"></span>
     </button>
   </div>
-</div>
 
-<section>
-  <h2>Recent runs</h2>
-  {{if .Runs}}
-  <table class="runs" aria-live="polite">
-    <tr><th>kind</th><th>started</th><th>duration</th><th>status</th><th>detail</th></tr>
-    {{range .Runs}}
-    <tr id="run-{{.ID}}" data-run-id="{{.ID}}">
-      <td>{{.Kind}}</td>
-      <td title="{{.StartedAt}}">{{.StartedAt}}</td>
-      <td>{{runDuration .}}</td>
-      <td>{{runPill .Status}}</td>
-      <td class="detail">{{runDetail .}}</td>
-    </tr>
+  <section>
+    <h2>Recent runs</h2>
+    {{if .Runs}}
+    <table class="runs" aria-live="polite">
+      <tr><th>kind</th><th>started</th><th>duration</th><th>status</th><th>detail</th></tr>
+      {{range .Runs}}
+      <tr id="run-{{.ID}}" data-run-id="{{.ID}}">
+        <td>{{.Kind}}</td>
+        <td title="{{.StartedAt}}">{{.StartedAt}}</td>
+        <td>{{runDuration .}}</td>
+        <td>{{runPill .Status}}</td>
+        <td class="detail">{{runDetail .}}</td>
+      </tr>
+      {{end}}
+    </table>
+    {{else}}
+    <p class="sub">no runs recorded yet — the startup scan may still be in flight.</p>
     {{end}}
-  </table>
-  {{else}}
-  <p class="sub">no runs recorded yet — the startup scan may still be in flight.</p>
-  {{end}}
-</section>
+  </section>
+</div>
 {{end}}

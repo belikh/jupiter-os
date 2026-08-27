@@ -134,8 +134,8 @@ func TestRecentRunsCappedAndDeduped(t *testing.T) {
 			t.Errorf("run id %s appears %d times, want deduped", id, n)
 		}
 	}
-	if !strings.Contains(body, `hx-swap="morph:innerHTML"`) {
-		t.Error("dashboard polling must use morph:innerHTML")
+	if !strings.Contains(body, `hx-swap="morph:outerHTML"`) {
+		t.Error("dashboard polling must use morph:outerHTML")
 	}
 }
 

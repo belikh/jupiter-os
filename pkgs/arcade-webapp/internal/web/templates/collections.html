@@ -66,7 +66,7 @@
       the log lives on the Metadata page).</p>
 
     <form class="filter-bar" aria-label="create a collection"
-          hx-post="/collections/create" hx-target="#collections-panel" hx-swap="morph:innerHTML" hx-indicator="closest form" hx-disabled-elt="closest form">
+          hx-post="/collections/create" hx-target="#collections-panel" hx-swap="morph:outerHTML" hx-indicator="closest form" hx-disabled-elt="closest form">
       <input type="text" name="name" required maxlength="80" placeholder="collection name…" aria-label="collection name">
       <input type="text" name="summary" maxlength="200" placeholder="summary (optional)" aria-label="collection summary">
       <button type="submit"><span>create</span> <span class="htmx-indicator spinner" aria-hidden="true"></span></button>
@@ -85,7 +85,7 @@
           <td><code class="sub">{{.Shortname}}</code></td>
           <td class="num">{{.Games}}{{if .UpdatedAgo}} <span class="sub" title="last edited">{{.UpdatedAgo}}</span>{{end}}</td>
           <td>
-            <button class="mini danger" hx-post="/collections/{{.ID}}/delete" hx-target="#collections-panel" hx-swap="morph:innerHTML" hx-indicator="this" hx-disabled-elt="this" hx-confirm="Delete “{{.Name}}”?"
+            <button class="mini danger" hx-post="/collections/{{.ID}}/delete" hx-target="#collections-panel" hx-swap="morph:outerHTML" hx-indicator="this" hx-disabled-elt="this" hx-confirm="Delete “{{.Name}}”?"
               title="delete this collection (its members stay in the library)"><span>delete</span> <span class="htmx-indicator spinner" aria-hidden="true"></span></button>
           </td>
         </tr>
@@ -170,7 +170,7 @@
       from generation until fixed.</p>
 
     <form class="filter-bar" aria-label="rename collection"
-          hx-post="/collections/{{.Collection.ID}}/update" hx-target="#collection-panel" hx-swap="morph:innerHTML" hx-indicator="closest form" hx-disabled-elt="closest form">
+          hx-post="/collections/{{.Collection.ID}}/update" hx-target="#collection-panel" hx-swap="morph:outerHTML" hx-indicator="closest form" hx-disabled-elt="closest form">
       <input type="text" name="name" required maxlength="80" value="{{.Collection.Name}}" aria-label="collection name">
       <input type="text" name="summary" maxlength="200" value="{{.Collection.Summary}}" placeholder="summary (optional)" aria-label="collection summary">
       <button type="submit"><span>save</span> <span class="htmx-indicator spinner" aria-hidden="true"></span></button>
@@ -187,7 +187,7 @@
           <td>{{.Title}}{{if .Hidden}} <span class="chip hidden-chip" title="hidden games are excluded from the generated launcher DB">hidden</span>{{else if .Pending}} <span class="chip pending-chip" title="file incomplete (completeness sniff) — lands in the system's (Pending) collection, not launchable yet">pending</span>{{end}}</td>
           <td><span class="chip">{{.SystemKey}}</span></td>
           <td>
-            <button class="mini danger" hx-post="/collections/{{$.Collection.ID}}/remove?system={{.SystemKey}}&game={{.GameID}}" hx-target="#collection-panel" hx-swap="morph:innerHTML" hx-indicator="this" hx-disabled-elt="this"
+            <button class="mini danger" hx-post="/collections/{{$.Collection.ID}}/remove?system={{.SystemKey}}&game={{.GameID}}" hx-target="#collection-panel" hx-swap="morph:outerHTML" hx-indicator="this" hx-disabled-elt="this"
               title="remove from this collection (stays in the library)"><span>remove</span> <span class="htmx-indicator spinner" aria-hidden="true"></span></button>
           </td>
         </tr>
@@ -199,7 +199,7 @@
     {{end}}
 
     <form class="filter-bar" method="get" action="/collections/{{.Collection.ID}}" aria-label="add games by search"
-          hx-get="/collections/{{.Collection.ID}}" hx-target="#collection-panel" hx-swap="morph:innerHTML"
+          hx-get="/collections/{{.Collection.ID}}" hx-target="#collection-panel" hx-swap="morph:outerHTML"
           hx-trigger="input changed delay:300ms, change delay:300ms">
       <input type="search" name="q" value="{{.Q}}" placeholder="search titles to add…" aria-label="search titles to add">
       <noscript><button type="submit">search</button></noscript>
@@ -210,7 +210,7 @@
       {{range .Results}}
       <li data-candidate="{{.GameID}}">
         {{.Title}} <span class="chip">{{.SystemKey}}</span>
-        <button class="mini primary" hx-post="/collections/{{$.Collection.ID}}/add?system={{.SystemKey}}&game={{.GameID}}" hx-target="#collection-panel" hx-swap="morph:innerHTML" hx-indicator="this" hx-disabled-elt="this"
+        <button class="mini primary" hx-post="/collections/{{$.Collection.ID}}/add?system={{.SystemKey}}&game={{.GameID}}" hx-target="#collection-panel" hx-swap="morph:outerHTML" hx-indicator="this" hx-disabled-elt="this"
           title="add to this collection"><span>add</span> <span class="htmx-indicator spinner" aria-hidden="true"></span></button>
       </li>
       {{end}}
