@@ -53,6 +53,11 @@ type Server struct {
 	// Game art root (P4): Skyscraper-cache media dir, "" = SVG posters
 	// only. See art.go.
 	artDir string
+	// Skyscraper cache dir for cover fallback (P4 follow-up): when
+	// artDir misses, covers are served from
+	// <cacheDir>/<system>/covers/<source>/<id>.* — the same cache the
+	// scanner reads for coverage. "" = no fallback, SVG only.
+	cacheDir string
 	// Metadata engine (P5): nil = not configured. See metadata.go.
 	sc *scrape.Driver
 	// Launcher-DB generator (P6): nil = not configured. See generate.go.

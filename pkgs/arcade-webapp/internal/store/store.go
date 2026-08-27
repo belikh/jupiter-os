@@ -1617,13 +1617,18 @@ type GameSummary struct {
 	// imports); "" for catalogue rows — consumers derive from RelPath
 	// then (see web.displayTitle).
 	Title string
+	// Description is the ingested game prose (P6, 4000 runes via
+	// ApplyCacheEnrichment). "" while unscraped.
+	Description string
 }
 
 // GameDetail is GetGame's shape: one game joined with its owning system.
 // The P5 fields (HasDescription/HasCover, CRC32/SHA1) carry the metadata
 // engine's best-effort cache flags and the igir-ingested checksums —
 // zero-value ("unscraped") until a scrape run / checksum-bearing report
-// fills them.
+// fills them. The Description prose lives on the embedded GameSummary
+// (games.description, 4000 runes via ApplyCacheEnrichment) — the flag is
+// a separate presence hint, the text is authoritative.
 type GameDetail struct {
 	GameSummary
 	System         SystemRow
@@ -1782,7 +1787,7 @@ func (s *Store) ListGames(opts GameListOpts) (GamePage, error) {
 
 	query := `SELECT g.id, g.system_key, g.rel_path, g.size_bytes,
 			g.first_seen_at, g.last_seen_at, g.hidden, g.verify_state,
-			COALESCE(g.title, '')
+			COALESCE(g.title, ''), COALESCE(g.description, '')
 		FROM games g WHERE ` + cond + ` ORDER BY ` + order
 	qargs := args
 	if opts.Limit > 0 {
@@ -1802,7 +1807,7 @@ func (s *Store) ListGames(opts GameListOpts) (GamePage, error) {
 		var g GameSummary
 		var hidden int
 		if err := rows.Scan(&g.ID, &g.SystemKey, &g.RelPath, &g.SizeBytes,
-			&g.FirstSeenAt, &g.LastSeenAt, &hidden, &g.VerifyState, &g.Title); err != nil {
+			&g.FirstSeenAt, &g.LastSeenAt, &hidden, &g.VerifyState, &g.Title, &g.Description); err != nil {
 			return GamePage{}, err
 		}
 		g.Hidden = hidden != 0
@@ -1839,12 +1844,13 @@ func (s *Store) GetGame(systemKey string, id int64) (*GameDetail, error) {
 		       g.hidden, g.verify_state, COALESCE(g.title, ''),
 		       COALESCE(g.has_description, 0), COALESCE(g.has_cover, 0),
 		       COALESCE(g.crc32, ''), COALESCE(g.sha1, ''),
+		       COALESCE(g.description, ''),
 		       s.key, s.collection, s.bucket, s.core, s.emulator, s.sky_handle, s.torrent, s.extensions, s.sort_order, s.source
 		FROM games g JOIN systems s ON s.key = g.system_key
 		WHERE g.system_key = ? AND g.id = ?`, systemKey, id).
 		Scan(&d.ID, &d.SystemKey, &d.RelPath, &d.SizeBytes, &d.FirstSeenAt, &d.LastSeenAt,
 			&hidden, &d.VerifyState, &d.Title,
-			&desc, &cover, &d.CRC32, &d.SHA1,
+			&desc, &cover, &d.CRC32, &d.SHA1, &d.Description,
 			&d.System.Key, &d.System.Collection, &d.System.Bucket, &d.System.Core,
 			&d.System.Emulator, &d.System.SkyHandle, &d.System.Torrent,
 			&d.System.Extensions, &d.System.SortOrder, &d.System.Source)
@@ -2227,4 +2233,27 @@ func (s *Store) GameSampleDescription(systemKey string) (string, error) {
 		return desc.String, nil
 	}
 	return "", nil
+}
+
+// CoverSamples returns up to limit game IDs for the system that have a
+// cover flag (has_cover=1), ordered by rel_path — the metadata page's
+// tiny cover strip. Empty when none.
+func (s *Store) CoverSamples(systemKey string, limit int) ([]int64, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	rows, err := s.db.Query(`SELECT id FROM games WHERE system_key=? AND has_cover=1 ORDER BY rel_path LIMIT ?`, systemKey, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	var out []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
 }

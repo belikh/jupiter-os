@@ -108,6 +108,7 @@
       </tr></thead>
       <tbody>
         {{range .Rows}}
+        {{$row := .}}
         <tr data-system="{{.Key}}" data-games="{{.Games}}" data-desc-pct="{{.DescPct}}" data-cover-pct="{{.CoverPct}}">
           <td>{{.Collection}} <span class="chip">{{.Key}}</span></td>
           <td>
@@ -126,6 +127,9 @@
                  title="cover-art coverage {{.CoverPct}}% ({{.Cover}} of {{.Games}})">
               <span style="width: {{.CoverPct}}%"></span>
             </div>
+            {{if .CoverSamples}}<div class="cover-strip">
+              {{range .CoverSamples}}<img src="/art/{{$row.Key}}/{{.}}" alt="" width="36" height="48" loading="lazy" decoding="async" class="cover-thumb">{{end}}
+            </div>{{end}}
             {{else}}<span class="sub">no roms</span>{{end}}
           </td>
           <td class="num">{{.CacheEntries}}{{if .RefreshedAgo}} <span class="sub" title="coverage last recomputed">{{.RefreshedAgo}}</span>{{end}}</td>

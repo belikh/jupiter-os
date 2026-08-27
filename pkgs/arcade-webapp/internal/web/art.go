@@ -24,12 +24,56 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/scanner"
 )
 
 // WithArt wires the Skyscraper-cache media root ("" = SVG posters only).
 // Read-only: the webapp never writes into the cache.
 func WithArt(dir string) Option {
 	return func(s *Server) { s.artDir = dir }
+}
+
+// WithCacheDir wires the Skyscraper resource cache dir for the cover
+// fallback ("" = no fallback, SVG only). Read-only: the webapp never
+// writes into the cache; it already reads it for coverage.
+func WithCacheDir(dir string) Option {
+	return func(s *Server) { s.cacheDir = dir }
+}
+
+// openSkyscraperCover looks for <cacheRoot>/<sys>/covers/<source>/<id>.*
+// where source is screenscraper or thegamesdb and ext is png/jpg/jpeg.
+// The id is the lowercase hex SHA1 the scanner keys on (CacheID). All
+// variable segments are sanitized; the joined path must stay under the
+// cache root.
+func openSkyscraperCover(cacheRoot, sys, id string) (*os.File, string, time.Time, bool) {
+	if sys == "" || sys == "." || sys == ".." || strings.ContainsAny(sys, `/\`) ||
+		id == "" || strings.ContainsAny(id, `/\`) {
+		return nil, "", time.Time{}, false
+	}
+	cleanRoot := filepath.Clean(cacheRoot)
+	for _, src := range []string{"screenscraper", "thegamesdb"} {
+		for _, ext := range []string{".png", ".jpg", ".jpeg"} {
+			cand := filepath.Join(cleanRoot, sys, "covers", src, id+ext)
+			clean := filepath.Clean(cand)
+			if clean != cand && !strings.HasPrefix(clean, cleanRoot+string(os.PathSeparator)) {
+				continue
+			}
+			if !strings.HasPrefix(clean, cleanRoot+string(os.PathSeparator)) && clean != cleanRoot {
+				continue
+			}
+			fi, err := os.Stat(clean)
+			if err != nil || fi.IsDir() {
+				continue
+			}
+			f, err := os.Open(clean)
+			if err != nil {
+				continue
+			}
+			return f, filepath.Base(clean), fi.ModTime(), true
+		}
+	}
+	return nil, "", time.Time{}, false
 }
 
 // svgEscaper escapes text interpolated into poster markup (text nodes and
@@ -198,6 +242,42 @@ func (s *Server) handleArt(w http.ResponseWriter, r *http.Request) {
 			defer f.Close() //nolint:errcheck // read-only
 			http.ServeContent(w, r, name, modtime, f)
 			return
+		}
+	}
+	if s.cacheDir != "" {
+		cacheID := g.SHA1
+		if cacheID == "" {
+			// Fallback: hash the file on disk (best-effort). The stored
+			// SHA1 is the scanner's CacheID; a missing SHA1 means the
+			// game was discovered before P6 or exceeds the hash cap — try
+			// hashing now so covers still resolve after a cache scrape.
+			root := s.gameRoots.forBucket(g.System.Bucket)
+			if root != "" {
+				p := filepath.Join(root, sys, g.RelPath)
+				if id, err := scanner.CacheID(p); err == nil {
+					cacheID = id
+				}
+			}
+		}
+		if cacheID != "" {
+			if cc, err := scanner.ReadCacheCoverage(filepath.Join(s.cacheDir, sys)); err == nil {
+				if _, ok := cc.CoverIDs[cacheID]; ok {
+					if f, name, modtime, ok := openSkyscraperCover(s.cacheDir, sys, cacheID); ok {
+						defer f.Close() //nolint:errcheck // read-only
+						http.ServeContent(w, r, name, modtime, f)
+						return
+					}
+				}
+			}
+			// Coverage miss or file absent still tries the file directly:
+			// a stale db.xml or a covers-only cache (no db) should not
+			// hide a present cover. This second probe costs one stat per
+			// source/ext (6 stats) only when coverage denied it.
+			if f, name, modtime, ok := openSkyscraperCover(s.cacheDir, sys, cacheID); ok {
+				defer f.Close() //nolint:errcheck // read-only
+				http.ServeContent(w, r, name, modtime, f)
+				return
+			}
 		}
 	}
 

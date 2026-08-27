@@ -108,6 +108,7 @@ type gameCardVM struct {
 	Hidden      bool
 	Href        string // detail route with back=<this library query>
 	ArtURL      string // /art/<system>/<id> (SVG poster or scraped cover)
+	Description string // truncated prose from games.description (4000 runes at ingest)
 }
 
 type libraryVM struct {
@@ -204,6 +205,10 @@ func (s *Server) fetchLibrary(r *http.Request) (libraryVM, error) {
 	vm.Total = pg.Total
 	vm.CountShown = len(pg.Games)
 	for _, g := range pg.Games {
+		desc := g.Description
+		if r := []rune(desc); len(r) > 160 {
+			desc = string(r[:159]) + "…"
+		}
 		vm.Games = append(vm.Games, gameCardVM{
 			ID:          g.ID,
 			SystemKey:   g.SystemKey,
@@ -213,7 +218,8 @@ func (s *Server) fetchLibrary(r *http.Request) (libraryVM, error) {
 			Hidden:      g.Hidden,
 			Href: fmt.Sprintf("/systems/%s/games/%d?back=%s",
 				g.SystemKey, g.ID, url.QueryEscape(vm.BackHere)),
-			ArtURL: fmt.Sprintf("/art/%s/%d", g.SystemKey, g.ID),
+			ArtURL:      fmt.Sprintf("/art/%s/%d", g.SystemKey, g.ID),
+			Description: desc,
 		})
 	}
 	if page > 1 {
@@ -318,6 +324,9 @@ type gameDetailVM struct {
 	// re-scrape button; hide/show stays a P7 affordance).
 	HasDescription bool
 	HasCover       bool
+	// Description is the ingested prose (4000 runes, via
+	// ApplyCacheEnrichment). Empty until scraped.
+	Description string
 	// P6 carry-in: the game file's SHA1 (scanner CacheID / igir ingest),
 	// rendered in the facts block; "" until the next scan or a
 	// checksum-bearing verify report fills it.
@@ -391,6 +400,7 @@ func (s *Server) handleGameDetail(w http.ResponseWriter, r *http.Request) {
 		Hidden:         g.Hidden,
 		HasDescription: g.HasDescription,
 		HasCover:       g.HasCover,
+		Description:    g.Description,
 		SHA1:           g.SHA1,
 		Actions:        s.fetchGameActions(g),
 		ArtURL:         fmt.Sprintf("/art/%s/%d", g.SystemKey, g.ID),

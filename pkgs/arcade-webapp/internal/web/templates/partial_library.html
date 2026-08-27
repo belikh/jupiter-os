@@ -13,6 +13,7 @@
       <img class="gcard-art" src="{{.ArtURL}}" alt="" width="240" height="320" loading="lazy" decoding="async">
       <span class="gcard-body">
         <span class="gcard-title" title="{{.Title}}">{{.Title}}</span>
+        {{if .Description}}<span class="gcard-desc">{{.Description}}</span>{{end}}
         <span class="gcard-meta">
           <span class="chip">{{.SystemKey}}</span>
           {{gamePill .VerifyState}}

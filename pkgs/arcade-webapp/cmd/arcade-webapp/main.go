@@ -174,6 +174,14 @@ func main() {
 	} else {
 		log.Printf("arcade-webapp: game art not configured (ARCADE_WEBAPP_ART_DIR empty) — SVG posters only")
 	}
+	// Skyscraper cache fallback for covers (PS1 1.5G demo: 790M covers
+	// live under <cacheDir>/<sys>/covers/<source>/<id>.* — no extra
+	// config). Wired unconditionally when the cache dir is known so
+	// /art/<system>/<id> serves real covers without manual ARCADE_WEBAPP_ART_DIR.
+	if cacheDir := envOr("ARCADE_WEBAPP_SKYSCRAPER_CACHE_DIR", ""); cacheDir != "" {
+		opts = append(opts, web.WithCacheDir(cacheDir))
+		log.Printf("arcade-webapp: cover cache fallback wired (%s)", cacheDir)
+	}
 
 	// Metadata engine (P5): the Skyscraper driver execs the binary the
 	// module hands us (ARCADE_WEBAPP_SKYSCRAPER_BIN), writing into the

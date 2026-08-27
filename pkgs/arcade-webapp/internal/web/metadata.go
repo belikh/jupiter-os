@@ -57,13 +57,14 @@ type metaRowVM struct {
 	RefreshedAgo      string // last coverage recompute, relative
 	// Last scrape attempt for this system (newest kind=scrape run that
 	// names it), plus the bounded run history with deltas.
-	LastOutcome string // "" never scraped
-	LastAgo     string
-	LastErr     string
-	SampleDesc  string // ingested description sample (first game with description)
-	Launchable  bool   // metadata.pegasus.txt has launch line (P6)
-	History     []metaPointVM
-	CanScrape   bool
+	LastOutcome  string // "" never scraped
+	LastAgo      string
+	LastErr      string
+	SampleDesc   string  // ingested description sample (first game with description)
+	Launchable   bool    // metadata.pegasus.txt has launch line (P6)
+	CoverSamples []int64 // up to 4 game IDs with cover for the thumbnail strip
+	History      []metaPointVM
+	CanScrape    bool
 }
 
 // metaPointVM is one history line: a run's outcome plus its delta
@@ -174,6 +175,9 @@ func (s *Server) fetchMetadata() metadataVM {
 		// Ingested metadata sample (first game's description) — shows the pipeline's real output, not just counts.
 		if sample, err := s.sampleDescription(r.Key); err == nil {
 			row.SampleDesc = sample
+		}
+		if samples, err := s.st.CoverSamples(r.Key, 4); err == nil {
+			row.CoverSamples = samples
 		}
 		row.Launchable = s.isLaunchable(r.Key, r.Bucket)
 		row.CanScrape = vm.Configured && !vm.State.Running

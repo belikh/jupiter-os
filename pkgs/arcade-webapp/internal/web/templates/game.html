@@ -52,6 +52,17 @@
           </span>
         </div>
         {{template "game-actions" .Actions}}
+        {{if .Description}}
+        <div class="game-description">
+          <h3 class="game-desc-head">Description</h3>
+          <p class="game-desc-body">{{.Description}}</p>
+        </div>
+        {{else}}
+        <div class="game-description empty">
+          <h3 class="game-desc-head">Description</h3>
+          <p class="sub">no description yet — run Scrape</p>
+        </div>
+        {{end}}
       </div>
     </div>
     {{template "foot"}}
