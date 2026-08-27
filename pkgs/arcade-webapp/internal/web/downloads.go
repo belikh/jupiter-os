@@ -391,7 +391,15 @@ func (s *Server) handlePartialDownloadsSummary(w http.ResponseWriter, r *http.Re
 // browser-originated mutation 403'd from day one; only header-toting
 // curls ever worked.)
 func hxRequestOK(r *http.Request) bool {
-	return r.Header.Get("HX-Request") != "" || r.Header.Get("X-HX-Request") != ""
+	if r.Header.Get("HX-Request") != "" || r.Header.Get("X-HX-Request") != "" {
+		return true
+	}
+	// A rejected mutation must be LOUD: the silent 403 here is exactly
+	// how the wrong-header bug hid for the app's entire life. Log every
+	// rejection with its endpoint so a browser/server header mismatch is
+	// diagnosable from the journal in minutes, not months.
+	log.Printf("web: rejected mutation %s %s from %s (no htmx request header)", r.Method, r.URL.Path, r.RemoteAddr)
+	return false
 }
 
 // handleAcquire submits one system's staged torrent to the daemon — the
