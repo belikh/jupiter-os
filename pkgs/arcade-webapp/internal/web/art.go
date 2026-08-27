@@ -42,10 +42,11 @@ func WithCacheDir(dir string) Option {
 }
 
 // openSkyscraperCover looks for <cacheRoot>/<sys>/covers/<source>/<id>.*
-// where source is screenscraper or thegamesdb and ext is png/jpg/jpeg.
-// The id is the lowercase hex SHA1 the scanner keys on (CacheID). All
-// variable segments are sanitized; the joined path must stay under the
-// cache root.
+// where source is screenscraper or thegamesdb and ext is png/jpg/jpeg
+// (or no extension — Skyscraper writes files as plain <id> with no suffix
+// on europa). The id is the lowercase hex SHA1 the scanner keys on
+// (CacheID). All variable segments are sanitized; the joined path must
+// stay under the cache root.
 func openSkyscraperCover(cacheRoot, sys, id string) (*os.File, string, time.Time, bool) {
 	if sys == "" || sys == "." || sys == ".." || strings.ContainsAny(sys, `/\`) ||
 		id == "" || strings.ContainsAny(id, `/\`) {
@@ -53,7 +54,7 @@ func openSkyscraperCover(cacheRoot, sys, id string) (*os.File, string, time.Time
 	}
 	cleanRoot := filepath.Clean(cacheRoot)
 	for _, src := range []string{"screenscraper", "thegamesdb"} {
-		for _, ext := range []string{".png", ".jpg", ".jpeg"} {
+		for _, ext := range []string{"", ".png", ".jpg", ".jpeg"} {
 			cand := filepath.Join(cleanRoot, sys, "covers", src, id+ext)
 			clean := filepath.Clean(cand)
 			if clean != cand && !strings.HasPrefix(clean, cleanRoot+string(os.PathSeparator)) {
