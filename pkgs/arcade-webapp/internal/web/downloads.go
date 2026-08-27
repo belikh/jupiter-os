@@ -379,13 +379,19 @@ func (s *Server) handlePartialDownloadsSummary(w http.ResponseWriter, r *http.Re
 	s.render(w, http.StatusOK, "partial-downloads-summary", sum)
 }
 
-// hxRequestOK is the CSRF posture for every mutating endpoint: htmx
-// always sends X-HX-Request on its requests, plain cross-site HTML form
-// posts cannot (closes the ADV-P1-07 carry-over; the service is LAN-only
-// and cookie-less, so a custom header is the proportionate defense — the
-// htmx-documented pattern).
+// hxRequestOK is the CSRF posture for every mutating endpoint. htmx
+// natively sends `HX-Request: true` on every request it makes; plain
+// cross-site HTML form posts cannot send either that header or any
+// custom one without a CORS preflight, so header presence is the
+// proportionate defense for a LAN-only, cookie-less service (closes the
+// ADV-P1-07 carry-over). The custom X-HX-Request stays accepted for
+// scripts and the historical tests — but the native header is the one
+// browsers actually carry. (The original P2 implementation checked ONLY
+// X-HX-Request on the belief that htmx sends it — it never did, so every
+// browser-originated mutation 403'd from day one; only header-toting
+// curls ever worked.)
 func hxRequestOK(r *http.Request) bool {
-	return r.Header.Get("X-HX-Request") != ""
+	return r.Header.Get("HX-Request") != "" || r.Header.Get("X-HX-Request") != ""
 }
 
 // handleAcquire submits one system's staged torrent to the daemon — the

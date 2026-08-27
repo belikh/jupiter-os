@@ -117,11 +117,18 @@ button.primary {
   box-shadow: 0 0 18px rgba(66,182,255,.18);
 }
 button.primary:hover { filter: brightness(1.05); }
-.htmx-request button, button.htmx-request { opacity: 0.6; }
+/* Request-in-flight affordances are scoped to the REQUESTING element.
+   Panel polls also set htmx-request on the polled panel itself, so an
+   unscoped descendant rule flashed/dimmed EVERY button in the panel on
+   every 2s/3s/10s tick (the all-buttons-spinner regression). Only the
+   pressed button itself, or buttons inside a submitting form, light up. */
+button.htmx-request,
+form.htmx-request button { opacity: 0.6; }
 button .htmx-indicator { display: none; margin-left: 0.4rem; }
 button.htmx-request .htmx-indicator { display: inline-block; }
 .htmx-indicator { display: none; }
-.htmx-request .htmx-indicator { display: inline-block; }
+form.htmx-request .htmx-indicator,
+.htmx-request.htmx-indicator { display: inline-block; }
 .spinner {
   display: inline-block; width: 1em; height: 1em;
   border: 2px solid currentColor; border-right-color: transparent;
