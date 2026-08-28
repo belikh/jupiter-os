@@ -1,0 +1,6 @@
+{"timestamp": "2026-08-28T08:38:47.155045", "pattern_type": "correction", "pattern_regex": "regex", "skill_name": "demo-skill", "confidence_level": "HIGH", "decision": "accept", "signal_content": "no, use Y not X", "modification": null}
+{"timestamp": "2026-08-28T08:38:55.482488", "pattern_type": "approval", "pattern_regex": "regex", "skill_name": "med-skill", "confidence_level": "MEDIUM", "decision": "accept", "signal_content": "", "modification": null}
+{"timestamp": "2026-08-28T08:39:32.609160", "pattern_type": "approval", "pattern_regex": "regex", "skill_name": "med-skill", "confidence_level": "MEDIUM", "decision": "skip", "signal_content": "", "modification": null}
+{"timestamp": "2026-08-28T08:39:32.609575", "pattern_type": "approval", "pattern_regex": "regex", "skill_name": "med-skill", "confidence_level": "MEDIUM", "decision": "accept", "signal_content": "", "modification": null}
+{"timestamp": "2026-08-28T08:40:05.972407", "pattern_type": "approval", "pattern_regex": "regex", "skill_name": "med-skill", "confidence_level": "MEDIUM", "decision": "skip", "signal_content": "", "modification": null}
+{"timestamp": "2026-08-28T08:40:26.535156", "pattern_type": "correction", "pattern_regex": "regex", "skill_name": "demo-skill", "confidence_level": "HIGH", "decision": "accept", "signal_content": "no, use Y not X", "modification": null}
