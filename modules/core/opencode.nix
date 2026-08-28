@@ -50,6 +50,13 @@ let
     All English prose produced in this session — including responses, comments, documentation, commit messages, and user-facing text — MUST use Australian English spelling. Examples: behaviour (not behavior), colour (not color), centre (not center), organisation (not organization), optimise (not optimize), prioritise, labour, travelled, defence (not defense), programme, analogue. Do not use American spellings. Code identifiers, external API names, and verbatim quotations are exempt.
   '';
 
+  githubProjectSkill = pkgs.fetchFromGitHub {
+    owner = "netresearch";
+    repo = "github-project-skill";
+    rev = "v2.17.0";
+    hash = "sha256-tUx89rf5hxoTp25MBdmMLUvB59vAbingERbKtRCeJB4=";
+  };
+
   # THE canonical config (see module header). Comments live here, not in
   # the JSON. The watcher key was schema-probed against 1.18.22
   # (`opencode debug config` drops unknown keys but resolves this one).
@@ -252,6 +259,20 @@ in
     # committed config always wins over edits made through the TUI.
     system.activationScripts.opencodeConfig = lib.stringAfter [ "users" ] ''
       install -D -m 0644 -o io -g users ${builtinConfig} /home/io/.config/opencode/opencode.json
+    '';
+
+    # Global skill: github-project (Netresearch) — repository setup, branch
+    # protection, issue hierarchies, auto-merge. Installed to both the
+    # universal ~/.agents/skills and the OpenCode-specific path so every
+    # session (regardless of discovery order) sees it. Pinned to v2.17.0.
+    system.activationScripts.githubProjectSkill = lib.stringAfter [ "users" ] ''
+      for dest in /home/io/.agents/skills/github-project /home/io/.config/opencode/skills/github-project; do
+        mkdir -p "$(dirname "$dest")"
+        rm -rf "$dest"
+        cp -r ${githubProjectSkill}/skills/github-project "$dest"
+        chown -R io:users "$dest"
+        chmod -R u+rw,go+r "$dest"
+      done
     '';
 
   };
