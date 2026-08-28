@@ -42,6 +42,14 @@
 let
   cfg = config.jupiter.core.opencode;
 
+  australianEnglish = " Use Australian English spelling in all prose, comments, documentation, and messages (behaviour, colour, organisation, centre, optimise, prioritise, labour, travelled, defence, programme, analogue — not American behavior, color, center, organization, optimize, etc.). Code identifiers, external API names, and verbatim quotations are exempt.";
+
+  australianEnglishInstructions = pkgs.writeText "australian-english.md" ''
+    # Language — Australian English
+
+    All English prose produced in this session — including responses, comments, documentation, commit messages, and user-facing text — MUST use Australian English spelling. Examples: behaviour (not behavior), colour (not color), centre (not center), organisation (not organization), optimise (not optimize), prioritise, labour, travelled, defence (not defense), programme, analogue. Do not use American spellings. Code identifiers, external API names, and verbatim quotations are exempt.
+  '';
+
   # THE canonical config (see module header). Comments live here, not in
   # the JSON. The watcher key was schema-probed against 1.18.22
   # (`opencode debug config` drops unknown keys but resolves this one).
@@ -73,6 +81,7 @@ let
       # build-agent thread on ~/.config/opencode). io accepts the tradeoff
       # on a serving host; git pushes are still reviewed post-hoc by io.
       permission = "allow";
+      instructions = [ "${australianEnglishInstructions}" ];
       # Explicit primary agents so the web UI's "Show agent Picker" actually
       # shows both Build and Plan. Without this, the new layout (v1.18.1+)
       # hides the toggle and only Plan appears. Build was being overridden
@@ -85,7 +94,9 @@ let
           mode = "all";
           hidden = false;
           description = "Build — full tool access for implementation";
-          prompt = "You are the build agent. You have full tool access to read, edit, and execute commands. Implement the requested changes directly.";
+          prompt =
+            "You are the build agent. You have full tool access to read, edit, and execute commands. Implement the requested changes directly."
+            + australianEnglish;
           permission = {
             edit = "allow";
             bash = "allow";
@@ -95,7 +106,9 @@ let
           mode = "primary";
           hidden = false;
           description = "Plan — read-only analysis and sequencing";
-          prompt = "You are the plan agent. You are read-only: analyze the codebase, sequence the work, and describe what you would do without making any file edits or running any bash commands. Put the plan in .opencode/plans/*.md if needed.";
+          prompt =
+            "You are the plan agent. You are read-only: analyze the codebase, sequence the work, and describe what you would do without making any file edits or running any bash commands. Put the plan in .opencode/plans/*.md if needed."
+            + australianEnglish;
           permission = {
             edit = "ask";
             bash = "ask";
@@ -105,7 +118,9 @@ let
           mode = "primary";
           hidden = false;
           description = "Code — full implementation (Build fallback)";
-          prompt = "You are the code agent. You have full tool access to read, edit, and execute commands. Implement the requested changes directly.";
+          prompt =
+            "You are the code agent. You have full tool access to read, edit, and execute commands. Implement the requested changes directly."
+            + australianEnglish;
           permission = {
             edit = "allow";
             bash = "allow";
