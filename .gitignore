@@ -29,3 +29,6 @@ scratchpad/
 tests/fixtures/arcade/incoming/
 tests/fixtures/arcade/verified/
 tests/fixtures/arcade/reports/
+
+# Reflect runtime logs (generated at runtime)
+.opencode/skills/reflect/.state/reflect_runs/
