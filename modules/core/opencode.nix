@@ -270,8 +270,12 @@ in
         mkdir -p "$(dirname "$dest")"
         rm -rf "$dest"
         cp -r ${githubProjectSkill}/skills/github-project "$dest"
+        # NixOS has no /bin/bash (only /run/current-system/sw/bin/bash and
+        # /usr/bin/env). Upstream verify script uses #!/bin/bash — patch it.
+        sed -i 's|#!/bin/bash|#!/usr/bin/env bash|' "$dest/scripts/verify-github-project.sh" || true
         chown -R io:users "$dest"
         chmod -R u+rw,go+r "$dest"
+        chmod +x "$dest/scripts/"*.sh 2>/dev/null || true
       done
     '';
 
