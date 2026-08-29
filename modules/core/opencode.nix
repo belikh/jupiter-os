@@ -39,6 +39,8 @@
 # settingsFile spelling all agree on glm-5.3, kimi-k2.7-code, minimax-m3.
 # groq rotated its catalog under us on 2026-08-26 — llama-3.1-8b-instant
 # vanished from this key's /models; title-gen now rides openai/gpt-oss-20b.
+# empero-free + tokenrouter added 2026-08-29; tokenrouter ids verified
+# against its live /v1/models (glm-5.3-free answered a probe chat).
 let
   cfg = config.jupiter.core.opencode;
 
@@ -191,6 +193,73 @@ let
             };
           };
         };
+        # Free community endpoint (key is the literal "free" — public, not a
+        # secret, so no sops entry). Catalogue swapped to GLM mid-migration
+        # 2026-08-29 ("switching the free endpoint to new models"); limits
+        # from Z.AI's published glm-5.3-flash spec (1M context / 128K out).
+        "empero-free" = {
+          npm = "@ai-sdk/openai-compatible";
+          name = "Empero Free";
+          options = {
+            baseURL = "https://free.empero.org/v1";
+            apiKey = "free";
+          };
+          models = {
+            "glm-5.3-flash" = {
+              limit = {
+                context = 1000000;
+                output = 131072;
+              };
+            };
+          };
+        };
+        # TokenRouter (api.tokenrouter.com) aggregator. Model ids verified
+        # against the live /v1/models catalogue 2026-08-29 (131 models;
+        # glm-5.3-free confirmed present and answering — it routes to
+        # upstream glm-5.3 with thinking forced on). Limits from vendor
+        # docs: Z.AI (glm-5.3/-flash 1M/128K), Qwen blog + OpenRouter
+        # (qwen3.8-max 1M/128K), Google Cloud (gemini-3.7-flash 1M/64K).
+        # kimi-k3 output cap is unpublished — deliberately unset, not
+        # guessed. The endpoint's /models carries no limit metadata.
+        tokenrouter = {
+          npm = "@ai-sdk/openai-compatible";
+          name = "TokenRouter";
+          options = {
+            baseURL = "https://api.tokenrouter.com/v1";
+            apiKey = "{env:TOKENROUTER_API_KEY}";
+          };
+          models = {
+            "z-ai/glm-5.3-free" = {
+              limit = {
+                context = 1000000;
+                output = 131072;
+              };
+            };
+            "z-ai/glm-5.3-flash" = {
+              limit = {
+                context = 1000000;
+                output = 131072;
+              };
+            };
+            # kimi-k3 output cap is unverifiable (vendor docs don't publish
+            # it; the account has $0 credit so the API won't even validate
+            # max_tokens) — and the config schema requires limit.context AND
+            # limit.output or neither, so no limit block at all.
+            "moonshotai/kimi-k3" = { };
+            "qwen/qwen3.8-max" = {
+              limit = {
+                context = 1000000;
+                output = 131072;
+              };
+            };
+            "google/gemini-3.7-flash" = {
+              limit = {
+                context = 1048576;
+                output = 65536;
+              };
+            };
+          };
+        };
       };
       mcp.cloudflare = {
         type = "remote";
@@ -215,6 +284,7 @@ let
     export GROQ_API_KEY="$(cat ${config.sops.secrets.groq_api_key.path})"
     export OPENCODE_API_KEY="$(sed -n 's/^OPENCODE_API_KEY=//p' ${config.sops.secrets.dsh_env.path})"
     export PARALLEL_API_KEY="$(sed -n 's/^PARALLEL_API_KEY=//p' ${config.sops.secrets.dsh_env.path})"
+    export TOKENROUTER_API_KEY="$(cat ${config.sops.secrets.tokenrouter_api_key.path})"
     export CLOUDFLARE_BROWSER_RUN_TOKEN="$(cat ${config.sops.secrets.cloudflare_browser_run_token.path})"
     export CF_ACCOUNT_ID="19f62c2ef7861336d274166233ba3a17"
     exec "$HOME/.opencode/bin/opencode" "$@"
@@ -252,6 +322,13 @@ in
     # Browser-lane prep (WP7-lite): random token generated blind into sops
     # (never displayed); consumed only when upstream issue #2 merges.
     sops.secrets.cloudflare_browser_run_token = {
+      owner = "io";
+      mode = "0400";
+    };
+
+    # TokenRouter aggregator key (api.tokenrouter.com) — provider block
+    # lives in builtinConfig under `tokenrouter`, {env:TOKENROUTER_API_KEY}.
+    sops.secrets.tokenrouter_api_key = {
       owner = "io";
       mode = "0400";
     };
