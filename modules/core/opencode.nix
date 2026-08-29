@@ -215,6 +215,10 @@ let
     export OPENCODE_API_KEY="$(sed -n 's/^OPENCODE_API_KEY=//p' ${config.sops.secrets.dsh_env.path})"
     export CLOUDFLARE_BROWSER_RUN_TOKEN="$(cat ${config.sops.secrets.cloudflare_browser_run_token.path})"
     export CF_ACCOUNT_ID="19f62c2ef7861336d274166233ba3a17"
+    # Parallel (parallel-search / parallel-fetch MCP tools + hyperresearch's
+    # parallel lane) authenticates from this env var; without it every call
+    # dies before reaching the network (observed 2026-08-29).
+    export PARALLEL_API_KEY="$(cat ${config.sops.secrets.parallel_api_key.path})"
     exec "$HOME/.opencode/bin/opencode" "$@"
   '';
 in
@@ -250,6 +254,13 @@ in
     # Browser-lane prep (WP7-lite): random token generated blind into sops
     # (never displayed); consumed only when upstream issue #2 merges.
     sops.secrets.cloudflare_browser_run_token = {
+      owner = "io";
+      mode = "0400";
+    };
+
+    # Parallel API key — consumed by the wrapper export above (opencode
+    # parallel-search/fetch tools + hyperresearch parallel lane).
+    sops.secrets.parallel_api_key = {
       owner = "io";
       mode = "0400";
     };
