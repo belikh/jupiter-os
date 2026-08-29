@@ -265,6 +265,17 @@ let
         type = "remote";
         url = "https://mcp.cloudflare.com/mcp";
       };
+      # Home Assistant MCP server (mcp-ha-connect add-on) — LAN-direct to the
+      # HA box (fleet.nix address; callisto has no mDNS). Auth is the
+      # /private_<token> URL path; {env:} interpolation keeps the token out
+      # of the committed config. Endpoint is POST-only streamable HTTP
+      # (verified live 2026-08-29: initialize → 200, bare GET → 405).
+      mcp.homeassistant = {
+        type = "remote";
+        url = "http://${config.jupiter.fleet.addresses.homeassistant}:9583/private_{env:HA_MCP_TOKEN}";
+        enabled = true;
+        timeout = 10000;
+      };
       # Local plugin as a file:/// URI — the form the proven laptop rig
       # runs on this same 1.18.x series; bare store paths are unproven.
       plugin = [
@@ -287,6 +298,7 @@ let
     export TOKENROUTER_API_KEY="$(cat ${config.sops.secrets.tokenrouter_api_key.path})"
     export CLOUDFLARE_BROWSER_RUN_TOKEN="$(cat ${config.sops.secrets.cloudflare_browser_run_token.path})"
     export CF_ACCOUNT_ID="19f62c2ef7861336d274166233ba3a17"
+    export HA_MCP_TOKEN="$(cat ${config.sops.secrets.ha_mcp_token.path})"
     exec "$HOME/.opencode/bin/opencode" "$@"
   '';
 in
@@ -329,6 +341,13 @@ in
     # TokenRouter aggregator key (api.tokenrouter.com) — provider block
     # lives in builtinConfig under `tokenrouter`, {env:TOKENROUTER_API_KEY}.
     sops.secrets.tokenrouter_api_key = {
+      owner = "io";
+      mode = "0400";
+    };
+
+    # Home Assistant MCP path token (mcp-ha-connect). Recovered blind from
+    # fish history into sops (never displayed) 2026-08-29.
+    sops.secrets.ha_mcp_token = {
       owner = "io";
       mode = "0400";
     };
