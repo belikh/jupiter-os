@@ -31,6 +31,12 @@
 let
   cfg = config.jupiter.arcade;
 
+  # Shared session-ladder machinery + the arcade slice definition (W4c):
+  # the slice caps the arcade PLANE on every host it exists on.
+  inherit (import ../lib.nix { inherit config lib pkgs; })
+    jupiterArcadeSlice
+    ;
+
   # Custom Pegasus theme: "jupiterOS arcade". Touch-friendly, Catppuccin Mocha
   # palette. Files live in the Nix store and are symlinked into the gamer
   # user's themes dir via tmpfiles.
@@ -44,6 +50,63 @@ let
       runHook postInstall
     '';
   };
+
+  # W4c: the Pegasus third-party providers this fleet knows about
+  # (research/notes/interim-report-pegasus-metadata-root-cause-fight:
+  # Provider.h ships `bool m_enabled = true;` — every provider is ON until
+  # an explicit `providers.<codename>.enabled: false` line lands in
+  # settings.txt). The collections arrive exclusively through the
+  # declared game_dirs.txt (Pegasus metadata + kiosk-side generators);
+  # leaving Steam/GOG/ES2/… enabled beside them is the Skyscraper
+  # "mish-mash" precondition — phantom collections injected next to the
+  # 64 declared dirs. providersEnabled opts named providers back in.
+  knownPegasusProviders = [
+    "steam"
+    "gog"
+    "es2"
+    "android_apps"
+    "launchbox"
+    "logiqx"
+    "lutris"
+    "playnite"
+    "skraper"
+  ];
+
+  disabledPegasusProviders = builtins.filter (
+    p: !builtins.elem p cfg.providersEnabled
+  ) knownPegasusProviders;
+
+  providerDisableLines = pkgs.writeText "pegasus-providers-off.txt" (
+    lib.concatStringsSep "\n" (map (p: "providers.${p}.enabled: false") disabledPegasusProviders)
+  );
+
+  # W4c: OnFailure escalation — the ladder's last two rungs. Reaching
+  # here means the session unit FAILED (with Restart=always + explicit
+  # start limits, that is the start-limit exhaustion: a crash-looping
+  # cabinet). Ladder: reboot; after ${toString failureLadderLimit}
+  # consecutive failed ladders WITHOUT one good READY (the launcher
+  # wrapper clears the counter on first ready), drop to the rescue
+  # console instead of reboot-looping forever — tty2 is already the
+  # reserved rescue console on arcade-console hosts.
+  failureLadderLimit = 3;
+
+  arcadeFailureScript = pkgs.writeShellScript "jupiter-arcade-failure" ''
+    set -eu
+    DIR=/var/lib/jupiter-arcade
+    mkdir -p "$DIR"
+    n=$(( $(cat "$DIR/failure-count" 2>/dev/null || echo 0) + 1 ))
+    echo "$n" > "$DIR/failure-count"
+    echo "jupiter-arcade failure ladder #$n (session unit entered failed state)"
+    if [ "$n" -ge ${toString failureLadderLimit} ]; then
+      echo "jupiter-arcade: $n failed ladders without a ready session — booting to the rescue console"
+      rm -f "$DIR/failure-count"
+      ${pkgs.systemd}/bin/systemctl set-default rescue.target
+      ${pkgs.systemd}/bin/systemctl reboot
+      exit 0
+    fi
+    echo "jupiter-arcade: rebooting for ladder recovery (counter resets on a successful READY=1)"
+    ${pkgs.systemd}/bin/systemctl reboot
+  '';
 in
 {
   options.jupiter.arcade = {
@@ -86,6 +149,58 @@ in
         collections that need them.
       '';
     };
+
+    # --- W4c kiosk operability spec (plan §6.H) -----------------------------
+
+    watchdogAndLadder = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Supervise the arcade session unit with the full recovery ladder:
+        the launcher wrapper as a Type=notify main process asserting
+        READY=1 when the frontend reports menu-accepting-input,
+        WatchdogSec armed, Restart=always with explicit start limits
+        (6 per 300 s — not the upstream 5-per-10 s that parks a
+        crash-looping cabinet dead in ~12 s), OnFailure reboot
+        escalation, and a boot-count guard onto the rescue console
+        after 3 failed ladders. The ladder numbers live in
+        modules/lib.nix (sessionLadder) with their rationale.
+      '';
+    };
+
+    recycleCalendar = lib.mkOption {
+      type = lib.types.str;
+      default = "*-*-* 05:00:00";
+      description = ''
+        Nightly session recycle (systemd calendar expression), the
+        mechanism-backed answer to the documented gamescope degradation
+        (exponential kernel-slab leak after ~15 h — research note
+        gamescope-degradation-is-documented-exponential-kernel-slab-leak-after-15h-reboo).
+        <literal>try-restart</literal>: a kiosk whose session is
+        down (dashboard mode) is left alone. Scheduled at 05:00 by
+        default — deliberately AWAY from the 03:00-class DAT/scan
+        maintenance window so the two cheapest defences never collide
+        on europa's two cores (plan §6.A capacity rule).
+      '';
+    };
+
+    providersEnabled = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ ];
+      description = ''
+        Pegasus third-party providers to LEAVE ENABLED (by codename:
+        steam, gog, es2, android_apps, launchbox, logiqx, lutris,
+        playnite, skraper). Every provider ships enabled-by-default
+        (Provider.h: <literal>bool m_enabled = true;</literal>) and
+        settings.txt is seed-once, so the mish-mash exposure never
+        self-heals; this module re-asserts
+        <literal>providers.&lt;name&gt;.enabled: false</literal> for
+        every provider NOT listed here at every boot — the declared
+        collection set (game_dirs.txt) stays the only source unless an
+        operator explicitly opts a provider back in. Default: none —
+        the collections arrive through the declared dirs only.
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -113,7 +228,59 @@ in
       # L+ forces (re)create so a theme change in a future deploy propagates
       # without needing to wipe the user dir.
       "L+ /home/${cfg.sessionUser}/.config/pegasus-frontend/themes/jupiteros-arcade - - - - ${jupiterArcadeTheme}"
+      # W4c: the failure-ladder counter directory — gamer-writable because
+      # the session launcher (User=${cfg.sessionUser}) clears the counter
+      # on the first good READY; the escalation unit (root) increments it.
+      "d /var/lib/jupiter-arcade 0755 ${cfg.sessionUser} users -"
     ];
+
+    # --- W4c: the arcade plane's resource slice + recovery ladder ----------
+    systemd.slices."jupiter-arcade" = jupiterArcadeSlice;
+
+    # Ladder contribution to the SHARED session unit name: dashboard-gaming
+    # (kiosks, on-demand) and arcade-console (boot-default) both generate
+    # `jupiter-arcade.service` from modules/lib.nix's supervised shape;
+    # this module adds the arcade-plane Slice and the OnFailure rung on
+    # every host that runs the arcade (both import this module).
+    systemd.services.jupiter-arcade = lib.mkIf cfg.watchdogAndLadder {
+      # Cap the session plane (gamescope + pegasus + launched emulators
+      # inherit the session cgroup) — the kiosk half of the slice the
+      # europa webapp also joins.
+      serviceConfig.Slice = "jupiter-arcade.slice";
+      # The ladder's escalation rung: reaching failed state (with
+      # Restart=always + explicit start limits, that is start-limit
+      # exhaustion) reboots, then the boot-count guard drops onto the
+      # rescue console.
+      unitConfig.OnFailure = [ "jupiter-arcade-failure.service" ];
+    };
+
+    systemd.services.jupiter-arcade-failure = lib.mkIf cfg.watchdogAndLadder {
+      description = "jupiterOS Arcade failure ladder (reboot, boot-count guard to rescue console)";
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = "${arcadeFailureScript}";
+      };
+    };
+
+    # Nightly session recycle (W4c): try-restart at recycleCalendar —
+    # only a LIVE session recycles (kiosks sitting on the dashboard are
+    # untouched), scheduled away from the DAT/scan maintenance window.
+    systemd.timers."jupiter-arcade-recycle" = lib.mkIf cfg.watchdogAndLadder {
+      description = "Nightly jupiterOS Arcade session recycle (gamescope leak mitigation)";
+      wantedBy = [ "timers.target" ];
+      timerConfig = {
+        OnCalendar = cfg.recycleCalendar;
+        Persistent = false;
+        Unit = "jupiter-arcade-recycle.service";
+      };
+    };
+    systemd.services."jupiter-arcade-recycle" = lib.mkIf cfg.watchdogAndLadder {
+      description = "Recycle the jupiterOS Arcade session (try-restart)";
+      serviceConfig = {
+        Type = "oneshot";
+        ExecStart = "${pkgs.systemd}/bin/systemctl try-restart jupiter-arcade.service";
+      };
+    };
 
     # --- Pegasus config seeding ----------------------------------------------
     # game_dirs.txt is where Pegasus discovers collections (one path per
@@ -123,9 +290,11 @@ in
     # hand-edits — that's how amalthea ended up showing 2 of 3 collections).
     # settings.txt is seeded only when absent: Pegasus rewrites it on exit
     # with the user's UI choices, and clobbering those on every boot would
-    # revert e.g. a theme the user picked in the UI.
+    # revert e.g. a theme the user picked in the UI — EXCEPT the provider
+    # defaults (W4c), which are re-asserted at every boot exactly because
+    # seed-once settings never self-heal and every provider ships enabled.
     systemd.services.pegasus-config-seed = {
-      description = "Seed Pegasus config (game_dirs + settings) for ${cfg.sessionUser}";
+      description = "Seed Pegasus config (game_dirs + settings + provider defaults) for ${cfg.sessionUser}";
       wantedBy = [ "multi-user.target" ];
       # Runs before the session can start at boot; jupiter-arcade.service is
       # only started on demand (HA select), by which point this has run.
@@ -151,6 +320,9 @@ in
             # on exit with the user's UI choices, which then persist.
             general.theme: themes/${cfg.theme}
           '';
+          # providers.<name>.enabled: false for every provider not opted
+          # back in — appended (idempotently) at every boot.
+          providerOffRegex = "^providers\\.(${lib.concatStringsSep "|" disabledPegasusProviders})\\.enabled:";
         in
         ''
           set -eu
@@ -169,6 +341,17 @@ in
           else
             sed -i '/^launcher\.script:/d;/^assets\.directory:/d;/^collections\.directory:/d' "$SETTINGS"
           fi
+
+          # W4c provider defaults, self-healing at every boot: strip this
+          # module's managed provider lines (both old disables AND any
+          # drift the UI or a hand-edit wrote), then append the declared
+          # set. Pegasus persists providers.*.enabled itself, so an
+          # operator toggle survives until the next boot re-asserts the
+          # DECLARED state — providersEnabled is the opt-in surface.
+          # -E: the alternation is ERE.
+          sed -Ei '/${providerOffRegex}/d' "$SETTINGS"
+          printf '\n# providers: managed by modules/desktop/arcade.nix (jupiter.arcade.providersEnabled)\n' >> "$SETTINGS"
+          cat ${providerDisableLines} >> "$SETTINGS"
         '';
     };
   };

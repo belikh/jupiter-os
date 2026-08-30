@@ -12,6 +12,12 @@
 
   {{if .Error}}<div class="action-error" role="alert">{{.Error}}</div>{{end}}
 
+  {{/* W4b liveness alarm (plan §6.G): the no-intro/redump asymmetry —
+         no-intro frozen >21d while redump fetched <14d ago — is the
+         measured signature of a dead upstream feed. Page-worthy: red,
+         role=alert, first element of the panel. */}}
+  {{if .Liveness}}<div class="action-error" role="alert"><strong>DAT liveness:</strong> {{.LivenessDetail}}</div>{{end}}
+
   <section>
     <h2>Verify &amp; organize
       {{if .Configured}}
@@ -85,7 +91,7 @@
           <td class="num">
             {{if .StagedFiles}}{{.StagedFiles}} files · {{.StagedBytes}}{{if .InFlight}} <span class="pill running" title="aria2 control files present at last scan">in flight</span>{{end}}{{else}}<span class="sub">—</span>{{end}}
           </td>
-          <td>{{verifyStateChip .State .Counts}}{{if .LastAttemptFailed}} <span class="pill error" title="{{if .CountsValid}}last attempt failed — showing last good report{{else}}last attempt failed — no report ingested yet{{end}}">last attempt failed</span>{{end}}{{if .CountsValid}} <span class="sub" title="last verify finished">{{.FinishedAgo}}</span>{{end}}
+          <td>{{verifyStateChip .State .Counts}}{{if .LastAttemptFailed}} <span class="pill error" title="{{if .CountsValid}}last attempt failed — showing last good report{{else}}last attempt failed — no report ingested yet{{end}}">{{if .LastAttemptRefused}}last attempt refused: {{.LastAttemptRefused}}{{else}}last attempt failed{{end}}</span>{{end}}{{if .CountsValid}} <span class="sub" title="last verify finished">{{.FinishedAgo}}</span>{{end}}
             {{if .OffenderFiles}}
             {{/* P4 drill-down: the persisted per-file offenders (input-side
                  junk + output-side extras) behind the unmatched/extra pill.

@@ -196,6 +196,13 @@
                 # it without floating anything else in the closure.
                 (final: prev: {
                   crush-go = nixpkgs-unstable.legacyPackages.${prev.stdenv.hostPlatform.system}.go;
+                  # The flake rev, fleet-wide (arcade remediation W4a):
+                  # modules/services/arcade-webapp.nix stamps it into the
+                  # webapp's version so a live binary identifies its tree
+                  # ("a static 0.1.0 cannot identify what is live" —
+                  # plan §6.F). An overlay attr is the one lexically
+                  # available place every host's pkgs can see it.
+                  jupiter-flake-rev = self.rev or "";
                 })
               ];
             }
@@ -460,6 +467,10 @@
         import ./pkgs/arcade-webapp {
           lib = nixpkgs.lib;
           buildGoModule = nixpkgs.legacyPackages.x86_64-linux.buildGoModule;
+          # W4a version stamping: the exact tree rev goes into the store
+          # name AND the binary (-X main.version). Dirty checkouts
+          # (self.rev null) report 0.1.0-dev.
+          rev = self.rev or "";
         }
       );
 
@@ -474,9 +485,99 @@
       # `nix flake check` builds every registered host closure — for a
       # single-host bootstrap that's cheap, and it's the whole point: prove
       # the thing builds.
-      checks.x86_64-linux = builtins.mapAttrs (
-        _: host: host.config.system.build.toplevel
-      ) self.nixosConfigurations;
+      #
+      # L2 lane (arcade remediation plan §6.E / W0): the arcade-webapp VM
+      # harness (tests/hosts/arcade-webapp-vm.nix) as a testers.runNixOSTest
+      # — BUILDING this check boots the VM and runs the in-VM smoke, so
+      # `nix build .#checks.x86_64-linux.arcade-webapp-vm` (what CI's
+      # arcade-webapp-l2-vm job runs) is a full module/service integration
+      # gate. It overrides the mapAttrs toplevel entry of the same name:
+      # building the test builds that closure anyway, so the plain toplevel
+      # check would be strictly weaker. vmSmokePoweroff=false keeps the VM
+      # alive for the driver, which asserts /run/arcade-smoke-verdict —
+      # the standalone `make test-arcade-webapp` path (build-vm + serial
+      # grep + self-poweroff) is unchanged via the arg's default.
+      checks.x86_64-linux =
+        (builtins.mapAttrs (_: host: host.config.system.build.toplevel) self.nixosConfigurations)
+        // {
+          arcade-webapp-vm = untunedPkgs.testers.runNixOSTest {
+            name = "arcade-webapp-vm";
+
+            nodes.machine =
+              { ... }:
+              {
+                imports = [ ./tests/hosts/arcade-webapp-vm.nix ];
+                jupiter.tests.arcadeWebappVm.poweroffAfterSmoke = false;
+                # Match the standalone driver's shape (scripts/
+                # test-arcade-webapp.sh boots -m 1024 -smp 2); extra headroom
+                # for the real igir verify + generate passes.
+                virtualisation.memorySize = 2048;
+                virtualisation.cores = 2;
+              };
+
+            testScript = ''
+              start_all()
+
+              # The smoke service (jupiter-arcade-webapp-smoke) runs the
+              # full in-VM sequence — healthz, fixture cards, aria2
+              # pause/resume, real-igir verify (amber→green), promote,
+              # generate, scrape, curation, eXo, launch-line exec probe —
+              # and records PASS/FAIL in /run/arcade-smoke-verdict. It
+              # self-poweroffs only in the standalone path; here the VM
+              # stays up until this script has read the verdict.
+              machine.wait_for_file("/run/arcade-smoke-verdict", timeout=1800)
+              verdict = machine.succeed("cat /run/arcade-smoke-verdict").strip()
+              if verdict != "PASS":
+                  print(machine.succeed("journalctl -u jupiter-arcade-webapp-smoke -n 200 --no-pager || true"))
+                  raise Exception(f"arcade-webapp-vm smoke verdict: {verdict}")
+            '';
+          };
+
+          # L3 lane (arcade remediation plan §6.E / W3): the L2 harness
+          # PLUS chromium-in-VM Playwright driving the real dashboard —
+          # the only lane whose client sends exactly what a real browser
+          # sends (htmx's native HX-Request header, real swaps, real
+          # poll timers). Fails on any 4xx on any resource and any
+          # duplicate panel id; the only lane that could ever have seen
+          # the lifetime 403. Playwright + the chromium browser binary
+          # both come from the pinned nixpkgs' in-tree packaging (see
+          # tests/hosts/arcade-webapp-browser-vm.nix). CI runs this as
+          # the arcade-webapp-l3-browser job; the driver asserts BOTH
+          # verdicts — smoke first, then the browser lane.
+          arcade-webapp-browser-vm = untunedPkgs.testers.runNixOSTest {
+            name = "arcade-webapp-browser-vm";
+
+            nodes.machine =
+              { ... }:
+              {
+                imports = [ ./tests/hosts/arcade-webapp-browser-vm.nix ];
+                jupiter.tests.arcadeWebappVm.poweroffAfterSmoke = false;
+                # The L2 shape (2048/2) plus chromium headroom — a
+                # headless browser on top of the full webapp stack.
+                virtualisation.memorySize = 4096;
+                virtualisation.cores = 2;
+              };
+
+            testScript = ''
+              start_all()
+
+              # Smoke first (same contract as the L2 check above), then
+              # the browser lane runs strictly after it
+              # (After=jupiter-arcade-webapp-smoke.service).
+              machine.wait_for_file("/run/arcade-smoke-verdict", timeout=1800)
+              verdict = machine.succeed("cat /run/arcade-smoke-verdict").strip()
+              if verdict != "PASS":
+                  print(machine.succeed("journalctl -u jupiter-arcade-webapp-smoke -n 200 --no-pager || true"))
+                  raise Exception(f"arcade-webapp-browser-vm smoke verdict: {verdict}")
+
+              machine.wait_for_file("/run/arcade-browser-verdict", timeout=1800)
+              bverdict = machine.succeed("cat /run/arcade-browser-verdict").strip()
+              if bverdict != "PASS":
+                  print(machine.succeed("journalctl -u jupiter-arcade-webapp-browser -n 200 --no-pager || true"))
+                  raise Exception(f"arcade-webapp-browser-vm browser verdict: {bverdict}")
+            '';
+          };
+        };
 
       # Documentation site: auto-generated from all jupiter.* modules
       # Uses an existing host configuration (amalthea) which already has all
@@ -616,6 +717,12 @@
             age
             ssh-to-age
             nixfmt
+            # Pinned Go toolchain for the arcade-webapp L1 lane (arcade
+            # remediation W0): `make check-arcade-webapp` runs go vet +
+            # go test -race (and the fixture gate) with exactly this go,
+            # pinned by flake.lock — identical for CI, humans and agents,
+            # no registry/channel drift.
+            go
           ];
         };
     };

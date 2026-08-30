@@ -20,6 +20,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash/crc32"
@@ -207,16 +208,67 @@ func DAT(s System) string {
 	return b.String()
 }
 
-// WriteDATs writes one DAT per system under dir as <dir>/<key>.dat.
+// WriteDATs writes one DAT per system under dir as <dir>/<key>.dat,
+// plus the content-addressed dat-lock.json pinning those exact bytes
+// (remediation W4b: the committed lock is regenerated WITH the DATs, so
+// a corpus re-bootstrap can never leave a stale lock — the drift class
+// TestCommittedCorpusLockMatchesBytes closes from the consuming side).
 func WriteDATs(dir string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
+	lock := lockDoc{Systems: map[string]lockEntry{}}
 	for _, s := range Systems() {
+		b := []byte(DAT(s))
 		p := filepath.Join(dir, s.Key+".dat")
-		if err := os.WriteFile(p, []byte(DAT(s)), 0o644); err != nil {
+		if err := os.WriteFile(p, b, 0o644); err != nil {
 			return err
 		}
+		lock.Systems[s.Key] = lockEntry{
+			SourceCommit: lockCorpusCommit,
+			BytesSHA256:  hex.EncodeToString(sum256(b)),
+			RomCount:     len(s.Games),
+			FetchedAt:    lockFetchedAt,
+		}
 	}
-	return nil
+	return writeLockJSON(dir, lock)
+}
+
+// The corpus lock's authoring metadata. The fixture corpus is
+// self-authored (never fetched from Fresh1G1R), so the source commit is
+// a deliberately obvious sentinel and fetched_at a fixed date — the
+// fixture DATs' own authoring date. Both are load-bearing constants:
+// dats_test.go asserts the exact values so a hand-edit that invents a
+// realistic-looking commit is caught.
+const (
+	lockCorpusCommit = "0000000000000000000000000000000000000001"
+	lockFetchedAt    = "2026-08-21T00:00:00Z"
+)
+
+// lockDoc/lockEntry mirror internal/dats' Lock/LockEntry JSON shape
+// WITHOUT importing that package (dats' own tests import fixture — an
+// import cycle would follow; the shapes are pinned by dats_test.go's
+// round-trip over the COMMITTED file, which both packages read).
+type lockDoc struct {
+	Systems map[string]lockEntry `json:"systems"`
+}
+
+type lockEntry struct {
+	SourceCommit string `json:"source_commit"`
+	BytesSHA256  string `json:"bytes_sha256"`
+	RomCount     int    `json:"rom_count"`
+	FetchedAt    string `json:"fetched_at"`
+}
+
+func sum256(b []byte) []byte {
+	h := sha256.Sum256(b)
+	return h[:]
+}
+
+func writeLockJSON(dir string, l lockDoc) error {
+	b, err := json.MarshalIndent(l, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "dat-lock.json"), append(b, '\n'), 0o644)
 }

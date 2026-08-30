@@ -43,6 +43,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/dats"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/pipeline"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/store"
 )
@@ -98,6 +99,7 @@ const (
 	OutcomeVerified           = "verified"            // igir ran; report ingested
 	OutcomeSkippedEmpty       = "skipped-empty"       // nothing staged (idempotent skip)
 	OutcomeSkippedDownloading = "skipped-downloading" // .aria2 control files present
+	OutcomeDATLock            = "dat-lock-mismatch"   // DAT bytes fail dat-lock (promotion refused)
 	OutcomePromotedUnchecked  = "promoted-unchecked"  // no DAT: copied as-is
 	OutcomeFailed             = "failed"              // igir/report error
 )
@@ -209,17 +211,45 @@ func (r *Runner) VerifyAll() ([]SystemOutcome, error) {
 // isolation), never a batch abort. When Pipeline is set (ADV-P5-03) the
 // shared verify+scrape slot is claimed first — a scrape holding it
 // rejects this batch with ErrBusy before anything is recorded.
+//
+// The lock is held for the BATCH only (remediation W4d): the post-verify
+// rescan deliberately runs AFTER Release, inside no heavy-job slot. The
+// rescan is itself a multi-TiB-tree walk on the 2-core box; holding the
+// pipeline mutex through it extended every verify's scrape/generate
+// lockout by the whole rescan for no mutual-exclusion benefit (the scan
+// has its own serializer).
 func (r *Runner) Verify(systemKeys []string) ([]SystemOutcome, error) {
 	if r.Pipeline != nil {
 		if !r.Pipeline.TryAcquire() {
 			return nil, ErrBusy
 		}
-		defer r.Pipeline.Release()
 	}
+	outcomes, promoted, err := r.verifyLocked(systemKeys)
+	if r.Pipeline != nil {
+		r.Pipeline.Release()
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	// Newly promoted files are invisible to the dashboard until the next
+	// scan — kick one now (best effort; a concurrent scan just wins),
+	// OUTSIDE the heavy-job lock (see the method comment).
+	if promoted && r.rescan != nil {
+		if err := r.rescan(); err != nil && !errors.Is(err, ErrBusy) && !strings.Contains(err.Error(), "already running") {
+			r.logf("post-verify rescan: %v", err)
+		}
+	}
+	return outcomes, nil
+}
+
+// verifyLocked is Verify's batch body — called with the pipeline slot
+// (when configured) already held.
+func (r *Runner) verifyLocked(systemKeys []string) ([]SystemOutcome, bool, error) {
 	r.mu.Lock()
 	if r.state.Running {
 		r.mu.Unlock()
-		return nil, ErrBusy
+		return nil, false, ErrBusy
 	}
 	r.state = State{Running: true, StartedAt: time.Now().UTC().Format(time.RFC3339), Total: len(systemKeys)}
 	r.mu.Unlock()
@@ -228,7 +258,7 @@ func (r *Runner) Verify(systemKeys []string) ([]SystemOutcome, error) {
 	byKey := map[string]store.SystemRow{}
 	systems, err := r.st.Systems()
 	if err != nil {
-		return nil, fmt.Errorf("igir: systems: %w", err)
+		return nil, false, fmt.Errorf("igir: systems: %w", err)
 	}
 	for _, s := range systems {
 		byKey[s.Key] = s
@@ -236,7 +266,7 @@ func (r *Runner) Verify(systemKeys []string) ([]SystemOutcome, error) {
 
 	runID, err := r.st.StartRun("verify")
 	if err != nil {
-		return nil, fmt.Errorf("igir: record run: %w", err)
+		return nil, false, fmt.Errorf("igir: record run: %w", err)
 	}
 
 	outcomes := make([]SystemOutcome, 0, len(systemKeys))
@@ -258,9 +288,11 @@ func (r *Runner) Verify(systemKeys []string) ([]SystemOutcome, error) {
 	}
 
 	status := "ok"
+	failed := 0
 	for _, oc := range outcomes {
-		if oc.Outcome == OutcomeFailed {
+		if oc.Outcome == OutcomeFailed || oc.Outcome == OutcomeDATLock {
 			status = "error"
+			failed++
 		}
 	}
 	detail, _ := json.Marshal(struct {
@@ -275,18 +307,13 @@ func (r *Runner) Verify(systemKeys []string) ([]SystemOutcome, error) {
 		if status == "ok" {
 			s.LastOKAt = time.Now().UTC().Format(time.RFC3339)
 		} else {
-			s.LastError = fmt.Sprintf("%d failed systems", len(systemKeys))
+			// The ACTUAL failed-system count, never the batch size
+			// (remediation W4d: a 61-system batch with one failure used
+			// to report "61 failed systems" — the UI counter bug).
+			s.LastError = fmt.Sprintf("%d failed system(s)", failed)
 		}
 	})
-
-	// Newly promoted files are invisible to the dashboard until the next
-	// scan — kick one now (best effort; a concurrent scan just wins).
-	if promoted && r.rescan != nil {
-		if err := r.rescan(); err != nil && !errors.Is(err, ErrBusy) && !strings.Contains(err.Error(), "already running") {
-			r.logf("post-verify rescan: %v", err)
-		}
-	}
-	return outcomes, nil
+	return outcomes, promoted, nil
 }
 
 // processSystem is cartridge-verify.sh's process_system, ported. runID
@@ -316,6 +343,16 @@ func (r *Runner) processSystem(sys store.SystemRow, runID int64) SystemOutcome {
 		// Missing DAT: skip verification, copy staged ROMs as-is
 		// ("better partial than blocked"). rsync -a semantics: files
 		// identical in size+mtime are skipped, so re-runs are cheap.
+		//
+		// TOCTOU close (remediation W4d): the in-flight check above
+		// raced whatever aria2 started since; re-check the control
+		// files immediately before the copy — promoting a download
+		// that went mid-flight in the gap floods the tree exactly the
+		// same as verifying it would.
+		if hasAria2Control(incoming) {
+			oc.Outcome = OutcomeSkippedDownloading
+			return oc
+		}
 		if err := os.MkdirAll(output, 0o755); err != nil {
 			oc.Outcome, oc.Err = OutcomeFailed, err.Error()
 			return oc
@@ -340,6 +377,24 @@ func (r *Runner) processSystem(sys store.SystemRow, runID int64) SystemOutcome {
 		return oc
 	}
 
+	// Supply-chain gate (remediation W4b / plan §6.G): a DAT that fails
+	// its dat-lock entry is UNTRUSTED input. Promotion — checked or
+	// unchecked — against bytes the lock never attested is refused; the
+	// system fails loudly instead. No lock entry (bootstrap) proceeds as
+	// before: the first locked generation is written by the next DAT
+	// refresh.
+	if err := dats.CheckLock(r.cfg.DATDir, sys.Key); err != nil {
+		var mismatch *dats.LockMismatch
+		if errors.As(err, &mismatch) {
+			oc.Outcome, oc.Err = OutcomeDATLock, mismatch.Error()
+			r.logf("%s: %s", sys.Key, mismatch.Error())
+			return oc
+		}
+		// An unreadable lock file is a hard stop too, but distinguish it.
+		oc.Outcome, oc.Err = OutcomeFailed, fmt.Sprintf("dat-lock unreadable: %v", err)
+		return oc
+	}
+
 	// igir copy test report — cartridge-verify.sh's flag set plus the
 	// aria2-metadata exclusion (see runIgir's --input-exclude comment).
 	if err := os.MkdirAll(output, 0o755); err != nil {
@@ -348,6 +403,15 @@ func (r *Runner) processSystem(sys store.SystemRow, runID int64) SystemOutcome {
 	}
 	if err := os.MkdirAll(r.cfg.ReportDir, 0o755); err != nil {
 		oc.Outcome, oc.Err = OutcomeFailed, err.Error()
+		return oc
+	}
+	// TOCTOU close (remediation W4d): the batch's first in-flight check
+	// may be minutes stale by now (61-system batches run long) —
+	// re-check the .aria2 control files immediately before exec. A
+	// download that started in the gap gets skipped here, not verified
+	// half-downloaded.
+	if hasAria2Control(incoming) {
+		oc.Outcome = OutcomeSkippedDownloading
 		return oc
 	}
 	if err := r.runIgir(dat, incoming, output, report); err != nil {
@@ -759,8 +823,10 @@ func dirHasFiles(dir string) bool {
 
 // hasAria2Control reports whether any *.aria2 control file exists under
 // dir — the runtime-authoritative in-flight check (the scan-time staging
-// table is only a hint).
-func hasAria2Control(dir string) bool {
+// table is only a hint). A package-level var (not a plain func) so the
+// tests can interpose between the batch's first check and the
+// immediately-before-exec re-checks — the TOCTOU window W4d closes.
+var hasAria2Control = func(dir string) bool {
 	found := false
 	_ = filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
 		if err != nil {

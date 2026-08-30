@@ -32,3 +32,13 @@ tests/fixtures/arcade/reports/
 
 # Reflect runtime logs (generated at runtime)
 .opencode/skills/reflect/.state/reflect_runs/
+
+# Hyperresearch vault and research run artifacts
+.hyperresearch/
+research/
+
+# igir runtime cache (mutates on fixture runs)
+igir.cache
+
+# opencode worktrees
+worktrees/

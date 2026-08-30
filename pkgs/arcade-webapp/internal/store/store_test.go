@@ -335,6 +335,123 @@ func TestRunsLifecycle(t *testing.T) {
 	}
 }
 
+// TestFailOrphanedRuns (remediation W4a/W4d acceptance): the startup
+// sweep closes every 'running' row as an error with the sweep marker —
+// "kill -9 mid-verify leaves no orphaned running row after restart".
+// Finished rows are untouched.
+func TestFailOrphanedRuns(t *testing.T) {
+	s := openTemp(t)
+	// A finished run and three orphaned ones across kinds.
+	doneID, err := s.StartRun("scan")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.FinishRun(doneID, "ok", `{"games":1}`); err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{"verify", "dat-fetch", "scrape"} {
+		if _, err := s.StartRun(kind); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	n, err := s.FailOrphanedRuns("killed with runs in flight (startup sweep)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 3 {
+		t.Fatalf("swept %d rows, want 3", n)
+	}
+
+	runs, err := s.RecentRuns(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	orphans := 0
+	for _, r := range runs {
+		if r.Status == "running" {
+			t.Errorf("run %d (%s) still running after the sweep", r.ID, r.Kind)
+		}
+		if strings.Contains(r.Detail, "Swept") {
+			orphans++
+			if r.FinishedAt == "" || r.Status != "error" {
+				t.Errorf("swept run %d = %s/%q, want error + finished_at", r.ID, r.Status, r.FinishedAt)
+			}
+			if !strings.Contains(r.Detail, "startup sweep") {
+				t.Errorf("swept run detail = %q, want the reason", r.Detail)
+			}
+		}
+	}
+	if orphans != 3 {
+		t.Errorf("%d swept rows in RecentRuns, want 3", orphans)
+	}
+
+	// Idempotent: a second sweep over the same store finds nothing.
+	n2, err := s.FailOrphanedRuns("again")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n2 != 0 {
+		t.Errorf("second sweep = %d, want 0", n2)
+	}
+}
+
+// TestDATVersionsAppendOnlyLedger (remediation W4b / plan §6.G): every
+// accepted generation appends; history reads newest-first; the
+// newest-by-system map agrees. There is deliberately no update or
+// delete path to test — the ledger's contract is append-only.
+func TestDATVersionsAppendOnlyLedger(t *testing.T) {
+	s := openTemp(t)
+	first := time.Now().UTC().Add(-time.Hour).Format(time.RFC3339)
+	for i, sha := range []string{strings.Repeat("a", 64), strings.Repeat("b", 64)} {
+		if err := s.AppendDATVersion(DATVersion{
+			SystemKey: "nes", SourceCommit: fmt.Sprintf("%040d", i+1),
+			BytesSHA256: sha, RomCount: 4 + i, FetchedAt: first,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.AppendDATVersion(DATVersion{
+		SystemKey: "segacd", SourceCommit: fmt.Sprintf("%040d", 9),
+		BytesSHA256: strings.Repeat("c", 64), RomCount: 7, FetchedAt: first,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	v, err := s.DATVersions("nes", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(v) != 2 {
+		t.Fatalf("nes history = %d rows, want 2", len(v))
+	}
+	if v[0].BytesSHA256 != strings.Repeat("b", 64) || v[1].BytesSHA256 != strings.Repeat("a", 64) {
+		t.Errorf("history not newest-first: %+v", v)
+	}
+	if v[0].RomCount != 5 || v[1].RomCount != 4 {
+		t.Errorf("rom counts drifted: %+v", v)
+	}
+
+	// Limited read.
+	if v, err := s.DATVersions("nes", 1); err != nil || len(v) != 1 {
+		t.Errorf("DATVersions(nes, 1) = %d rows, %v; want 1, nil", len(v), err)
+	}
+
+	newest, err := s.NewestDATVersionBySystem()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(newest) != 2 {
+		t.Fatalf("NewestDATVersionBySystem = %d systems, want 2", len(newest))
+	}
+	if newest["nes"].BytesSHA256 != strings.Repeat("b", 64) {
+		t.Errorf("newest nes = %+v, want the second generation", newest["nes"])
+	}
+	if newest["wiiu"] != nil {
+		t.Errorf("newest map holds a system with no history: %+v", newest["wiiu"])
+	}
+}
+
 func TestSystemSummaryJoins(t *testing.T) {
 	s := openTemp(t)
 	if err := s.UpsertSystems([]SystemRow{

@@ -115,16 +115,67 @@ let
   # access).
   # The script unzips then chowns back to the calling user so dosbox (as
   # gamer) can later write saves into the per-game dir — by then upper-only.
+  #
+  # W1-T2 hardening: the gamer account (and anything that can drive its
+  # Pegasus launch lines — generated on europa by the arcade webapp) must
+  # not be able to aim root unzip/chown at arbitrary paths. Two layers:
+  #   1. the NOPASSWD sudoers rules below pin the OUTER argument shape
+  #      (merge-mount path prefixes for the path args, literal user/group
+  #      for the chown args) — sudoers wildcards cannot express "single
+  #      path component" or "no traversal", so this is shape, not safety;
+  #   2. this script validates every argument before use: exact argument
+  #      count, chown target pinned to the session user, zip and
+  #      target-parent canonicalised with realpath(1) and confined to the
+  #      collection overlay mounts, target-name restricted to one path
+  #      component sitting directly inside the target parent.
+  # unzip itself refuses to extract entries that would escape the target
+  # tree (`../` components, absolute paths) unless `-:` is passed — never
+  # pass it. Residual risk (crafted zip contents, e.g. symlink games
+  # inside the archive) is retired by the root-free overlay redesign
+  # (ledger row W0-D5), of which this lock is the interim measure.
+  exoAllowedDirs = lib.concatMapStringsSep "|" (
+    name:
+    let
+      m = mergeMount name;
+    in
+    "${m}|${m}/*"
+  ) collectionNames;
   exoExtractHelper = pkgs.writeShellScriptBin "exo-extract-helper" ''
     #!${pkgs.runtimeShell}
     # Invoked as root via: /run/wrappers/bin/sudo -n exo-extract-helper \
     #   <zip> <target-parent> <target-name> <chown-user> <chown-group>
     set -eu
+    die() { echo "exo-extract-helper: $*" >&2; exit 2; }
+    [ "$#" -eq 5 ] || die "usage: exo-extract-helper <zip> <target-parent> <target-name> <chown-user> <chown-group> (got $# arg(s))"
     ZIP=$1
     TARGET_PARENT=$2
     TARGET_NAME=$3
     CHOWN_USER=$4
     CHOWN_GROUP=$5
+    REALPATH="${pkgs.coreutils}/bin/realpath"
+    DIRNAME="${pkgs.coreutils}/bin/dirname"
+    case "$CHOWN_USER:$CHOWN_GROUP" in
+      ${cfg.sessionUser}:users) ;;
+      *) die "chown target locked to ${cfg.sessionUser}:users (got $CHOWN_USER:$CHOWN_GROUP)" ;;
+    esac
+    case "$TARGET_NAME" in
+      ""|"."|".."|*/*) die "target name must be a single path component: $TARGET_NAME" ;;
+    esac
+    PARENT_CANON=$("$REALPATH" -m -- "$TARGET_PARENT")
+    ZIP_CANON=$("$REALPATH" -m -- "$ZIP")
+    case "$PARENT_CANON" in
+      ${exoAllowedDirs}) ;;
+      *) die "target parent outside the eXo overlay mounts: $PARENT_CANON" ;;
+    esac
+    case "$ZIP_CANON" in
+      ${exoAllowedDirs}) ;;
+      *) die "zip outside the eXo overlay mounts: $ZIP_CANON" ;;
+    esac
+    case "$ZIP_CANON" in
+      *.zip) ;;
+      *) die "not a .zip archive: $ZIP_CANON" ;;
+    esac
+    [ "$("$DIRNAME" -- "$ZIP_CANON")" = "$PARENT_CANON" ] || die "zip must live directly inside the target parent"
     if [ ! -f "$ZIP" ]; then
       echo "exo-extract-helper: zip not found: $ZIP" >&2
       exit 1
@@ -172,16 +223,45 @@ let
   # to the child path once, into the overlay upper. Root, for the same
   # ovl_permission reason as the extraction helper: the target directory
   # exists on the read-only NFS lower, so the session user can't create in it.
+  # W1-T2: same two-layer hardening as exoExtractHelper — sudoers pins the
+  # outer shape (exo-win9x overlay-mount prefixes, literal user/group), and
+  # the script validates argument count, chown target, .vhd suffix and
+  # realpath-canonicalised prefixes before touching anything.
   exoPrepareCDrive = pkgs.writeShellScriptBin "exo-prepare-c-drive" ''
     #!${pkgs.runtimeShell}
     # Invoked as root via: sudo -n exo-prepare-c-drive \
     #   <base-image> <c-drive-path> <chown-user> <chown-group>
     # Restores a pristine C: from a local master before each Win9x launch.
     set -eu
+    die() { echo "exo-prepare-c-drive: $*" >&2; exit 2; }
+    [ "$#" -eq 4 ] || die "usage: exo-prepare-c-drive <base-image> <c-drive-path> <chown-user> <chown-group> (got $# arg(s))"
     BASE=$1
     CHILD=$2
     CHOWN_USER=$3
     CHOWN_GROUP=$4
+    REALPATH="${pkgs.coreutils}/bin/realpath"
+    case "$CHOWN_USER:$CHOWN_GROUP" in
+      ${cfg.sessionUser}:users) ;;
+      *) die "chown target locked to ${cfg.sessionUser}:users (got $CHOWN_USER:$CHOWN_GROUP)" ;;
+    esac
+    BASE=$("$REALPATH" -m -- "$BASE")
+    CHILD=$("$REALPATH" -m -- "$CHILD")
+    case "$BASE" in
+      ${mergeMount "exo-win9x"}|${mergeMount "exo-win9x"}/*) ;;
+      *) die "base image outside the exo-win9x overlay mount: $BASE" ;;
+    esac
+    case "$CHILD" in
+      ${mergeMount "exo-win9x"}|${mergeMount "exo-win9x"}/*) ;;
+      *) die "c-drive path outside the exo-win9x overlay mount: $CHILD" ;;
+    esac
+    case "$BASE" in
+      *.vhd) ;;
+      *) die "base image must be a .vhd: $BASE" ;;
+    esac
+    case "$CHILD" in
+      *.vhd) ;;
+      *) die "c-drive path must be a .vhd: $CHILD" ;;
+    esac
     # Absolute paths throughout: sudo sanitises PATH, so unqualified
     # dirname/cp/mv would not resolve when this runs via `sudo -n`.
     CP="${pkgs.coreutils}/bin/cp"
@@ -373,22 +453,38 @@ in
       "d ${cfg.overlayBase}/${name}/work 0755 ${cfg.sessionUser} users -"
     ]) collectionNames;
 
-    # Allow the session user to run only the extraction helper as root with no
-    # password. See exoExtractHelper above for why root is required.
+    # Allow the session user to run only the extraction helpers as root
+    # with no password — W1-T2: with PINNED argument vectors, not the old
+    # argument-unlocked entries (a bare command path in sudoers allows ANY
+    # arguments, which made every kiosk root-reachable from anything that
+    # could drive the gamer account's launch lines — europa's webapp
+    # generates those). Outer layer, per helper:
+    #   exo-extract-helper <zip> <target-parent> <target-name> <user> <grp>:
+    #     args 1-2 confined to each collection's overlay merge mount
+    #     (fixed prefix), arg 3 free (game names contain spaces — sudoers
+    #     cannot express "one component"), args 4-5 literal gamer:users.
+    #   exo-prepare-c-drive <base> <child> <user> <grp>: args 1-2 confined
+    #     to the exo-win9x merge mount, args 3-4 literal gamer:users.
+    # sudoers wildcards match across word boundaries, so this shape-pinning
+    # alone is NOT sufficient — the helpers validate every argument
+    # (canonicalised prefixes, single-component names, exact counts,
+    # locked chown targets) before acting on anything. Full retirement of
+    # the sudo path is the root-free overlay redesign (ledger W0-D5).
     security.sudo.extraRules = [
       {
         users = [ cfg.sessionUser ];
         runAs = "root";
-        commands = [
-          {
-            command = "${lib.getExe exoExtractHelper}";
+        commands =
+          map (name: {
+            command = "${lib.getExe exoExtractHelper} ${mergeMount name}/* ${mergeMount name}/* * ${cfg.sessionUser} users";
             options = [ "NOPASSWD" ];
-          }
-          {
-            command = "${lib.getExe exoPrepareCDrive}";
-            options = [ "NOPASSWD" ];
-          }
-        ];
+          }) collectionNames
+          ++ [
+            {
+              command = "${lib.getExe exoPrepareCDrive} ${mergeMount "exo-win9x"}/* ${mergeMount "exo-win9x"}/* * ${cfg.sessionUser} users";
+              options = [ "NOPASSWD" ];
+            }
+          ];
       }
     ];
 

@@ -1,0 +1,22 @@
+{
+  "systems": {
+    "gb": {
+      "source_commit": "0000000000000000000000000000000000000001",
+      "bytes_sha256": "b4f3f971444bbd746c76bdd7b08783534aab0e3481dbb9e2d8b06183802a0020",
+      "rom_count": 4,
+      "fetched_at": "2026-08-21T00:00:00Z"
+    },
+    "nes": {
+      "source_commit": "0000000000000000000000000000000000000001",
+      "bytes_sha256": "3d8c4c9ed4c2d238530d561e846f8b7e2ba3c9d9dbe1bdac8d20fdad34ce630e",
+      "rom_count": 5,
+      "fetched_at": "2026-08-21T00:00:00Z"
+    },
+    "snes": {
+      "source_commit": "0000000000000000000000000000000000000001",
+      "bytes_sha256": "e118de6457dc9c18a4e3a7680f6b5b117a987cf78eeddbc623ac04572fa533ed",
+      "rom_count": 4,
+      "fetched_at": "2026-08-21T00:00:00Z"
+    }
+  }
+}

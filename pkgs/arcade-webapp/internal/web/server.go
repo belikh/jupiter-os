@@ -174,7 +174,9 @@ func New(st *store.Store, scan *scanner.Scanner, opts ...Option) (*Server, error
 	mux.HandleFunc("POST /collections/{id}/remove", s.handleCollectionRemoveGame)
 	mux.HandleFunc("POST /rescan", s.handleRescan)
 	mux.HandleFunc("GET /", s.handleIndex)
-	s.handler = mux
+	// W4a hardening: security headers on every response + MaxBytesReader
+	// on every body-reading endpoint (see hardening.go).
+	s.handler = harden(mux)
 	return s, nil
 }
 
@@ -545,6 +547,18 @@ func runWarnings(r store.Run) int {
 // length-capped. Never raw JSON (ADV-P1-05: an operator reading the
 // dashboard should not parse a JSON blob by eye).
 func runDetail(r store.Run) template.HTML {
+	// The W4d startup sweep closes orphaned 'running' rows with a
+	// Swept marker instead of a kind payload — render the REASON so the
+	// error pill has an honest cell (a bare error with an empty detail
+	// reads as a bug, and the operator must see the row was swept at
+	// startup, not failed on its own merits).
+	var sweep struct {
+		Swept  bool   `json:"Swept"`
+		Reason string `json:"Reason"`
+	}
+	if err := json.Unmarshal([]byte(r.Detail), &sweep); err == nil && sweep.Swept {
+		return template.HTML(`<em>swept at startup: </em>` + template.HTMLEscapeString(truncate(sweep.Reason, 120)))
+	}
 	if html, ok := runDetailForKind(r); ok {
 		return html
 	}

@@ -10,11 +10,15 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/aria2"
@@ -27,6 +31,29 @@ import (
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/store"
 	"github.com/belikh/jupiter-os/pkgs/arcade-webapp/internal/web"
 )
+
+// version is stamped at build time from git (remediation W4a / plan
+// §6.F: a static "0.1.0" cannot identify what is live). The Nix build
+// passes -X main.version=<pkg version> where <pkg version> carries the
+// flake rev — the startup log and /healthz answer "what is running"
+// without leaving the host.
+var version = "dev"
+
+// newHTTPServer builds the production server with the FULL timeout set
+// (remediation W4a / plan §6.F — the audited-absence catalogue's first
+// hygiene line; the app previously shipped ReadHeaderTimeout only).
+// Extracted so the timeout configuration and graceful-drain contract
+// are testable without booting the whole app (main_test.go).
+func newHTTPServer(addr string, h http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           h,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      120 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+}
 
 func envOr(key, def string) string {
 	if v := os.Getenv(key); v != "" {
@@ -46,6 +73,13 @@ type secretPaths struct {
 }
 
 func main() {
+	showVersion := flag.Bool("version", false, "print the stamped version and exit")
+	flag.Parse()
+	if *showVersion {
+		fmt.Println("arcade-webapp " + version)
+		return
+	}
+
 	addr := envOr("ARCADE_WEBAPP_ADDR", ":8094")
 
 	secrets := secretPaths{
@@ -100,6 +134,19 @@ func main() {
 		log.Fatalf("arcade-webapp: open db %s: %v", cfg.DBPath, err)
 	}
 	defer st.Close() //nolint:errcheck // best effort at shutdown
+
+	// Startup sweep (remediation W4a/W4d): every run still marked
+	// 'running' belongs to a PREVIOUS process — kill -9 mid-verify, OOM,
+	// power loss. Fail them NOW, strictly before any background job of
+	// THIS process can open its own run row (the scan goroutine and the
+	// DAT refresh below), so the sweep can never race a live job.
+	swept, err := st.FailOrphanedRuns("killed with runs in flight (startup sweep)")
+	if err != nil {
+		log.Fatalf("arcade-webapp: orphaned-run sweep: %v", err)
+	}
+	if swept > 0 {
+		log.Printf("arcade-webapp: startup sweep failed %d orphaned 'running' row(s) from a previous process", swept)
+	}
 
 	scan := scanner.New(cfg, st)
 
@@ -156,12 +203,13 @@ func main() {
 	var fetcher *dats.Fetcher
 	if cfg.DATDir != "" {
 		fetcher = &dats.Fetcher{
-			BaseURL: envOr("ARCADE_WEBAPP_DAT_FETCH_BASE_URL", dats.DefaultBaseURL),
-			Dir:     cfg.DATDir,
-			St:      st,
-			Log:     log.Default(),
+			BaseURL:   envOr("ARCADE_WEBAPP_DAT_FETCH_BASE_URL", dats.DefaultBaseURL),
+			CommitURL: envOr("ARCADE_WEBAPP_DAT_COMMIT_URL", dats.DefaultCommitURL),
+			Dir:       cfg.DATDir,
+			St:        st,
+			Log:       log.Default(),
 		}
-		log.Printf("arcade-webapp: DAT manager wired (%s -> %s)", fetcher.BaseURL, cfg.DATDir)
+		log.Printf("arcade-webapp: DAT manager wired (%s -> %s, commit-pinned)", fetcher.BaseURL, cfg.DATDir)
 	}
 	opts = append(opts, web.WithPipeline(runner, fetcher))
 
@@ -272,16 +320,22 @@ func main() {
 			f := fetcher
 			go func() {
 				ctx := context.Background()
-				refresh := func() {
-					systems, err := st.Systems()
-					if err != nil {
-						log.Printf("arcade-webapp: dat refresh: %v", err)
-						return
-					}
-					res := f.Refresh(ctx, systems)
-					log.Printf("arcade-webapp: dat refresh: %d fetched, %d unmapped, %d warnings",
-						res.Fetched, res.Unmapped, len(res.Warnings))
+			refresh := func() {
+				systems, err := st.Systems()
+				if err != nil {
+					log.Printf("arcade-webapp: dat refresh: %v", err)
+					return
 				}
+				res := f.Refresh(ctx, systems)
+				log.Printf("arcade-webapp: dat refresh: %d fetched, %d unmapped, %d warnings",
+					res.Fetched, res.Unmapped, len(res.Warnings))
+				// The asymmetry alarm (W4b): a page-worthy journal event
+				// on every scheduled refresh — the no-intro feed dying is
+				// exactly the nine-week silent freeze this detects.
+				if frozen, detail := f.Liveness(time.Now()); frozen {
+					log.Printf("arcade-webapp: PAGE-WORTHY: %s", detail)
+				}
+			}
 				refresh()
 				t := time.NewTicker(time.Duration(hours) * time.Hour)
 				defer t.Stop()
@@ -313,14 +367,44 @@ func main() {
 			time.Since(started).Round(time.Second), res.Systems, res.Games,
 			web.HumanBytes(res.Bytes), len(res.Warnings))
 	}()
+	// The production-Go server set (remediation W4a / plan §6.F): the
+	// app shipped with only ReadHeaderTimeout for its whole life — the
+	// audited-absence catalogue's first hygiene line. ReadTimeout bounds
+	// the whole request INCLUDING its body (the 64 MiB torrent upload
+	// needs 60 s only on a pathologically slow link); WriteTimeout bounds
+	// response writes (poll fragments are small — 120 s is generous for
+	// a slow client on the furthest kiosk); IdleTimeout reaps keep-alive
+	// conns so a fleet of browsers cannot pin sockets forever.
+	httpSrv := newHTTPServer(addr, srv.Handler())
 
-	httpSrv := &http.Server{
-		Addr:              addr,
-		Handler:           srv.Handler(),
-		ReadHeaderTimeout: 10 * time.Second,
-	}
-	log.Printf("arcade-webapp: listening on %s (db %s)", addr, filepath.Base(cfg.DBPath))
-	if err := httpSrv.ListenAndServe(); err != nil {
-		log.Fatalf("arcade-webapp: %v", err)
+	// Signal-driven graceful drain (W4a): SIGTERM/SIGINT stop ACCEPTING
+	// new connections and wait for in-flight requests to complete before
+	// the process exits — a kiosk/europa switch (systemctl stop →
+	// SIGTERM) must never sever a response mid-flight. The shutdown
+	// deadline lives on a FRESH context: the signal context is already
+	// cancelled at the moment Shutdown is called from it.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
+
+	errCh := make(chan error, 1)
+	go func() {
+		log.Printf("arcade-webapp %s listening on %s (db %s)", version, addr, filepath.Base(cfg.DBPath))
+		errCh <- httpSrv.ListenAndServe()
+	}()
+
+	select {
+	case err := <-errCh:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("arcade-webapp: %v", err)
+		}
+	case <-ctx.Done():
+		stop() // restore default signal behaviour: a second SIGTERM kills
+		drainCtx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+		defer cancel()
+		started := time.Now()
+		if err := httpSrv.Shutdown(drainCtx); err != nil {
+			log.Fatalf("arcade-webapp: graceful shutdown failed: %v", err)
+		}
+		log.Printf("arcade-webapp: graceful shutdown drained in-flight requests in %s", time.Since(started).Round(time.Millisecond))
 	}
 }

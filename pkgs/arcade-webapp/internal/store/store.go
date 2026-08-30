@@ -89,7 +89,17 @@ import (
 // title search useless. The importer persists the real `game:` value;
 // catalogue rows stay NULL (their filenames ARE their titles) and every
 // consumer falls back to the filename derivation when NULL.
-const SchemaVersion = 10
+//
+// v11 (remediation W4b / plan §6.G): dat_versions — the append-only DAT
+// generation ledger. dat_info stays the CURRENT-state card (one row per
+// system, upserted), but every ACCEPTED DAT generation now also appends
+// an immutable history row (source_commit, bytes_sha256, rom_count,
+// fetched_at), so the database can answer "what attested what, and
+// when" — the overwrite semantics of SetDATInfo alone could not. The
+// churn audit (core-hash transitions as reviewable diffs) and the
+// no-intro/redump liveness asymmetry both read this table; nothing ever
+// UPDATEs or DELETEs from it by contract.
+const SchemaVersion = 11
 
 // SystemRow is one catalogue system as persisted (Extensions is a JSON
 // array string — enough for P1's rendering needs). Source distinguishes
@@ -395,6 +405,13 @@ func (s *Store) Migrate() error {
 			}
 		}
 	}
+	if version < 11 {
+		for _, stmt := range schemaV11 {
+			if _, err := tx.Exec(stmt); err != nil {
+				return fmt.Errorf("store: migrate v11: %w", err)
+			}
+		}
+	}
 	if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, SchemaVersion)); err != nil {
 		return err
 	}
@@ -586,6 +603,27 @@ var schemaV9 = []string{
 // pre-P8 and all catalogue rows read NULL → filename-derived titles.
 var schemaV10 = []string{
 	`ALTER TABLE games ADD COLUMN title TEXT`,
+}
+
+// schemaV11 adds the append-only DAT generation ledger (see
+// SchemaVersion). system_key is deliberately NOT a foreign key to
+// systems: the ledger records ATTESTATION HISTORY — a catalogue rescan
+// that prunes a system (cascade) must never erase the record of what was
+// verified against while it existed. The (system_key, id) index serves
+// the per-system newest-first churn read.
+var schemaV11 = []string{
+	`CREATE TABLE dat_versions (
+		id            INTEGER PRIMARY KEY AUTOINCREMENT,
+		system_key    TEXT NOT NULL,
+		source_commit TEXT NOT NULL,
+		bytes_sha256  TEXT NOT NULL,
+		rom_count     INTEGER NOT NULL DEFAULT 0,
+		dat_name      TEXT NOT NULL DEFAULT '',
+		version       TEXT NOT NULL DEFAULT '',
+		date          TEXT NOT NULL DEFAULT '',
+		fetched_at    TEXT NOT NULL
+	)`,
+	`CREATE INDEX dat_versions_system ON dat_versions(system_key, id)`,
 }
 
 // Close closes the database.
@@ -862,6 +900,94 @@ func (s *Store) DATInfo(systemKey string) (*DATInfo, error) {
 	return &d, nil
 }
 
+// DATVersion is one ACCEPTED DAT generation — a row of the append-only
+// dat_versions ledger (schema v11, remediation W4b / plan §6.G). Rows are
+// INSERTed by the DAT manager exactly once per accepted generation and
+// never updated or deleted: the ledger is the database's answer to "what
+// attested what, and when".
+type DATVersion struct {
+	ID           int64
+	SystemKey    string
+	SourceCommit string // full Fresh1G1R commit SHA the bytes were fetched at
+	BytesSHA256  string // hex sha256 of the DAT file bytes
+	RomCount     int
+	DatName      string
+	Version      string
+	Date         string
+	FetchedAt    string
+}
+
+// AppendDATVersion records one accepted DAT generation. Append-only by
+// contract (see schemaV11): no update or delete path exists on purpose.
+func (s *Store) AppendDATVersion(v DATVersion) error {
+	if v.FetchedAt == "" {
+		v.FetchedAt = nowUTC()
+	}
+	_, err := s.db.Exec(`INSERT INTO dat_versions
+		(system_key, source_commit, bytes_sha256, rom_count, dat_name, version, date, fetched_at)
+		VALUES (?,?,?,?,?,?,?,?)`,
+		v.SystemKey, v.SourceCommit, v.BytesSHA256, v.RomCount, v.DatName, v.Version, v.Date, v.FetchedAt)
+	return err
+}
+
+// DATVersions returns a system's generation history newest-first (all of
+// it when limit <= 0) — the churn audit's read side.
+func (s *Store) DATVersions(systemKey string, limit int) ([]DATVersion, error) {
+	q := `SELECT id, system_key, source_commit, bytes_sha256, rom_count, dat_name, version, date, fetched_at
+		FROM dat_versions WHERE system_key=? ORDER BY id DESC`
+	args := []any{systemKey}
+	if limit > 0 {
+		q += ` LIMIT ?`
+		args = append(args, limit)
+	}
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	var out []DATVersion
+	for rows.Next() {
+		var v DATVersion
+		if err := rows.Scan(&v.ID, &v.SystemKey, &v.SourceCommit, &v.BytesSHA256, &v.RomCount,
+			&v.DatName, &v.Version, &v.Date, &v.FetchedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	return out, rows.Err()
+}
+
+// NewestDATVersionBySystem maps system key -> the newest dat_versions row
+// (nil values for systems with no history). The liveness asymmetry alarm
+// reads this (remediation W4b): "no-intro frozen >21 d while redump
+// <14 d" is computed over the two collection families' newest
+// fetched_at stamps.
+func (s *Store) NewestDATVersionBySystem() (map[string]*DATVersion, error) {
+	// SQLite's bare-column MAX() idiom: with one aggregate and no GROUP BY,
+	// the bare columns come from the row that matched the MAX — per-system
+	// via a correlated subquery instead, keeping the statement simple and
+	// index-served (dat_versions_system).
+	rows, err := s.db.Query(`SELECT v.id, v.system_key, v.source_commit, v.bytes_sha256, v.rom_count,
+		v.dat_name, v.version, v.date, v.fetched_at
+		FROM dat_versions v
+		WHERE v.id = (SELECT MAX(w.id) FROM dat_versions w WHERE w.system_key = v.system_key)`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // read-only
+	out := map[string]*DATVersion{}
+	for rows.Next() {
+		var v DATVersion
+		if err := rows.Scan(&v.ID, &v.SystemKey, &v.SourceCommit, &v.BytesSHA256, &v.RomCount,
+			&v.DatName, &v.Version, &v.Date, &v.FetchedAt); err != nil {
+			return nil, err
+		}
+		vc := v
+		out[v.SystemKey] = &vc
+	}
+	return out, rows.Err()
+}
+
 // SetScrapeCoverage records the Skyscraper cache game count for a system.
 func (s *Store) SetScrapeCoverage(systemKey string, cacheEntries int64) error {
 	_, err := s.db.Exec(`INSERT INTO scrape_coverage (system_key, cache_entries, computed_at)
@@ -995,6 +1121,35 @@ func (s *Store) FinishRun(id int64, status, detail string) error {
 	_, err := s.db.Exec(`UPDATE runs SET finished_at=?, status=?, detail=? WHERE id=?`,
 		nowUTC(), status, detail, id)
 	return err
+}
+
+// FailOrphanedRuns is the startup sweep (remediation W4d / plan §6.I):
+// every run still marked 'running' belongs to a PREVIOUS process that
+// died without finishing it (kill -9 mid-verify, OOM, power loss) — no
+// live job can exist before the first job of this process starts. Each
+// is closed as an error carrying the sweep marker, so "a kill -9
+// mid-verify leaves no orphaned running row after restart" (W4a
+// acceptance) holds by construction. Returns the number of rows swept.
+func (s *Store) FailOrphanedRuns(reason string) (int64, error) {
+	if reason == "" {
+		reason = "orphaned by an unclean shutdown (failed at startup sweep)"
+	}
+	res, err := s.db.Exec(`UPDATE runs SET finished_at=?, status='error',
+		detail='{"Swept":true,"Reason":'||?||'}' WHERE status='running'`, nowUTC(), quoteJSON(reason))
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
+// quoteJSON wraps a plain string as a JSON string literal for embedding
+// in hand-built detail payloads (FailOrphanedRuns).
+func quoteJSON(s string) string {
+	b, err := json.Marshal(s)
+	if err != nil { // unreachable for string input; fail loudly shaped
+		return `""`
+	}
+	return string(b)
 }
 
 // LastRun returns the most recent run, or nil when none exist.

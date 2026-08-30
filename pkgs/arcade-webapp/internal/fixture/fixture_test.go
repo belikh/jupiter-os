@@ -112,6 +112,43 @@ func TestRomsMatchCommittedDATs(t *testing.T) {
 	}
 }
 
+// TestWriteDATsMatchesCommittedCorpus pins the generator↔committed
+// equivalence for the WHOLE corpus directory: WriteDATs' output must be
+// byte-identical to testdata/dats (DATs AND, since remediation W4b, the
+// dat-lock.json pinning them). A domain bump or game-list change that
+// regenerates the DATs without re-committing — or a hand-edited lock —
+// fails here and in dats' own TestCommittedCorpusLockMatchesBytes.
+func TestWriteDATsMatchesCommittedCorpus(t *testing.T) {
+	dir := t.TempDir()
+	if err := WriteDATs(dir); err != nil {
+		t.Fatalf("WriteDATs: %v", err)
+	}
+	for _, s := range Systems() {
+		want, err := os.ReadFile(filepath.Join(committedDats, s.Key+".dat"))
+		if err != nil {
+			t.Fatalf("read committed %s.dat: %v", s.Key, err)
+		}
+		got, err := os.ReadFile(filepath.Join(dir, s.Key+".dat"))
+		if err != nil {
+			t.Fatalf("read generated %s.dat: %v", s.Key, err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Errorf("%s.dat: generator output differs from the committed corpus — re-bootstrap testdata/dats", s.Key)
+		}
+	}
+	wantLock, err := os.ReadFile(filepath.Join(committedDats, "dat-lock.json"))
+	if err != nil {
+		t.Fatalf("read committed dat-lock.json: %v (the W4b corpus lock is missing)", err)
+	}
+	gotLock, err := os.ReadFile(filepath.Join(dir, "dat-lock.json"))
+	if err != nil {
+		t.Fatalf("WriteDATs wrote no dat-lock.json: %v", err)
+	}
+	if !bytes.Equal(gotLock, wantLock) {
+		t.Errorf("generated dat-lock.json differs from the committed lock:\ncommitted:\n%s\ngenerated:\n%s", wantLock, gotLock)
+	}
+}
+
 // TestWriteROMsDeterministic pins the byte stream: two WriteROMs runs must
 // produce identical trees (same files, same bytes). The committed DATs embed
 // these hashes, so any wobble here is a stale-DAT bug.

@@ -56,9 +56,17 @@
 let
   cfg = config.jupiter.services.arcadeWebapp;
 
-  inherit (import ../lib.nix { inherit config lib pkgs; }) commonServiceHardening;
+  inherit (import ../lib.nix { inherit config lib pkgs; })
+    commonServiceHardening
+    jupiterArcadeSlice
+    ;
 
-  pkg = pkgs.callPackage ../../pkgs/arcade-webapp { };
+  pkg = pkgs.callPackage ../../pkgs/arcade-webapp {
+    # W4a version stamping: the fleet-wide overlay attr (set in flake.nix
+    # from self.rev). Guarded so a host built outside this flake still
+    # evaluates — it just reports 0.1.0-dev.
+    rev = pkgs.jupiter-flake-rev or "";
+  };
 
   # The committed TSV, copied into the store so the Go scanner parses the
   # same rows every consumer derives from (the retired rom-scraper.nix
@@ -284,13 +292,31 @@ in
 
     datFetchBaseUrl = lib.mkOption {
       type = lib.types.str;
-      default = "https://raw.githubusercontent.com/UnluckyForSome/Fresh1G1R/main/daily-1g1r-dat/McLean";
+      default = "https://raw.githubusercontent.com/UnluckyForSome/Fresh1G1R";
       description = ''
-        Base URL of the Fresh1G1R McLean 1G1R DAT tree the DAT manager
-        fetches per-system DATs from (scripts/deprecated/fetch-mclean-
-        1g1r-dats.sh's URL
-        family). Overridable so the VM test stubs the host — tests never
-        touch GitHub.
+        Raw-content ROOT of the Fresh1G1R repo the DAT manager fetches
+        per-system McLean DATs from — WITHOUT any ref. Since the
+        remediation W4b supply-chain hardening the fetcher appends the
+        RESOLVED COMMIT (<option>datCommitUrl</option>) and the McLean
+        subdir itself: every DAT comes from a commit-pinned URL, never
+        the mutable <literal>main</literal> branch. Overridable so the
+        VM test stubs the host — tests never touch GitHub.
+      '';
+    };
+
+    datCommitUrl = lib.mkOption {
+      type = lib.types.str;
+      default = "https://api.github.com/repos/UnluckyForSome/Fresh1G1R/commits/main";
+      description = ''
+        Endpoint resolving the Fresh1G1R ref to a full 40-hex commit
+        SHA (GitHub REST <literal>/commits/&lt;ref&gt;</literal> shape;
+        the top-level <literal>sha</literal> field). One call per
+        refresh batch; every DAT in the batch is then fetched at that
+        immutable commit. When resolution fails, the fetcher falls back
+        to the newest commit pinned in <literal>&lt;datDir&gt;/
+        dat-lock.json</literal>, so a GitHub API outage degrades to the
+        last-attested generation instead of killing DAT currency.
+        Overridable so the VM test stubs it.
       '';
     };
 
@@ -314,6 +340,46 @@ in
         (<option>jupiter.services.aria2</option>; europa-local default).
         Download control (P2) is enabled when this and
         <option>aria2SecretFile</option> are both set.
+      '';
+    };
+
+    # --- Unit resource caps (arcade remediation W4a / plan §6.F) -------
+    #
+    # The capacity ledger's binding rule (plan §6.A): europa is 2 cores /
+    # 7.7 GB serving NFS with one recorded OOM, and the webapp ran ROOT,
+    # UNCAPPED, UNWATCHDOGGED for its whole life — nothing new lands on
+    # europa before the caps exist. The caps bound the whole unit cgroup
+    # INCLUDING the exec'd children (igir verify, Skyscraper scrape), so
+    # an OOM kills the pipeline job alone, never the ZFS host. Same
+    # grammar as jupiter.services.aria2 (that module's post-OOM design).
+
+    memoryMax = lib.mkOption {
+      type = lib.types.str;
+      default = "2G";
+      description = ''
+        Hard memory ceiling for the unit's cgroup — the webapp AND its
+        exec'd children (igir hashing is streaming; Skyscraper's gather
+        passes are the peak). 2G on europa's 7.7G leaves the ZFS ARC
+        and NFS headroom; aria2 is separately capped at 3G.
+      '';
+    };
+
+    memoryHigh = lib.mkOption {
+      type = lib.types.str;
+      default = "1536M";
+      description = ''
+        Soft memory ceiling — reclaim starts throttling the cgroup
+        above this before <option>memoryMax</option>'s hard kill.
+      '';
+    };
+
+    cpuQuota = lib.mkOption {
+      type = lib.types.str;
+      default = "160%";
+      description = ''
+        CPU quota for the unit's cgroup (verify/scrape/generate are the
+        heavy jobs; the two-hour 87%-CPU boot is the incident of
+        record). 160% of the 2 cores leaves the NFS-serving share free.
       '';
     };
 
@@ -427,6 +493,12 @@ in
       "d '${cfg.scratchDir}/reports' 0750 root root -"
     ];
 
+    # W4a/W4c: the arcade plane's resource slice (MemoryMax bounds the
+    # whole plane; the webapp unit's own caps tighten inside it). Shared
+    # definition with modules/desktop/arcade.nix (identical definitions
+    # merge; divergent ones hard-fail eval).
+    systemd.slices."jupiter-arcade" = jupiterArcadeSlice;
+
     systemd.services.jupiter-arcade-webapp = {
       description = "jupiterOS Arcade pipeline webapp (scanner + dashboard)";
       wantedBy = [ "multi-user.target" ];
@@ -467,6 +539,7 @@ in
         ARCADE_WEBAPP_SCRAPE_INTERVAL_HOURS =
           if cfg.scrapeIntervalHours == null then "0" else toString cfg.scrapeIntervalHours;
         ARCADE_WEBAPP_DAT_FETCH_BASE_URL = cfg.datFetchBaseUrl;
+        ARCADE_WEBAPP_DAT_COMMIT_URL = cfg.datCommitUrl;
         ARCADE_WEBAPP_SCRATCH_DIR = cfg.scratchDir;
         ARCADE_WEBAPP_DB = "${cfg.stateDir}/arcade-webapp.db";
       }
@@ -507,11 +580,43 @@ in
         mkdir -p '${cfg.stateDir}' '${cfg.scratchDir}/reports'
       '';
 
+      # W4a explicit start limits (plan §6.F): the unit previously
+      # inherited upstream's default 5 starts / 10s — the budget that
+      # parks a crash-looping service dead before any human looks
+      # (the plan's §6.H finding, transposed to the pipeline plane). A
+      # crash-looping pipeline webapp on europa must keep trying for
+      # minutes, and the bursts the L2 smoke itself induces (restart +
+      # kill -9 + restart inside one run) must not trip the limiter:
+      # 6 starts / 300 s mirrors the kiosk session ladder's budget
+      # (modules/lib.nix sessionLadder — the same grammar the W4c spec
+      # landed for the cabinet plane).
+      startLimitIntervalSec = 300;
+      startLimitBurst = 6;
+
       serviceConfig = {
         Type = "exec";
         ExecStart = "${lib.getExe cfg.package}";
         Restart = "on-failure";
         RestartSec = "10s";
+
+        # W4a graceful-drain budget: on stop, systemd sends SIGTERM and
+        # the webapp drains in-flight requests (its shutdown path allows
+        # 100 s — see cmd/arcade-webapp/main.go). TimeoutStopSec must be
+        # AT LEAST that drain window, or systemd SIGKILLs the process
+        # mid-drain and turns every kiosk/europa switch into the
+        # connection-sever the drain exists to prevent. The heavy
+        # children (igir/Skyscraper) die with the cgroup on stop — a
+        # verify interrupted this way is the startup-sweep's exact case.
+        TimeoutStopSec = 110;
+
+        # W4a: the unit joins the arcade slice (caps the plane; see
+        # jupiter-arcade.slice in modules/lib.nix) and carries its own
+        # explicit resource ceilings — the whole cgroup INCLUDING the
+        # exec'd igir/Skyscraper children.
+        Slice = "jupiter-arcade.slice";
+        MemoryMax = cfg.memoryMax;
+        MemoryHigh = cfg.memoryHigh;
+        CPUQuota = cfg.cpuQuota;
 
         # Deliberately NOT DynamicUser (suno-web can afford it because its
         # state lives in a StateDirectory; this service writes its SQLite

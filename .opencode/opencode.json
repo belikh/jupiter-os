@@ -1,0 +1,22 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "//": "Deny-first runtime rules for the arcade remediation programme (SPEC.md constitution rule 6: deployment to europa or any kiosk is denied to agents; host switches and live observations run through the operator-assisted path, live deployment stays on the CI dispatch path). Rules are glob patterns over the full command string; opencode evaluates the LAST matching rule, so every deny below would also need to stay last if allows are ever added above them. NOTE: takes effect on the next opencode restart.",
+  "permission": {
+    "bash": {
+      "*nixos-rebuild switch*": "deny",
+      "*nixos-rebuild test*": "deny",
+      "*nixos-rebuild boot*": "deny",
+      "*nixos-rebuild*switch*": "deny",
+      "*switch-to-configuration*": "deny",
+      "ssh root@*": "deny",
+      "*ssh root@*": "deny",
+      "*ssh root@10.*": "deny",
+      "*ssh *root@*": "deny",
+      "git push --force*": "deny",
+      "*git push --force*": "deny",
+      "git push -f*": "deny",
+      "*git push -f *": "deny",
+      "*git push*+*:*": "deny"
+    }
+  }
+}

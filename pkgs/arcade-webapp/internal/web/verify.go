@@ -53,6 +53,13 @@ const (
 	VerifyStateMissing   = "missing"   // DAT games missing from the staged set (amber)
 	VerifyStateExtra     = "extra"     // games-tree files the DAT doesn't claim (amber)
 	VerifyStateUnmatched = "unmatched" // unmatched staged input / other deviations (red)
+	// VerifyStateDATLock (W4b): the newest verify attempt REFUSED to run
+	// — the DAT's on-disk bytes fail the dat-lock entry, so promotion
+	// against them is refused (igir never exec'd). The row must carry
+	// the refusal AS the state: the last-good pill was computed against
+	// bytes that are no longer on disk, and keeping it green here is
+	// exactly the silent-failure class this remediation exists to kill.
+	VerifyStateDATLock = "dat-lock-mismatch"
 	// VerifyStateExo marks P8's eXo-sourced systems: their launcher DB is
 	// kiosk-side and no igir verify applies — a distinct grey state so
 	// "unknown" keeps meaning "not verified YET".
@@ -133,6 +140,11 @@ func verifyStateChip(state string, v store.VerifyResult) template.HTML {
 		return template.HTML(fmt.Sprintf(`<span class="pill warn" title="all %d DAT games found; %d games-tree file(s) the DAT doesn't claim%s">%d extra</span>`, v.DatGames, v.Extra, art, v.Extra))
 	case VerifyStateUnchecked:
 		return template.HTML(fmt.Sprintf(`<span class="pill unknown" title="no DAT — promoted unchecked (%s)">unchecked</span>`, HumanBytes(v.PromotedBytes)))
+	case VerifyStateDATLock:
+		// W4b: the on-disk DAT bytes fail the lock — nothing ran, so the
+		// counts shown alongside (if any) are the LAST GOOD generation's,
+		// kept for context only.
+		return template.HTML(`<span class="pill stale" title="DAT bytes fail dat-lock — verify REFUSED; restore the locked DAT or refresh from the pinned commit">dat-lock</span>`)
 	case VerifyStateExo:
 		return template.HTML(`<span class="pill unknown" title="eXo curated collection — launcher DB generated kiosk-side; browse/curation only">exo</span>`)
 	default:
@@ -168,6 +180,11 @@ type verifyRowVM struct {
 	// report, and the marker says so instead of implying all is well
 	// (ADV-P3-02).
 	LastAttemptFailed bool
+	// W4b: when the newest attempt was refused outright (the dat-lock
+	// mismatch — promotion against untrusted DAT bytes), the marker
+	// names the refusal class instead of the generic "last attempt
+	// failed".
+	LastAttemptRefused string
 	// P4 drill-down, loaded only for offending systems (last verify has
 	// unmatched>0 or extra>0): the persisted per-file offender list and
 	// the recent-run history with run-over-run deltas.
@@ -201,6 +218,10 @@ type verifyVM struct {
 	Runner         igir.State
 	DATsRunning    bool
 	Error          string
+	// Liveness (W4b): the no-intro-frozen/redump-fresh asymmetry alarm
+	// is live — rendered as the panel's red alert banner.
+	Liveness       bool
+	LivenessDetail string
 	Rows           []verifyRowVM
 	IdleCount      int
 	// Aggregate: how many systems sit in each state (the header chips).
@@ -221,6 +242,12 @@ func (s *Server) fetchVerify() verifyVM {
 	}
 	if s.df != nil {
 		vm.DATsRunning = s.df.Running()
+		// The asymmetry alarm reads the dat_versions ledger — a page
+		// read on every poll is one cheap indexed query (see
+		// NewestDATVersionBySystem).
+		if frozen, detail := s.df.Liveness(vm.Now); frozen {
+			vm.Liveness, vm.LivenessDetail = true, detail
+		}
 	}
 	vm.Meta = pageMeta{Title: "verify", Sub: "verify & organize", ActiveVerify: true}
 
@@ -285,10 +312,20 @@ func (s *Server) fetchVerify() verifyVM {
 		// must say so when the newest attempt died. The RunID
 		// comparison excludes failed runs whose own report WAS ingested
 		// (igir non-zero exit + parseable report records counts too —
-		// that pill is not stale).
-		if at, ok := lastAttempt[sys.Key]; ok &&
-			at.Outcome == igir.OutcomeFailed && at.RunID > sys.Verify.RunID {
+		// that pill is not stale). W4b: the dat-lock-mismatch refusal is
+		// the same honesty class — the newest attempt refused to run
+		// against untrusted DAT bytes, and the marker names WHICH.
+		if at, ok := lastAttempt[sys.Key]; ok && at.RunID > sys.Verify.RunID &&
+			(at.Outcome == igir.OutcomeFailed || at.Outcome == igir.OutcomeDATLock) {
 			row.LastAttemptFailed = true
+			if at.Outcome == igir.OutcomeDATLock {
+				row.LastAttemptRefused = "dat-lock mismatch"
+				// W4b: the refusal OVERTURNS the last-good state — the
+				// counts were verified against bytes the lock no longer
+				// attests, so the row itself reads as the refusal (the
+				// VM smoke asserts data-verify="dat-lock-mismatch").
+				row.State = VerifyStateDATLock
+			}
 		}
 		if sys.Verify.FinishedAt != "" {
 			row.FinishedAgo = relTime(vm.Now, sys.Verify.FinishedAt)

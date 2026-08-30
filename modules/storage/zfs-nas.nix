@@ -162,8 +162,14 @@ let
       mountpoint = "/tank/archive/retro/metadata/skyscraper-cache";
       recordsize = "128K";
     }
-    # Generated fleet arcade inventory (inventory.json) — written by
-    # modules/services/arcade-inventory.nix, consumed by `make status-arcade`.
+    # Arcade pipeline state (modules/services/arcade-webapp.nix): the
+    # webapp's SQLite store — operator curation + verification history —
+    # plus the fleet inventory JSON. The irreplaceable arcade asset (the
+    # ROMs and DATs re-acquire; this record does not), so it carries the
+    # `important` sanoid template (modules/storage/sanoid.nix, W1-T3).
+    # (The comment previously credited the retired
+    # modules/services/arcade-inventory.nix unit — removed with the P8
+    # sprawl; the webapp owns this dataset now.)
     {
       name = "tank/archive/retro/state";
       mountpoint = "/tank/archive/retro/state";

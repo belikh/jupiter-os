@@ -174,18 +174,27 @@ let
 
   # The static-server root in one derivation: the torrent payload at
   # payload/ (webseed URL /payload/…) and the stubbed Fresh1G1R DAT
-  # tree at dats/ (the module's datFetchBaseUrl points at
-  # http://127.0.0.1:8099/dats — tests never touch GitHub). The stubbed
-  # nes DAT carries a NEWER date (2026-08-22) than the committed fixture
-  # DATs (2026-08-21) so the refresh is observable in the UI.
+  # tree at dats/ — commit-pinned since the W4b supply-chain hardening.
+  # The fetcher asks <datFetchBaseUrl>/<commit>/<datSubdir>/<coll>/<dat>
+  # after resolving the ref via <datCommitUrl> (a /commits/<ref>-shaped
+  # JSON document), so the stub mirrors BOTH: dats/commit.json answers
+  # {"sha": …} for the invented test commit, and the DAT bytes live
+  # under dats/<that commit>/daily-1g1r-dat/McLean/<coll>/… — never the
+  # mutable main branch (tests never touch GitHub, and the URL shape
+  # itself is under test). The stubbed nes DAT carries a NEWER date
+  # (2026-08-22) than the committed fixture DATs (2026-08-21) so the
+  # refresh is observable in the UI.
+  stubCommit = "0ae05e3e2ab1125af306f5b9a7d90fc546f3c66a"; # invented, 40-hex like the resolver demands
   stubRoot = pkgs.stdenv.mkDerivation {
     name = "arcade-webapp-vm-stub-root";
     buildCommand = ''
       set -euo pipefail
-      mkdir -p $out/payload $out/dats/no-intro
+      mkdir -p $out/payload $out/dats/${stubCommit}/daily-1g1r-dat/McLean/no-intro
       head -c 2097152 /dev/zero | tr '\0' 'P' > $out/payload/vm-fixture-payload.bin
+      printf '{"sha": "%s", "commit": {"message": "daily"}}' '${stubCommit}' \
+        > $out/dats/commit.json
       sed 's/2026-08-21/2026-08-22/' ${dats}/nes.dat \
-        > "$out/dats/no-intro/Nintendo - Nintendo Entertainment System (Headerless) (No-Intro - Fresh1G1R - McLean).dat"
+        > "$out/dats/${stubCommit}/daily-1g1r-dat/McLean/no-intro/Nintendo - Nintendo Entertainment System (Headerless) (No-Intro - Fresh1G1R - McLean).dat"
     '';
   };
 
@@ -291,17 +300,30 @@ let
   smoke = pkgs.writeShellScript "arcade-webapp-vm-smoke" ''
     exec > /dev/ttyS0 2>&1
     set -uo pipefail
+    # The verdict also lands in /run/arcade-smoke-verdict so the L2
+    # runNixOSTest driver (which disables the self-poweroff below) can
+    # assert the outcome from a live machine instead of a dead console.
+    verdict() { echo "$1" > /run/arcade-smoke-verdict; }
     poweroff_drained() {
       sync
       sleep 1
+      # ARCADE_SMOKE_NO_POWEROFF=1 (set by the smoke unit when
+      # vmSmokePoweroff is false) leaves the machine up for the
+      # runNixOSTest driver — the VM dies on the framework's own teardown
+      # after the test script has read the verdict.
+      if [ "''${ARCADE_SMOKE_NO_POWEROFF:-0}" = "1" ]; then
+        return 0
+      fi
       systemctl poweroff || true
     }
     fail() {
+      verdict FAIL
       echo "ARCADE-WEBAPP-VM: FAIL: $*" >&2
       poweroff_drained
       exit 1
     }
     pass() {
+      verdict PASS
       echo "ARCADE-WEBAPP-VM: PASS"
       poweroff_drained
     }
@@ -501,13 +523,20 @@ let
     # line ("listening on", emitted right before ListenAndServe in
     # cmd/arcade-webapp/main.go) — a dead/redirected journal fails
     # loudly instead of grepping nothing and reporting 0 matches.
+    # Since the W4a version stamping the line carries the binary's
+    # version ("arcade-webapp <version> listening on :8094"). The stamp
+    # is build-context-dependent BY DESIGN: a dirty local checkout
+    # reports 0.1.0-dev, a clean CI tree reports 0.1.0-g<short sha> —
+    # what is asserted is the SHAPE (a 0.1.0-* stamp present, the old
+    # un-stamped "arcade-webapp: listening on" gone, and never the bare
+    # Go default "dev" that a broken ldflags would leave).
     journal=$(journalctl -u jupiter-arcade-webapp --no-pager) \
       || fail "journalctl could not read the webapp journal (secret grep would be vacuous)"
-    grep -q 'arcade-webapp: listening on' <<<"$journal" \
-      || fail "webapp journal lacks its startup line — journal capture broken (secret grep would be vacuous)"
+    grep -Eq 'arcade-webapp 0\.1\.0-[a-z0-9]+ listening on' <<<"$journal" \
+      || fail "webapp journal lacks its version-stamped startup line (want 'arcade-webapp 0.1.0-* listening on') — either journal capture is broken or version stamping regressed"
     n=$(grep -c 'vm-test-invented-secret-not-from-sops' <<<"$journal" || true)
     [ "$n" = "0" ] || fail "RPC secret value leaked into the webapp journal"
-    echo "smoke: RPC secret never logged (journal alive: startup line present, grep clean)"
+    echo "smoke: RPC secret never logged (journal alive: version-stamped startup line present, grep clean)"
 
     # ---- P3: verify & organize (REAL igir) + DAT currency (stubbed) ----
     #
@@ -647,6 +676,58 @@ let
     done
     [ "$ok" = 1 ] || fail "dashboard nes card never flipped to 5 games / 60% / verified"
     echo "smoke: promotion on disk (fresh output), dashboard pill live"
+
+    # ---- W4b: the dat-lock supply chain, end to end in the VM ----------
+    #
+    # The stub-served refresh above locked nes at the stub commit with
+    # the bytes it served, and the green verify just ran against those
+    # LOCKED bytes (the gate is pinning, not paranoia). Now break the
+    # pin: swap the DAT on disk AFTER the lock attested it (the
+    # poisoned-cache / on-disk-tamper class) and prove the next verify
+    # REFUSES with the distinct dat-lock-mismatch outcome — igir never
+    # exec'd, nothing promoted, the run closes as an error, the verify
+    # partial names the refusal — then prove the operator's recovery
+    # (restoring the locked bytes) unblocks the system.
+    echo "smoke: W4b dat-lock: asserting the lock state"
+    lockf="${datDir}/dat-lock.json"
+    [ -f "$lockf" ] || fail "W4b: dat-lock.json missing after a stub-served DAT refresh"
+    grep -q '"source_commit": "0ae05e3e2ab1125af306f5b9a7d90fc546f3c66a"' "$lockf" \
+      || fail "W4b: dat-lock does not pin the stub commit (commit-pinned fetch failed)"
+    grep -Eq '"bytes_sha256": "[0-9a-f]{64}"' "$lockf" \
+      || fail "W4b: dat-lock lacks a sha256 for nes"
+    echo "smoke: W4b dat-lock: lock pins the stub commit + sha256 (content-addressed)"
+
+    # Tamper: swap the attested bytes out from under the lock.
+    cp "${datDir}/nes.dat" /tmp/w4b-locked-nes.dat
+    printf 'tampered-by-the-smoke' > "${datDir}/nes.dat"
+    if ! verify_until /systems/nes/verify nes dat-lock-mismatch; then
+      echo "smoke: DEBUG verify fragment rows:"
+      curl -sf "$base/partials/verify" | grep -o 'data-system="[a-z0-9]*" data-verify="[a-z-]*"' | head -8 || true
+      echo "smoke: DEBUG webapp journal tail:"
+      journalctl -u jupiter-arcade-webapp --no-pager -n 40 || true
+      fail "W4b: tampered DAT was not refused as dat-lock-mismatch"
+    fi
+    echo "smoke: W4b dat-lock: tampered DAT refused (outcome dat-lock-mismatch)"
+
+    # The refusal surfaces honestly on the verify partial (ADV-P3-02
+    # marker names the refusal class) and in the run detail.
+    frag=$(curl -sf "$base/partials/verify" || true)
+    grep -q 'last attempt refused: dat-lock mismatch' <<<"$frag" \
+      || fail "W4b: verify partial does not name the dat-lock refusal"
+    status=$(curl -sf "$base/partials/status" || true)
+    grep -q 'nes: dat-lock-mismatch' <<<"$status" \
+      || fail "W4b: run detail does not carry the nes dat-lock-mismatch outcome"
+    echo "smoke: W4b dat-lock: refusal named on the panel + in the run detail"
+
+    # Restore the locked bytes; the system verifies again (lock follows
+    # the bytes — the operator's recovery path is exactly this restore).
+    cp /tmp/w4b-locked-nes.dat "${datDir}/nes.dat"
+    if ! verify_until /systems/nes/verify nes verified; then
+      echo "smoke: DEBUG webapp journal tail:"
+      journalctl -u jupiter-arcade-webapp --no-pager -n 40 || true
+      fail "W4b: restoring the locked bytes must unblock the system"
+    fi
+    echo "smoke: W4b dat-lock: restored bytes verify again (lock follows the bytes)"
 
     # Promote-unchecked degradation: a2600 has staged input but NO DAT in
     # the VM — everything copies as-is, the pill reads 'unchecked' (grey,
@@ -1073,7 +1154,15 @@ let
     code=$(curl -s -o /tmp/hide.out -w '%{http_code}' -H "$HX" \
       -X POST "$base/systems/nes/games/$mid/hide")
     [ "$code" = 200 ] || fail "POST hide -> $code, want 200"
-    grep -q 'Show</button>' /tmp/hide.out \
+    # Selector updated for the 5533d1e (2026-08-28) game-actions rework:
+    # the label is span-wrapped for the htmx indicator
+    # (<span>Show</span> <span class="htmx-indicator…">), so the pre-fix
+    # 'Show</button>' anchor can never match. The CONTRACT asserted is
+    # unchanged — POST hide -> 200 and the response re-renders the button
+    # with the label flipped to Show. Caught by the first L2 runNixOSTest
+    # run (arcade remediation W0): the smoke had not been executed since
+    # 680fe9a (2026-08-23), five days before the markup change.
+    grep -q '<span>Show</span>' /tmp/hide.out \
       || fail "hide response did not re-render its button flipped to Show"
     code=$(curl -s -o /dev/null -w '%{http_code}' -X POST "$base/systems/nes/games/$mid/hide")
     [ "$code" = 403 ] || fail "bare POST hide -> $code, want 403 (CSRF posture)"
@@ -1258,11 +1347,172 @@ let
     gen_now
     echo "smoke: editor chips + honest counts visible through the REAL UI"
 
+    # ---- W4a acceptance: graceful drain + the kill -9 startup sweep ----
+    #
+    # The two service-hygiene proofs the handoff names, executed against
+    # the REAL unit (Restart/on-failure, TimeoutStopSec=110, the drain
+    # path in cmd/arcade-webapp/main.go, the FailOrphanedRuns sweep):
+    #
+    #   1. SIGTERM drain: hold a response open (curl --limit-rate over a
+    #      large static file), systemctl restart mid-transfer, and prove
+    #      the connection DELIVERS its full body across the restart
+    #      (HTTP 200, exact byte count) — a severed response would be
+    #      a truncated read.
+    #
+    #   2. kill -9 mid-verify: stage the in-flight marker (gb's .aria2
+    #      skip makes a verify slow enough to catch running), kill -9
+    #      the MAIN PID, let the unit restart, and prove no 'running'
+    #      row survives: the sweep closed it as an error with its
+    #      marker, visible in the run detail before the window rotates.
+    echo "smoke: W4a drain: opening a slow response across a SIGTERM restart"
+    # The largest always-served asset is htmx.min.js (~50 KiB, embedded in
+    # the binary and served at a fixed path); at 2 KiB/s the transfer
+    # takes ~25 s — comfortably spanning the restart's stop+start, short
+    # against the curl budget. The full-body proof: HTTP 200, a
+    # non-empty body, and the size matching what the SAME VM serves on
+    # a fresh (post-restart) request — the byte source is the embed.FS,
+    # so both reads must agree exactly.
+    curl -s --limit-rate 2k -o /tmp/w4a-drain.out -w '%{http_code} %{size_download}' \
+      "$base/static/htmx.min.js" > /tmp/w4a-drain.code &
+
+    drain_pid=$!
+    # DEBUG sampler: every second, snapshot the drain connection's TCP
+    # state (ss -ti shows send-q/recv-q + timers) so a truncated
+    # transfer leaves an autopsy in the serial log instead of a bare
+    # byte count. Cheap; removed nothing.
+    ( for _ in $(seq 1 40); do
+        ss -ti "sport = :8094 or dport = :8094" 2>/dev/null | head -12 >> /tmp/w4a-drain-ss.log
+        sleep 1
+      done ) &
+    sampler_pid=$!
+    # Let the transfer get mid-flight (a few KiB in), then restart.
+    sleep 4
+    systemctl restart jupiter-arcade-webapp
+    # The restarted unit must answer again (the drain window is over
+    # when the new process listens).
+    up=0
+    for _ in $(seq 1 60); do
+      if curl -sf "$base/healthz" >/dev/null 2>&1; then up=1; break; fi
+      sleep 1
+    done
+    [ "$up" = 1 ] || fail "W4a: webapp never answered /healthz after the SIGTERM restart"
+    echo "smoke: W4a drain: webapp back up after restart; waiting for the in-flight response"
+
+    # The in-flight transfer must COMPLETE with its full body — the
+    # drain proof (curl exit + code 200 + the byte count matching a
+    # fresh post-restart read of the same asset).
+    wait "$drain_pid"
+    read -r drain_code drain_size < /tmp/w4a-drain.code
+    curl -s -o /tmp/w4a-fresh.out "$base/static/htmx.min.js"
+    fresh_size=$(stat -c %s /tmp/w4a-fresh.out)
+    [ "$drain_code" = "200" ] || fail "W4a drain: in-flight response across SIGTERM -> code $drain_code, want 200"
+    if [ "$drain_size" != "$fresh_size" ]; then
+      echo "smoke: DEBUG W4a drain socket sampler (last 30 lines):"
+      tail -30 /tmp/w4a-drain-ss.log 2>/dev/null || true
+      echo "smoke: DEBUG drain guest TCP params:"
+      sysctl net.ipv4.tcp_wmem net.ipv4.tcp_rmem net.core.wmem_default net.core.rmem_default net.ipv4.tcp_retries2 2>/dev/null || true
+      echo "smoke: DEBUG ss all (filter syntax fallback):"
+      ss -ti 2>/dev/null | head -20 || true
+      echo "smoke: DEBUG drain curl timing file:"
+      cat /tmp/w4a-drain.code || true
+      fail "W4a drain: in-flight body $drain_size bytes, want the full $fresh_size (connection severed mid-drain?)"
+    fi
+    kill "$sampler_pid" 2>/dev/null || true
+    [ -s /tmp/w4a-drain.out ] || fail "W4a drain: the drained response body is empty"
+    # The journal carries the drain's own log line (the graceful path
+    # ran, not the SIGKILL path — the line is emitted only after
+    # Shutdown() returns).
+    grep -q 'graceful shutdown drained in-flight requests' <(journalctl -u jupiter-arcade-webapp --no-pager) \
+      || fail "W4a drain: journal lacks the graceful-drain line (Shutdown path never completed)"
+    echo "smoke: W4a drain: in-flight request delivered in full across the SIGTERM restart (drain line journaled)"
+
+    # kill -9 mid-verify: the sweep closes the orphaned 'running' row.
+    echo "smoke: W4a sweep: killing the webapp mid-verify with SIGKILL"
+    # gb's in-flight skip needs a control file; while it exists a verify
+    # of gb completes instantly, so instead hold a REAL long verify:
+    # the whole-corpus batch against the igir binary is the slow path.
+    # Simpler and deterministic: create a scan-length window by holding
+    # the heavy pipeline — the fastest deterministic slow job is a
+    # verify on a system with a staged .aria2 file ... which skips.
+    # The deterministic slow job in this host is the SCAN of the
+    # materialized trees; but scans are cheap here too. The honest
+    # slow-verify substitute: POST /verify (the batch endpoint) and
+    # kill -9 as soon as the run row shows 'running' in the status
+    # partial — any duration is fine, the kill races the finish, and
+    # the assertion is about the ROW, not the duration.
+    curl -s -o /dev/null -H "$HX" -X POST "$base/verify" &
+    verify_pid=$!
+    killed=0
+    for _ in $(seq 1 30); do
+      pid=$(systemctl show jupiter-arcade-webapp -p MainPID --value)
+      if [ "$pid" != "0" ] && [ -n "$pid" ]; then
+        if kill -9 "$pid" 2>/dev/null; then killed=1; break; fi
+      fi
+      sleep 1
+    done
+    [ "$killed" = 1 ] || fail "W4a sweep: could not kill -9 the webapp MainPID"
+    wait "$verify_pid" || true
+    # The unit restarts (Restart=on-failure); wait for /healthz.
+    up=0
+    for _ in $(seq 1 60); do
+      if curl -sf "$base/healthz" >/dev/null 2>&1; then up=1; break; fi
+      sleep 1
+    done
+    [ "$up" = 1 ] || fail "W4a sweep: webapp never came back after kill -9"
+    echo "smoke: W4a sweep: webapp kill -9'd mid-verify and restarted; asserting the runs table"
+
+    # The sweep must have closed every 'running' row as an error with
+    # its marker. Query through the API the partial serves (the run
+    # detail carries the sweep reason), with the same DEBUG-gated
+    # retry shape the other run-row assertions use. The sweep marker
+    # 'startup sweep' must appear in SOME run detail, and no row may
+    # still be 'running'.
+    swept=0
+    for _ in $(seq 1 15); do
+      status=$(curl -sf "$base/partials/status" || true)
+      if grep -q 'startup sweep' <<<"$status"; then swept=1; break; fi
+      sleep 1
+    done
+    [ "$swept" = 1 ] \
+      || fail "W4a sweep: no 'startup sweep' marker in any run detail — the orphaned 'running' row survived the restart (FailOrphanedRuns regressed)"
+    # No run row anywhere still says running: scan back through the
+    # partial window (RecentRuns(8)) — all rows must render a terminal
+    # pill (ok/error), never 'running'. The 10s partial poll can lag
+    # one cycle; re-grep after a settle beat.
+    sleep 11
+    status=$(curl -sf "$base/partials/status" || true)
+    if grep -q '<span class="pill running">running' <<<"$status"; then
+      fail "W4a sweep: a 'running' run row survived the kill -9 restart — orphan row persists"
+    fi
+    echo "smoke: W4a sweep: kill -9 mid-verify left no orphaned 'running' row (sweep marker in run detail)"
+
     pass
   '';
 in
 {
-  imports = [ ../../modules/services/arcade-webapp.nix ];
+  # L2-driver toggle (arcade remediation W0), declared as an inline
+  # options-only module because this host file keeps its config at the
+  # top level: false when driven by flake.nix's
+  # checks.x86_64-linux.arcade-webapp-vm (testers.runNixOSTest) — the
+  # driver keeps the VM alive and asserts /run/arcade-smoke-verdict
+  # instead of grepping a powered-off serial console. Default true
+  # preserves the standalone path (`make test-arcade-webapp`: build-vm +
+  # serial grep + self-poweroff).
+  imports = [
+    ../../modules/services/arcade-webapp.nix
+    {
+      options.jupiter.tests.arcadeWebappVm.poweroffAfterSmoke = lib.mkOption {
+        type = lib.types.bool;
+        default = true;
+        description = ''
+          Whether the in-VM smoke service powers the VM off after printing
+          its verdict. Leave true for the standalone build-vm driver; the
+          L2 runNixOSTest check sets it false so the test driver can read
+          the verdict from the live machine.
+        '';
+      };
+    }
+  ];
 
   networking.hostName = "arcade-webapp-vm";
 
@@ -1317,10 +1567,13 @@ in
     skyscraperPackage = skyscraperStub;
     scrapeIntervalHours = null;
     # DAT manager against the in-VM stub host — tests never touch
-    # GitHub (the stub serves a re-dated nes DAT so the refresh is
-    # observable). Scheduled refresh stays OFF for determinism; the
-    # on-demand endpoints are what the smoke drives.
+    # GitHub (the stub serves a commit-pinned re-dated nes DAT so the
+    # refresh is observable; the ref resolves through the stub's own
+    # /dats/commit.json, never the real GitHub API). Scheduled refresh
+    # stays OFF for determinism; the on-demand endpoints are what the
+    # smoke drives.
     datFetchBaseUrl = "http://127.0.0.1:8099/dats";
+    datCommitUrl = "http://127.0.0.1:8099/dats/commit.json";
     datRefreshIntervalHours = null;
     scratchDir = scratch;
     # Download control against the in-VM daemon (default RPC URL
@@ -1483,6 +1736,12 @@ in
       ExecStart = "${smoke}";
       StandardOutput = "console";
       StandardError = "console";
+    }
+    // lib.optionalAttrs (!config.jupiter.tests.arcadeWebappVm.poweroffAfterSmoke) {
+      # L2 mode: the runNixOSTest driver owns VM teardown; the smoke
+      # records /run/arcade-smoke-verdict and exits instead of powering
+      # the machine off under the driver.
+      Environment = "ARCADE_SMOKE_NO_POWEROFF=1";
     };
     path = [
       launchProbe
@@ -1495,7 +1754,8 @@ in
       jq # P8: /inventory.json legacy-shape assertions
       systemd
       coreutils # stat: the AC-8c launch probe resolves the substituted ROM path in the served tree
-      procps # ps: the P3 verify DEBUG hang-check
+      procps # ps: the P3 verify DEBUG hang-check; sysctl: W4a drain DEBUG TCP params
+      iproute2 # ss: the W4a drain DEBUG socket sampler
     ]);
   };
 

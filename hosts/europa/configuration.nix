@@ -440,15 +440,13 @@
       }
       {
         # AriaNg web UI for the aria2 download manager (see aria2.nix).
+        # W1-T1: the rpc.jupiter.au JSON-RPC tunnel route is REMOVED — the
+        # daemon is loopback-only now and AriaNg reaches it through this
+        # vhost's same-origin /jsonrpc proxy. Remote RPC ops return only
+        # behind a Cloudflare Access policy on a re-added route
+        # (ledger row W1-D1), never secret-only on a public ingress.
         hostname = "ariang.jupiter.au";
         port = 8083;
-      }
-      {
-        # aria2 JSON-RPC. Cloudflare terminates TLS at the edge, so AriaNg
-        # reaches this as wss://rpc.jupiter.au/jsonrpc (auth = RPC secret).
-        # WebSocket upgrades are carried by cloudflared.
-        hostname = "rpc.jupiter.au";
-        port = 6800;
       }
       {
         # suno-web (Suno archive browser UI, this host :8093 —
@@ -571,14 +569,14 @@
     enable = true;
     downloadDir = "/tank/downloads";
     openFirewall = true;
-    # AriaNg (web UI) defaults its RPC connection to rpc.jupiter.au:443, which
-    # cloudflared tunnels to the local daemon (:6800); Cloudflare terminates
-    # TLS / carries the WebSocket upgrade, so AriaNg talks wss://rpc.jupiter.au/jsonrpc.
-    # The RPC secret is still entered once per browser (never embedded in the
-    # served page — would leak the daemon's auth to anyone on the LAN).
-    rpcHost = "rpc.jupiter.au";
-    rpcProtocol = "wss";
-    rpcWebPort = 443;
+    # AriaNg (web UI) defaults its RPC connection to this host's LAN
+    # address on the AriaNg vhost port (:8083) — the vhost's /jsonrpc
+    # location reverse-proxies to the loopback-bound daemon (:6800), so
+    # the RPC URL is same-origin with the UI. The RPC secret is still
+    # entered once per browser (never embedded in the served page — would
+    # leak the daemon's auth to anyone on the LAN). Remote (off-LAN) RPC
+    # is deferred to a Cloudflare-Access-fronted route (ledger W1-D1).
+    rpcHost = config.jupiter.fleet.addresses.europa;
     # The arcade webapp submits its per-system torrents with
     # dir=<incomingDir>/<sys> (fire-and-forget via the JSON-RPC endpoint), so
     # the daemon needs the incoming root writable to resume partials in

@@ -1,4 +1,4 @@
-.PHONY: build-all check update fmt fmt-check verify-arcade status-arcade fixture-arcade test-arcade-webapp docs docs-serve
+.PHONY: build-all check update fmt fmt-check verify-arcade status-arcade fixture-arcade test-arcade-webapp check-arcade-webapp check-ledger docs docs-serve
 
 # Build every registered host closure (the 4 dashboard kiosks).
 build-all:
@@ -69,6 +69,19 @@ fixture-arcade:
 # /dev/kvm for a sane boot time.
 test-arcade-webapp:
 	./scripts/test-arcade-webapp.sh
+
+# L1 lane (arcade remediation SPEC.md W0): go vet + race-enabled tests on
+# pkgs/arcade-webapp, using the flake devShell's pinned Go toolchain — the
+# exact commands .github/workflows/ci.yml's arcade-webapp-l1 job runs, so
+# agent, human and CI see identical results.
+check-arcade-webapp:
+	nix develop -c bash -c 'cd pkgs/arcade-webapp && go vet ./... && go test -race ./...'
+
+# Remediation ledger gate (SPEC.md constitution §1.3): every deferral and
+# adoption is a dated TSV row; CI fails when a row's trigger date arrives
+# with the row still open. Prose deferrals are unconstitutional.
+check-ledger:
+	./scripts/ledger-check.sh docs/plans/arcade-remediation-ledger.tsv
 
 # Update flake locks
 update:

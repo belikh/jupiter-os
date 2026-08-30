@@ -14,6 +14,7 @@ package scanner
 
 import (
 	"archive/zip"
+	"bytes"
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
@@ -509,8 +510,28 @@ func ReadDAT(path string) (*store.DATInfo, error) {
 		info.SizeBytes = st.Size()
 		info.ModTime = st.ModTime()
 	}
+	if err := parseLogiqx(f, info); err != nil {
+		return nil, fmt.Errorf("scanner: parse %s: %w", path, err)
+	}
+	return info, nil
+}
 
-	dec := xml.NewDecoder(f)
+// ReadDATBytes is ReadDAT over an in-memory DAT (remediation W4b): the
+// DAT manager parses a freshly downloaded byte slice BEFORE installing
+// it, so an unparseable generation is refused at the gate instead of
+// replacing a good on-disk DAT.
+func ReadDATBytes(body []byte) (*store.DATInfo, error) {
+	info := &store.DATInfo{SizeBytes: int64(len(body)), ModTime: time.Now()}
+	if err := parseLogiqx(bytes.NewReader(body), info); err != nil {
+		return nil, err
+	}
+	return info, nil
+}
+
+// parseLogiqx fills info's header fields and <game> count from a Logiqx
+// datafile stream.
+func parseLogiqx(r io.Reader, info *store.DATInfo) error {
+	dec := xml.NewDecoder(r)
 	var header logiqxHeader
 	for {
 		tok, err := dec.Token()
@@ -518,7 +539,7 @@ func ReadDAT(path string) (*store.DATInfo, error) {
 			if errors.Is(err, io.EOF) {
 				break
 			}
-			return nil, fmt.Errorf("scanner: parse %s: %w", path, err)
+			return err
 		}
 		switch t := tok.(type) {
 		case xml.StartElement:
@@ -526,7 +547,7 @@ func ReadDAT(path string) (*store.DATInfo, error) {
 			case "header":
 				// DecodeElement consumes through </header> in one go.
 				if err := dec.DecodeElement(&header, &t); err != nil {
-					return nil, fmt.Errorf("scanner: header of %s: %w", path, err)
+					return err
 				}
 			case "game":
 				info.RomCount++
@@ -539,7 +560,7 @@ func ReadDAT(path string) (*store.DATInfo, error) {
 	if info.Date == "" {
 		info.Date = header.Build // clrmamepro-style DATs put the date in <build>
 	}
-	return info, nil
+	return nil
 }
 
 // countCacheGames implements the Skyscraper coverage heuristic via

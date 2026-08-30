@@ -322,6 +322,93 @@ func TestVerifyLastAttemptFailedMarker(t *testing.T) {
 	}
 }
 
+// TestVerifyDATLockRefusalFlipsRowState (W4b): a verify attempt REFUSED
+// by the dat-lock gate must flip the row's data-verify state to the
+// refusal state — the last-good "verified" pill was computed against
+// DAT bytes the lock no longer attests, so rendering it while the
+// on-disk DAT is untrusted is exactly the silent-green class this
+// remediation exists to kill. The VM smoke asserts the same contract
+// through the real igir runner; this pins the web layer alone.
+func TestVerifyDATLockRefusalFlipsRowState(t *testing.T) {
+	srv, _ := newVerifyServer(t)
+	stamp := time.Now().UTC().Format(time.RFC3339)
+
+	// Last GOOD generation: ingested, green.
+	runID, err := srv.st.StartRun("verify")
+	if err != nil {
+		t.Fatal(err)
+	}
+	detail, err := json.Marshal(verifyRunDetail{Systems: []igir.SystemOutcome{
+		{Sys: "nes", Outcome: igir.OutcomeVerified, DatGames: 5, Found: 5},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.st.FinishRun(runID, "ok", string(detail)); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.st.RecordVerifyResult(store.VerifyResult{
+		SystemKey: "nes", RunID: runID, FinishedAt: stamp, DatGames: 5, Found: 5,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Newer attempt: REFUSED by the dat-lock gate (the on-disk DAT was
+	// swapped after the lock attested it).
+	runID2, err := srv.st.StartRun("verify")
+	if err != nil {
+		t.Fatal(err)
+	}
+	detail2, err := json.Marshal(verifyRunDetail{Systems: []igir.SystemOutcome{
+		{Sys: "nes", Outcome: igir.OutcomeDATLock, Err: "dats: nes.dat fails its dat-lock entry"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.st.FinishRun(runID2, "error", string(detail2)); err != nil {
+		t.Fatal(err)
+	}
+
+	frag := get(t, srv.Handler(), "/partials/verify").Body.String()
+	if !strings.Contains(frag, `data-system="nes" data-verify="dat-lock-mismatch"`) {
+		t.Error("row state must carry the refusal (data-verify=\"dat-lock-mismatch\") — not the stale last-good pill")
+	}
+	if !strings.Contains(frag, "last attempt refused: dat-lock mismatch") {
+		t.Error("the refusal marker must name the dat-lock class")
+	}
+	if !strings.Contains(frag, ">dat-lock</span>") {
+		t.Error("the state chip must render the dat-lock pill")
+	}
+
+	// The operator's recovery: a newer successful attempt clears the
+	// refusal (restoring the locked bytes lets the system verify again).
+	runID3, err := srv.st.StartRun("verify")
+	if err != nil {
+		t.Fatal(err)
+	}
+	detail3, err := json.Marshal(verifyRunDetail{Systems: []igir.SystemOutcome{
+		{Sys: "nes", Outcome: igir.OutcomeVerified, DatGames: 5, Found: 5},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.st.FinishRun(runID3, "ok", string(detail3)); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.st.RecordVerifyResult(store.VerifyResult{
+		SystemKey: "nes", RunID: runID3, FinishedAt: stamp, DatGames: 5, Found: 5, Duplicate: 5,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	frag = get(t, srv.Handler(), "/partials/verify").Body.String()
+	if !strings.Contains(frag, `data-system="nes" data-verify="verified"`) {
+		t.Error("a newer successful attempt must restore the green state (the lock follows the bytes)")
+	}
+	if strings.Contains(frag, "last attempt refused") {
+		t.Error("refusal marker must clear once a newer attempt ingests")
+	}
+}
+
 // TestVerifyDrillDownRendersOffendersAndDeltas (P4): a system whose last
 // verify has unmatched/extra deviations must name the per-file offenders
 // (the persisted RecordVerifyUnmatched list) and show its recent-run

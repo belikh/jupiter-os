@@ -7,11 +7,22 @@
 
 # aria2 download manager + AriaNg web UI.
 #
-# aria2 runs as a systemd service with JSON-RPC on :6800, bound to all
-# interfaces so AriaNg and other LAN clients can reach it (auth is via the
-# RPC secret, never via network isolation). AriaNg (pure HTML/JS) is served
-# via nginx on a separate port. RPC secret is provided via sops
-# (jupiter_aria2_rpc_secret).
+# aria2 runs as a systemd service with JSON-RPC on :6800 bound to LOOPBACK
+# ONLY (W1-T1: it previously listened on all interfaces with the port
+# opened in the firewall and a public Cloudflare-tunnel route at
+# rpc.jupiter.au — secret-only auth on a public ingress, plus the secret
+# visible in /proc/<pid>/cmdline). Consumers:
+#   - the arcade webapp (same host) talks to 127.0.0.1:6800 directly;
+#   - AriaNg is served by nginx on :<port>, and its browser reaches the
+#     daemon through the same-origin /jsonrpc reverse proxy below — the
+#     daemon itself never leaves loopback and the RPC port is never opened
+#     in the firewall.
+# Remote (off-LAN) RPC access is a ledgered follow-up: re-add a tunnel
+# route only behind a Cloudflare Access policy on the hostname
+# (docs/plans/arcade-remediation-ledger.tsv W1-D1).
+# The RPC secret is provided via sops (jupiter_aria2_rpc_secret), handed
+# to the service through systemd LoadCredential, and passed to aria2 in a
+# runtime conf file — it never appears in any process's argv.
 
 let
   cfg = config.jupiter.services.aria2;
@@ -42,14 +53,14 @@ in
       type = lib.types.str;
       default = "127.0.0.1";
       description = ''
-        Host under which AriaNg (the web UI) reaches the JSON-RPC daemon. The
-        daemon binds all interfaces (<literal>--rpc-listen-all</literal>); over
-        the LAN it is usually the routable host (e.g. the NAS'
-        <literal>10.1.1.2</literal>), or a public/TLS reverse-proxy hostname
-        when the endpoint is fronted by a tunnel (see europa's
-        <literal>rpc.jupiter.au</literal>). Combine with
-        <option>rpcProtocol</option> and <option>rpcWebPort</option> to build
-        the exact URL AriaNg defaults to.
+        Host under which AriaNg (the web UI) reaches the JSON-RPC daemon.
+        The daemon binds loopback only; AriaNg's browser hits the
+        <literal>/jsonrpc</literal> reverse proxy on this module's nginx
+        vhost, so this is the address BROWSERS on the LAN use to reach
+        <option>port</option> — usually this host's routable LAN address
+        (e.g. the NAS' <literal>10.1.1.2</literal>). Combine with
+        <option>rpcProtocol</option> and <option>rpcWebPort</option> to
+        build the exact URL AriaNg defaults to.
       '';
     };
 
@@ -62,22 +73,22 @@ in
       ];
       default = "http";
       description = ''
-        Protocol AriaNg uses to reach the JSON-RPC daemon. Default
-        <literal>http</literal> for a plain LAN endpoint; set
-        <literal>wss</literal> when the endpoint is fronted by TLS/WebSocket
-        termination (e.g. europa's <literal>rpc.jupiter.au</literal> via
-        cloudflared), or <literal>https</literal>/<literal>ws</literal> as
-        appropriate.
+        Protocol AriaNg uses to reach the JSON-RPC daemon through the
+        same-origin <literal>/jsonrpc</literal> proxy. Default
+        <literal>http</literal> for the plain LAN path; set
+        <literal>wss</literal>/<literal>https</literal> only when the
+        AriaNg vhost itself is fronted by TLS termination.
       '';
     };
 
     rpcWebPort = lib.mkOption {
       type = lib.types.port;
-      default = 6800;
+      default = cfg.port;
       description = ''
-        Port AriaNg uses to reach the JSON-RPC daemon. Defaults to the daemon's
-        local <option>rpcPort</option> (6800); set to 443 when the endpoint is
-        fronted by a TLS-terminating reverse proxy / tunnel.
+        Port AriaNg uses to reach the JSON-RPC daemon. Defaults to the
+        AriaNg vhost's own <option>port</option>: the
+        <literal>/jsonrpc</literal> location on that vhost proxies to the
+        loopback-bound daemon, so the RPC URL is same-origin with the UI.
       '';
     };
 
@@ -105,7 +116,12 @@ in
     openFirewall = lib.mkOption {
       type = lib.types.bool;
       default = true;
-      description = "Open RPC and web UI ports in firewall for LAN access";
+      description = ''
+        Open the AriaNg web UI and BitTorrent ports in the firewall for LAN
+        access. The JSON-RPC port is deliberately NEVER opened: the daemon
+        binds loopback only (W1-T1) and AriaNg reaches it through the
+        same-origin nginx <literal>/jsonrpc</literal> proxy.
+      '';
     };
 
     btListenPort = lib.mkOption {
@@ -173,9 +189,12 @@ in
     ]
     ++ map (dir: "d ${dir} 0755 io users -") cfg.extraWritableDirs;
 
-    # aria2 daemon. The RPC secret is read from the sops file at runtime:
-    # sops secrets are only decryptable at activation, so the ExecStart
-    # caches the value via `$(cat ...)` (aria2 has no --rpc-secret-file).
+    # aria2 daemon. The RPC secret reaches the service via systemd
+    # LoadCredential (from the sops file), and the wrapper writes it into a
+    # runtime conf file (mode 0600, tmpfs) which aria2 reads via
+    # --conf-path — aria2 has no --rpc-secret-file, and passing
+    # --rpc-secret on the command line exposes it in /proc/<pid>/cmdline to
+    # every local user (the W1-T1 exposure class).
     # WARNING: no shell comments (`#`) inside the ExecStart script below. The
     # script is built from this Nix string, and a `#` mid-command swallows the
     # backslash-continuation AND, because the script is `exec`, everything
@@ -183,7 +202,7 @@ in
     # --save-session/--max-concurrent-downloads/--enable-dht6 after the save-
     # session comments were added, until this was fixed).
     systemd.services.aria2 = {
-      description = "aria2 download manager (JSON-RPC)";
+      description = "aria2 download manager (JSON-RPC, loopback only)";
       wantedBy = [ "multi-user.target" ];
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
@@ -192,13 +211,19 @@ in
         Type = "exec";
         User = "io";
         Group = "users";
+        RuntimeDirectory = "aria2";
+        LoadCredential = "aria2-rpc-secret:${config.sops.secrets.jupiter_aria2_rpc_secret.path}";
         ExecStart = pkgs.writeShellScript "aria2-exec" ''
           set -eu
+          umask 077
+          [ -s "$CREDENTIALS_DIRECTORY/aria2-rpc-secret" ] || exit 1
+          CONF="$RUNTIME_DIRECTORY/aria2.conf"
+          printf 'rpc-secret=%s\n' "$(cat "$CREDENTIALS_DIRECTORY/aria2-rpc-secret")" > "$CONF"
           exec ${pkgs.aria2}/bin/aria2c \
             --enable-rpc \
-            --rpc-listen-all=true \
+            --rpc-listen-all=false \
             --rpc-listen-port=${toString cfg.rpcPort} \
-            --rpc-secret="$(cat ${config.sops.secrets.jupiter_aria2_rpc_secret.path})" \
+            --conf-path="$CONF" \
             --rpc-max-request-size=64M \
             --dir=${cfg.downloadDir} \
             --file-allocation=falloc \
@@ -269,6 +294,18 @@ in
         locations."= /" = {
           return = "302 /index.html#!/settings/rpc/set/${cfg.rpcProtocol}/${cfg.rpcHost}/${toString cfg.rpcWebPort}/jsonrpc";
         };
+        # Same-origin reverse proxy to the loopback-bound JSON-RPC daemon
+        # (W1-T1). The daemon never leaves 127.0.0.1; AriaNg's browser
+        # posts to <vhost>/jsonrpc and nginx forwards. Auth is still the
+        # RPC secret (entered once per browser, never embedded in the
+        # served page). WebSocket upgrades are carried for ws:// configs.
+        locations."/jsonrpc" = {
+          proxyPass = "http://127.0.0.1:${toString cfg.rpcPort}";
+          proxyWebsockets = true;
+          extraConfig = ''
+            proxy_read_timeout 300s;
+          '';
+        };
         # AriaNg is a SPA - serve index.html for all routes
         locations."/" = {
           tryFiles = "$uri $uri/ /index.html";
@@ -283,10 +320,11 @@ in
     };
 
     # Firewall. The BT listen port needs both TCP (peer connections) and UDP
-    # (DHT/tracker).
+    # (DHT/tracker). cfg.rpcPort is deliberately absent: the daemon binds
+    # loopback only and LAN clients go through the AriaNg vhost's /jsonrpc
+    # proxy (W1-T1 — the RPC port was previously open to the LAN).
     networking.firewall.allowedTCPPorts = lib.mkIf cfg.openFirewall [
       cfg.port
-      cfg.rpcPort
       cfg.btListenPort
     ];
     networking.firewall.allowedUDPPorts = lib.mkIf cfg.openFirewall [
