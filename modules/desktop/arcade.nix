@@ -80,32 +80,27 @@ let
     lib.concatStringsSep "\n" (map (p: "providers.${p}.enabled: false") disabledPegasusProviders)
   );
 
-  # W4c: OnFailure escalation — the ladder's last two rungs. Reaching
-  # here means the session unit FAILED (with Restart=always + explicit
-  # start limits, that is the start-limit exhaustion: a crash-looping
-  # cabinet). Ladder: reboot; after ${toString failureLadderLimit}
-  # consecutive failed ladders WITHOUT one good READY (the launcher
-  # wrapper clears the counter on first ready), drop to the rescue
-  # console instead of reboot-looping forever — tty2 is already the
-  # reserved rescue console on arcade-console hosts.
-  failureLadderLimit = 3;
-
+  # OnFailure observer for the session unit. Reaching here means the
+  # session unit FAILED (with Restart=always + explicit start limits,
+  # that is the start-limit exhaustion: a crash-looping session). An
+  # earlier revision escalated by REBOOTING the host (3 failed ladders
+  # -> rescue console), but that is wrong for any host with a second
+  # job: callisto runs the fleet Postgres, the MQTT broker and shared
+  # builds beside its arcade, and on 2026-08-31 a Pegasus start timeout
+  # (Type=notify, the 180 s start budget) tripped OnFailure on EVERY
+  # boot and reboot-looped the serving host indefinitely — the
+  # boot-count guard never fired because /var/lib is impermanent, the
+  # counter reset each boot. A game frontend is never worth a host
+  # power-cycle: this rung only records the failure episode (journal +
+  # counter file, cleared by the launcher on the first good READY);
+  # host recovery is an operator decision.
   arcadeFailureScript = pkgs.writeShellScript "jupiter-arcade-failure" ''
     set -eu
     DIR=/var/lib/jupiter-arcade
     mkdir -p "$DIR"
     n=$(( $(cat "$DIR/failure-count" 2>/dev/null || echo 0) + 1 ))
     echo "$n" > "$DIR/failure-count"
-    echo "jupiter-arcade failure ladder #$n (session unit entered failed state)"
-    if [ "$n" -ge ${toString failureLadderLimit} ]; then
-      echo "jupiter-arcade: $n failed ladders without a ready session — booting to the rescue console"
-      rm -f "$DIR/failure-count"
-      ${pkgs.systemd}/bin/systemctl set-default rescue.target
-      ${pkgs.systemd}/bin/systemctl reboot
-      exit 0
-    fi
-    echo "jupiter-arcade: rebooting for ladder recovery (counter resets on a successful READY=1)"
-    ${pkgs.systemd}/bin/systemctl reboot
+    echo "jupiter-arcade failure episode #$n (session unit entered failed state; host stays up)"
   '';
 in
 {
@@ -161,10 +156,12 @@ in
         READY=1 when the frontend reports menu-accepting-input,
         WatchdogSec armed, Restart=always with explicit start limits
         (6 per 300 s — not the upstream 5-per-10 s that parks a
-        crash-looping cabinet dead in ~12 s), OnFailure reboot
-        escalation, and a boot-count guard onto the rescue console
-        after 3 failed ladders. The ladder numbers live in
-        modules/lib.nix (sessionLadder) with their rationale.
+        crash-looping cabinet dead in ~12 s), and an OnFailure
+        observer that records the failure episode without touching the
+        host (an earlier revision rebooted — removed after it
+        reboot-looped callisto, the serving host, on a Pegasus start
+        timeout). The ladder numbers live in modules/lib.nix
+        (sessionLadder) with their rationale.
       '';
     };
 
@@ -247,15 +244,15 @@ in
       # inherit the session cgroup) — the kiosk half of the slice the
       # europa webapp also joins.
       serviceConfig.Slice = "jupiter-arcade.slice";
-      # The ladder's escalation rung: reaching failed state (with
+      # The ladder's failure observer: reaching failed state (with
       # Restart=always + explicit start limits, that is start-limit
-      # exhaustion) reboots, then the boot-count guard drops onto the
-      # rescue console.
+      # exhaustion) records the episode in the journal and the counter
+      # file. Deliberately does NOT reboot — see arcadeFailureScript.
       unitConfig.OnFailure = [ "jupiter-arcade-failure.service" ];
     };
 
     systemd.services.jupiter-arcade-failure = lib.mkIf cfg.watchdogAndLadder {
-      description = "jupiterOS Arcade failure ladder (reboot, boot-count guard to rescue console)";
+      description = "jupiterOS Arcade failure observer (records the episode; host stays up)";
       serviceConfig = {
         Type = "oneshot";
         ExecStart = "${arcadeFailureScript}";

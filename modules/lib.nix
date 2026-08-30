@@ -24,8 +24,9 @@ let
   #     -> SIGABRT to the main process
   #     -> Restart=always with RestartSec=5
   #     -> start limits (6 starts per 300 s, not 5 per 10 s)
-  #     -> OnFailure escalation (arcade.nix: reboot, then boot-count guard
-  #        to the rescue console after 3 failed ladders)
+  #     -> OnFailure observer (arcade.nix: journal + counter only — a
+  #        game frontend is never worth a host power-cycle; the reboot
+  #        escalation was removed after it looped callisto)
   sessionLadder = {
     # The wrapper's readiness budget: pegasus-fe must appear within 60 s
     # (the 60-second boot-to-playable signage number) and then settle
@@ -63,7 +64,7 @@ in
   # process heuristic + settle window IS the spec's "small notify
   # wrapper"), feeds the systemd watchdog while the compositor lives,
   # clears the session-failure boot counter on the first good ready
-  # (arcade.nix's OnFailure ladder guard), and exits with the
+  # (arcade.nix's OnFailure observer's counter), and exits with the
   # compositor's status so Restart=always owns recovery.
   mkSessionLauncher =
     name: user: command:
@@ -109,9 +110,9 @@ in
         echo "jupiter-${name}: frontend process never matched — asserting READY=1 on the fallback budget"
       fi
       "$NOTIFY" READY=1
-      # First good ready clears the failure-ladder boot counter (the
-      # OnFailure escalation unit counts failed ladders across reboots;
-      # a session that reaches ready is, by definition, not one).
+      # First good ready clears the failure-episode counter (the
+      # OnFailure observer unit counts failed episodes; a session that
+      # reaches ready is, by definition, not one).
       rm -f /var/lib/jupiter-arcade/failure-count 2>/dev/null || true
 
       # Watchdog feed: ping while the compositor lives. A hung WRAPPER
