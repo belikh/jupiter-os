@@ -100,7 +100,7 @@ answers "what did we verify against, and when?" in one query.
 | L2 | the 1517-line harness as `checks.x86_64-linux.arcade-webapp-vm` (`testers.runNixOSTest`) | `arcade-webapp-l2-vm` job, udev unlock + fail-loud KVM probe | **live (W0)** |
 | L3 | chromium-in-VM Playwright lane driving the real dashboard; fails on any 4xx and any duplicate panel id | same VM lane, in-tree Playwright packaging | **live (W3)** |
 | L4 | synthetic europa-shaped fixtures (extension-less covers, real TSV profile) + on-host live-data timer | hosted + europa | with W4 |
-| L5 | kiosk boot/session smoke: gamescope + Pegasus session, `READY=1` asserted inside 60 s | hosted | with W4 (kiosk spec) |
+| L5 | kiosk boot/session smoke: gamescope + Pegasus session up and rendering inside 60 s | hosted | with W4 (kiosk spec) |
 
 Binding conditions:
 - **The fail-loud `/dev/kvm` probe is mandatory** on every VM lane. The
@@ -153,15 +153,24 @@ never a page; promotion gate as constants + procedure (auto-promote
 additions-only; human approval beyond removals of max(5 titles, 0.5%));
 identity re-keyed by hash not path; rename-before-parse reversed.
 
-**W4c — kiosk operability spec (§6.H).** L5 smoke boots to `READY=1`
-inside 60 s in VM; a killed (induced) compositor self-recovers within one
-ladder step; no kiosk runs an interactive sudo helper. Scope: notify
-wrapper asserting `READY=1` on menu-accepting-input; `WatchdogSec` armed;
-recovery ladder with explicit numbers (watchdog → SIGABRT →
-`Restart=always` → start limits → `OnFailure` reboot → boot-count guard to
-the rescue console); nightly `RuntimeMaxSec`-style recycle off the scan
-window; `jupiter-arcade.slice`; activation-time mount units replacing the
-session's sudo path; explicit `providers.*.enabled` seed.
+**W4c — kiosk operability spec (§6.H).** L5 smoke boots a live
+gamescope + Pegasus session inside 60 s in VM; a killed (induced)
+compositor self-recovers within one ladder step; no kiosk runs an
+interactive sudo helper. Scope: recovery ladder with explicit numbers
+(`Restart=always` → start limits → `OnFailure` journal observer — the
+host is NEVER power-cycled over a game frontend: the original reboot
+escalation reboot-looped callisto, the serving host, on 2026-08-31);
+nightly `RuntimeMaxSec`-style recycle off the scan window;
+`jupiter-arcade.slice`; activation-time mount units replacing the
+session's sudo path; explicit `providers.*.enabled` seed. The
+measured-start half (Type=notify wrapper asserting `READY=1` +
+`WatchdogSec`) was decommissioned 2026-08-31, ledger row W4c-X1: a
+PAMName session unit migrates its whole cgroup into the logind session
+scope, so PID 1 attributes `sd_notify` to `session-N.scope` and the
+start job can never complete — every start timed out at 180 s and
+reboot-looped callisto while the frontend rendered happily. Session
+units are `Type=simple`; revisit a cgroup-compatible companion-watchdog
+design only on a measured need.
 
 **W4d — pipeline correctness & consolidation (§6.I).** The three
 convergence proofs green in CI (run-twice and kill-and-restart on verify,

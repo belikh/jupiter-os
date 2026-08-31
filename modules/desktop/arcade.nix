@@ -86,21 +86,16 @@ let
   # earlier revision escalated by REBOOTING the host (3 failed ladders
   # -> rescue console), but that is wrong for any host with a second
   # job: callisto runs the fleet Postgres, the MQTT broker and shared
-  # builds beside its arcade, and on 2026-08-31 a Pegasus start timeout
-  # (Type=notify, the 180 s start budget) tripped OnFailure on EVERY
-  # boot and reboot-looped the serving host indefinitely — the
+  # builds beside its arcade, and on 2026-08-31 the W4c Type=notify
+  # start timeout (see modules/lib.nix sessionLadder) tripped OnFailure
+  # on EVERY boot and reboot-looped the serving host indefinitely — the
   # boot-count guard never fired because /var/lib is impermanent, the
   # counter reset each boot. A game frontend is never worth a host
-  # power-cycle: this rung only records the failure episode (journal +
-  # counter file, cleared by the launcher on the first good READY);
-  # host recovery is an operator decision.
+  # power-cycle: this rung only journal-logs the failure episode; host
+  # recovery is an operator decision.
   arcadeFailureScript = pkgs.writeShellScript "jupiter-arcade-failure" ''
     set -eu
-    DIR=/var/lib/jupiter-arcade
-    mkdir -p "$DIR"
-    n=$(( $(cat "$DIR/failure-count" 2>/dev/null || echo 0) + 1 ))
-    echo "$n" > "$DIR/failure-count"
-    echo "jupiter-arcade failure episode #$n (session unit entered failed state; host stays up)"
+    echo "jupiter-arcade failure episode (session unit entered failed state; host stays up)"
   '';
 in
 {
@@ -145,23 +140,25 @@ in
       '';
     };
 
-    # --- W4c kiosk operability spec (plan §6.H) -----------------------------
+    # --- Session supervision (arcade remediation W4c, simplified 2026-08-31) --
 
-    watchdogAndLadder = lib.mkOption {
+    supervision = lib.mkOption {
       type = lib.types.bool;
       default = true;
       description = ''
-        Supervise the arcade session unit with the full recovery ladder:
-        the launcher wrapper as a Type=notify main process asserting
-        READY=1 when the frontend reports menu-accepting-input,
-        WatchdogSec armed, Restart=always with explicit start limits
-        (6 per 300 s — not the upstream 5-per-10 s that parks a
-        crash-looping cabinet dead in ~12 s), and an OnFailure
-        observer that records the failure episode without touching the
-        host (an earlier revision rebooted — removed after it
-        reboot-looped callisto, the serving host, on a Pegasus start
-        timeout). The ladder numbers live in modules/lib.nix
-        (sessionLadder) with their rationale.
+        Supervise the arcade session unit: Restart=always with
+        explicit start limits (6 per 300 s — not the upstream
+        5-per-10 s that parks a crash-looping cabinet dead in ~12 s),
+        the arcade-plane resource slice, a nightly session recycle,
+        and an OnFailure observer that journal-logs the failure
+        episode without touching the host. The earlier
+        watchdogAndLadder notify machinery was removed 2026-08-31
+        (ledger W4c-X1): a PAMName session unit's cgroup drains into
+        the logind session scope, so a Type=notify start job can never
+        complete — it timed out at 180 s on every boot and, via the
+        old reboot escalation, looped callisto. The numbers live in
+        modules/lib.nix (sessionLadder) with the live-verified
+        anatomy.
       '';
     };
 
@@ -225,33 +222,29 @@ in
       # L+ forces (re)create so a theme change in a future deploy propagates
       # without needing to wipe the user dir.
       "L+ /home/${cfg.sessionUser}/.config/pegasus-frontend/themes/jupiteros-arcade - - - - ${jupiterArcadeTheme}"
-      # W4c: the failure-ladder counter directory — gamer-writable because
-      # the session launcher (User=${cfg.sessionUser}) clears the counter
-      # on the first good READY; the escalation unit (root) increments it.
-      "d /var/lib/jupiter-arcade 0755 ${cfg.sessionUser} users -"
     ];
 
-    # --- W4c: the arcade plane's resource slice + recovery ladder ----------
+    # --- Session supervision: resource slice + failure observer + recycle --
     systemd.slices."jupiter-arcade" = jupiterArcadeSlice;
 
-    # Ladder contribution to the SHARED session unit name: dashboard-gaming
+    # Supervision contribution to the SHARED session unit name: dashboard-gaming
     # (kiosks, on-demand) and arcade-console (boot-default) both generate
-    # `jupiter-arcade.service` from modules/lib.nix's supervised shape;
-    # this module adds the arcade-plane Slice and the OnFailure rung on
+    # `jupiter-arcade.service` from modules/lib.nix's session shape; this
+    # module adds the arcade-plane Slice and the OnFailure observer on
     # every host that runs the arcade (both import this module).
-    systemd.services.jupiter-arcade = lib.mkIf cfg.watchdogAndLadder {
+    systemd.services.jupiter-arcade = lib.mkIf cfg.supervision {
       # Cap the session plane (gamescope + pegasus + launched emulators
       # inherit the session cgroup) — the kiosk half of the slice the
       # europa webapp also joins.
       serviceConfig.Slice = "jupiter-arcade.slice";
-      # The ladder's failure observer: reaching failed state (with
-      # Restart=always + explicit start limits, that is start-limit
-      # exhaustion) records the episode in the journal and the counter
-      # file. Deliberately does NOT reboot — see arcadeFailureScript.
+      # The failure observer: reaching failed state (with Restart=always +
+      # explicit start limits, that is start-limit exhaustion) logs the
+      # episode in the journal. Deliberately does NOT reboot — see
+      # arcadeFailureScript.
       unitConfig.OnFailure = [ "jupiter-arcade-failure.service" ];
     };
 
-    systemd.services.jupiter-arcade-failure = lib.mkIf cfg.watchdogAndLadder {
+    systemd.services.jupiter-arcade-failure = lib.mkIf cfg.supervision {
       description = "jupiterOS Arcade failure observer (records the episode; host stays up)";
       serviceConfig = {
         Type = "oneshot";
@@ -262,7 +255,7 @@ in
     # Nightly session recycle (W4c): try-restart at recycleCalendar —
     # only a LIVE session recycles (kiosks sitting on the dashboard are
     # untouched), scheduled away from the DAT/scan maintenance window.
-    systemd.timers."jupiter-arcade-recycle" = lib.mkIf cfg.watchdogAndLadder {
+    systemd.timers."jupiter-arcade-recycle" = lib.mkIf cfg.supervision {
       description = "Nightly jupiterOS Arcade session recycle (gamescope leak mitigation)";
       wantedBy = [ "timers.target" ];
       timerConfig = {
@@ -271,7 +264,7 @@ in
         Unit = "jupiter-arcade-recycle.service";
       };
     };
-    systemd.services."jupiter-arcade-recycle" = lib.mkIf cfg.watchdogAndLadder {
+    systemd.services."jupiter-arcade-recycle" = lib.mkIf cfg.supervision {
       description = "Recycle the jupiterOS Arcade session (try-restart)";
       serviceConfig = {
         Type = "oneshot";

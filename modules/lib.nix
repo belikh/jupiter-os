@@ -15,37 +15,33 @@
 }:
 
 let
-  # Session ladder numbers (arcade remediation W4c / plan §6.H). Explicit
-  # because the upstream defaults park a crash-looping cabinet dead in
-  # ~12 s (5 starts per 10 s with RestartSec=2) and "operator notices and
-  # power-cycles" was the only recovery. The ladder, with numbers:
+  # Session supervision numbers (arcade remediation W4c / plan §6.H).
+  # Explicit because the upstream defaults park a crash-looping cabinet
+  # dead in ~12 s (5 starts per 10 s with RestartSec=2) and "operator
+  # notices and power-cycles" was the only recovery. The ladder, with
+  # numbers:
   #
-  #   watchdog (WatchdogSec=90, pinged every 30 s by the launcher wrapper)
-  #     -> SIGABRT to the main process
-  #     -> Restart=always with RestartSec=5
+  #   Restart=always with RestartSec=5
   #     -> start limits (6 starts per 300 s, not 5 per 10 s)
   #     -> OnFailure observer (arcade.nix: journal + counter only — a
   #        game frontend is never worth a host power-cycle; the reboot
   #        escalation was removed after it looped callisto)
+  #
+  # NOT in the session units, deliberately: Type=notify / WatchdogSec /
+  # any sd_notify-based readiness. A PAMName session unit's whole cgroup
+  # is migrated into the logind session scope at PAM-open, so PID 1
+  # attributes notify datagrams to session-N.scope and the unit's start
+  # job can never complete — every start timed out at 180 s on callisto
+  # (2026-08-31) while the frontend rendered happily, tripping the
+  # OnFailure reboot into an unbounded reboot loop of the serving host.
+  # Verified live: Main PID in session-28.scope, unit Tasks: 0, wrapper's
+  # READY=1 in the journal, start never completing. Ledger row W4c-X1.
   sessionLadder = {
-    # The wrapper's readiness budget: pegasus-fe must appear within 60 s
-    # (the 60-second boot-to-playable signage number) and then settle
-    # 10 s before READY=1 is asserted (first frames are cache scans, not
-    # menu-accepting-input).
-    readyWaitSeconds = 60;
-    readySettleSeconds = 10;
-    # WatchdogSec must comfortably exceed readyWait+settle; pings at half
-    # intervals keep it fed during normal operation.
-    watchdogSec = 90;
-    watchdogPingSeconds = 30;
     # Crash-loop budget: 6 restarts per 300 s (a cabinet keeps trying
     # for minutes instead of parking dead at ~12 s).
     startLimitBurst = 6;
     startLimitIntervalSec = 300;
     restartSec = 5;
-    # Notify deadline: Type=notify start timeout (cold-cache Pegasus
-    # scans run long on the HD 520 kiosks).
-    timeoutStartSec = 180;
   };
 in
 {
@@ -57,15 +53,10 @@ in
   # sandboxes (Steam/Heroic/Lutris via umu -> pressure-vessel) don't refuse
   # to start. Rationale for each line lives in dashboard-gaming.nix's header.
   #
-  # Since the W4c kiosk operability spec this is ALSO the supervision
-  # wrapper: the script is the unit's Type=notify main process, asserts
-  # READY=1 once the frontend reports menu-accepting-input (process-up +
-  # settle — pegasus-fe has no readiness signal, so the wrapper's
-  # process heuristic + settle window IS the spec's "small notify
-  # wrapper"), feeds the systemd watchdog while the compositor lives,
-  # clears the session-failure boot counter on the first good ready
-  # (arcade.nix's OnFailure observer's counter), and exits with the
-  # compositor's status so Restart=always owns recovery.
+  # Plain exec shape (no supervision wrapper): the unit is Type=simple,
+  # Restart=always owns recovery, and the OnFailure observer in
+  # arcade.nix records failure episodes. A notify wrapper cannot work
+  # here — see sessionLadder's comment above.
   mkSessionLauncher =
     name: user: command:
     pkgs.writeShellScript "jupiter-${name}-session" ''
@@ -73,59 +64,7 @@ in
       XDG_RUNTIME_DIR="/run/user/$(id -u ${user})"
       export XDG_RUNTIME_DIR
       export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
-      NOTIFY="${pkgs.systemd}/bin/systemd-notify"
-      PGR="${pkgs.procps}/bin/pgrep"
-
-      # The session itself, under the ambient-cap scrub, in the
-      # background: this wrapper must survive as the main process to
-      # own the notify channel and the watchdog pings.
-      ${pkgs.libcap}/bin/capsh --noamb -- -c 'exec ${command}' &
-      child=$!
-
-      seen=0
-      i=0
-      while [ "$i" -lt ${toString sessionLadder.readyWaitSeconds} ]; do
-        i=$((i + 1))
-        if "$PGR" -f 'pegasus-fe' >/dev/null 2>&1; then
-          seen=1
-          break
-        fi
-        if ! kill -0 "$child" 2>/dev/null; then break; fi
-        sleep 1
-      done
-      if [ "$seen" = 1 ]; then
-        # Menu-LOADING is not menu-ACCEPTING-INPUT: settle past the
-        # first cache-scan frames before READY is asserted.
-        j=0
-        while [ "$j" -lt ${toString sessionLadder.readySettleSeconds} ]; do
-          j=$((j + 1))
-          kill -0 "$child" 2>/dev/null || break
-          sleep 1
-        done
-        echo "jupiter-${name}: frontend process seen — asserting READY=1 after the settle window"
-      else
-        # A mode whose frontend never matches the pgrep heuristic still
-        # reports ready after the full wait (the wrapper's supervision
-        # is generic; only the readiness signal is frontend-specific).
-        echo "jupiter-${name}: frontend process never matched — asserting READY=1 on the fallback budget"
-      fi
-      "$NOTIFY" READY=1
-      # First good ready clears the failure-episode counter (the
-      # OnFailure observer unit counts failed episodes; a session that
-      # reaches ready is, by definition, not one).
-      rm -f /var/lib/jupiter-arcade/failure-count 2>/dev/null || true
-
-      # Watchdog feed: ping while the compositor lives. A hung WRAPPER
-      # stops pinging and the watchdog fires (SIGABRT rung of the
-      # ladder); a dead compositor takes the wrapper down via wait and
-      # Restart=always owns the recovery.
-      while kill -0 "$child" 2>/dev/null; do
-        "$NOTIFY" WATCHDOG=1 || true
-        sleep ${toString sessionLadder.watchdogPingSeconds} & waiter=$!
-        wait "$waiter" 2>/dev/null || true
-      done
-      wait "$child"
-      exit $?
+      exec ${pkgs.libcap}/bin/capsh --noamb -- -c 'exec ${command}'
     '';
 
   # A start/stoppable system unit that can grab DRM master on tty1, modelled
@@ -140,11 +79,12 @@ in
   # organic restart. TimeoutStopSec=10 matches Valve's gamescope-session.
   # Named mk* because it is a function returning the attrset, not the value.
   #
-  # W4c: Type=notify (the launcher wrapper asserts READY=1 — the
-  # boot-to-playable budget becomes a MEASURED start, not a hope), the
-  # watchdog armed over the whole session lifetime, and the explicit
-  # start-limit tuning of sessionLadder replacing the 5-per-10s upstream
-  # default that parked crash-looping cabinets dead in ~12 s.
+  # Type=simple + the explicit start-limit tuning of sessionLadder
+  # replacing the 5-per-10s upstream default that parked crash-looping
+  # cabinets dead in ~12 s. No Type=notify/WatchdogSec here, ever — a
+  # PAMName unit's cgroup drains into the logind session scope, so
+  # sd_notify can never reach this unit's start job (sessionLadder's
+  # comment has the live-verified anatomy).
   mkSessionOnTty1 =
     {
       conditionOnTty1 ? true,
@@ -177,10 +117,7 @@ in
           StandardError = "journal";
           UtmpIdentifier = "tty1";
           UtmpMode = "user";
-          Type = "notify";
-          NotifyAccess = "all";
-          TimeoutStartSec = toString sessionLadder.timeoutStartSec;
-          WatchdogSec = toString sessionLadder.watchdogSec;
+          Type = "simple";
           Restart = "always";
           RestartSec = toString sessionLadder.restartSec;
           TimeoutStopSec = 10;
