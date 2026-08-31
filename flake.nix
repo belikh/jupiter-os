@@ -348,7 +348,7 @@
       # (RemoveEnvironmentCleanupHook). 13.0.3 ships v137 prebuilds and the
       # fix, so the daemon stays on nodejs_24 (no v3 Node compile) and
       # Design Harness no longer crash-loops.
-      openDesignDaemonNode22Module = { config, pkgs, lib, ... }: {
+      openDesignDaemonModule = { config, pkgs, lib, ... }: {
         services.open-design.package = pkgs.callPackage ./pkgs/open-design-daemon {
           inherit (pkgs) lib stdenv fetchPnpmDeps pnpmConfigHook makeWrapper python3 gnumake pkg-config;
           nodejs = pkgs.nodejs_24;
@@ -390,7 +390,7 @@
         # docs/callisto-iscsi-root-provisioning.md (live at 10.1.1.3, root
         # over ext4-iSCSI on europa's zvol).
         callisto = mkHost ./hosts/callisto/configuration.nix [
-          openDesignDaemonNode22Module
+          openDesignDaemonModule
         ];
 
         # Arcade webapp pipeline TEST host — a minimal VM (tests/hosts/

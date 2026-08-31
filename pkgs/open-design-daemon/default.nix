@@ -1,16 +1,16 @@
-{
-  lib,
-  stdenv,
-  fetchPnpmDeps,
-  pnpmConfigHook,
-  makeWrapper,
-  python3,
-  gnumake,
-  pkg-config,
-  nodejs,
-  pnpm_10,
-  open-design,
-  jq,
+{ lib
+, stdenv
+, fetchPnpmDeps
+, pnpmConfigHook
+, makeWrapper
+, python3
+, gnumake
+, pkg-config
+, nodejs
+, pnpm_10
+, open-design
+, jq
+,
 }:
 # OpenDesign daemon with better_sqlite3 bumped to 13.0.3 to fix Node 24.19
 # crash (RemoveEnvironmentCleanupHook: env != nullptr in
@@ -39,8 +39,13 @@ let
 
   pnpmWorkspaceFilters = map (workspacePath: "./${workspacePath}") workspacePaths;
 
-  # Patched src with better_sqlite3 bumped for Node 24.19. Use runCommand
-  # so both the main src and pnpmDepsSrc see the same package.json.
+  # Patched src with better_sqlite3 bumped for Node 24.19. Overwrites BOTH
+  # apps/daemon/package.json AND the root pnpm-lock.yaml — fetchPnpmDeps and
+  # the install phase both run `pnpm install --frozen-lockfile`, which
+  # rejects a manifest whose specifiers don't match the lockfile
+  # (ERR_PNPM_OUTDATED_LOCKFILE). The lockfile alongside this default.nix
+  # was regenerated with `pnpm install` after the bump; refresh it whenever
+  # the pinned version changes.
   patchedSrc = stdenv.mkDerivation {
     name = "open-design-patched-src";
     src = open-design;
@@ -49,8 +54,10 @@ let
       cp -r $src $out
       chmod -R u+w $out
       ${lib.getExe jq} --arg v "13.0.3" '.dependencies."better-sqlite3" = $v' $out/apps/daemon/package.json > $out/apps/daemon/package.json.tmp && mv $out/apps/daemon/package.json.tmp $out/apps/daemon/package.json
+      cp ${./pnpm-lock.yaml} $out/pnpm-lock.yaml
       echo "Bumped better_sqlite3 to 13.0.3 for Node 24.19 in patchedSrc"
       grep -q '"better-sqlite3": "13.0.3"' $out/apps/daemon/package.json || (echo "bump failed" >&2; exit 1)
+      grep -q 'better-sqlite3@13.0.3' $out/pnpm-lock.yaml || (echo "lockfile copy failed" >&2; exit 1)
     '';
   };
 
@@ -105,7 +112,7 @@ stdenv.mkDerivation (finalAttrs: {
       exit 1
     fi
 
-    echo "Building better-sqlite3 from source at $bsq_dir (Node $(node --version), better-sqlite3 12.x)"
+    echo "Building better-sqlite3 from source at $bsq_dir (Node $(node --version), better-sqlite3 13.x)"
     ( cd "$bsq_dir" && node-gyp rebuild --release --build-from-source )
 
     if [ ! -f "$bsq_dir/build/Release/better_sqlite3.node" ]; then
@@ -168,10 +175,10 @@ stdenv.mkDerivation (finalAttrs: {
   };
 
   meta = with lib; {
-    description = "OpenDesign daemon — local agent orchestrator + API (`od` CLI) (Node 22 rebuild for Jupiter)";
+    description = "OpenDesign daemon — local agent orchestrator + API (`od` CLI) (better_sqlite3 13.0.3 for Jupiter)";
     homepage = "https://github.com/nexu-io/open-design";
     license = licenses.asl20;
     mainProgram = "od";
     platforms = platforms.linux ++ platforms.darwin;
   };
-})
+  })
