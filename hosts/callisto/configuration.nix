@@ -617,6 +617,29 @@
   services.open-design.webFrontend.host = "";
   services.open-design.webFrontend.allowedOrigins = [ "https://design.jupiter.au" ];
 
+  # OpenDesign daemon wraps opencode via /run/current-system/sw/bin/opencode
+  # which execs $HOME/.opencode/bin/opencode and reads sops secrets at
+  # /run/secrets/* (zai_api_key, groq_api_key, dsh_env, …) as the calling
+  # user. Upstream runs as open-design (HOME=/var/lib/open-design,
+  # ProtectHome=true) so it looks in /var/lib/open-design/.opencode and
+  # cannot read /run/secrets/* (owner io/users, 0400) or /home/io. On
+  # Jupiter the fleet's LLM keys and per-user CLIs live under io, so run
+  # the daemon (and its Caddy sidecar) as io with home access. Mirrors
+  # opencode-web.service (modules/services/opencode-web.nix) which also
+  # runs as io.
+  systemd.services.open-design.serviceConfig.User = lib.mkForce "io";
+  systemd.services.open-design.serviceConfig.Group = lib.mkForce "users";
+  systemd.services.open-design.serviceConfig.ProtectHome = lib.mkForce false;
+  systemd.services.open-design.serviceConfig.ReadWritePaths = lib.mkForce [
+    "/var/lib/open-design"
+    "/home/io/.opencode"
+    "/home/io/.config"
+    "/home/io/.cache"
+  ];
+  systemd.services.open-design-web.serviceConfig.User = lib.mkForce "io";
+  systemd.services.open-design-web.serviceConfig.Group = lib.mkForce "users";
+  systemd.services.open-design-web.serviceConfig.ProtectHome = lib.mkForce false;
+
   jupiter.services.cloudflareTunnel = {
     enable = true;
     tunnelId = "85534a9c-2c13-412c-a658-322f7c36edc7";
