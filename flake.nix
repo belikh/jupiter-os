@@ -74,6 +74,18 @@
       url = "github:belikh/suno-web";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # OpenDesign — local-first design product (daemon `od` + Next.js web
+    # frontend). Provides a NixOS module (services.open-design) and
+    # packages for daemon/web. Justified by a registered host that uses
+    # it: callisto enables jupiter.services.openDesign. Design artefacts
+    # are generated as real files (HTML/PDF/PPTX/MP4) via agent skills;
+    # the web frontend proxies /api/* to the daemon and serves the static
+    # SPA. Enabled on the serving host alongside dsh/opencode-web.
+    open-design = {
+      url = "github:nexu-io/open-design";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -87,6 +99,7 @@
       ha-linux-agent,
       jovian,
       suno-web,
+      open-design,
       ...
     }:
     let
@@ -114,6 +127,11 @@
                   # would perturb every host's pkgs — they're applied only on
                   # hosts that opt into the gaming stack below.
                   jovian.nixosModules.default
+                  # OpenDesign daemon + web frontend (services.open-design).
+                  # Imported fleet-wide (inert until services.open-design.enable
+                  # or jupiter.services.openDesign.enable is set), so every host
+                  # can opt in without a per-host flake import.
+                  open-design.nixosModules.default
                 ];
               }
             )

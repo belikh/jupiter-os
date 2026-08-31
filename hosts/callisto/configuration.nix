@@ -40,6 +40,8 @@
     ../../modules/services/cloudflare-tunnel.nix
     # opencode web UI: one serve behind the tunnel at opencode.jupiter.au
     ../../modules/services/opencode-web.nix
+    # OpenDesign — local-first design product (daemon `od` + web frontend)
+    ../../modules/services/open-design.nix
     # jupiterOS Arcade: boots straight into the gamescope/Pegasus session on
     # tty1 (modules/desktop/arcade-console.nix) with full kiosk collection
     # parity — console ROMs (modules/desktop/cartridges.nix) + eXo DOS/Win
@@ -593,6 +595,19 @@
   # (85534a9c) created 2026-08-16 via `cloudflared tunnel create`; creds in
   # the cloudflare_callisto_cert sops secret; DNS dsh.jupiter.au → tunnel
   # via `cloudflared tunnel route dns`.
+  # ---- OpenDesign ---------------------------------------------------------
+  # Local-first design product: daemon `od` + web frontend (static SPA +
+  # Caddy proxy). Runs alongside dsh/opencode on the serving host.
+  # Uses the default ports (daemon 7457, web 5174) and dataDir
+  # /var/lib/open-design on the iSCSI root.
+  #
+  # Public reachability is the same Cloudflare tunnel as dsh/opencode
+  # (design.jupiter.au): webFrontend binds loopback only; cloudflared
+  # proxies to it. No firewall widening needed for tunnel access.
+  jupiter.services.openDesign = {
+    enable = true;
+  };
+
   jupiter.services.cloudflareTunnel = {
     enable = true;
     tunnelId = "85534a9c-2c13-412c-a658-322f7c36edc7";
@@ -611,6 +626,13 @@
         # opencode web UI (modules/services/opencode-web.nix). host defaults to
         # localhost; the serve binds 127.0.0.1:4096.
         port = 4096;
+      }
+      {
+        hostname = "design.jupiter.au";
+        # OpenDesign web frontend (modules/services/open-design.nix).
+        # Caddy serves the SPA on 5174 and proxies /api/* to the daemon
+        # on 7457. Keep port in sync with services.open-design.webFrontend.port.
+        port = 5174;
       }
     ];
   };
