@@ -343,6 +343,23 @@
         jupiter.services.sunoWeb.package = suno-web.packages.x86_64-linux.suno-web;
       };
 
+      # OpenDesign daemon rebuilt with Node 22 to avoid better_sqlite3 12.10.0
+      # crash on Node 24.19 (RemoveEnvironmentCleanupHook: env != nullptr).
+      # Upstream builds with nodejs_24 (v137) but better_sqlite3 12.10.0 only
+      # has prebuilds up to v131 (Node 22); its from-source build on 24.19
+      # triggers the V8 API bug. Node 22 is LTS and has v127 prebuilds.
+      # This module pins services.open-design.package to the Node-22 rebuild
+      # so callisto's daemon is stable even with Design Harness (od-next)
+      # active. Web frontend stays on Node 24 (no native binding).
+      openDesignDaemonNode22Module = { config, pkgs, lib, ... }: {
+        services.open-design.package = pkgs.callPackage ./pkgs/open-design-daemon {
+          inherit (pkgs) lib stdenv fetchPnpmDeps pnpmConfigHook makeWrapper python3 gnumake pkg-config;
+          nodejs_22 = pkgs.nodejs_22;
+          pnpm_10 = pkgs.pnpm_10;
+          open-design = open-design;
+        };
+      };
+
     in
     {
       nixosConfigurations = {
@@ -374,7 +391,9 @@
         # hosts/callisto/configuration.nix and
         # docs/callisto-iscsi-root-provisioning.md (live at 10.1.1.3, root
         # over ext4-iSCSI on europa's zvol).
-        callisto = mkHost ./hosts/callisto/configuration.nix [ ];
+        callisto = mkHost ./hosts/callisto/configuration.nix [
+          openDesignDaemonNode22Module
+        ];
 
         # Arcade webapp pipeline TEST host — a minimal VM (tests/hosts/
         # arcade-webapp-vm.nix) running the real
