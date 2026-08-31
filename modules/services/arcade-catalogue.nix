@@ -68,31 +68,36 @@ in
         let
           system = lib.types.submodule {
             options = {
-              collection = lib.mkOption { type = lib.types.str; };
-              bucket = lib.mkOption {
-                type = lib.types.enum [
-                  "cartridge"
-                  "optical"
-                  "modern"
-                ];
-              };
-              core = lib.mkOption {
-                type = lib.types.nullOr lib.types.str;
-                default = null;
-              };
-              emulator = lib.mkOption {
-                type = lib.types.nullOr lib.types.str;
-                default = null;
-              };
-              extensions = lib.mkOption { type = lib.types.listOf lib.types.str; };
-              skyHandle = lib.mkOption {
-                type = lib.types.nullOr lib.types.str;
-                default = null;
-              };
-              torrent = lib.mkOption {
-                type = lib.types.nullOr lib.types.str;
-                default = null;
-              };
+               collection = lib.mkOption { type = lib.types.str; description = "Collection display title"; };
+               bucket = lib.mkOption {
+                 type = lib.types.enum [
+                   "cartridge"
+                   "optical"
+                   "modern"
+                 ];
+                 description = "Europa ZFS dataset bucket";
+               };
+               core = lib.mkOption {
+                 type = lib.types.nullOr lib.types.str;
+                 default = null;
+                 description = "Libretro core name";
+               };
+               emulator = lib.mkOption {
+                 type = lib.types.nullOr lib.types.str;
+                 default = null;
+                 description = "Standalone emulator name";
+               };
+               extensions = lib.mkOption { type = lib.types.listOf lib.types.str; description = "ROM file extensions"; };
+               skyHandle = lib.mkOption {
+                 type = lib.types.nullOr lib.types.str;
+                 default = null;
+                 description = "Skyscraper platform handle";
+               };
+               torrent = lib.mkOption {
+                 type = lib.types.nullOr lib.types.str;
+                 default = null;
+                 description = "Myrient/Minerva torrent filename";
+               };
             };
           };
         in
