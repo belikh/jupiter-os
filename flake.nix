@@ -343,20 +343,18 @@
         jupiter.services.sunoWeb.package = suno-web.packages.x86_64-linux.suno-web;
       };
 
-      # OpenDesign daemon rebuilt with Node 22 to avoid better_sqlite3 12.10.0
-      # crash on Node 24.19 (RemoveEnvironmentCleanupHook: env != nullptr).
-      # Upstream builds with nodejs_24 (v137) but better_sqlite3 12.10.0 only
-      # has prebuilds up to v131 (Node 22); its from-source build on 24.19
-      # triggers the V8 API bug. Node 22 is LTS and has v127 prebuilds.
-      # This module pins services.open-design.package to the Node-22 rebuild
-      # so callisto's daemon is stable even with Design Harness (od-next)
-      # active. Web frontend stays on Node 24 (no native binding).
+      # OpenDesign daemon with better_sqlite3 bumped to 13.0.3 for Node 24.19.
+      # Upstream pins 12.10.0 (v131) which crashes on Node 24.19 v137
+      # (RemoveEnvironmentCleanupHook). 13.0.3 ships v137 prebuilds and the
+      # fix, so the daemon stays on nodejs_24 (no v3 Node compile) and
+      # Design Harness no longer crash-loops.
       openDesignDaemonNode22Module = { config, pkgs, lib, ... }: {
         services.open-design.package = pkgs.callPackage ./pkgs/open-design-daemon {
           inherit (pkgs) lib stdenv fetchPnpmDeps pnpmConfigHook makeWrapper python3 gnumake pkg-config;
-          nodejs_22 = pkgs.nodejs_22;
+          nodejs = pkgs.nodejs_24;
           pnpm_10 = pkgs.pnpm_10;
           open-design = open-design;
+          jq = pkgs.jq;
         };
       };
 

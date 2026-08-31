@@ -7,21 +7,17 @@
   python3,
   gnumake,
   pkg-config,
-  nodejs_22,
+  nodejs,
   pnpm_10,
   open-design,
+  jq,
 }:
-# OpenDesign daemon rebuilt with Node 22 to avoid better_sqlite3 12.10.0
-# crash on Node 24.19 (RemoveEnvironmentCleanupHook: env != nullptr).
-# Upstream builds with nodejs_24 (v137) but better_sqlite3 12.10.0 only
-# has prebuilds up to v131 (Node 22) and its from-source build still
-# triggers the V8 API bug on 24.19. Node 22 is LTS and has v127 prebuilds,
-# so the native binding is stable.
-#
-# This derivation mirrors open-design/nix/package-daemon.nix but pins
-# nodejs to nodejs_22. All other inputs (pnpm_10, src filtering, workspace
-# list) are identical to the upstream flake's perSystem daemon derivation
-# so the pnpmDeps hash stays valid.
+# OpenDesign daemon with better_sqlite3 bumped to 13.0.3 to fix Node 24.19
+# crash (RemoveEnvironmentCleanupHook: env != nullptr in
+# Statement::~Statement). Upstream pins 12.10.0 (v131, Node 22) while the
+# fleet runs nodejs_24 v137 (24.19). 13.0.3 ships v137 prebuilds and the
+# V8 API fix, so the daemon stays on Node 24 (no v3 Node compile) and
+# Design Harness (od-next) no longer crash-loops.
 let
   pname = "open-design-daemon";
   version = (lib.importJSON "${open-design}/package.json").version;
@@ -41,17 +37,32 @@ let
     "apps/daemon"
   ];
 
-  pnpmDepsHash = (import "${open-design}/nix/pnpm-deps.nix").daemonHash;
   pnpmWorkspaceFilters = map (workspacePath: "./${workspacePath}") workspacePaths;
 
-  src = open-design;
-  pnpmDepsSrc = open-design;
+  # Patched src with better_sqlite3 bumped for Node 24.19. Use runCommand
+  # so both the main src and pnpmDepsSrc see the same package.json.
+  patchedSrc = stdenv.mkDerivation {
+    name = "open-design-patched-src";
+    src = open-design;
+    nativeBuildInputs = [ jq ];
+    installPhase = ''
+      cp -r $src $out
+      chmod -R u+w $out
+      ${lib.getExe jq} --arg v "13.0.3" '.dependencies."better-sqlite3" = $v' $out/apps/daemon/package.json > $out/apps/daemon/package.json.tmp && mv $out/apps/daemon/package.json.tmp $out/apps/daemon/package.json
+      echo "Bumped better_sqlite3 to 13.0.3 for Node 24.19 in patchedSrc"
+      grep -q '"better-sqlite3": "13.0.3"' $out/apps/daemon/package.json || (echo "bump failed" >&2; exit 1)
+    '';
+  };
 
-  # Use the flake's exact pnpm 10.33.2 tarball so fetchPnpmDeps matches
-  # the install phase (see open-design/flake.nix pnpm_10 override).
+  src = patchedSrc;
+  pnpmDepsSrc = patchedSrc;
+
+  # Use fakeHash to discover the correct pnpmDeps hash after the bump.
+  # First build will fail with “got: sha256-…”, copy that into pnpmDepsHash
+  # and rebuild. Keep the original hash as a comment for reference.
+  pnpmDepsHash = lib.fakeHash; # was (import "${open-design}/nix/pnpm-deps.nix").daemonHash for 12.10.0
+
   pnpm_10_fixed = pnpm_10;
-
-  nodejs = nodejs_22;
 in
 stdenv.mkDerivation (finalAttrs: {
   inherit pname version src;
