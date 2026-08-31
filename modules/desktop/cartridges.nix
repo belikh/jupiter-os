@@ -321,11 +321,16 @@ in
     # hang emulator reads forever; automount + idle-timeout so each mount exists
     # only while something uses it. No overlay: ROMs are read directly and saves
     # don't write back here.
-    fileSystems = lib.genAttrs usedDatasets (d: {
-      device = datasetNfsDevice d;
-      fsType = "nfs";
-      options = nfsMountOptions;
-    });
+    fileSystems = lib.listToAttrs (
+      map (d: {
+        name = datasetMount.${d};
+        value = {
+          device = datasetNfsDevice d;
+          fsType = "nfs";
+          options = nfsMountOptions;
+        };
+      }) usedDatasets
+    );
 
     environment.systemPackages = [
       jupiterRetroarch
