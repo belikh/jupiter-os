@@ -607,6 +607,14 @@
   jupiter.services.openDesign = {
     enable = true;
   };
+  # OpenDesign via Cloudflare tunnel must handle Host: design.jupiter.au
+  # arriving at Caddy on localhost:5174. Upstream's Caddy site
+  # `http://127.0.0.1:5174` only matches Host 127.0.0.1, so a tunnel
+  # request with Host design.jupiter.au gets an empty 200. Widen the
+  # Caddy bind to all interfaces and declare the external origin so the
+  # daemon's same-origin gate (OD_ALLOWED_ORIGINS) accepts it.
+  services.open-design.webFrontend.host = "0.0.0.0";
+  services.open-design.webFrontend.allowedOrigins = [ "https://design.jupiter.au" ];
 
   jupiter.services.cloudflareTunnel = {
     enable = true;
