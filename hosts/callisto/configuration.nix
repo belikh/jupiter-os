@@ -617,6 +617,59 @@
   services.open-design.webFrontend.host = "";
   services.open-design.webFrontend.allowedOrigins = [ "https://design.jupiter.au" ];
 
+  # Loopback-only daemon routes (e.g. /api/strategies/od-next/rollout for
+  # Design Harness) are gated by requireLocalDaemonRequest which checks
+  # Host and Origin are loopback and peer is 127.0.0.1. Via the tunnel the
+  # Host is design.jupiter.au and Origin is https://design.jupiter.au,
+  # so the daemon would 403 with “request host must be a loopback daemon
+  # address”. Make Caddy rewrite both to loopback before proxying so the
+  # daemon sees a loopback request. This mirrors how the daemon's own
+  # localOriginFromHeader and isLoopbackHostname checks work.
+  systemd.services.open-design-web.serviceConfig.ExecStart = lib.mkForce (
+    let
+      caddyFile = pkgs.writeText "open-design-web.Caddyfile" ''
+        {
+          auto_https off
+          admin off
+          persist_config off
+        }
+
+        http://:5174 {
+          handle /api/* {
+            reverse_proxy 127.0.0.1:7457 {
+              header_up Host 127.0.0.1:7457
+              header_up Origin http://127.0.0.1:7457
+              flush_interval -1
+              transport http {
+                read_timeout 86400s
+                write_timeout 86400s
+              }
+            }
+          }
+          handle /artifacts/* {
+            reverse_proxy 127.0.0.1:7457 {
+              header_up Host 127.0.0.1:7457
+              header_up Origin http://127.0.0.1:7457
+            }
+          }
+          handle /frames/* {
+            reverse_proxy 127.0.0.1:7457 {
+              header_up Host 127.0.0.1:7457
+              header_up Origin http://127.0.0.1:7457
+            }
+          }
+          handle {
+            root * ${config.services.open-design.webFrontend.package}
+            try_files {path} {path}/ /index.html
+            file_server
+            encode gzip
+          }
+        }
+      '';
+    in
+    "${lib.getExe pkgs.caddy} run --config ${caddyFile} --adapter caddyfile"
+  );
+
   # OpenDesign daemon wraps opencode via /run/current-system/sw/bin/opencode
   # which execs $HOME/.opencode/bin/opencode and reads sops secrets at
   # /run/secrets/* (zai_api_key, groq_api_key, dsh_env, …) as the calling
