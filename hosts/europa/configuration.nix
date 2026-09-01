@@ -503,12 +503,6 @@
     enable = true;
     targetIqn = "iqn.2026-07.au.jupiter:europa:callisto-root";
     initiatorIqn = "iqn.2026-07.au.jupiter:callisto";
-    # Dedicated /nix/store on tank (6.5T free) to relieve rpool (97% full, 74%
-    # frag, 14G free — see 2026-09-01 bio-error incident). Store tolerates
-    # sync=disabled; root keeps sync=standard.
-    nixStoreDataset = "tank/services/callisto-nix-store";
-    nixStoreSize = "350G";
-    nixStoreSync = "disabled";
   };
 
   # ---- jupiterOS Arcade (europa-side pipeline) ----------------------------
