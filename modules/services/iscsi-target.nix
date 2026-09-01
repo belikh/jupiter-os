@@ -53,6 +53,13 @@ let
   datasetParts = lib.splitString "/" cfg.zvolDataset;
   poolName = lib.head datasetParts;
   parentDataset = lib.concatStringsSep "/" (lib.init datasetParts);
+
+  hasStore = cfg.nixStoreDataset != null;
+  storeBackstoreName = cfg.nixStoreBackstoreName;
+  storeZvolPath = "/dev/zvol/${cfg.nixStoreDataset}";
+  storeDatasetParts = lib.splitString "/" (cfg.nixStoreDataset or "");
+  storePoolName = lib.head storeDatasetParts;
+  storeParentDataset = lib.concatStringsSep "/" (lib.init storeDatasetParts);
 in
 {
   imports = [ ../network/fleet.nix ];
@@ -130,7 +137,7 @@ in
       '';
     };
 
-    initiatorIqn = lib.mkOption {
+      initiatorIqn = lib.mkOption {
       type = lib.types.str;
       description = ''
         The single initiator IQN allowed to log into this target (the
@@ -138,6 +145,46 @@ in
         note above.
       '';
       example = "iqn.2026-07.au.jupiter:callisto";
+    };
+
+    nixStoreDataset = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      description = ''
+        Optional second zvol backing a dedicated /nix/store LUN for the
+        initiator (callisto). When set, a second block backstore + LUN 1
+        is exported on the SAME target IQN. Intended to move callisto's
+        store off rpool (97% full, 74% frag) onto tank where 6.5T is free.
+        The store tolerates sync=disabled (content-addressed) while the
+        root journal keeps sync=standard — see the zvolDataset comment.
+      '';
+      example = "tank/services/callisto-nix-store";
+    };
+
+    nixStoreSize = lib.mkOption {
+      type = lib.types.str;
+      default = "350G";
+      description = "Size of the nix-store zvol (zfs create -V syntax). Must be larger than the current store (~234G on 2026-09-01).";
+    };
+
+    nixStoreBackstoreName = lib.mkOption {
+      type = lib.types.str;
+      default = "callisto-nix-store";
+      description = "LIO backstore name for the nix-store zvol.";
+    };
+
+    nixStoreSync = lib.mkOption {
+      type = lib.types.enum [
+        "standard"
+        "always"
+        "disabled"
+      ];
+      default = "disabled";
+      description = ''
+        sync property for the nix-store zvol. disabled is safe for
+        /nix/store (content-addressed, verified by nix) and avoids the
+        tank spinner fsync stall that forced the root zvol to rpool.
+      '';
     };
   };
 
@@ -150,6 +197,13 @@ in
             plugin = "block";
             name = backstoreName;
             dev = zvolPath;
+          }
+        ]
+        ++ lib.optionals hasStore [
+          {
+            plugin = "block";
+            name = storeBackstoreName;
+            dev = storeZvolPath;
           }
         ];
         targets = [
@@ -175,6 +229,12 @@ in
                     index = 0;
                     storage_object = "/backstores/block/${backstoreName}";
                   }
+                ]
+                ++ lib.optionals hasStore [
+                  {
+                    index = 1;
+                    storage_object = "/backstores/block/${storeBackstoreName}";
+                  }
                 ];
                 node_acls = [
                   {
@@ -183,6 +243,13 @@ in
                       {
                         index = 0;
                         tpg_lun = 0;
+                        write_protect = false;
+                      }
+                    ]
+                    ++ lib.optionals hasStore [
+                      {
+                        index = 1;
+                        tpg_lun = 1;
                         write_protect = false;
                       }
                     ];
@@ -249,9 +316,37 @@ in
       '';
     };
 
+    systemd.services.zfs-create-iscsi-nix-store = lib.mkIf hasStore {
+      description = "Create the ${cfg.nixStoreDataset} zvol for callisto /nix/store (idempotent)";
+      after = [
+        "zfs-import.target"
+        "zfs-import-${storePoolName}.service"
+      ];
+      before = [ "iscsi-target.service" ];
+      wantedBy = [ "iscsi-target.service" ];
+      path = [ pkgs.zfs ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+      };
+      script = ''
+        if ! zfs list -H -o name "${storeParentDataset}" >/dev/null 2>&1; then
+          echo "Creating parent dataset ${storeParentDataset}"
+          zfs create -p "${storeParentDataset}"
+        fi
+        if ! zfs list -H -o name "${cfg.nixStoreDataset}" >/dev/null 2>&1; then
+          echo "Creating zvol ${cfg.nixStoreDataset} (${cfg.nixStoreSize})"
+          zfs create -V "${cfg.nixStoreSize}" -o volblocksize=16K \
+            -o primarycache="metadata" -o sync="${cfg.nixStoreSync}" "${cfg.nixStoreDataset}"
+        fi
+        zfs set primarycache="metadata" "${cfg.nixStoreDataset}"
+        zfs set sync="${cfg.nixStoreSync}" "${cfg.nixStoreDataset}"
+      '';
+    };
+
     systemd.services.iscsi-target = {
-      requires = [ "zfs-create-iscsi-zvol.service" ];
-      after = [ "zfs-create-iscsi-zvol.service" ];
+      requires = [ "zfs-create-iscsi-zvol.service" ] ++ lib.optionals hasStore [ "zfs-create-iscsi-nix-store.service" ];
+      after = [ "zfs-create-iscsi-zvol.service" ] ++ lib.optionals hasStore [ "zfs-create-iscsi-nix-store.service" ];
 
       # Assert the LUN actually got exported. `targetctl restore` treats every
       # per-object failure as a WARNING and still exits 0, so the unit reports
@@ -289,6 +384,17 @@ in
               exit 1
             fi
             echo "iscsi-target: verified LUN 0 exported and mapped to ${cfg.initiatorIqn}"
+            ${lib.optionalString hasStore ''
+              if [ ! -d "$tpg/lun/lun_1" ]; then
+                echo "iscsi-target: TPG LUN 1 (nix-store) is MISSING under $tpg/lun." >&2
+                exit 1
+              fi
+              if [ ! -d "$tpg/acls/${cfg.initiatorIqn}/lun_1" ]; then
+                echo "iscsi-target: MappedLUN 1 (nix-store) is MISSING for ${cfg.initiatorIqn}." >&2
+                exit 1
+              fi
+              echo "iscsi-target: verified LUN 1 (nix-store) exported and mapped to ${cfg.initiatorIqn}"
+            ''}
           ''
         ))
       ];

@@ -103,6 +103,16 @@
     options = [ "relatime" ];
   };
 
+  # Dedicated /nix/store on tank (second iSCSI LUN) to relieve rpool
+  # (97% full). The store is content-addressed, so sync=disabled on the
+  # zvol is safe — the root journal keeps standard sync.
+  fileSystems."/nix/store" = {
+    device = "/dev/disk/by-path/ip-${config.jupiter.fleet.addresses.europa}:3260-iscsi-iqn.2026-07.au.jupiter:europa:callisto-root-lun-1";
+    fsType = "ext4";
+    neededForBoot = true;
+    options = [ "relatime" ];
+  };
+
   # PXE (europa's jupiter.pxe) hands off the kernel+initrd directly — this
   # host's own firmware boot menu / EFI NVRAM is never consulted, so
   # systemd-boot's *files* landing on the ESP are inert (harmless, just
