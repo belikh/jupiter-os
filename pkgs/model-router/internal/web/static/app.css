@@ -1,0 +1,141 @@
+/* model router dashboard — components consume var(--ze-*) ONLY.
+   Anti-pattern gate (jupiter-os style guide §14): no hex literals here;
+   every colour comes from zeus-tokens.css. */
+
+body {
+  margin: 0;
+  font-family: var(--ze-font, system-ui, sans-serif);
+  background: var(--ze-bg);
+  color: var(--ze-fg);
+}
+
+.shell {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.topbar {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--ze-line);
+  margin-bottom: 1.5rem;
+}
+
+.topbar h1 {
+  font-size: 1.25rem;
+  margin: 0;
+  letter-spacing: 0.02em;
+}
+
+.topbar .tag {
+  color: var(--ze-fg2);
+  font-size: 0.8rem;
+}
+
+a { color: var(--ze-info); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+  gap: 1rem;
+}
+
+.card {
+  background: var(--ze-panel);
+  border: 1px solid var(--ze-line);
+  border-radius: var(--ze-radius);
+  padding: 1rem;
+}
+
+.card h2 {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.chip {
+  font-size: 0.7rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--ze-line-strong);
+}
+
+.chip.ok    { color: var(--ze-ok);     border-color: var(--ze-ok); }
+.chip.warn  { color: var(--ze-warn);   border-color: var(--ze-warn); }
+.chip.alert { color: var(--ze-alert);  border-color: var(--ze-alert); }
+.chip.muted { color: var(--ze-muted); }
+.chip.info  { color: var(--ze-info);   border-color: var(--ze-info); }
+
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 0.2rem 0.75rem; font-size: 0.82rem; }
+.kv dt { color: var(--ze-fg2); }
+.kv dd { margin: 0; }
+
+.gauge {
+  height: 0.4rem;
+  background: var(--ze-raised);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.gauge > span {
+  display: block;
+  height: 100%;
+  background: var(--ze-ok);
+}
+
+.gauge.warn > span { background: var(--ze-warn); }
+.gauge.alert > span { background: var(--ze-alert); }
+
+table.events {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+table.events th, table.events td {
+  text-align: left;
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid var(--ze-line);
+}
+
+table.events th { color: var(--ze-fg2); font-weight: 500; }
+table.events td.time { color: var(--ze-muted); white-space: nowrap; }
+table.events td.reason { color: var(--ze-fg); }
+
+input.keyfield {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--ze-raised);
+  border: 1px solid var(--ze-line-strong);
+  border-radius: var(--ze-radius);
+  color: var(--ze-fg);
+  padding: 0.45rem 0.6rem;
+  font-family: monospace;
+  font-size: 0.8rem;
+}
+
+button.save {
+  background: var(--ze-ok);
+  color: var(--ze-bg);
+  border: none;
+  border-radius: var(--ze-radius);
+  padding: 0.45rem 1rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.whydown {
+  color: var(--ze-warn);
+  font-size: 0.75rem;
+}
+
+section { margin-bottom: 2rem; }
+section > h2 { font-size: 1.05rem; border-bottom: 1px solid var(--ze-line); padding-bottom: 0.35rem; }
+
+.note { color: var(--ze-fg2); font-size: 0.78rem; }

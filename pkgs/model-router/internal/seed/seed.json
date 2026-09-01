@@ -1,0 +1,905 @@
+{
+  "providers": [
+    {
+      "id": "google",
+      "name": "Google AI Studio",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+      "signup_url": "https://aistudio.google.com",
+      "key_page_url": "https://aistudio.google.com/app/apikey",
+      "window_hints": [
+        {
+          "kind": "fixed_pacific_midnight",
+          "notes": "per-project quotas; reasoning variants need 60s timeout"
+        }
+      ],
+      "initial_caps": {
+        "rpm": 15,
+        "rpd": 1500
+      },
+      "friction_flags": [
+        "timeout_ms: 60000 (reasoning cold starts)"
+      ],
+      "api_flavour": "google"
+    },
+    {
+      "id": "groq",
+      "name": "Groq",
+      "base_url": "https://api.groq.com/openai/v1",
+      "signup_url": "https://console.groq.com",
+      "key_page_url": "https://console.groq.com/keys",
+      "window_hints": [
+        {
+          "kind": "rolling_headers",
+          "notes": "per-model caps; x-ratelimit headers on every response"
+        }
+      ],
+      "initial_caps": {
+        "rpm": 30,
+        "rpd": 1000,
+        "tpm": 8000,
+        "tpd": 200000
+      },
+      "friction_flags": [],
+      "api_flavour": "openai",
+      "env_key": "GROQ_API_KEY"
+    },
+    {
+      "id": "cerebras",
+      "name": "Cerebras",
+      "base_url": "https://api.cerebras.ai/v1",
+      "signup_url": "https://cloud.cerebras.ai",
+      "key_page_url": "https://cloud.cerebras.ai",
+      "window_hints": [
+        {
+          "kind": "continuous_bucket",
+          "notes": "TRIAL ONLY: $5 credits/30 days, card required"
+        }
+      ],
+      "initial_caps": {
+        "rpm": 5,
+        "tpm": 30000,
+        "tpd": 1000000
+      },
+      "friction_flags": [
+        "card required even for trial",
+        "trial expires in 30 days",
+        "no permanent free tier"
+      ],
+      "api_flavour": "openai"
+    },
+    {
+      "id": "bai",
+      "name": "B.AI",
+      "base_url": "https://api.b.ai/v1",
+      "signup_url": "https://bai.ai",
+      "key_page_url": "https://bai.ai",
+      "window_hints": [
+        {
+          "kind": "rolling_headers",
+          "notes": "limited-time 0-credit promo — commercial eligibility tracked in hints"
+        }
+      ],
+      "initial_caps": {},
+      "friction_flags": [],
+      "api_flavour": "openai"
+    },
+    {
+      "id": "anyapi",
+      "name": "AnyAPI",
+      "base_url": "https://api.anyapi.ai/v1",
+      "signup_url": "https://anyapi.ai",
+      "key_page_url": "https://anyapi.ai",
+      "window_hints": [
+        {
+          "kind": "rolling_headers",
+          "notes": "free tier $0 no card; 100K tokens/day binding limit; no published RPM/RPD"
+        }
+      ],
+      "initial_caps": {},
+      "friction_flags": [],
+      "api_flavour": "openai"
+    },
+    {
+      "id": "nvidia",
+      "name": "NVIDIA NIM",
+      "base_url": "https://integrate.api.nvidia.com/v1",
+      "signup_url": "https://developer.nvidia.com",
+      "key_page_url": "https://build.nvidia.com",
+      "window_hints": [
+        {
+          "kind": "rolling_headers",
+          "notes": "officially unpublished; 40 RPM observed; ~1K RPD on large models; 180s timeout for reasoning cold starts"
+        }
+      ],
+      "initial_caps": {
+        "rpm": 40
+      },
+      "friction_flags": [
+        "timeout_ms: 180000 (reasoning cold starts)"
+      ],
+      "api_flavour": "openai"
+    },
+    {
+      "id": "mistral",
+      "name": "Mistral",
+      "base_url": "https://api.mistral.ai/v1",
+      "signup_url": "https://console.mistral.ai",
+      "key_page_url": "https://console.mistral.ai/api-keys",
+      "window_hints": [
+        {
+          "kind": "rolling_headers",
+          "notes": "Studio free mode; limits portal-only"
+        }
+      ],
+      "initial_caps": {},
+      "friction_flags": [],
+      "api_flavour": "openai"
+    },
+    {
+      "id": "openrouter",
+      "name": "OpenRouter",
+      "base_url": "https://openrouter.ai/api/v1",
+      "signup_url": "https://openrouter.ai",
+      "key_page_url": "https://openrouter.ai/keys",
+      "window_hints": [
+        {
+          "kind": "utc_midnight_shared",
+          "notes": "account-wide daily budget across :free models; extra HTTP-Referer/X-Title headers"
+        }
+      ],
+      "initial_caps": {
+        "rpm": 20,
+        "rpd_unfunded": 50,
+        "rpd_funded": 1000,
+        "credit_threshold_usd": 10
+      },
+      "friction_flags": [],
+      "api_flavour": "openai"
+    },
+    {
+      "id": "github",
+      "name": "GitHub Models",
+      "base_url": "https://models.github.ai/inference",
+      "signup_url": "https://github.com",
+      "key_page_url": "https://github.com/settings/tokens",
+      "window_hints": [
+        {
+          "kind": "rolling_headers",
+          "notes": "RETIRED 2026-07-30 per our research — kept tombstoned for the record"
+        }
+      ],
+      "initial_caps": {},
+      "friction_flags": [],
+      "api_flavour": "openai"
+    },
+    {
+      "id": "zai",
+      "name": "Z.ai (Zhipu)",
+      "base_url": "https://open.bigmodel.cn/api/paas/v4",
+      "signup_url": "https://z.ai",
+      "key_page_url": "https://open.bigmodel.cn/usercenter/proj-mgmt/apikeys",
+      "window_hints": [
+        {
+          "kind": "session_5h_7d",
+          "notes": "1113=billing-as-429 never retry; console autodetect bigmodel.cn vs api.z.ai; glm-4.7-flash hidden reasoning 41s TTFB; 60s timeout"
+        }
+      ],
+      "initial_caps": {
+        "concurrency": 1
+      },
+      "friction_flags": [
+        "timeout_ms: 60000 (reasoning cold starts)"
+      ],
+      "api_flavour": "zai",
+      "env_key": "Z_AI_API_KEY"
+    },
+    {
+      "id": "huggingface",
+      "name": "HuggingFace Router",
+      "base_url": "https://router.huggingface.co/v1",
+      "signup_url": "https://huggingface.co",
+      "key_page_url": "https://huggingface.co/settings/tokens",
+      "window_hints": [
+        {
+          "kind": "credit_expiry",
+          "notes": "$0.10/mo recurring router credit, no card"
+        }
+      ],
+      "initial_caps": {
+        "credits_month": 0.1
+      },
+      "friction_flags": [],
+      "api_flavour": "openai"
+    },
+    {
+      "id": "ollama",
+      "name": "Ollama Cloud",
+      "base_url": "https://ollama.com/v1",
+      "signup_url": "https://ollama.com",
+      "key_page_url": "https://ollama.com/settings/keys",
+      "window_hints": [
+        {
+          "kind": "session_5h_7d",
+          "notes": "free plan 1 concurrent; 5h session; reasoning models 30-90s; 120s timeout"
+        }
+      ],
+      "initial_caps": {
+        "concurrency": 1
+      },
+      "friction_flags": [
+        "timeout_ms: 120000 (reasoning cold starts)"
+      ],
+      "api_flavour": "openai"
+    },
+    {
+      "id": "kilo",
+      "name": "Kilo Gateway",
+      "base_url": "https://api.kilo.ai/api/gateway/v1",
+      "signup_url": "https://kilo.ai",
+      "key_page_url": "https://kilo.ai/api-keys",
+      "window_hints": [
+        {
+          "kind": "rolling_headers",
+          "notes": "keyless :free routes 200 req/hr per IP; training on free prompts; validation via /api/gateway/models"
+        },
+        {
+          "kind": "rolling_headers",
+          "notes": "keyless: anonymous access supported"
+        }
+      ],
+      "initial_caps": {},
+      "friction_flags": [
+        "validate via https://api.kilo.ai/api/gateway/models"
+      ],
+      "api_flavour": "openai"
+    },
+    {
+      "id": "llm7",
+      "name": "LLM7",
+      "base_url": "https://api.llm7.io/v1",
+      "signup_url": "https://llm7.io",
+      "key_page_url": "https://llm7.io",
+      "window_hints": [
+        {
+          "kind": "rolling_headers",
+          "notes": "100 req/hr; anonymous works for basic models"
+        }
+      ],
+      "initial_caps": {
+        "rpm": 100
+      },
+      "friction_flags": [],
+      "api_flavour": "openai"
+    },
+    {
+      "id": "opencode",
+      "name": "OpenCode Zen",
+      "base_url": "https://opencode.ai/zen/v1",
+      "signup_url": "https://opencode.ai",
+      "key_page_url": "https://opencode.ai/auth",
+      "window_hints": [
+        {
+          "kind": "rolling_headers",
+          "notes": "promotional free roster; trial-only terms"
+        }
+      ],
+      "initial_caps": {},
+      "friction_flags": [],
+      "api_flavour": "openai",
+      "env_key": "OPENCODE_API_KEY"
+    },
+    {
+      "id": "ovh",
+      "name": "OVH AI Endpoints",
+      "base_url": "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1",
+      "signup_url": "https://www.ovhcloud.com/en/public-cloud/ai-endpoints/",
+      "key_page_url": "https://www.ovhcloud.com/en/public-cloud/ai-endpoints/",
+      "window_hints": [
+        {
+          "kind": "rolling_headers",
+          "notes": "keyless 2 RPM/IP anonymous; 400 RPM keyed project; EU-hosted zero retention"
+        },
+        {
+          "kind": "rolling_headers",
+          "notes": "keyless: anonymous access supported"
+        }
+      ],
+      "initial_caps": {
+        "rpm": 2
+      },
+      "friction_flags": [],
+      "api_flavour": "openai"
+    },
+    {
+      "id": "agnes",
+      "name": "Agnes AI",
+      "base_url": "https://apihub.agnes-ai.com/v1",
+      "signup_url": "https://platform.agnes-ai.com",
+      "key_page_url": "https://platform.agnes-ai.com",
+      "window_hints": [
+        {
+          "kind": "rolling_headers",
+          "notes": "$0 promotional (watch for reversion); ~30 concurrent before 429; 60s timeout for reasoning"
+        }
+      ],
+      "initial_caps": {},
+      "friction_flags": [
+        "timeout_ms: 60000 (reasoning cold starts)"
+      ],
+      "api_flavour": "openai"
+    },
+    {
+      "id": "reka",
+      "name": "Reka",
+      "base_url": "https://api.reka.ai/v1",
+      "signup_url": "https://platform.reka.ai",
+      "key_page_url": "https://platform.reka.ai",
+      "window_hints": [
+        {
+          "kind": "credit_expiry",
+          "notes": "recurring monthly credit, no card; reka-flash-3 + reka-edge-2603"
+        }
+      ],
+      "initial_caps": {
+        "credits_month": 10
+      },
+      "friction_flags": [],
+      "api_flavour": "openai"
+    },
+    {
+      "id": "siliconflow",
+      "name": "SiliconFlow",
+      "base_url": "https://api.siliconflow.com/v1",
+      "signup_url": "https://siliconflow.com",
+      "key_page_url": "https://cloud.siliconflow.cn",
+      "window_hints": [
+        {
+          "kind": "rolling_headers",
+          "notes": "free models after real-name; also free FLUX/CosyVoice media models"
+        }
+      ],
+      "initial_caps": {},
+      "friction_flags": [
+        "real-name gate since 2026-05-15 (PRC documents or foreigner permanent residence)"
+      ],
+      "api_flavour": "openai"
+    },
+    {
+      "id": "routeway",
+      "name": "Routeway",
+      "base_url": "https://api.routeway.ai/v1",
+      "signup_url": "https://routeway.ai",
+      "key_page_url": "https://routeway.ai",
+      "window_hints": [
+        {
+          "kind": "rolling_headers",
+          "notes": "observed stricter 5 rpm than docs 20/200; Cloudflare 1010 without browser UA"
+        }
+      ],
+      "initial_caps": {
+        "rpm": 5
+      },
+      "friction_flags": [
+        "requires browser User-Agent"
+      ],
+      "api_flavour": "openai"
+    },
+    {
+      "id": "bazaarlink",
+      "name": "BazaarLink",
+      "base_url": "https://bazaarlink.ai/api/v1",
+      "signup_url": "https://bazaarlink.ai",
+      "key_page_url": "https://bazaarlink.ai",
+      "window_hints": [
+        {
+          "kind": "rolling_headers",
+          "notes": "auto:free picks zero-cost model"
+        }
+      ],
+      "initial_caps": {},
+      "friction_flags": [],
+      "api_flavour": "openai"
+    },
+    {
+      "id": "ainative",
+      "name": "AINative Studio",
+      "base_url": "https://api.ainative.studio/api/v1",
+      "signup_url": "https://ainative.studio",
+      "key_page_url": "https://ainative.studio",
+      "window_hints": [
+        {
+          "kind": "rolling_headers",
+          "notes": "advertised ~10M tokens/month free, unverified until account confirms"
+        }
+      ],
+      "initial_caps": {},
+      "friction_flags": [],
+      "api_flavour": "openai"
+    },
+    {
+      "id": "aion",
+      "name": "Aion Labs",
+      "base_url": "https://api.aionlabs.ai/v1",
+      "signup_url": "https://aionlabs.ai",
+      "key_page_url": "https://aionlabs.ai",
+      "window_hints": [
+        {
+          "kind": "rolling_headers",
+          "notes": "recurring free availability managed per catalog"
+        }
+      ],
+      "initial_caps": {},
+      "friction_flags": [],
+      "api_flavour": "openai"
+    },
+    {
+      "id": "requesty",
+      "name": "Requesty",
+      "base_url": "https://router.requesty.ai/v1",
+      "signup_url": "https://requesty.ai",
+      "key_page_url": "https://requesty.ai",
+      "window_hints": [
+        {
+          "kind": "rolling_headers",
+          "notes": "free model rows age in monthly; 60 RPM reported"
+        }
+      ],
+      "initial_caps": {},
+      "friction_flags": [],
+      "api_flavour": "openai"
+    },
+    {
+      "id": "navy",
+      "name": "NavyAI",
+      "base_url": "https://api.navy/v1",
+      "signup_url": "https://navy.ai",
+      "key_page_url": "https://navy.ai",
+      "window_hints": [
+        {
+          "kind": "rolling_headers",
+          "notes": "150K tokens/day; Discord-backed dashboard; needs explicit UA"
+        }
+      ],
+      "initial_caps": {
+        "rpm": 20
+      },
+      "friction_flags": [
+        "requires browser User-Agent"
+      ],
+      "api_flavour": "openai"
+    },
+    {
+      "id": "nara",
+      "name": "NaraRouter",
+      "base_url": "https://router.bynara.id/v1",
+      "signup_url": "https://bynara.id",
+      "key_page_url": "https://bynara.id",
+      "window_hints": [
+        {
+          "kind": "rolling_headers",
+          "notes": "Telegram verification; mistral-large/medium-3-5/tencent-hy3 free"
+        }
+      ],
+      "initial_caps": {},
+      "friction_flags": [],
+      "api_flavour": "openai"
+    },
+    {
+      "id": "sealion",
+      "name": "SEA-LION",
+      "base_url": "https://api.sea-lion.ai/v1",
+      "signup_url": "https://sea-lion.ai",
+      "key_page_url": "https://sea-lion.ai",
+      "window_hints": [
+        {
+          "kind": "rolling_headers",
+          "notes": "AI Singapore; Google sign-in; no region wall"
+        }
+      ],
+      "initial_caps": {
+        "rpm": 10
+      },
+      "friction_flags": [],
+      "api_flavour": "openai"
+    },
+    {
+      "id": "orcarouter",
+      "name": "OrcaRouter",
+      "base_url": "https://api.orcarouter.ai/v1",
+      "signup_url": "https://orcarouter.ai",
+      "key_page_url": "https://orcarouter.ai",
+      "window_hints": [
+        {
+          "kind": "rolling_headers",
+          "notes": "sk-orca- keys; *-free aliases; 429=clean quota signal never falls back to paid"
+        }
+      ],
+      "initial_caps": {},
+      "friction_flags": [],
+      "api_flavour": "openai"
+    },
+    {
+      "id": "unorouter",
+      "name": "UnoRouter",
+      "base_url": "https://api.unorouter.com/v1",
+      "signup_url": "https://unorouter.com",
+      "key_page_url": "https://unorouter.com",
+      "window_hints": [
+        {
+          "kind": "rolling_headers",
+          "notes": "per-minute :free limit; parallel bursts trip account-wide 429 for minutes"
+        }
+      ],
+      "initial_caps": {},
+      "friction_flags": [],
+      "api_flavour": "openai"
+    },
+    {
+      "id": "xkiro",
+      "name": "xKiro",
+      "base_url": "https://api.xkiro.com/v1",
+      "signup_url": "https://xkiro.com",
+      "key_page_url": "https://xkiro.com",
+      "window_hints": [
+        {
+          "kind": "rolling_headers",
+          "notes": "5M free tokens/day; /v1/models public (false-positive validation) — validate via /v1/usage"
+        }
+      ],
+      "initial_caps": {
+        "tpd": 5000000
+      },
+      "friction_flags": [
+        "validate via https://api.xkiro.com/v1/usage"
+      ],
+      "api_flavour": "openai"
+    },
+    {
+      "id": "qianfan",
+      "name": "Baidu Qianfan",
+      "base_url": "https://qianfan.baidubce.com/v2",
+      "signup_url": "https://qianfan.baidubce.com",
+      "key_page_url": "https://console.bce.baidu.com/qianfan",
+      "window_hints": [
+        {
+          "kind": "rolling_headers",
+          "notes": "ERNIE-Speed/Lite/Tiny free via PAYG rate limits; real-name gate"
+        }
+      ],
+      "initial_caps": {},
+      "friction_flags": [],
+      "api_flavour": "openai"
+    },
+    {
+      "id": "volcengine",
+      "name": "Volcengine Ark",
+      "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+      "signup_url": "https://www.volcengine.com/product/ark",
+      "key_page_url": "https://console.volcengine.com/ark",
+      "window_hints": [
+        {
+          "kind": "utc_midnight_shared",
+          "notes": "Doubao 2M tokens/day/model for individuals; real-name gate"
+        }
+      ],
+      "initial_caps": {
+        "tpd": 2000000
+      },
+      "friction_flags": [],
+      "api_flavour": "openai"
+    },
+    {
+      "id": "longcat",
+      "name": "LongCat",
+      "base_url": "https://api.longcat.chat/openai/v1",
+      "signup_url": "https://platform.longcat.chat",
+      "key_page_url": "https://platform.longcat.chat",
+      "window_hints": [
+        {
+          "kind": "utc_midnight_shared",
+          "notes": "Meituan; daily free quota; email signup works outside mainland"
+        }
+      ],
+      "initial_caps": {},
+      "friction_flags": [],
+      "api_flavour": "openai"
+    },
+    {
+      "id": "xfyun",
+      "name": "iFlytek Spark",
+      "base_url": "https://spark-api-open.xf-yun.com/v1",
+      "signup_url": "https://xinghuo.xfyun.cn",
+      "key_page_url": "https://console.xfyun.cn",
+      "window_hints": [
+        {
+          "kind": "rolling_headers",
+          "notes": "Spark Lite free; APIPassword as bearer"
+        }
+      ],
+      "initial_caps": {},
+      "friction_flags": [],
+      "api_flavour": "openai"
+    },
+    {
+      "id": "empero",
+      "name": "Empero Free",
+      "base_url": "https://free.empero.org/v1",
+      "signup_url": "https://free.empero.org",
+      "key_page_url": "https://free.empero.org",
+      "window_hints": [
+        {
+          "kind": "rolling_headers",
+          "notes": "community free gateway; key literally \"free\"; rotating model roster; currently maintenance"
+        }
+      ],
+      "initial_caps": {},
+      "friction_flags": [
+        "key literally \"free\" — no signup"
+      ],
+      "api_flavour": "openai"
+    },
+    {
+      "id": "tokenrouter",
+      "name": "TokenRouter",
+      "base_url": "https://api.tokenrouter.com/v1",
+      "signup_url": "https://tokenrouter.com",
+      "key_page_url": "https://tokenrouter.com",
+      "window_hints": [
+        {
+          "kind": "rolling_headers",
+          "notes": "131 models incl z-ai/glm-5.3-free; aggregator with free model variants"
+        }
+      ],
+      "initial_caps": {},
+      "friction_flags": [],
+      "api_flavour": "openai",
+      "env_key": "TOKENROUTER_API_KEY"
+    },
+    {
+      "id": "cloudflare",
+      "name": "Cloudflare Workers AI",
+      "signup_url": "https://dash.cloudflare.com",
+      "key_page_url": "https://dash.cloudflare.com/profile/api-tokens",
+      "base_url": "https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/v1",
+      "api_flavour": "cloudflare",
+      "window_hints": [
+        {
+          "kind": "utc_midnight_shared",
+          "notes": "10,000 neurons/day shared allocation resets 00:00 UTC; paid-billing exclusion list incl. glm-5.3, glm-5.3-flash, glm-5.2; key format account_id:token"
+        }
+      ],
+      "initial_caps": {
+        "neurons_day": 10000
+      },
+      "friction_flags": []
+    },
+    {
+      "id": "cohere",
+      "name": "Cohere",
+      "signup_url": "https://cohere.com",
+      "key_page_url": "https://dashboard.cohere.com/api-keys",
+      "base_url": "https://api.cohere.com/compatibility/v1",
+      "api_flavour": "openai",
+      "window_hints": [
+        {
+          "kind": "rolling_headers",
+          "notes": "compatibility endpoint; 20 RPM / 1K calls per month on the trial key"
+        }
+      ],
+      "initial_caps": {
+        "rpm": 20
+      },
+      "friction_flags": []
+    },
+    {
+      "id": "modelscope",
+      "name": "ModelScope",
+      "signup_url": "https://modelscope.cn",
+      "key_page_url": "https://modelscope.cn/my/myaccesstoken",
+      "base_url": "https://api-inference.modelscope.cn/v1",
+      "api_flavour": "openai",
+      "window_hints": [
+        {
+          "kind": "utc_midnight_shared",
+          "notes": "2,000 calls/day account-wide, <=200/model dynamic; resets UTC+8; garbage tokens falsely 200 on /v1/models — validate via 1-token chat probe"
+        }
+      ],
+      "initial_caps": {
+        "rpd": 2000
+      },
+      "friction_flags": [
+        "real-name verification (Alibaba Cloud CN binding) — practically PRC-gated"
+      ]
+    },
+    {
+      "id": "pollinations",
+      "name": "Pollinations",
+      "signup_url": "https://pollinations.ai",
+      "key_page_url": "https://auth.pollinations.ai",
+      "base_url": "https://gen.pollinations.ai/v1",
+      "api_flavour": "openai",
+      "window_hints": [
+        {
+          "kind": "rolling_headers",
+          "notes": "free capacity accrues 1 pollen per IP per hour; /v1/models falsely 200 for revoked keys — validate via /account/key"
+        }
+      ],
+      "initial_caps": {},
+      "friction_flags": []
+    },
+    {
+      "id": "aihorde",
+      "name": "AI Horde",
+      "signup_url": "https://aihorde.net",
+      "key_page_url": "https://aihorde.net/register",
+      "base_url": "https://aihorde.net/v1",
+      "api_flavour": "openai",
+      "window_hints": [
+        {
+          "kind": "rolling_headers",
+          "notes": "community volunteer workers; queue-based (tens of seconds, no streaming); anonymous key 0000000000 at lowest priority; max_tokens >= 16; no tool calls"
+        }
+      ],
+      "initial_caps": {},
+      "friction_flags": [
+        "keyless anonymous at lowest priority"
+      ]
+    }
+  ],
+  "models": [
+    {
+      "family": "glm-5.2",
+      "provider_id": "openrouter",
+      "local_slug": "z-ai/glm-5.2:free",
+      "status": "free",
+      "notes": ""
+    },
+    {
+      "family": "glm-5.2",
+      "provider_id": "cloudflare-workers-ai",
+      "local_slug": "@cf/zai-org/glm-5.2",
+      "status": "paid_gated",
+      "notes": ""
+    },
+    {
+      "family": "glm-5.2",
+      "provider_id": "mistral",
+      "local_slug": "glm-5.2",
+      "status": "paid",
+      "notes": ""
+    },
+    {
+      "family": "kimi-k3",
+      "provider_id": "nvidia-nim",
+      "local_slug": "moonshotai/Kimi-K3",
+      "status": "free",
+      "notes": ""
+    },
+    {
+      "family": "kimi-k3",
+      "provider_id": "ollama-cloud",
+      "local_slug": "kimi-k3:cloud",
+      "status": "free_capped",
+      "notes": ""
+    },
+    {
+      "family": "qwen3.8",
+      "provider_id": "groq",
+      "local_slug": "qwen/qwen3.8-27b",
+      "status": "free",
+      "notes": "2M TPD allowance"
+    },
+    {
+      "family": "qwen3.8",
+      "provider_id": "cloudflare-workers-ai",
+      "local_slug": "@cf/zai-org/qwen3.8-27b",
+      "status": "free",
+      "notes": ""
+    },
+    {
+      "family": "qwen3.8",
+      "provider_id": "ovhcloud-ai-endpoints",
+      "local_slug": "qwen3.5-397b-a17b",
+      "status": "free",
+      "notes": "one generation back on OVH"
+    },
+    {
+      "family": "deepseek-v4",
+      "provider_id": "nvidia-nim",
+      "local_slug": "deepseek-ai/deepseek-v4-flash",
+      "status": "free",
+      "notes": ""
+    },
+    {
+      "family": "deepseek-v4",
+      "provider_id": "nvidia-nim",
+      "local_slug": "deepseek-ai/deepseek-v4-pro",
+      "status": "free",
+      "notes": ""
+    },
+    {
+      "family": "deepseek-v4",
+      "provider_id": "ollama-cloud",
+      "local_slug": "deepseek-v4-pro:cloud",
+      "status": "free_capped",
+      "notes": ""
+    },
+    {
+      "family": "glm-5.3",
+      "provider_id": "ollama-cloud",
+      "local_slug": "glm-5.3:cloud",
+      "status": "free_capped",
+      "notes": ""
+    },
+    {
+      "family": "glm-5.3-flash",
+      "provider_id": "ollama-cloud",
+      "local_slug": "glm-5.3-flash:cloud",
+      "status": "free_capped",
+      "notes": ""
+    },
+    {
+      "family": "glm-5.3",
+      "provider_id": "zai",
+      "local_slug": "glm-5.3",
+      "status": "paid",
+      "notes": ""
+    },
+    {
+      "family": "glm-5.3-flash",
+      "provider_id": "zai",
+      "local_slug": "glm-5.3-flash",
+      "status": "paid",
+      "notes": "50% promo ends 2026-09-09"
+    },
+    {
+      "family": "glm-5.3",
+      "provider_id": "cloudflare-workers-ai",
+      "local_slug": "@cf/zai-org/glm-5.3",
+      "status": "paid_gated",
+      "notes": "paid-billing exclusion list"
+    },
+    {
+      "family": "glm-5.3-flash",
+      "provider_id": "cloudflare-workers-ai",
+      "local_slug": "@cf/zai-org/glm-5.3-flash",
+      "status": "paid_gated",
+      "notes": "paid-billing exclusion list"
+    },
+    {
+      "family": "glm-4x-flash",
+      "provider_id": "cloudflare-workers-ai",
+      "local_slug": "@cf/zai-org/glm-4.7-flash",
+      "status": "free",
+      "notes": ""
+    },
+    {
+      "family": "glm-4x-flash",
+      "provider_id": "zai",
+      "local_slug": "glm-4.7-flash",
+      "status": "free",
+      "notes": ""
+    },
+    {
+      "family": "glm-4x-flash",
+      "provider_id": "openrouter",
+      "local_slug": "z-ai/glm-4.5-flash:free",
+      "status": "free",
+      "notes": "retirement announced, still serving"
+    },
+    {
+      "family": "glm-5.3",
+      "provider_id": "nvidia-nim",
+      "local_slug": "",
+      "status": "no_host",
+      "notes": "lineage tombstoned 2026-08-21"
+    },
+    {
+      "family": "qwen3.8",
+      "provider_id": "nvidia-nim",
+      "local_slug": "",
+      "status": "no_host",
+      "notes": "Qwen lineage EOL 2026-07-27"
+    }
+  ]
+}

@@ -76,12 +76,15 @@ in
         WorkingDirectory = cfg.rootDir;
         # Keys come from the pinned wrapper at /run/current-system/sw/bin/opencode
         # (which execs the chmod-0555 1.18.22 binary). With serverPasswordFile
-        # set, OPENCODE_SERVER_PASSWORD turns on HTTP basic auth.
+        # set, OPENCODE_SERVER_PASSWORD turns on HTTP basic auth. The dsh_env
+        # sops secret is exported so the {env:} provider keys — including
+        # MODEL_ROUTER_TOKEN for the fleet's own gateway (router.jupiter.au)
+        # — resolve inside the served sessions.
         ExecStart =
           if cfg.serverPasswordFile != null then
-            "${pkgs.bash}/bin/bash -c 'export OPENCODE_SERVER_PASSWORD=\"$(cat ${cfg.serverPasswordFile})\"; exec /run/current-system/sw/bin/opencode serve --port ${toString cfg.port} --hostname 127.0.0.1'"
+            "${pkgs.bash}/bin/bash -c 'export OPENCODE_SERVER_PASSWORD=\"$(cat ${cfg.serverPasswordFile})\"; set -a; [ -f ${config.sops.secrets.dsh_env.path} ] && . ${config.sops.secrets.dsh_env.path}; set +a; exec /run/current-system/sw/bin/opencode serve --port ${toString cfg.port} --hostname 127.0.0.1'"
           else
-            "/run/current-system/sw/bin/opencode serve --port ${toString cfg.port} --hostname 127.0.0.1";
+            "${pkgs.bash}/bin/bash -c 'set -a; [ -f ${config.sops.secrets.dsh_env.path} ] && . ${config.sops.secrets.dsh_env.path}; set +a; exec /run/current-system/sw/bin/opencode serve --port ${toString cfg.port} --hostname 127.0.0.1'";
         Restart = "on-failure";
         RestartSec = 5;
       };

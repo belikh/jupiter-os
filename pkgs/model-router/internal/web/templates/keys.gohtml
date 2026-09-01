@@ -1,0 +1,45 @@
+{{define "layout"}}<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Keys — Model Router</title>
+<link rel="stylesheet" href="/static/zeus-tokens.css">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div class="shell">
+  <div class="topbar">
+    <h1>Provider Keys</h1>
+    <span class="tag"><a href="/">dashboard</a> · <a href="/events">events</a></span>
+  </div>
+  {{template "content" .}}
+</div>
+</body>
+</html>{{end}}
+
+{{define "content"}}
+<section>
+  <h2>Credential vault</h2>
+  <p class="note">Keys are encrypted at rest (AES-256-GCM) and never echoed back. Sign up at the provider, paste the key, and it validates on entry with a one-token probe.</p>
+  <div class="grid">
+    {{range .Providers}}
+    <div class="card">
+      <h2>{{.Name}} <span class="chip {{.KeyChip}}">{{.KeyState}}</span></h2>
+      <div class="kv">
+        <dt>signup</dt><dd><a href="{{.SignupURL}}" target="_blank" rel="noopener">{{.SignupURL}}</a></dd>
+        <dt>key page</dt><dd><a href="{{.KeyPageURL}}" target="_blank" rel="noopener">{{.KeyPageURL}}</a></dd>
+        {{if .Friction}}<dt>notes</dt><dd class="note">{{.Friction}}</dd>{{end}}
+      </div>
+      {{if .Detail}}<p class="whydown">{{.Detail}}</p>{{end}}
+      <form method="post" action="/keys/{{.ID}}" style="margin-top:0.6rem">
+        <input class="keyfield" type="password" name="key" placeholder="paste {{.Name}} API key" autocomplete="off">
+        <div style="margin-top:0.5rem; display:flex; gap:0.5rem">
+          <button class="save" type="submit">Save &amp; validate</button>
+        </div>
+      </form>
+    </div>
+    {{end}}
+  </div>
+</section>
+{{end}}

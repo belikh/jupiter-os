@@ -1,0 +1,40 @@
+{{define "layout"}}<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="5">
+<title>Events — Model Router</title>
+<link rel="stylesheet" href="/static/zeus-tokens.css">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div class="shell">
+  <div class="topbar">
+    <h1>Event Log</h1>
+    <span class="tag"><a href="/">dashboard</a> · <a href="/keys">keys</a></span>
+  </div>
+  {{template "content" .}}
+</div>
+</body>
+</html>{{end}}
+
+{{define "content"}}
+<section>
+  <h2>Why things went down (and came back)</h2>
+  {{if .Events}}
+  <table class="events">
+    <tr><th>time</th><th>provider</th><th>model</th><th>kind</th><th>reason</th></tr>
+    {{range .Events}}
+    <tr>
+      <td class="time">{{.Time}}</td>
+      <td>{{.Provider}}</td>
+      <td>{{.Model}}</td>
+      <td>{{.Kind}}</td>
+      <td class="reason">{{.Reason}}</td>
+    </tr>
+    {{end}}
+  </table>
+  {{else}}<p class="note">No events yet — cooldowns, quota pauses, catalogue drift and recoveries land here with their reasons.</p>{{end}}
+</section>
+{{end}}

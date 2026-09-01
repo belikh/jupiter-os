@@ -44,6 +44,16 @@
     ../../modules/services/opencode-web.nix
     # OpenDesign — local-first design product (daemon `od` + web frontend)
     ../../modules/services/open-design.nix
+    # Model Router — self-hosted OpenAI-compatible gateway pooling free LLM
+    # inference tiers (41 providers in the signed seed; learned quota ledger
+    # with reset scheduling; per-endpoint health reasons; Zeus dashboard).
+    # Upstream (private): github.com/belikh/model-router; the Go source is
+    # vendored at pkgs/model-router (ADR-0002 D2) and this module is the
+    # upstream nix/module with the package default pointed in-tree. The
+    # flake's modelRouterModule (mkHost extras) stamps the rev.
+    # Public at router.jupiter.au via this host's Cloudflare tunnel (ingress
+    # + DNS added 2026-09-01 alongside dsh/opencode/design).
+    ../../modules/services/model-router.nix
     # jupiterOS Arcade: boots straight into the gamescope/Pegasus session on
     # tty1 (modules/desktop/arcade-console.nix) with full kiosk collection
     # parity — console ROMs (modules/desktop/cartridges.nix) + eXo DOS/Win
@@ -229,6 +239,21 @@
   # jupiter.services.llm.host = "0.0.0.0";
   # jupiter.services.llm.exposeLan = true;
   # jupiter.services.llm.clientUrl = "http://127.0.0.1:8081";
+
+  # ---- Model Router (jupiter.services.modelRouter) — ENABLED 2026-09-01 ----
+  # The fleet's model server answer, replacing the disabled llama-server
+  # above: instead of one local GPU model, it pools every free LLM inference
+  # tier behind one OpenAI-compatible endpoint on loopback :8080, proxied
+  # publicly at router.jupiter.au through this host's tunnel. Provider keys
+  # bootstrap from the dsh_env sops secret (same GROQ/Z_AI/OPENCODE/TOKEN
+  # ROUTER keys the crush wrappers use) into the router's own encrypted
+  # vault on first boot; the dashboard (router.jupiter.au) owns them after.
+  # opencode + OpenDesign + dsh all point at it as their provider (see the
+  # opencode-web and dsh sections — provider entries added 2026-09-01).
+  jupiter.services.modelRouter = {
+    enable = true;
+    envFile = config.sops.secrets.dsh_env.path; # same provider keys as dsh
+  };
 
   hardware.graphics.enable = true;
 
@@ -528,6 +553,37 @@
                 - id: nemotron-3-ultra-free
                   contextWindow: 1000000
                   maxTokens: 128000
+            # Model Router — the fleet's own gateway (jupiter.services.
+            # modelRouter; router.jupiter.au / loopback :8080 on this
+            # host). Model ids are the router's pool FAMILIES; the limits
+            # are each family's worst-case free member (seed matrix, same
+            # stamps as modules/core/opencode.nix's model-router block).
+            # apiKeyEnv resolves from this same dsh_env file, where the
+            # router's client token also lands for its first boot.
+            model-router:
+              displayName: Model Router (jupiter)
+              apiKeyEnv: MODEL_ROUTER_TOKEN
+              api: openai-completions
+              baseURL: http://127.0.0.1:8080/v1
+              models:
+                - id: glm-4x-flash
+                  contextWindow: 131072
+                  maxTokens: 32768
+                - id: glm-5.2
+                  contextWindow: 262144
+                  maxTokens: 32768
+                - id: qwen3.8
+                  contextWindow: 131072
+                  maxTokens: 32768
+                - id: kimi-k3
+                  contextWindow: 1000000
+                  maxTokens: 131072
+                - id: deepseek-v4-flash
+                  contextWindow: 1000000
+                  maxTokens: 131072
+                - id: glm-5.3-flash
+                  contextWindow: 1000000
+                  maxTokens: 131072
       '').outPath;
   };
 

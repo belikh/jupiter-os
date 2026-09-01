@@ -261,6 +261,70 @@ let
           };
         };
       };
+      # Model Router (router.jupiter.au) — this fleet's own gateway
+      # (github.com/belikh/model-router, running on callisto behind its
+      # Cloudflare tunnel; jupiter.services.modelRouter). Pools every free
+      # LLM inference tier behind one OpenAI-compatible endpoint: the
+      # model ids are the router's pool FAMILIES (glm-4x-flash, glm-5.2,
+      # qwen3.8, kimi-k3, deepseek-v4-flash, glm-5.3-flash via
+      # ollama-cloud capped / stealth windows), each backed by however
+      # many free endpoints currently serve it. Key is the router's own
+      # client token (MODEL_ROUTER_TOKEN, shared with dsh/OpenDesign via
+      # the wrapper env; the router holds the provider keys in its vault).
+      # Added 2026-09-01 alongside the callisto service.
+      "model-router" = {
+        npm = "@ai-sdk/openai-compatible";
+        name = "Model Router (jupiter)";
+        options = {
+          baseURL = "https://router.jupiter.au/v1";
+          apiKey = "{env:MODEL_ROUTER_TOKEN}";
+        };
+        models = {
+          # limits are the pool's WORST-case member per family (seed matrix):
+          # glm-4x-flash: openrouter :free 256K/zai glm-4.7-flash 128K → 128K/32K
+          "glm-4x-flash" = {
+            limit = {
+              context = 131072;
+              output = 32768;
+            };
+          };
+          # glm-5.2: openrouter z-ai/glm-5.2:free 256K → 262144/32768
+          "glm-5.2" = {
+            limit = {
+              context = 262144;
+              output = 32768;
+            };
+          };
+          # qwen3.8: groq qwen3.8-27b 131072 (2M TPD free allowance)
+          "qwen3.8" = {
+            limit = {
+              context = 131072;
+              output = 32768;
+            };
+          };
+          # kimi-k3: NVIDIA NIM 1M/128K (free-tier anchor)
+          "kimi-k3" = {
+            limit = {
+              context = 1000000;
+              output = 131072;
+            };
+          };
+          # deepseek-v4-flash: NIM 1M class
+          "deepseek-v4-flash" = {
+            limit = {
+              context = 1000000;
+              output = 131072;
+            };
+          };
+          # glm-5.3-flash: ollama cloud capped tier (literal free hosting)
+          "glm-5.3-flash" = {
+            limit = {
+              context = 1000000;
+              output = 131072;
+            };
+          };
+        };
+      };
       mcp.cloudflare = {
         type = "remote";
         url = "https://mcp.cloudflare.com/mcp";
@@ -314,6 +378,12 @@ let
     export OPENCODE_API_KEY="$(sed -n 's/^OPENCODE_API_KEY=//p' ${config.sops.secrets.dsh_env.path})"
     export PARALLEL_API_KEY="$(sed -n 's/^PARALLEL_API_KEY=//p' ${config.sops.secrets.dsh_env.path})"
     export TOKENROUTER_API_KEY="$(cat ${config.sops.secrets.tokenrouter_api_key.path})"
+    # Model Router client token (router.jupiter.au) — the fleet's own
+    # gateway on callisto. The router pre-seeds this same token on first
+    # boot from MODEL_ROUTER_TOKEN in its env (jupiter.services.modelRouter
+    # envFile), so consumers share one credential.
+    if [ -n "''${MODEL_ROUTER_SOPS_PATH:-}" ]; then export MODEL_ROUTER_TOKEN="$(cat "$MODEL_ROUTER_SOPS_PATH")"; fi
+    if grep -q '^MODEL_ROUTER_TOKEN=' ${config.sops.secrets.dsh_env.path} 2>/dev/null; then export MODEL_ROUTER_TOKEN="$(sed -n 's/^MODEL_ROUTER_TOKEN=//p' ${config.sops.secrets.dsh_env.path})"; fi
     export CLOUDFLARE_BROWSER_RUN_TOKEN="$(cat ${config.sops.secrets.cloudflare_browser_run_token.path})"
     export CF_ACCOUNT_ID="19f62c2ef7861336d274166233ba3a17"
     export HA_MCP_TOKEN="$(cat ${config.sops.secrets.ha_mcp_token.path})"

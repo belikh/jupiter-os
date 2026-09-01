@@ -75,6 +75,15 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    # Model Router — self-hosted OpenAI-compatible gateway pooling free LLM
+    # inference tiers (41 providers; learned quota ledger with reset
+    # scheduling; per-endpoint health reasons; Zeus dashboard). Runs on
+    # callisto behind its Cloudflare tunnel at router.jupiter.au; opencode,
+    # OpenDesign and dsh point at it as their provider. The repo carries
+    # its own flake (buildGoModule, CGO-free static binary) plus a plain
+    # NixOS module (nixosModules.default) that this tree imports for
+    # callisto via modelRouterModule.
+
     # OpenDesign — local-first design product (daemon `od` + Next.js web
     # frontend). Provides a NixOS module (services.open-design) and
     # packages for daemon/web. Justified by a registered host that uses
@@ -343,6 +352,20 @@
         jupiter.services.sunoWeb.package = suno-web.packages.x86_64-linux.suno-web;
       };
 
+      # Hand callisto the model-router module. The package is vendored
+      # in-tree (pkgs/model-router, ADR-0002 D2 — the private origin repo
+      # cannot be fetched by the builders) and the upstream NixOS module
+      # is vendored at modules/services/model-router.nix, which the host
+      # imports directly; this module only pins the package with the flake
+      # rev for version stamping, mirroring openDesignDaemonModule.
+      modelRouterModule =
+        { pkgs, ... }:
+        {
+          jupiter.services.modelRouter.package = pkgs.callPackage ./pkgs/model-router {
+            rev = self.rev or "";
+          };
+        };
+
       # OpenDesign daemon with better_sqlite3 bumped to 13.0.3 for Node 24.19.
       # Upstream pins 12.10.0 (v131) which crashes on Node 24.19 v137
       # (RemoveEnvironmentCleanupHook). 13.0.3 ships v137 prebuilds and the
@@ -391,6 +414,7 @@
         # over ext4-iSCSI on europa's zvol).
         callisto = mkHost ./hosts/callisto/configuration.nix [
           openDesignDaemonModule
+          modelRouterModule
         ];
 
         # Arcade webapp pipeline TEST host — a minimal VM (tests/hosts/

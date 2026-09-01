@@ -1,0 +1,47 @@
+{{define "layout"}}<!DOCTYPE html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="5">
+<title>Model Router</title>
+<link rel="stylesheet" href="/static/zeus-tokens.css">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div class="shell">
+  <div class="topbar">
+    <h1>Model Router</h1>
+    <span class="tag">free-tier pool · {{len .Families}} families routable</span>
+    <span class="tag"><a href="/keys">keys</a> · <a href="/events">events</a></span>
+  </div>
+  {{template "content" .}}
+</div>
+</body>
+</html>{{end}}
+
+{{define "content"}}
+<section>
+  <h2>Pools</h2>
+  <div class="grid">
+    {{range .Pools}}
+    <div class="card">
+      <h2>{{.Family}} <span class="chip {{.State}}">{{.StateLabel}}</span></h2>
+      <div class="kv">
+        <dt>endpoints</dt><dd>{{.EndpointCount}}</dd>
+        <dt>in-flight</dt><dd>{{.InFlight}}</dd>
+      </div>
+      {{range .Endpoints}}
+      <div class="kv" style="margin-top:0.5rem">
+        <dt>{{.Provider}}</dt>
+        <dd>
+          {{if .WhyDown}}<span class="whydown">{{.WhyDown}}</span>{{else}}<span class="chip ok">serving</span>{{end}}
+        </dd>
+      </div>
+      {{end}}
+    </div>
+    {{end}}
+    {{if not .Pools}}<p class="note">No pools yet — wire provider keys on the <a href="/keys">keys page</a>.</p>{{end}}
+  </div>
+</section>
+{{end}}

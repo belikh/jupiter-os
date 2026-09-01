@@ -102,5 +102,15 @@ in
         ++ config.services.open-design.extraBinPaths
       )
     );
+
+    # The daemon's PATH-discovered agents (opencode, claude, codex) inherit
+    # the service environment, so the model-router provider
+    # (router.jupiter.au — the fleet's own gateway) resolves inside
+    # spawned opencode sessions the same way the interactive rig does:
+    # EnvironmentFile carries MODEL_ROUTER_TOKEN (plus the provider keys
+    # opencode's {env:} references need) straight into the unit.
+    systemd.services.open-design.serviceConfig.EnvironmentFile =
+      lib.mkIf (config.sops.secrets ? dsh_env)
+        [ config.sops.secrets.dsh_env.path ];
   };
 }
