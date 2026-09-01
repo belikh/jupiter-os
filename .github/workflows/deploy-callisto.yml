@@ -1,0 +1,103 @@
+# Deploy — callisto: run `nixos-rebuild switch` on callisto from CI.
+#
+# Same shape and capability discipline as deploy-europa.yml (which carries
+# the full rationale): the CI runner already holds a root→callisto path —
+# ci-distributed-callisto.yml's builders join the tailnet
+# (TAILSCALE_CI_AUTHKEY) and dispatch Nix remote builds to root@callisto
+# with NIX_BUILD_SSH_KEY (the jupiter-fleet-nix-build key callisto's
+# authorized_keys explicitly accepts, hosts/callisto/configuration.nix).
+# This workflow reuses exactly that mechanism for the switch itself. No new
+# secret, no new access; the delta is "and then run nixos-rebuild switch".
+#
+# Dispatch limited to repo writers; no push trigger, so merges never
+# auto-deploy.
+name: Deploy — callisto
+
+on:
+  workflow_dispatch:
+    inputs:
+      host:
+        description: "Host to switch"
+        type: choice
+        options: [callisto]
+        default: callisto
+        required: true
+
+concurrency:
+  # One deploy at a time per host: two concurrent switches race
+  # switch-to-configuration and can abort each other mid-activation
+  # (observed class: callisto's wait-online hang killed switches
+  # MID-ACTIVATION).
+  group: deploy-${{ inputs.host }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: switch ${{ inputs.host }} @ ${{ github.sha }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Join tailnet
+        run: |
+          # Same retry-loop rationale as deploy-europa.yml: apt/dpkg on the
+          # runner races the tailscale installer; fetch-to-file first.
+          TS_OK=0
+          for _ in $(seq 1 30); do
+            if curl -fsSL -o /tmp/ts-install.sh https://tailscale.com/install.sh \
+               && sudo sh /tmp/ts-install.sh \
+               && command -v tailscale >/dev/null; then
+              TS_OK=1; break
+            fi
+            echo "tailscale install failed (dpkg busy / network?); retrying in 10s"; sleep 10
+          done
+          [ "$TS_OK" = 1 ] || { echo "::error::tailscale install never succeeded"; exit 1; }
+          sudo tailscale up \
+            --login-server=https://neptune.jupiter.au:8080 \
+            --authkey=${{ secrets.TAILSCALE_CI_AUTHKEY }} \
+            --hostname="ci-deploy-${{ github.run_id }}" \
+            --accept-routes
+
+      - name: Stage root@callisto identity
+        run: |
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "${{ secrets.NIX_BUILD_SSH_KEY }}" > "$HOME/.ssh/callisto_ci"
+          chmod 600 "$HOME/.ssh/callisto_ci"
+          {
+            echo "Host callisto"
+            echo "  HostName callisto"
+            echo "  User root"
+            echo "  IdentityFile $HOME/.ssh/callisto_ci"
+            echo "  IdentitiesOnly yes"
+            echo "  StrictHostKeyChecking accept-new"
+            echo "  ServerAliveInterval 30"
+          } >> "$HOME/.ssh/config"
+
+      - name: Probe root@callisto reachability
+        run: |
+          # Fail FAST with discriminating diagnostics instead of letting
+          # the switch hang on DNS.
+          tailscale ip -4 || { echo "::error::never registered on tailnet"; exit 1; }
+          ssh -o ConnectTimeout=20 root@callisto 'echo reachable: $(hostname) / $(readlink /run/current-system)'
+
+      - name: Switch
+        id: switch
+        run: |
+          # Canonical on-host command, pinned to the dispatched SHA.
+          REF="github:belikh/jupiter-os/${GITHUB_SHA}"
+          echo "switching ${{ inputs.host }} to $REF"
+          ssh root@callisto "nixos-rebuild switch --flake $REF#${{ inputs.host }}"
+
+      - name: Verify by observation
+        if: always()
+        run: |
+          set -x
+          # Never assert from the switch exit code alone: read live state back.
+          ssh root@callisto 'readlink /run/current-system; nixos-rebuild list-generations | head -3'
+          # The procurement MCP service this deploy is carrying:
+          ssh root@callisto 'systemctl is-active procurement-mcp.service'
+          ssh root@callisto 'curl -sS -o /dev/null -w "procurement-mcp /mcp: %{http_code}\n" -X POST http://127.0.0.1:8787/mcp -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" -d "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"clientInfo\":{\"name\":\"verify\",\"version\":\"0\"}}}"'
+          # eBay compliance endpoint on the same port (if tunnel ingress active):
+          ssh root@callisto 'curl -sS -o /dev/null -w "ebay notifications GET: %{http_code}\n" "http://127.0.0.1:8787/ebay/notifications?challenge_code=verify"'
