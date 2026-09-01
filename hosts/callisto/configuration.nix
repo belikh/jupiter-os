@@ -795,6 +795,15 @@
         # on 7457. Keep port in sync with services.open-design.webFrontend.port.
         port = 5174;
       }
+      {
+        hostname = "procurement.jupiter.au";
+        # Procurement MCP streamable-HTTP (modules/services/procurement-mcp.nix).
+        # Publicly reachable ONLY for eBay marketplace account deletion
+        # notifications compliance (/ebay/notifications GET+POST) — the MCP
+        # endpoint itself (/mcp) rides the same port loopback-side; gate
+        # wider exposure via Cloudflare Access if ever needed.
+        port = 8787;
+      }
     ];
   };
 }

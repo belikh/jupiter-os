@@ -394,6 +394,7 @@ let
     if [ -f ${config.sops.secrets.procurement_database_url.path} ]; then export DATABASE_URL="$(cat ${config.sops.secrets.procurement_database_url.path})"; fi
     if [ -f ${config.sops.secrets.procurement_ebay_app_id.path} ]; then export EBAY_APP_ID="$(cat ${config.sops.secrets.procurement_ebay_app_id.path})"; fi
     if [ -f ${config.sops.secrets.procurement_ebay_cert_id.path} ]; then export EBAY_CERT_ID="$(cat ${config.sops.secrets.procurement_ebay_cert_id.path})"; fi
+    if [ -f ${config.sops.secrets.procurement_ebay_deletion_token.path} ]; then export EBAY_DELETION_TOKEN="$(cat ${config.sops.secrets.procurement_ebay_deletion_token.path})"; fi
     exec "$HOME/.opencode/bin/opencode" "$@"
   '';
 in
@@ -456,6 +457,7 @@ in
     sops.secrets.procurement_database_url = { sopsFile = ../../secrets/procurement.yaml; owner = "io"; mode = "0400"; };
     sops.secrets.procurement_ebay_app_id = { sopsFile = ../../secrets/procurement.yaml; owner = "io"; mode = "0400"; };
     sops.secrets.procurement_ebay_cert_id = { sopsFile = ../../secrets/procurement.yaml; owner = "io"; mode = "0400"; };
+    sops.secrets.procurement_ebay_deletion_token = { sopsFile = ../../secrets/procurement.yaml; owner = "io"; mode = "0400"; };
 
     # ~/.config is already persisted for io where impermanence applies;
     # callisto runs plain ext4. Re-synced on every activation, so the

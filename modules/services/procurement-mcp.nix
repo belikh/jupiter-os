@@ -39,6 +39,9 @@ in
     sops.secrets.procurement_sociavault_key = { sopsFile = ../../secrets/procurement.yaml; owner = "io"; group = "users"; mode = "0400"; };
     sops.secrets.procurement_apify_token = { sopsFile = ../../secrets/procurement.yaml; owner = "io"; group = "users"; mode = "0400"; };
     sops.secrets.procurement_database_url = { sopsFile = ../../secrets/procurement.yaml; owner = "io"; group = "users"; mode = "0400"; };
+    # eBay app credentials + marketplace account deletion/closure compliance
+    # token (the subscribe path that ENABLES a fresh production keyset).
+    sops.secrets.procurement_ebay_deletion_token = { sopsFile = ../../secrets/procurement.yaml; owner = "io"; group = "users"; mode = "0400"; };
 
     systemd.services.procurement-mcp = {
       description = "Procurement MCP — federated search (callisto)";
@@ -72,6 +75,11 @@ in
           export SOCIAVAULT_API_KEY="$(cat ${config.sops.secrets.procurement_sociavault_key.path})"
           export APIFY_TOKEN="$(cat ${config.sops.secrets.procurement_apify_token.path})"
           export DATABASE_URL="$(cat ${config.sops.secrets.procurement_database_url.path})"
+          # eBay compliance: the /ebay/notifications routes hash the token, so
+          # it must be in the environment; the endpoint URL must byte-match
+          # what's registered in the eBay developer portal.
+          export EBAY_DELETION_TOKEN="$(cat ${config.sops.secrets.procurement_ebay_deletion_token.path})"
+          export EBAY_DELETION_ENDPOINT="https://procurement.jupiter.au/ebay/notifications"
           # Optional keys — only export if the sops file exists (owner may not have provisioned yet)
           for k in procurement_ebay_app_id procurement_ebay_cert_id procurement_aliexpress_app_key procurement_aliexpress_app_secret; do
             f="/run/secrets/$k"
