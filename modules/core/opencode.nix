@@ -276,6 +276,24 @@ let
         enabled = true;
         timeout = 10000;
       };
+      # Procurement MCP — federated Chinese + AU procurement search (TMAPI / eBay AU / SociaVault / Apify).
+      # Hosted on callisto (this host) as a local stdio MCP spawned per opencode session.
+      # Integration-only — no scrapers built here; every source is a hosted API.
+      # Keys come from sops (never in JSON) via the wrapper's env; {env:} is not needed for local
+      # stdio — the child inherits the wrapper's environment.
+      mcp.procurement = {
+        type = "local";
+        command = [
+          # Shared with the callisto systemd unit (modules/services/
+        # procurement-mcp.nix package default) so the two consumers never
+        # drift or double the closure. Rationale for the overrides lives
+        # in the package file.
+          "${config.jupiter.services.procurementMcp.package}/bin/python"
+          "/home/io/projects/procurement/server.py"
+        ];
+        enabled = true;
+        timeout = 15000;
+      };
       # Local plugin as a file:/// URI — the form the proven laptop rig
       # runs on this same 1.18.x series; bare store paths are unproven.
       plugin = [
@@ -299,6 +317,13 @@ let
     export CLOUDFLARE_BROWSER_RUN_TOKEN="$(cat ${config.sops.secrets.cloudflare_browser_run_token.path})"
     export CF_ACCOUNT_ID="19f62c2ef7861336d274166233ba3a17"
     export HA_MCP_TOKEN="$(cat ${config.sops.secrets.ha_mcp_token.path})"
+    # Procurement MCP — Chinese + AU federated search (callisto, 10.1.1.3 Postgres cache)
+    if [ -f ${config.sops.secrets.procurement_tmapi_token.path} ]; then export TMAPI_TOKEN="$(cat ${config.sops.secrets.procurement_tmapi_token.path})"; fi
+    if [ -f ${config.sops.secrets.procurement_sociavault_key.path} ]; then export SOCIAVAULT_API_KEY="$(cat ${config.sops.secrets.procurement_sociavault_key.path})"; fi
+    if [ -f ${config.sops.secrets.procurement_apify_token.path} ]; then export APIFY_TOKEN="$(cat ${config.sops.secrets.procurement_apify_token.path})"; fi
+    if [ -f ${config.sops.secrets.procurement_database_url.path} ]; then export DATABASE_URL="$(cat ${config.sops.secrets.procurement_database_url.path})"; fi
+    if [ -f ${config.sops.secrets.procurement_ebay_app_id.path} ]; then export EBAY_APP_ID="$(cat ${config.sops.secrets.procurement_ebay_app_id.path})"; fi
+    if [ -f ${config.sops.secrets.procurement_ebay_cert_id.path} ]; then export EBAY_CERT_ID="$(cat ${config.sops.secrets.procurement_ebay_cert_id.path})"; fi
     exec "$HOME/.opencode/bin/opencode" "$@"
   '';
 in
@@ -351,6 +376,16 @@ in
       owner = "io";
       mode = "0400";
     };
+
+    # Procurement MCP — federated Chinese + AU procurement (integration-only, no scrapers).
+    # Hosted on callisto; opencode spawns it per session as local stdio (mcp.procurement above).
+    # Fleet Postgres on 10.1.1.3 `jupiter` db per stack law when DATABASE_URL is set.
+    sops.secrets.procurement_tmapi_token = { sopsFile = ../../secrets/procurement.yaml; owner = "io"; mode = "0400"; };
+    sops.secrets.procurement_sociavault_key = { sopsFile = ../../secrets/procurement.yaml; owner = "io"; mode = "0400"; };
+    sops.secrets.procurement_apify_token = { sopsFile = ../../secrets/procurement.yaml; owner = "io"; mode = "0400"; };
+    sops.secrets.procurement_database_url = { sopsFile = ../../secrets/procurement.yaml; owner = "io"; mode = "0400"; };
+    sops.secrets.procurement_ebay_app_id = { sopsFile = ../../secrets/procurement.yaml; owner = "io"; mode = "0400"; };
+    sops.secrets.procurement_ebay_cert_id = { sopsFile = ../../secrets/procurement.yaml; owner = "io"; mode = "0400"; };
 
     # ~/.config is already persisted for io where impermanence applies;
     # callisto runs plain ext4. Re-synced on every activation, so the

@@ -18,7 +18,7 @@ keys:
   - &thebe age1y87tgg2sxnx0r2dne7r4ws0wm0256t6htw6a83dc0vxa8dd729dsc7v387
 
 creation_rules:
-  - path_regex: secrets/secrets.yaml$
+  - path_regex: secrets/(secrets|procurement)\.yaml$
     key_groups:
       - age:
           - *admin_io

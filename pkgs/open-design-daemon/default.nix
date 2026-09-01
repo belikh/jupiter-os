@@ -67,7 +67,7 @@ let
   # Use fakeHash to discover the correct pnpmDeps hash after the bump.
   # First build will fail with “got: sha256-…”, copy that into pnpmDepsHash
   # and rebuild. Keep the original hash as a comment for reference.
-  pnpmDepsHash = lib.fakeHash; # was (import "${open-design}/nix/pnpm-deps.nix").daemonHash for 12.10.0
+  pnpmDepsHash = "sha256-t/ERjkHsCHqI24aCGJ10peRN4NkPdkG5gs+262eu37o="; # was lib.fakeHash, was (import "${open-design}/nix/pnpm-deps.nix").daemonHash for 12.10.0
 
   pnpm_10_fixed = pnpm_10;
 in
@@ -112,11 +112,22 @@ stdenv.mkDerivation (finalAttrs: {
       exit 1
     fi
 
-    echo "Building better-sqlite3 from source at $bsq_dir (Node $(node --version), better-sqlite3 13.x)"
-    ( cd "$bsq_dir" && node-gyp rebuild --release --build-from-source )
+    # Stage the upstream prebuild rather than building from source. 13.0.3
+    # ships v137 prebuilds (Node 24 = ABI 137) — that is the entire point of
+    # the bump (see header). The node-gyp source build generated empty gyp
+    # targets under the Nix sandbox (TOUCH-only make, no CC/LD for either
+    # better_sqlite3 or test_extension) and never produced the .node; the
+    # prebuild is upstream's own Node-24 binary. node-gyp-build resolves
+    # build/Release first, so copy the platform prebuild there.
+    echo "Staging better-sqlite3 13.x prebuild (Node $(node --version), ABI $(node -p process.versions.modules)) at $bsq_dir/build/Release/"
+    (
+      cd "$bsq_dir"
+      mkdir -p build/Release
+      cp prebuilds/linux-x64.node build/Release/better_sqlite3.node
+    )
 
     if [ ! -f "$bsq_dir/build/Release/better_sqlite3.node" ]; then
-      echo "ERROR: better_sqlite3.node was not produced at $bsq_dir/build/Release/" >&2
+      echo "ERROR: better_sqlite3.node was not staged at $bsq_dir/build/Release/" >&2
       find "$bsq_dir" -name '*.node' -print >&2 || true
       exit 1
     fi

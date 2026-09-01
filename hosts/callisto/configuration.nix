@@ -28,6 +28,8 @@
     ../../modules/services/mqtt.nix
     # PostgreSQL server (fleet SQL database; see modules/services/postgres.nix)
     ../../modules/services/postgres.nix
+    # Federated procurement MCP (Chinese + AU marketplaces, integration-only)
+    ../../modules/services/procurement-mcp.nix
     # Tailscale client for Jupiter tailnet
     ../../modules/services/tailscale.nix
     # Aeon autonomous agent framework dashboard
@@ -586,6 +588,24 @@
     doInstallCheck = false;
   };
   jupiter.services.postgres.enable = true;
+
+  # ---- Procurement MCP — fleet Postgres cache (10.1.1.3 `jupiter` db, schema `procurement`) ----
+  # The MCP server lives at /home/io/projects/procurement/server.py on this host (callisto, 10.1.1.3).
+  # When DATABASE_URL is set (sops `procurement_database_url` → postgresql://procurement:***@10.1.1.3:5432/jupiter),
+  # it caches federated results in the existing fleet `jupiter` DB, schema `procurement`
+  # (DDL in procurement/migrations/001_procurement_cache.sql, applied by the server on first connect
+  # via CREATE SCHEMA/TABLE IF NOT EXISTS — no separate DB needed). The role `procurement` is
+  # ensured here; password is sops-sourced and set via initialScript on first provision.
+  services.postgresql.ensureUsers = [
+    {
+      name = "procurement";
+      ensureDBOwnership = false;
+    }
+  ];
+
+  # Wire the procurement MCP into opencode (local stdio, per-session spawn on callisto) and
+  # ensure its sops secrets are provisioned. The module itself declares the secrets; we just enable it.
+  jupiter.services.procurementMcp.enable = true;
 
   # ---- Cloudflare Tunnel (dedicated per-host tunnel) ------------------------
   # europa's tunnel can't serve dsh: its cloudflared can't reach THIS host's
