@@ -9,13 +9,19 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SECRETS_FILE="$REPO_ROOT/secrets/secrets.yaml"
 SOPS_CONFIG="$REPO_ROOT/.sops.yaml"
 
+if command -v sops &>/dev/null; then
+  SOPS="sops"
+else
+  SOPS="nix run nixpkgs#sops --"
+fi
+
 cmd="${1:-help}"
 
 case "$cmd" in
   edit)
     echo "Opening secrets.yaml in sops editor..."
     cd "$REPO_ROOT"
-    sops "$SECRETS_FILE"
+    $SOPS "$SECRETS_FILE"
     ;;
   extract)
     key="${2:-}"
@@ -24,7 +30,7 @@ case "$cmd" in
       exit 1
     fi
     echo "Extracting secret '$key' (piping directly without echoing plaintext to stdout)..." >&2
-    sops --extract "[\"$key\"]" "$SECRETS_FILE" | tr -d '\n'
+    $SOPS --extract "[\"$key\"]" "$SECRETS_FILE" | tr -d '\n'
     echo "" >&2
     ;;
   set)
@@ -35,13 +41,13 @@ case "$cmd" in
       exit 1
     fi
     echo "Setting secret '$key' via stdin..."
-    sops set --value-stdin "$SECRETS_FILE" "[\"$key\"]"
+    $SOPS set --value-stdin "$SECRETS_FILE" "[\"$key\"]"
     echo "Secret '$key' updated successfully."
     ;;
   updatekeys)
     echo "Updating sops encryption keys from .sops.yaml recipients..."
     cd "$REPO_ROOT"
-    sops updatekeys -y "$SECRETS_FILE"
+    $SOPS updatekeys -y "$SECRETS_FILE"
     echo "Keys updated successfully."
     ;;
   info)
