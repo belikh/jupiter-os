@@ -7,9 +7,22 @@ import (
 	"testing"
 )
 
+// unsetTokenEnv removes ambient provider-token env vars so tests are
+// hermetic against the host session (opencode fleet shells export
+// MODEL_ROUTER_TOKEN for their own provider wiring; a test must not
+// inherit it).
+func unsetTokenEnv(t *testing.T) {
+	t.Helper()
+	if old, ok := os.LookupEnv("MODEL_ROUTER_TOKEN"); ok {
+		os.Unsetenv("MODEL_ROUTER_TOKEN")
+		t.Cleanup(func() { os.Setenv("MODEL_ROUTER_TOKEN", old) })
+	}
+}
+
 // TestLoadDefaults asserts a first load with no existing config generates a
 // client token and fills in the documented defaults.
 func TestLoadDefaults(t *testing.T) {
+	unsetTokenEnv(t)
 	t.Chdir(t.TempDir()) // "./data" must land inside the sandbox
 	cfg, err := Load()
 	if err != nil {
@@ -53,6 +66,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 // TestLoadGeneratesUniqueTokens asserts each fresh config gets a distinct
 // crypto/rand token.
 func TestLoadGeneratesUniqueTokens(t *testing.T) {
+	unsetTokenEnv(t)
 	t.Chdir(t.TempDir())
 	a, err := Load()
 	if err != nil {
@@ -90,6 +104,7 @@ func TestLoadAppliesDefaultListenAddr(t *testing.T) {
 // empty client token, the regenerated token is written back to disk — clients
 // must not see a new token on every restart.
 func TestLoadPersistsRegeneratedToken(t *testing.T) {
+	unsetTokenEnv(t)
 	d := t.TempDir()
 	handTrimmed := `{"data_dir": "` + filepath.ToSlash(d) + `", "listen_addr": ":9000", "client_token": "", "db_path": "` + filepath.ToSlash(filepath.Join(d, "router.db")) + `"}`
 	if err := os.WriteFile(filepath.Join(d, "config.json"), []byte(handTrimmed), 0o600); err != nil {

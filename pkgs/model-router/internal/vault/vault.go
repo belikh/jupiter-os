@@ -25,9 +25,10 @@ import (
 type KeyState string
 
 const (
-	Untested KeyState = "untested" // stored, never validated
-	Valid    KeyState = "valid"    // most recent probe succeeded
-	Invalid  KeyState = "invalid"  // most recent probe failed (bad key, revoked, expired)
+	Untested   KeyState = "untested"   // stored, never validated
+	Valid      KeyState = "valid"      // most recent probe succeeded
+	Invalid    KeyState = "invalid"    // most recent probe failed (bad key, revoked, expired)
+	Validating KeyState = "validating" // probe in flight
 )
 
 // KeyStatus is the outcome of the most recent validation probe for a key.
@@ -101,46 +102,55 @@ func (v *Vault) openForProvider(providerID string, nonce, ciphertext []byte) ([]
 	return plaintext, nil
 }
 
-// Put stores an API key for a provider, replacing any previous key. The key
-// is sealed with a fresh nonce and stored as ciphertext only. A newly stored
-// key's status resets to untested.
-func (v *Vault) Put(providerID, key string) error {
+// Put stores an API key for a provider under an alias, replacing any
+// previous key under the same alias. A provider may hold several keys
+// (sibling keys absorb a 429 without demoting the whole model). The key
+// is sealed with a fresh nonce and stored as ciphertext only; a newly
+// stored key's status resets to untested. An empty alias defaults to
+// "default" for single-key callers.
+func (v *Vault) Put(providerID, alias, key string) error {
 	if providerID == "" {
 		return errors.New("vault: empty provider ID")
 	}
 	if key == "" {
 		return errors.New("vault: empty key")
 	}
+	if alias == "" {
+		alias = "default"
+	}
 	nonce, ciphertext, err := v.sealForProvider(providerID, []byte(key))
 	if err != nil {
 		return err
 	}
-	_, err = v.db.Exec(`INSERT INTO provider_keys (provider_id, nonce, ciphertext, status, last_checked_at, detail)
-		VALUES (?, ?, ?, 'untested', NULL, NULL)
-		ON CONFLICT(provider_id) DO UPDATE SET
+	_, err = v.db.Exec(`INSERT INTO provider_keys (provider_id, key_alias, nonce, ciphertext, status, last_checked_at, detail)
+		VALUES (?, ?, ?, ?, 'untested', NULL, NULL)
+		ON CONFLICT(provider_id, key_alias) DO UPDATE SET
 			nonce = excluded.nonce,
 			ciphertext = excluded.ciphertext,
 			status = 'untested',
 			last_checked_at = NULL,
 			detail = NULL`,
-		providerID, nonce, ciphertext)
+		providerID, alias, nonce, ciphertext)
 	if err != nil {
-		return fmt.Errorf("vault: store key for %s: %w", providerID, err)
+		return fmt.Errorf("vault: store key %s/%s: %w", providerID, alias, err)
 	}
 	return nil
 }
 
-// Get retrieves a provider's plaintext key. ok is false when no key is stored
-// for the provider.
-func (v *Vault) Get(providerID string) (key string, ok bool, err error) {
+// Get retrieves one stored key by alias. ok is false when that alias has
+// no row. An empty alias reads "default".
+func (v *Vault) Get(providerID, alias string) (key string, ok bool, err error) {
+	if alias == "" {
+		alias = "default"
+	}
 	var nonce, ciphertext []byte
-	err = v.db.QueryRow(`SELECT nonce, ciphertext FROM provider_keys WHERE provider_id = ?`, providerID).
+	err = v.db.QueryRow(`SELECT nonce, ciphertext FROM provider_keys WHERE provider_id = ? AND key_alias = ?`, providerID, alias).
 		Scan(&nonce, &ciphertext)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", false, nil
 	}
 	if err != nil {
-		return "", false, fmt.Errorf("vault: fetch key for %s: %w", providerID, err)
+		return "", false, fmt.Errorf("vault: fetch key %s/%s: %w", providerID, alias, err)
 	}
 	plaintext, err := v.openForProvider(providerID, nonce, ciphertext)
 	if err != nil {
@@ -149,42 +159,112 @@ func (v *Vault) Get(providerID string) (key string, ok bool, err error) {
 	return string(plaintext), true, nil
 }
 
-// Status returns the most recent validation status for a provider's key. It
-// errors when no key is stored. The returned KeyStatus never contains
+// KeyRow is one vault entry as the dashboard renders it: never contains
 // plaintext key material.
-func (v *Vault) Status(providerID string) (KeyStatus, error) {
+type KeyRow struct {
+	ProviderID  string
+	Alias       string
+	State       KeyState
+	LastChecked time.Time
+	Detail      string
+}
+
+// ListKeys returns every stored key for a provider (all aliases), or the
+// empty slice when none exist.
+func (v *Vault) ListKeys(providerID string) ([]KeyRow, error) {
+	rows, err := v.db.Query(`SELECT key_alias, status, last_checked_at, detail FROM provider_keys WHERE provider_id = ? ORDER BY key_alias`, providerID)
+	if err != nil {
+		return nil, fmt.Errorf("vault: list keys for %s: %w", providerID, err)
+	}
+	defer rows.Close()
+	var out []KeyRow
+	for rows.Next() {
+		var alias, state string
+		var lastChecked sql.NullTime
+		var detail sql.NullString
+		if err := rows.Scan(&alias, &state, &lastChecked, &detail); err != nil {
+			return nil, fmt.Errorf("vault: scan key row for %s: %w", providerID, err)
+		}
+		kr := KeyRow{ProviderID: providerID, Alias: alias, State: KeyState(state), Detail: detail.String}
+		if lastChecked.Valid {
+			kr.LastChecked = lastChecked.Time
+		}
+		out = append(out, kr)
+	}
+	return out, rows.Err()
+}
+
+// ActiveAliases lists the aliases whose keys are usable right now
+// (untested or valid — invalid keys sit out until re-validated).
+func (v *Vault) ActiveAliases(providerID string) ([]string, error) {
+	rows, err := v.db.Query(`SELECT key_alias FROM provider_keys WHERE provider_id = ? AND status IN ('untested', 'valid', 'validating') ORDER BY key_alias`, providerID)
+	if err != nil {
+		return nil, fmt.Errorf("vault: active aliases for %s: %w", providerID, err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var alias string
+		if err := rows.Scan(&alias); err != nil {
+			return nil, err
+		}
+		out = append(out, alias)
+	}
+	return out, rows.Err()
+}
+
+// DeleteKey removes one alias's key. Deleting the last key leaves the
+// provider keyless (the dashboard onboarding shows it as unconfigured).
+func (v *Vault) DeleteKey(providerID, alias string) error {
+	if alias == "" {
+		alias = "default"
+	}
+	_, err := v.db.Exec(`DELETE FROM provider_keys WHERE provider_id = ? AND key_alias = ?`, providerID, alias)
+	if err != nil {
+		return fmt.Errorf("vault: delete key %s/%s: %w", providerID, alias, err)
+	}
+	return nil
+}
+
+// Status returns the validation status for one alias. An empty alias reads
+// "default". The returned KeyStatus never contains plaintext key material.
+func (v *Vault) Status(providerID, alias string) (KeyStatus, error) {
+	if alias == "" {
+		alias = "default"
+	}
 	var state string
 	var lastChecked sql.NullTime
 	var detail sql.NullString
-	err := v.db.QueryRow(`SELECT status, last_checked_at, detail FROM provider_keys WHERE provider_id = ?`, providerID).
+	err := v.db.QueryRow(`SELECT status, last_checked_at, detail FROM provider_keys WHERE provider_id = ? AND key_alias = ?`, providerID, alias).
 		Scan(&state, &lastChecked, &detail)
 	if errors.Is(err, sql.ErrNoRows) {
-		return KeyStatus{}, fmt.Errorf("vault: no key stored for %s", providerID)
+		return KeyStatus{}, fmt.Errorf("vault: no key stored for %s/%s", providerID, alias)
 	}
 	if err != nil {
-		return KeyStatus{}, fmt.Errorf("vault: fetch status for %s: %w", providerID, err)
+		return KeyStatus{}, fmt.Errorf("vault: fetch status for %s/%s: %w", providerID, alias, err)
 	}
 	st := KeyStatus{State: KeyState(state), Detail: detail.String}
 	if lastChecked.Valid {
 		st.LastChecked = lastChecked.Time
 	}
 	switch st.State {
-	case Untested, Valid, Invalid:
+	case Untested, Valid, Invalid, KeyState("validating"):
 	default:
-		return KeyStatus{}, fmt.Errorf("vault: stored state %q for %s is not a known state", state, providerID)
+		return KeyStatus{}, fmt.Errorf("vault: stored state %q for %s/%s is not a known state", state, providerID, alias)
 	}
 	return st, nil
 }
 
-// SetStatus records a validation outcome for a provider's stored key. It
-// refuses unknown states at the API boundary so the closed vocabulary in the
-// database CHECK constraint stays closed.
-func (v *Vault) SetStatus(providerID string, status KeyStatus) error {
+// SetStatus records a validation outcome for one alias.
+func (v *Vault) SetStatus(providerID, alias string, status KeyStatus) error {
 	if providerID == "" {
 		return errors.New("vault: empty provider ID")
 	}
+	if alias == "" {
+		alias = "default"
+	}
 	switch status.State {
-	case Untested, Valid, Invalid:
+	case Untested, Valid, Invalid, KeyState("validating"):
 	default:
 		return fmt.Errorf("vault: unknown key state %q", status.State)
 	}
@@ -196,13 +276,13 @@ func (v *Vault) SetStatus(providerID string, status KeyStatus) error {
 	if !status.LastChecked.IsZero() {
 		lastChecked = status.LastChecked.UTC()
 	}
-	res, err := v.db.Exec(`UPDATE provider_keys SET status = ?, last_checked_at = ?, detail = ? WHERE provider_id = ?`,
-		string(status.State), lastChecked, detail, providerID)
+	res, err := v.db.Exec(`UPDATE provider_keys SET status = ?, last_checked_at = ?, detail = ? WHERE provider_id = ? AND key_alias = ?`,
+		string(status.State), lastChecked, detail, providerID, alias)
 	if err != nil {
-		return fmt.Errorf("vault: set status for %s: %w", providerID, err)
+		return fmt.Errorf("vault: set status for %s/%s: %w", providerID, alias, err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return fmt.Errorf("vault: no key stored for %s", providerID)
+		return fmt.Errorf("vault: no key stored for %s/%s", providerID, alias)
 	}
 	return nil
 }

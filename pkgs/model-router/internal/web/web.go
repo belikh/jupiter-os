@@ -25,18 +25,19 @@ var staticFS embed.FS
 
 // Server assembles dashboard state.
 type Server struct {
-	Pools   *pool.Pool
-	Machine *health.Machine
-	Ledger  *ledger.Ledger
-	Seed    seed.Seed
-	Vault   *vault.Vault
-	Events  func(limit int) []health.Event
-	SaveKey func(providerID, key string) error // vault.Put + validate
+	Pools     *pool.Pool
+	Machine   *health.Machine
+	Ledger    *ledger.Ledger
+	Seed      seed.Seed
+	Vault     *vault.Vault
+	Events    func(limit int) []health.Event
+	SaveKey   func(providerID, alias, key string) error // vault.Put + validate
+	DeleteKey func(providerID, alias string) error      // vault.DeleteKey
 }
 
 // NewServer builds the dashboard server.
-func NewServer(p *pool.Pool, m *health.Machine, led *ledger.Ledger, s seed.Seed, v *vault.Vault, eventsFn func(int) []health.Event, saveKey func(string, string) error) *Server {
-	return &Server{Pools: p, Machine: m, Ledger: led, Seed: s, Vault: v, Events: eventsFn, SaveKey: saveKey}
+func NewServer(p *pool.Pool, m *health.Machine, led *ledger.Ledger, s seed.Seed, v *vault.Vault, eventsFn func(int) []health.Event, saveKey func(string, string, string) error, deleteKey func(string, string) error) *Server {
+	return &Server{Pools: p, Machine: m, Ledger: led, Seed: s, Vault: v, Events: eventsFn, SaveKey: saveKey, DeleteKey: deleteKey}
 }
 
 // Mux assembles the routes.
@@ -56,6 +57,7 @@ func (s *Server) Mux() *http.ServeMux {
 	mux.HandleFunc("GET /", s.handleDashboard)
 	mux.HandleFunc("GET /keys", s.handleKeys)
 	mux.HandleFunc("POST /keys/{id}", s.handleKeySave)
+	mux.HandleFunc("POST /keys/{id}/{alias}/delete", s.handleKeyDelete)
 	mux.HandleFunc("GET /events", s.handleEvents)
 	return mux
 }
@@ -148,6 +150,14 @@ type providerView struct {
 	KeyChip    string
 	KeyState   string
 	Detail     string
+	Keys       []keyView
+}
+
+type keyView struct {
+	Alias       string
+	State       string
+	Detail      string
+	LastChecked string
 }
 
 func (s *Server) handleKeys(w http.ResponseWriter, r *http.Request) {
@@ -165,19 +175,28 @@ func (s *Server) handleKeys(w http.ResponseWriter, r *http.Request) {
 			pv.Friction = f
 		}
 		if s.Vault != nil {
-			st, err := s.Vault.Status(p.ID)
-			if err == nil {
-				pv.KeyState = string(st.State)
-				switch st.State {
-				case vault.Valid:
-					pv.KeyChip = "ok"
-				case vault.Invalid:
-					pv.KeyChip = "alert"
-					pv.Detail = st.Detail
-				case vault.KeyState("validating"):
-					pv.KeyChip = "info"
+			keys, err := s.Vault.ListKeys(p.ID)
+			if err == nil && len(keys) > 0 {
+				anyValid, anyInvalid := false, false
+				for _, k := range keys {
+					pv.Keys = append(pv.Keys, keyView{
+						Alias: k.Alias, State: string(k.State),
+						Detail: k.Detail, LastChecked: k.LastChecked.Format(time.RFC3339),
+					})
+					switch k.State {
+					case vault.Valid, vault.Untested:
+						anyValid = true
+					case vault.Invalid:
+						anyInvalid = true
+					}
+				}
+				switch {
+				case anyValid && !anyInvalid:
+					pv.KeyChip, pv.KeyState = "ok", fmt.Sprintf("%d key(s), all usable", len(keys))
+				case anyValid:
+					pv.KeyChip, pv.KeyState = "warn", fmt.Sprintf("%d key(s), some invalid", len(keys))
 				default:
-					pv.KeyChip = "muted"
+					pv.KeyChip, pv.KeyState = "alert", "all keys invalid"
 				}
 			}
 		}
@@ -189,13 +208,32 @@ func (s *Server) handleKeys(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleKeySave(w http.ResponseWriter, r *http.Request) {
 	providerID := r.PathValue("id")
 	key := r.PostFormValue("key")
+	alias := r.PostFormValue("alias")
+	if alias == "" {
+		alias = "default"
+	}
 	if key == "" {
 		http.Redirect(w, r, "/keys", http.StatusSeeOther)
 		return
 	}
 	if s.SaveKey != nil {
-		if err := s.SaveKey(providerID, key); err != nil {
+		if err := s.SaveKey(providerID, alias, key); err != nil {
 			http.Error(w, "save failed: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	http.Redirect(w, r, "/keys", http.StatusSeeOther)
+}
+
+func (s *Server) handleKeyDelete(w http.ResponseWriter, r *http.Request) {
+	providerID := r.PathValue("id")
+	alias := r.PathValue("alias")
+	if alias == "" {
+		alias = "default"
+	}
+	if s.DeleteKey != nil {
+		if err := s.DeleteKey(providerID, alias); err != nil {
+			http.Error(w, "delete failed: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 	}

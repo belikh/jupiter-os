@@ -40,6 +40,10 @@ type Loop struct {
 	events        func(health.Event)
 	adapters      map[string]Adapter
 	interval      time.Duration
+	// aliasesFor resolves a provider's active key aliases so pool
+	// rebuilds expand each endpoint across every usable key. nil means
+	// single-key ("default") behaviour.
+	aliasesFor func(providerID string) []string
 }
 
 // Adapter is the discovery-facing slice of upstream.Adapter.
@@ -48,7 +52,7 @@ type Adapter interface {
 }
 
 // New builds the loop from seed mappings.
-func New(s seed.Seed, pools *pool.Pool, machine *health.Machine, adapters map[string]Adapter, eventsFn func(health.Event)) *Loop {
+func New(s seed.Seed, pools *pool.Pool, machine *health.Machine, adapters map[string]Adapter, eventsFn func(health.Event), aliasesFor func(providerID string) []string) *Loop {
 	l := &Loop{
 		mappings:      make(map[string]ModelMapping),
 		providerKinds: make(map[string]string),
@@ -57,6 +61,7 @@ func New(s seed.Seed, pools *pool.Pool, machine *health.Machine, adapters map[st
 		events:        eventsFn,
 		adapters:      adapters,
 		interval:      24 * time.Hour, // silent-regime default: daily
+		aliasesFor:    aliasesFor,
 	}
 	for _, m := range s.Models {
 		key := m.Family + "|" + m.ProviderID
@@ -161,16 +166,24 @@ func (l *Loop) applyToPools(providerID string) {
 		if m.Provider != providerID {
 			continue
 		}
-		byFamily[m.Family] = append(byFamily[m.Family], pool.Endpoint{
-			Scope: health.Scope{
-				Provider: m.Provider,
-				Model:    m.Family,
-				Key:      "default",
-			},
-			Weights: map[string]float64{"rpm": 30}, // seed hints refine later
-			Family:  m.Family,
-			LocalID: m.LocalSlug,
-		})
+		aliases := []string{"default"}
+		if l.aliasesFor != nil {
+			if got := l.aliasesFor(m.Provider); len(got) > 0 {
+				aliases = got
+			}
+		}
+		for _, alias := range aliases {
+			byFamily[m.Family] = append(byFamily[m.Family], pool.Endpoint{
+				Scope: health.Scope{
+					Provider: m.Provider,
+					Model:    m.Family,
+					Key:      alias,
+				},
+				Weights: map[string]float64{"rpm": 30}, // seed hints refine later
+				Family:  m.Family,
+				LocalID: m.LocalSlug,
+			})
+		}
 	}
 	// union with OTHER providers' current members so this provider's
 	// rebuild never wipes its siblings; but if THIS provider's families

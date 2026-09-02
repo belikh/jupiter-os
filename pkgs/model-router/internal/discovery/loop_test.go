@@ -41,7 +41,7 @@ func testLoop(adapters map[string]Adapter) (*Loop, *pool.Pool, *health.Machine, 
 	p := pool.New(m, led, 0.5)
 	events := &[]health.Event{}
 	s := testSeed()
-	l := New(s, p, m, adapters, func(ev health.Event) { *events = append(*events, ev) })
+	l := New(s, p, m, adapters, func(ev health.Event) { *events = append(*events, ev) }, nil)
 	// seed the pools initially
 	l.mu.Lock()
 	l.applyToPools("openrouter")

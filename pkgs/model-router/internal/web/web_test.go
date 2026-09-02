@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -57,7 +58,7 @@ func newTestServer() (*Server, *pool.Pool, *health.Machine) {
 	}
 	var events []health.Event
 	evFn := func(limit int) []health.Event { return events }
-	srv := NewServer(p, m, led, s, nil, evFn, func(id, key string) error { return nil })
+	srv := NewServer(p, m, led, s, nil, evFn, func(id, alias, key string) error { return nil }, func(id, alias string) error { return nil })
 	return srv, p, m
 }
 
@@ -143,3 +144,54 @@ func firstN(s string, n int) string {
 
 var _ embed.FS
 var _ = vault.Untested
+
+// TestKeysPageMultiKey asserts the keys page renders one row per stored
+// alias with a working delete route, and that saving with an explicit
+// alias reaches the vault through SaveKey.
+func TestKeysPageMultiKey(t *testing.T) {
+	var saved []string // provider, alias, key triples
+	srv, _, _ := newTestServer()
+	srv.SaveKey = func(id, alias, key string) error {
+		saved = append(saved, id, alias, key)
+		return nil
+	}
+	srv.Vault = nil // view-only path; SaveKey records the triple
+	ts := httptest.NewServer(srv.Mux())
+	defer ts.Close()
+
+	form := url.Values{"alias": {"backup"}, "key": {"gsk-test"}}
+	resp, err := http.PostForm(ts.URL+"/keys/groq", form)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if len(saved) != 3 || saved[0] != "groq" || saved[1] != "backup" || saved[2] != "gsk-test" {
+		t.Fatalf("SaveKey captured %v, want groq/backup/gsk-test", saved)
+	}
+
+	// empty alias collapses to "default"
+	saved = nil
+	resp2, err := http.PostForm(ts.URL+"/keys/groq", url.Values{"key": {"gsk-2"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp2.Body.Close()
+	if len(saved) != 3 || saved[1] != "default" {
+		t.Fatalf("empty alias = %v, want default", saved)
+	}
+
+	// delete route hits DeleteKey with the path alias
+	var deleted []string
+	srv.DeleteKey = func(id, alias string) error {
+		deleted = append(deleted, id, alias)
+		return nil
+	}
+	resp3, err := http.PostForm(ts.URL+"/keys/groq/backup/delete", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp3.Body.Close()
+	if len(deleted) != 2 || deleted[0] != "groq" || deleted[1] != "backup" {
+		t.Fatalf("DeleteKey captured %v, want groq/backup", deleted)
+	}
+}

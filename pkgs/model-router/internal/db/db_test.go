@@ -249,8 +249,8 @@ func TestOpenIsIdempotent(t *testing.T) {
 	if err := sqlDB2.QueryRow("SELECT COUNT(*) FROM schema_migrations").Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if count != 2 {
-		t.Fatalf("schema_migrations rows = %d, want 2", count)
+	if count != 3 {
+		t.Fatalf("schema_migrations rows = %d, want 3", count)
 	}
 }
 
@@ -264,13 +264,13 @@ func TestProviderKeysMigration(t *testing.T) {
 	}
 	defer sqlDB.Close()
 
-	if _, err := sqlDB.Exec(`INSERT INTO provider_keys (provider_id, nonce, ciphertext, status, last_checked_at, detail)
-		VALUES ('probe-provider', X'00000000000000000000000000000000', X'00000000000000000000000000000000', 'untested', NULL, NULL)`); err != nil {
+	if _, err := sqlDB.Exec(`INSERT INTO provider_keys (provider_id, key_alias, nonce, ciphertext, status, last_checked_at, detail)
+		VALUES ('probe-provider', 'default', X'00000000000000000000000000000000', X'00000000000000000000000000000000', 'untested', NULL, NULL)`); err != nil {
 		t.Fatalf("provider_keys unusable: %v", err)
 	}
 
 	var status string
-	if err := sqlDB.QueryRow("SELECT status FROM provider_keys WHERE provider_id = 'probe-provider'").Scan(&status); err != nil {
+	if err := sqlDB.QueryRow("SELECT status FROM provider_keys WHERE provider_id = 'probe-provider' AND key_alias = 'default'").Scan(&status); err != nil {
 		t.Fatal(err)
 	}
 	if status != "untested" {

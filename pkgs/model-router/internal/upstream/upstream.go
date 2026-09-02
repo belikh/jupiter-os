@@ -60,11 +60,13 @@ func newHTTPClient() *http.Client {
 // Ollama, Together, Chutes, OVH, SiliconFlow, ModelScope).
 type OpenAIAdapter struct {
 	BaseURL string
-	APIKey  func() string // key provider (vault-backed; nil-safe)
-	Client  *http.Client
+	// APIKey resolves the bearer token for one key alias (vault-backed;
+	// nil-safe; empty string means "no key for this alias").
+	APIKey func(alias string) string
+	Client *http.Client
 }
 
-func NewOpenAIAdapter(baseURL string, keyFn func() string) *OpenAIAdapter {
+func NewOpenAIAdapter(baseURL string, keyFn func(alias string) string) *OpenAIAdapter {
 	return &OpenAIAdapter{BaseURL: baseURL, APIKey: keyFn, Client: newHTTPClient()}
 }
 
@@ -91,7 +93,7 @@ func (a *OpenAIAdapter) Start(ctx context.Context, sc ScopeID, req Request) (*St
 	// lesson)
 	hreq.Header.Set("Accept-Encoding", "identity")
 	if a.APIKey != nil {
-		if k := a.APIKey(); k != "" {
+		if k := a.APIKey(sc.Key); k != "" {
 			hreq.Header.Set("Authorization", "Bearer "+k)
 		}
 	}
@@ -108,7 +110,10 @@ func (a *OpenAIAdapter) ListModels(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	if a.APIKey != nil {
-		if k := a.APIKey(); k != "" {
+		// ListModels is alias-agnostic: probe with the provider's
+		// first usable key (empty string when the vault is empty —
+		// keyless endpoints like NIM answer anyway).
+		if k := a.APIKey(""); k != "" {
 			hreq.Header.Set("Authorization", "Bearer "+k)
 		}
 	}

@@ -156,7 +156,7 @@ func newHarness(t *testing.T, primaryMode string) *harness {
 			{Family: "fam", ProviderID: "backup", LocalSlug: "m", Status: "free"},
 		},
 	}
-	l := discovery.New(s, p, m, map[string]discovery.Adapter{"primary": primary, "backup": backup}, nil)
+	l := discovery.New(s, p, m, map[string]discovery.Adapter{"primary": primary, "backup": backup}, nil, nil)
 
 	f := facade.NewServer("drill-token", w, l, func() []string { return []string{"fam"} })
 	ts := httptest.NewServer(f.Mux())

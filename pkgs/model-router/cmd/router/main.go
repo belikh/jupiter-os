@@ -71,16 +71,122 @@ func main() {
 			continue
 		}
 		providerID := p.ID
-		keyFn := func() string {
-			if k, _, err := vlt.Get(providerID); err == nil {
-				return k
+		// Alias-aware key resolution: empty alias means "any usable
+		// key" (used by ListModels probes); a concrete alias resolves
+		// exactly that row.
+		keyFn := func(alias string) string {
+			ids := []string{alias}
+			if alias == "" {
+				var err error
+				ids, err = vlt.ActiveAliases(providerID)
+				if err != nil || len(ids) == 0 {
+					ids = []string{"default"} // vault empty: send no key
+				}
+			}
+			for _, id := range ids {
+				if k, ok, err := vlt.Get(providerID, id); err == nil && ok && k != "" {
+					return k
+				}
 			}
 			return ""
 		}
 		adapters[providerID] = upstream.NewOpenAIAdapter(p.BaseURL, keyFn)
 	}
 
-	// configure ledger scopes from seed window hints
+	// Env bootstrap: providers with a seed env_key get their vault row
+	// pre-seeded from the environment on first boot (no manual paste for
+	// keys the host already holds). The row lands under the "env" alias;
+	// existing rows are never overwritten — the dashboard stays the
+	// source of truth once a key is stored.
+	for _, p := range sd.Providers {
+		if p.EnvKey == "" {
+			continue
+		}
+		if _, ok := adapters[p.ID]; !ok {
+			continue
+		}
+		if _, ok, err := vlt.Get(p.ID, "env"); err == nil && ok {
+			continue // already bootstrapped from the environment
+		}
+		envVal := os.Getenv(p.EnvKey)
+		if envVal == "" {
+			continue
+		}
+		if err := vlt.Put(p.ID, "env", envVal); err != nil {
+			log.Printf("env bootstrap: %s: vault put failed: %v", p.ID, err)
+			continue
+		}
+		// validate with a models-list probe (same as the dashboard flow)
+		if ad, ok := adapters[p.ID]; ok {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			if _, err := ad.ListModels(ctx); err != nil {
+				_ = vlt.SetStatus(p.ID, "env", vault.KeyStatus{State: vault.Invalid, Detail: "env bootstrap validation failed: " + err.Error()})
+			} else {
+				_ = vlt.SetStatus(p.ID, "env", vault.KeyStatus{State: vault.Valid})
+			}
+			cancel()
+		}
+		log.Printf("env bootstrap: %s onboarded from %s", p.ID, p.EnvKey)
+	}
+
+	// syncProviderKeys rebuilds one provider's pool endpoints across all
+	// its active key aliases — sibling keys spread load like any other
+	// endpoint dimension (a 429 on one key no longer exhausts the
+	// provider's whole quota). The provider's previous endpoints are
+	// replaced, never appended (fresh saves must not duplicate rows).
+	syncProviderKeys := func(providerID string) {
+		aliases, err := vlt.ActiveAliases(providerID)
+		if err != nil || len(aliases) == 0 {
+			aliases = []string{"default"}
+		}
+		for _, m := range sd.Models {
+			if m.ProviderID != providerID {
+				continue
+			}
+			if m.Status != "free" && m.Status != "free_capped" && m.Status != "trial" {
+				continue
+			}
+			if _, ok := adapters[m.ProviderID]; !ok {
+				continue
+			}
+			eps := make([]pool.Endpoint, 0, len(aliases))
+			for _, alias := range aliases {
+				eps = append(eps, pool.Endpoint{
+					Scope:   health.Scope{Provider: m.ProviderID, Model: m.Family, Key: alias},
+					Weights: map[string]float64{"rpm": 30},
+					Family:  m.Family,
+					LocalID: m.LocalSlug,
+				})
+			}
+			// replace semantics: drop this provider's old endpoints in
+			// the family, keep every other provider's
+			merged := []pool.Endpoint{}
+			for _, e := range pools.Members(m.Family) {
+				if e.Scope.Provider != providerID {
+					merged = append(merged, e)
+				}
+			}
+			pools.SetMembers(m.Family, append(merged, eps...))
+		}
+	}
+
+	// seed the pools across active aliases so the first request can route
+	seeded := make(map[string]bool)
+	for _, m := range sd.Models {
+		if m.Status != "free" && m.Status != "free_capped" && m.Status != "trial" {
+			continue
+		}
+		if _, ok := adapters[m.ProviderID]; !ok {
+			continue
+		}
+		if !seeded[m.ProviderID] {
+			seeded[m.ProviderID] = true
+			syncProviderKeys(m.ProviderID)
+		}
+	}
+
+	// configure ledger scopes from seed window hints (one scope per
+	// provider×family×alias — aliases share the provider's windows)
 	for _, m := range sd.Models {
 		if m.Status != "free" && m.Status != "free_capped" && m.Status != "trial" {
 			continue
@@ -91,8 +197,14 @@ func main() {
 		}
 		kind := windowKindFor(prov)
 		caps := capMapFor(prov)
-		sc := health.Scope{Provider: m.ProviderID, Model: m.Family, Key: "default"}
-		led.ConfigureScope(sc, kind, caps)
+		aliases, err := vlt.ActiveAliases(m.ProviderID)
+		if err != nil || len(aliases) == 0 {
+			aliases = []string{"default"}
+		}
+		for _, alias := range aliases {
+			sc := health.Scope{Provider: m.ProviderID, Model: m.Family, Key: alias}
+			led.ConfigureScope(sc, kind, caps)
+		}
 	}
 
 	// the streaming walk
@@ -105,7 +217,13 @@ func main() {
 	for id, ad := range adapters {
 		discAdapters[id] = ad
 	}
-	loop := discovery.New(sd, pools, machine, discAdapters, nil)
+	aliasesFor := func(providerID string) []string {
+		if ids, err := vlt.ActiveAliases(providerID); err == nil && len(ids) > 0 {
+			return ids
+		}
+		return nil
+	}
+	loop := discovery.New(sd, pools, machine, discAdapters, nil, aliasesFor)
 	// seed the pools from the catalogue immediately
 	disc2 := loop // alias for clarity
 	_ = disc2
@@ -146,46 +264,8 @@ func main() {
 	}
 	api := facade.NewServer(cfg.ClientToken, walk, loop, famFn)
 
-	// dashboard
-	// Env bootstrap: providers with a seed env_key get their vault row
-	// pre-seeded from the environment on first boot (no manual paste for
-	// keys the host already holds). Existing rows are never overwritten —
-	// the dashboard stays the source of truth once a key is stored.
-	for _, p := range sd.Providers {
-		if p.EnvKey == "" {
-			continue
-		}
-		if _, ok := adapters[p.ID]; !ok {
-			continue
-		}
-		if _, stored, err := vlt.Get(p.ID); err == nil && !stored {
-			continue // nothing stored and no env key: onboarding page handles it
-		} else if err == nil && stored {
-			continue // already onboarded via the dashboard
-		}
-		envVal := os.Getenv(p.EnvKey)
-		if envVal == "" {
-			continue
-		}
-		if err := vlt.Put(p.ID, envVal); err != nil {
-			log.Printf("env bootstrap: %s: vault put failed: %v", p.ID, err)
-			continue
-		}
-		// validate with a models-list probe (same as the dashboard flow)
-		if ad, ok := adapters[p.ID]; ok {
-			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-			if _, err := ad.ListModels(ctx); err != nil {
-				_ = vlt.SetStatus(p.ID, vault.KeyStatus{State: vault.Invalid, Detail: "env bootstrap validation failed: " + err.Error()})
-			} else {
-				_ = vlt.SetStatus(p.ID, vault.KeyStatus{State: vault.Valid})
-			}
-			cancel()
-		}
-		log.Printf("env bootstrap: %s onboarded from %s", p.ID, p.EnvKey)
-	}
-
-	saveKey := func(providerID, key string) error {
-		if err := vlt.Put(providerID, key); err != nil {
+	saveKey := func(providerID, alias, key string) error {
+		if err := vlt.Put(providerID, alias, key); err != nil {
 			return err
 		}
 		// validate with a cheap probe: list models with the new key
@@ -193,14 +273,24 @@ func main() {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
 			if _, err := ad.ListModels(ctx); err != nil {
-				_ = vlt.SetStatus(providerID, vault.KeyStatus{State: vault.Invalid, Detail: "validation failed: " + err.Error()})
-				return nil // stored but flagged invalid — the UI shows why
+				_ = vlt.SetStatus(providerID, alias, vault.KeyStatus{State: vault.Invalid, Detail: "validation failed: " + err.Error()})
+			} else {
+				_ = vlt.SetStatus(providerID, alias, vault.KeyStatus{State: vault.Valid})
 			}
-			_ = vlt.SetStatus(providerID, vault.KeyStatus{State: vault.Valid})
 		}
+		// refresh the pools: the new alias takes traffic immediately
+		syncProviderKeys(providerID)
 		return nil
 	}
-	dash := web.NewServer(pools, machine, led, sd, vlt, machine.Events, saveKey)
+	deleteKey := func(providerID, alias string) error {
+		if err := vlt.DeleteKey(providerID, alias); err != nil {
+			return err
+		}
+		// refresh the pools: the alias's endpoints leave rotation
+		syncProviderKeys(providerID)
+		return nil
+	}
+	dash := web.NewServer(pools, machine, led, sd, vlt, machine.Events, saveKey, deleteKey)
 
 	// compose: one mux, two surfaces
 	mux := http.NewServeMux()

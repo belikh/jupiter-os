@@ -21,7 +21,7 @@
 {{define "content"}}
 <section>
   <h2>Credential vault</h2>
-  <p class="note">Keys are encrypted at rest (AES-256-GCM) and never echoed back. Sign up at the provider, paste the key, and it validates on entry with a one-token probe.</p>
+  <p class="note">Keys are encrypted at rest (AES-256-GCM) and never echoed back. A provider can hold several keys under named aliases — sibling keys share the load, so a 429 on one key no longer exhausts the provider. Sign up at the provider, paste the key, and it validates on entry with a one-token probe.</p>
   <div class="grid">
     {{range .Providers}}
     <div class="card">
@@ -31,8 +31,28 @@
         <dt>key page</dt><dd><a href="{{.KeyPageURL}}" target="_blank" rel="noopener">{{.KeyPageURL}}</a></dd>
         {{if .Friction}}<dt>notes</dt><dd class="note">{{.Friction}}</dd>{{end}}
       </div>
+      {{if .Keys}}
+      <table class="keylist">
+        <thead><tr><th>alias</th><th>state</th><th>checked</th><th></th></tr></thead>
+        <tbody>
+          {{range .Keys}}
+          <tr>
+            <td class="mono">{{.Alias}}</td>
+            <td><span class="chip {{if eq .State "valid"}}ok{{else if eq .State "invalid"}}alert{{else}}muted{{end}}">{{.State}}</span>{{if .Detail}} <span class="note">{{.Detail}}</span>{{end}}</td>
+            <td class="note">{{.LastChecked}}</td>
+            <td>
+              <form method="post" action="/keys/{{$.ID}}/{{.Alias}}/delete" class="inline">
+                <button class="danger" type="submit">remove</button>
+              </form>
+            </td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+      {{end}}
       {{if .Detail}}<p class="whydown">{{.Detail}}</p>{{end}}
       <form method="post" action="/keys/{{.ID}}" style="margin-top:0.6rem">
+        <input class="keyfield" type="text" name="alias" placeholder="alias (e.g. main, backup)" autocomplete="off">
         <input class="keyfield" type="password" name="key" placeholder="paste {{.Name}} API key" autocomplete="off">
         <div style="margin-top:0.5rem; display:flex; gap:0.5rem">
           <button class="save" type="submit">Save &amp; validate</button>
