@@ -116,7 +116,17 @@ jobs:
           # the NIX_CONFIG env var on every nix invocation it makes, emptying
           # the kiosk builder pool that /etc/nix/nix.conf (from the NixOS
           # buildMachines module) injects.
-          LAUNCH=$(printf '%s' "NIX_CONFIG='builders =' nohup nixos-rebuild switch --flake $REF#${{ inputs.host }} > /tmp/deploy-rebuild.log 2>&1 && touch /tmp/deploy-rebuild.done; rm -f /tmp/deploy-rebuild.done" | base64 -w0)
+          # The local nix-DAEMON owns builder selection and ignores every
+          # client-side override (verified: --builders, --option, NIX_CONFIG
+          # all failed — kiosk retry spam continued). Surgical fix: comment
+          # out the kiosk `builders =` lines in /etc/nix/nix.conf at deploy
+          # time (root ssh), run the switch (the new generation's own
+          # nix.conf takes over at activation), restore after. The kiosks
+          # are mDNS-unresolvable from callisto — the symmetric pool is
+          # only usable from GH runners.
+          PREP=$(printf '%s' "cp /etc/nix/nix.conf /etc/nix/nix.conf.deploy-backup && sed -i 's/^builders =/builders = #deploy-disabled /' /etc/nix/nix.conf" | base64 -w0)
+          ssh root@europa "ssh -i /run/secrets/nix_build_ssh_key root@10.1.1.3 'echo $PREP | base64 -d | bash'"
+          LAUNCH=$(printf '%s' "nohup nixos-rebuild switch --flake $REF#${{ inputs.host }} > /tmp/deploy-rebuild.log 2>&1 && touch /tmp/deploy-rebuild.done; rm -f /tmp/deploy-rebuild.done" | base64 -w0)
           ssh root@europa \
             "ssh -i /run/secrets/nix_build_ssh_key root@10.1.1.3 'echo $LAUNCH | base64 -d | bash'"
           echo "rebuild launched on callisto; polling for completion..."
@@ -132,6 +142,12 @@ jobs:
             fi
           done
           echo "::warning::rebuild still running after 110min — it survives this job; re-dispatch to verify"
+
+      - name: Restore nix.conf (if the switch failed)
+        if: failure()
+        run: |
+          RESTORE=$(printf '%s' 'cp /etc/nix/nix.conf.deploy-backup /etc/nix/nix.conf' | base64 -w0)
+          ssh root@europa "ssh -i /run/secrets/nix_build_ssh_key root@10.1.1.3 'echo $RESTORE | base64 -d | bash'" || true
 
       - name: Verify by observation
         if: always()
