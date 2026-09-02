@@ -40,7 +40,12 @@ buildGoModule {
   # single-binary property is load-bearing (no runtime deps).
   env.CGO_ENABLED = 0;
 
-  vendorHash = "sha256-BAvfNq8jRMtxnNRnCfD4m3N9Yqc7o9dM/v6eVfK0Iag=";
+  # The module tree is vendored in-repo (140MB — the fleet's build hosts
+  # have a pathological hang fetching proxy.golang.org over IPv6 inside
+  # the build sandbox; the vendor dir sidesteps the network entirely and
+  # the go-modules FOD collapses to a no-op). Sync via `go mod vendor`
+  # in the origin repo when go.mod changes.
+  vendorHash = null;
 
   ldflags = [
     "-s"
