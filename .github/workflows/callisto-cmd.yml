@@ -57,9 +57,9 @@ jobs:
       - name: Run command on callisto
         run: |
           tailscale ip -4 || { echo "::error::never registered on tailnet"; exit 1; }
-          # Single-quote the input: it is base64 (alnum only, no quotes) when pre-encoded by the
-        # caller; printf '%s' "..." would $-expand plain-text payloads on the runner and
-        # mangle them before they ever reach callisto.
-        PAYLOAD=$(printf '%s' '${{ inputs.cmd }}' | base64 -w0)
+            # Single-quote the input: it is base64 (alnum only, no quotes) when pre-encoded by the
+          # caller; printf '%s' "..." would $-expand plain-text payloads on the runner and
+          # mangle them before they ever reach callisto.
+          PAYLOAD=$(printf '%s' '${{ inputs.cmd }}' | base64 -w0)
           ssh root@europa \
             "ssh -i /run/secrets/nix_build_ssh_key root@10.1.1.3 'echo $PAYLOAD | base64 -d | timeout ${{ inputs.timeout }} bash'; echo EXIT=\$?"
