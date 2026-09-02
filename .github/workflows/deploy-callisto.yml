@@ -103,7 +103,14 @@ jobs:
           # marker and skips straight to verification.
           REF="github:belikh/jupiter-os/${GITHUB_SHA}"
           echo "switching ${{ inputs.host }} to $REF"
-          LAUNCH=$(printf '%s' "nohup nixos-rebuild switch --flake $REF#${{ inputs.host }} > /tmp/deploy-rebuild.log 2>&1 && touch /tmp/deploy-rebuild.done; rm -f /tmp/deploy-rebuild.done" | base64 -w0)
+          # --builders '': build LOCAL-ONLY. The symmetric buildMachines pool is
+          # correct for fleet hosts, but running nixos-rebuild ON callisto makes
+          # it dial the kiosks by mDNS (.localdomain), which callisto's
+          # systemd-resolved cannot resolve (verified: 92 connection failures,
+          # rebuild wedged at 0% CPU cycling retries). GH-runner builds are
+          # unaffected (different pool). Local-only is slower (maxJobs=1) but it
+          # PROGRESSES; most of the closure substitutes from Harmonia anyway.
+          LAUNCH=$(printf '%s' "nohup nixos-rebuild switch --flake $REF#${{ inputs.host }} --builders '' > /tmp/deploy-rebuild.log 2>&1 && touch /tmp/deploy-rebuild.done; rm -f /tmp/deploy-rebuild.done" | base64 -w0)
           ssh root@europa \
             "ssh -i /run/secrets/nix_build_ssh_key root@10.1.1.3 'echo $LAUNCH | base64 -d | bash'"
           echo "rebuild launched on callisto; polling for completion..."
