@@ -341,22 +341,19 @@ let
         timeout = 10000;
       };
       # Procurement MCP — federated Chinese + AU procurement search (TMAPI / eBay AU / SociaVault / Apify).
-      # Hosted on callisto (this host) as a local stdio MCP spawned per opencode session.
       # Integration-only — no scrapers built here; every source is a hosted API.
-      # Keys come from sops (never in JSON) via the wrapper's env; {env:} is not needed for local
-      # stdio — the child inherits the wrapper's environment.
+      # Remote (streamable-HTTP) against the systemd unit (modules/services/
+      # procurement-mcp.nix) on 127.0.0.1:8787 — one long-lived process instead
+      # of a stdio spawn per opencode session. Killed-session drift (stale
+      # server.py code in memory) was the failure mode that motivated this.
+      # Keys are loaded by the unit's sops EnvironmentFile, so the wrapper's
+      # env exports are no longer needed for this server (they remain for any
+      # manual CLI use of server.py).
       mcp.procurement = {
-        type = "local";
-        command = [
-          # Shared with the callisto systemd unit (modules/services/
-        # procurement-mcp.nix package default) so the two consumers never
-        # drift or double the closure. Rationale for the overrides lives
-        # in the package file.
-          "${config.jupiter.services.procurementMcp.package}/bin/python"
-          "/home/io/projects/procurement/server.py"
-        ];
+        type = "remote";
+        url = "http://127.0.0.1:8787/mcp";
         enabled = true;
-        timeout = 15000;
+        timeout = 30000;
       };
       # Local plugin as a file:/// URI — the form the proven laptop rig
       # runs on this same 1.18.x series; bare store paths are unproven.
