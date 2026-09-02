@@ -177,3 +177,33 @@ func TestLoadDirEnvToken(t *testing.T) {
 		t.Fatalf("persisted token changed across boots: %q", cfg2.ClientToken)
 	}
 }
+
+// TestFreshHonoursListenAddrEnv asserts a FIRST-BOOT config (no existing
+// file) honours MODEL_ROUTER_LISTEN_ADDR — the env override once applied
+// only when config.json already existed, so fresh deployments silently
+// bound :8080 despite the NixOS module pinning loopback.
+func TestFreshHonoursListenAddrEnv(t *testing.T) {
+	unsetTokenEnv(t)
+	if old, ok := os.LookupEnv("MODEL_ROUTER_LISTEN_ADDR"); ok {
+		os.Unsetenv("MODEL_ROUTER_LISTEN_ADDR")
+		t.Cleanup(func() { os.Setenv("MODEL_ROUTER_LISTEN_ADDR", old) })
+	}
+	t.Setenv("MODEL_ROUTER_LISTEN_ADDR", "127.0.0.1:18099")
+	t.Chdir(t.TempDir())
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ListenAddr != "127.0.0.1:18099" {
+		t.Fatalf("fresh ListenAddr = %q, want 127.0.0.1:18099", cfg.ListenAddr)
+	}
+	// and it must round-trip: the saved file reloads with the same address
+	reloaded, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.ListenAddr != "127.0.0.1:18099" {
+		t.Fatalf("reloaded ListenAddr = %q, want 127.0.0.1:18099", reloaded.ListenAddr)
+	}
+}

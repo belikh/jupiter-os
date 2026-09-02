@@ -163,6 +163,7 @@ func Load() (Seed, error) {
 			WindowHints:   p.WindowHints,
 			InitialCaps:   make(map[string]Cap, len(p.InitialCaps)),
 			FrictionFlags: p.FrictionFlags,
+			EnvKey:        p.EnvKey,
 		}
 		for kind, value := range p.InitialCaps {
 			prov.InitialCaps[kind] = Cap{Kind: kind, Value: value}

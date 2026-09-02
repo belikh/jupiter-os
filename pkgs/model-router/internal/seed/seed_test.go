@@ -198,3 +198,24 @@ func TestTamperedSeedRejected(t *testing.T) {
 		t.Fatal("verifySeed accepted a tampered seed body")
 	}
 }
+
+// TestLoadCarriesEnvKeys asserts the providerJSON -> Provider conversion
+// keeps EnvKey: the env-bootstrap path in the router silently no-ops when
+// this field is dropped (observed live on callisto — zero vault rows
+// despite keys present in the service environment).
+func TestLoadCarriesEnvKeys(t *testing.T) {
+	sd, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var withEnv []string
+	for _, p := range sd.Providers {
+		if p.EnvKey != "" {
+			withEnv = append(withEnv, p.ID+"->"+p.EnvKey)
+		}
+	}
+	if len(withEnv) == 0 {
+		t.Fatal("no providers carry env_key after Load — the wire conversion dropped the field")
+	}
+	t.Logf("env-keyed providers: %v", withEnv)
+}

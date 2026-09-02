@@ -106,7 +106,10 @@ func loadDir(dir string) (Config, error) {
 	return cfg, nil
 }
 
-// fresh builds and persists a first-run config in dir.
+// fresh builds and persists a first-run config in dir. The listen address
+// honours MODEL_ROUTER_LISTEN_ADDR from the very first boot — a fresh data
+// dir must not silently fall back to :8080 when the NixOS module pins
+// loopback binding.
 func fresh(dir string) (Config, error) {
 	token := os.Getenv("MODEL_ROUTER_TOKEN")
 	if token == "" {
@@ -116,9 +119,13 @@ func fresh(dir string) (Config, error) {
 			return Config{}, err
 		}
 	}
+	listenAddr := defaultListenAddr
+	if v := os.Getenv("MODEL_ROUTER_LISTEN_ADDR"); v != "" {
+		listenAddr = v
+	}
 	cfg := Config{
 		DataDir:     dir,
-		ListenAddr:  defaultListenAddr,
+		ListenAddr:  listenAddr,
 		ClientToken: token,
 		DBPath:      filepath.Join(dir, "router.db"),
 	}
