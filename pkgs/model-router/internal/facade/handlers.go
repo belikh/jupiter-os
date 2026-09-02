@@ -111,11 +111,16 @@ func (s *Server) handleChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// non-streaming: buffer the events, assemble one completion object
+	// non-streaming client: the upstream request STILL streams. The walk's
+	// commit rule (first content wins, honest termination, stall watchdog)
+	// only exists on the SSE path — a buffered JSON body has no content
+	// clock, so an upstream JSON response would stall-fail every hop
+	// (observed: non-stream requests exhausted all endpoints). The events
+	// are buffered here and reassembled into one completion object.
 	var content strings.Builder
 	finish := "stop"
 	err := s.Walk.Run(r.Context(), req.Model, upstream.Request{
-		Model: req.Model, Messages: req.Messages, Stream: false, Extra: req.Extra,
+		Model: req.Model, Messages: req.Messages, Stream: true, Extra: req.Extra,
 	}, func(ev upstream.SSEEvent) error {
 		if text, fin, ok := upstream.ContentOf(ev.Data); ok {
 			content.WriteString(text)

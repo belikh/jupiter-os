@@ -112,5 +112,17 @@ in
     systemd.services.open-design.serviceConfig.EnvironmentFile =
       lib.mkIf (config.sops.secrets ? dsh_env)
         [ config.sops.secrets.dsh_env.path ];
+
+    # The upstream unit runs as `io` but nothing provisions the data dir
+    # for that user — a directory first created under a different owner
+    # (observed 2026-09-01: root-owned `open-design` user, EACCES
+    # crash-loop, 130+ restarts, web UI served 502s for a day) wedges the
+    # daemon forever. Re-assert ownership on every start so whichever way
+    # upstream moves the service user, the dir follows.
+    systemd.services.open-design.preStart = lib.mkIf (cfg.dataDir != null) ''
+      mkdir -p ${cfg.dataDir}
+      chown -R io:users ${cfg.dataDir}
+      chmod 750 ${cfg.dataDir}
+    '';
   };
 }
