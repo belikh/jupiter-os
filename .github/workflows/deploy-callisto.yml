@@ -38,7 +38,7 @@ jobs:
   deploy:
     name: switch ${{ inputs.host }} @ ${{ github.sha }}
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 120
     steps:
       - name: Join tailnet
         run: |
