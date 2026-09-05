@@ -503,6 +503,19 @@
         }
       );
 
+      # suno-top — Go daemon that harvests Suno's PUBLIC trending feed into
+      # the fleet Postgres (db `jupiter`, schema `suno`): unique clips' full
+      # objects (prompts/tags/counts) plus an append-only sighting log for
+      # play-count growth curves. Credential-free (all endpoints verified
+      # unauthenticated). Exposed standalone for vendorHash recompute, same
+      # reason as suno-backup above. Consumed by modules/services/suno-top.nix.
+      packages.x86_64-linux.suno-top = (
+        import ./pkgs/suno-top {
+          lib = nixpkgs.lib;
+          buildGoModule = nixpkgs.legacyPackages.x86_64-linux.buildGoModule;
+        }
+      );
+
       # nom-web — browser UI for nix's internal-json build logs (see
       # pkgs/nom-web/default.nix). Exposed standalone for the same reason as
       # suno-backup above. Consumed by modules/services/nom-web.nix.

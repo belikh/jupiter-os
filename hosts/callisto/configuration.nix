@@ -211,6 +211,16 @@
   sops.secrets.mqtt_homeassistant = { };
   sops.secrets.mqtt_ha_linux_agent = { };
 
+  # ---- ha-linux-agent (minimal role) ----
+  # The broker host finally runs its own agent deliberately rather than by
+  # omission: minimal role, no session-bus Environment (nothing here needs
+  # it), one system service reporting CPU/memory/disk/ZFS/iSCSI-backed root
+  # to the broker on its own loopback.
+  jupiter.services.haAgent = {
+    enable = true;
+    mqttHost = "127.0.0.1";
+  };
+
   jupiter.services.mqtt = {
     enable = true;
     users = {

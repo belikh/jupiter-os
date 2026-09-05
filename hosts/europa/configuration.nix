@@ -332,6 +332,17 @@
 
   # ---- Services ------------------------------------------------------------
   # Headscale control plane server (self-hosted Tailscale)
+  # ---- ha-linux-agent (server role) ----
+  # The reliability rework's first server-class deploy: one system service
+  # (User=io), headless role — no session bus here, session-dependent
+  # features warn-and-disable. Gains the ZFS pool sensors (zpool
+  # auto-detects) plus the generic CPU/memory/disk surface; syncthing
+  # sensors activate the day an api_key is provisioned (opt-in upstream).
+  jupiter.services.haAgent = {
+    enable = true;
+    role = "server";
+  };
+
   jupiter.services.headscale = {
     enable = true;
     # NOT https://headscale.jupiter.au: that's Cloudflare-Tunnel-fronted and

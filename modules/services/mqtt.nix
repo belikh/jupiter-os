@@ -92,6 +92,14 @@ in
 
     services.mosquitto = {
       enable = true;
+      # Persist sessions + retained messages across broker restarts
+      # (mosquitto's default is amnesiac: every restart wiped all retained
+      # discovery configs and availability, which combined with the old
+      # agent's publish-once lifecycle left every entity stranded). The
+      # persisted DB lives under /var/lib/mosquitto (StateDirectory).
+      # $SYS drop counters (publish/messages/dropped) stay available for
+      # the queue-overflow watch as before.
+      persistence = true;
       listeners = [
         {
           port = cfg.port;

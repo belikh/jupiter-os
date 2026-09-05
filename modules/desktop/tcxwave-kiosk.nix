@@ -30,7 +30,6 @@ in
   imports = [
     ../services/tcxwave-power-tuning.nix
     ../services/tcxwave-touch-wake.nix
-    ../services/ha-agent.nix
     ./dashboard-kiosk.nix
     ./dashboard-gaming.nix
     # jupiterOS Arcade: Pegasus frontend for the HA-switchable gaming session.
@@ -201,6 +200,7 @@ in
     # comment for why not by hostname).
     jupiter.services.haAgent = {
       enable = true;
+      role = "kiosk";
       mqttHost = lib.mkDefault config.jupiter.fleet.addresses.callisto;
       # 1s poll so the screen light's on/off + brightness track physical
       # button/touch changes in HA without a noticeable lag (io: "i want

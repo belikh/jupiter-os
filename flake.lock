@@ -119,11 +119,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1784953734,
-        "narHash": "sha256-cHekk7rumhOh7xvoM0cjCnyumzgmKlhzV6QUTx7EQUM=",
+        "lastModified": 1788565396,
+        "narHash": "sha256-meY+lJ+SB8G5wbUMOg3xpBn3XAKunbkOVDduzLG6T/I=",
         "owner": "belikh",
         "repo": "ha-linux-agent",
-        "rev": "8369f4423db9e24e3a2264063cc2999548c386b4",
+        "rev": "2d9b6864ecec2d43e8e2d4b709adb54d4c442353",
         "type": "github"
       },
       "original": {

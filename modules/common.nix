@@ -30,6 +30,7 @@
     ./core/harmonia-substituter.nix
     ./core/branding.nix
     ./services/llama-server.nix
+    ./services/ha-agent.nix
     ./storage/zfs-profiles.nix
   ];
 

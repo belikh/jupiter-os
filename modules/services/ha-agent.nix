@@ -1,4 +1,22 @@
 # jupiter.* wiring for the ha-linux-agent flake (belikh/ha-linux-agent)
+#
+# Fleet service model (2026-09 reliability rework): ONE system service per
+# host, role-switched — the systemd --user shape is retired. A system
+# service restarts cleanly on every `nixos-rebuild switch` and orders
+# against network-online.target; a user unit can do neither, and since
+# nixpkgs PR #517768 (May 2026) switch-to-configuration runs a disruptive
+# per-user restart pass for any live user manager — exactly the wrong shape
+# for an appliance fleet.
+#
+# The launcher's system-scope polkit grants (subject.user == "io") survive
+# unchanged: a User=io system service satisfies the same match.
+#
+# The old ha-linux-agent-sysfs-perms chmod oneshot is DELETED: it granted
+# group-root writes the agent user could never use (io's only group was
+# wheel), so brightness writes failed EACCES silently. The kiosk role now
+# ships the upstream module's udev rule (video group gets write on
+# brightness — never bl_power, which cuts a rail the TCxWave touch
+# digitiser shares) plus io-in-video membership.
 {
   config,
   lib,
@@ -13,9 +31,27 @@ in
   options.jupiter.services.haAgent = {
     enable = lib.mkEnableOption "ha-linux-agent, the Home Assistant companion daemon";
 
+    role = lib.mkOption {
+      type = lib.types.enum [
+        "kiosk"
+        "server"
+        "minimal"
+      ];
+      default = "minimal";
+      description = ''
+        Host class, forwarded to the upstream module's role switch:
+        - kiosk: session-bus Environment block (the agent reaches
+          notification/compositor sessions on a lingered user) + the udev
+          video-group backlight rule + io-in-video.
+        - server: headless — no session bus to reach; session-dependent
+          features warn-and-disable.
+        - minimal: baseline unit only.
+      '';
+    };
+
     mqttHost = lib.mkOption {
       type = lib.types.str;
-      default = "localhost";
+      default = config.jupiter.fleet.addresses.callisto;
       description = "Mosquitto broker to publish sensors/commands to.";
     };
 
@@ -67,10 +103,10 @@ in
               type = lib.types.nullOr lib.types.str;
               default = null;
               description = ''
-                Set to expose this profile as a dimmable HA `light` (JSON
-                schema, brightness + on/off) instead of a plain `switch`.
-                On/off still goes through this profile's `unit`
-                (start/stop); brightness reads/writes
+                Set to expose this profile as a dimmable HA `light`
+                (brightness + on/off) instead of a plain `switch`. On/off
+                still goes through this profile's `unit` (start/stop);
+                brightness reads/writes
                 `/sys/class/backlight/<value>/brightness` directly. Empty
                 string ("") auto-detects the first backlight device.
                 Mutually exclusive with `group` — a dimmable screen and a
@@ -85,46 +121,34 @@ in
       description = ''
         Remote-controllable systemd units, exposed as HA switches (or, with
         `backlight` set, one dimmable light) via ha-linux-agent's
-        `backend-launcher` (see its ROADMAP.md "Layer 1 — session switch"
-        for the design). Profiles sharing a `group` collapse into one HA
+        `backend-launcher`. Profiles sharing a `group` collapse into one HA
         `select` instead of independent switches.
       '';
     };
   };
 
   config = lib.mkIf cfg.enable {
-    # Owned by io (not root) since the agent runs as a systemd --user service.
+    # Owned by io (not root): the system service runs as User=io and reads
+    # the password file directly.
     sops.secrets.mqtt_ha_linux_agent.owner = "io";
 
-    # ha-linux-agent runs as a systemd --user service (needs io's D-Bus
-    # session bus for notifications/niri sensors); enable lingering so it
-    # comes up at boot rather than only after first login.
-    users.users.io.linger = true;
-
-    systemd.user.services.ha-linux-agent.unitConfig = {
-      ConditionUser = "io";
-    };
-
-    # 0664 (not 0666): world-WRITABLE sysfs nodes would let any local user
-    # rewrite CPU governor / backlight — and on a kiosk where the dashboard
-    # user's browser context counts as "any local user", that is a real
-    # stepdown. Group-writable suffices: the agent's hardware backend reads
-    # these, io is in the groups that own the nodes (video for backlight,
-    # root-owned cpufreq reads need no write for its read-only sensors — the
-    # write targets below are the agent's own actuators). The `|| true`
-    # keeps hosts without cpufreq (or with Intel P-state EPP absent) green.
-    systemd.services.ha-linux-agent-sysfs-perms = {
-      description = "Set permissions for ha-linux-agent sysfs files";
-      wantedBy = [ "multi-user.target" ];
-      serviceConfig = {
-        Type = "oneshot";
-        ExecStart = "${pkgs.bash}/bin/bash -c 'chmod 0664 /sys/class/backlight/*/brightness /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor /sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference || true'";
-        RemainAfterExit = true;
-      };
+    # Linger stays — but for the CAGE SESSIONS (a kiosk's graphical session
+    # must survive without an interactive login), not for the agent: the
+    # agent is a system service now. Enable only where a session bus exists
+    # to keep alive (kiosk role).
+    users.users.io = {
+      linger = lib.mkIf (cfg.role == "kiosk") true;
+      # Backlight writes: the udev rule (shipped by the upstream module's
+      # kiosk role) puts brightness nodes in the video group; io needs
+      # membership to write them. Supplementary groups for a system service
+      # are computed at ExecStart spawn time, so the restart that follows
+      # this switch picks the membership up without a re-login.
+      extraGroups = lib.mkIf (cfg.role == "kiosk") [ "video" ];
     };
 
     services.ha-linux-agent = {
       enable = true;
+      role = cfg.role;
       settings = {
         device.id = config.networking.hostName;
         mqtt = {
@@ -139,14 +163,13 @@ in
           enable = true;
           cpu_governor = true;
           cpu_epp = true;
-          # This module is only enabled by TCx Wave kiosks, all of which now
-          # expose their backlight via a launcherApps `light` profile
-          # (jupiter.services.haAgent.launcherApps' screen-power entry) —
-          # leaving this at its true default would publish a second,
-          # independent brightness control for the exact same backlight
-          # device (confirmed live on amalthea 2026-07-25: io still saw a
-          # separate slider alongside the new light).
-          backlight = false;
+          # Kiosks expose their backlight via a launcherApps `light` profile
+          # (the screen-power entry below) — leaving this at its true default
+          # would publish a second, independent brightness control for the
+          # exact same backlight device (confirmed live on amalthea
+          # 2026-07-25: io still saw a separate slider alongside the new
+          # light).
+          backlight = cfg.role != "kiosk";
         };
         backends.launcher.apps = map (
           app:
