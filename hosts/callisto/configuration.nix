@@ -42,6 +42,13 @@
     ../../modules/services/cloudflare-tunnel.nix
     # opencode web UI: one serve behind the tunnel at opencode.jupiter.au
     ../../modules/services/opencode-web.nix
+    # Public Suno trending harvester → fleet Postgres (schema `suno`).
+    # Companion to europa's suno-backup: that mirrors OUR library, this
+    # vacuums the public winners' metadata + growth curves for hit-model
+    # research. Credential-free against Suno; DB URL via sops
+    # `suno_database_url`. Co-located with Postgres on purpose — the daemon
+    # is stateless apart from the DB.
+    ../../modules/services/suno-top.nix
     # OpenDesign — local-first design product (daemon `od` + web frontend)
     ../../modules/services/open-design.nix
     # Model Router — self-hosted OpenAI-compatible gateway pooling free LLM
@@ -667,7 +674,44 @@
       name = "procurement";
       ensureDBOwnership = false;
     }
+    {
+      # Public Suno trending harvester (modules/services/suno-top.nix).
+      # Schema-scoped like procurement: the daemon CREATEs `suno` schema +
+      # tables on first connect; grants are pattern-scoped to its own schema.
+      name = "suno";
+      ensureDBOwnership = false;
+    }
   ];
+
+  # Provision the `suno` role's password from the sops secret. Idempotent
+  # oneshot: parses the password out of the suno_database_url (keep it
+  # [A-Za-z0-9] so the sed extraction stays trivial) and ALTER ROLEs it.
+  # Runs before the harvester on every boot; ALTER is a no-op when unchanged.
+  systemd.services.jupiter-pg-provision-suno = {
+    description = "Set suno role password from sops secret";
+    wantedBy = [ "multi-user.target" ];
+    before = [ "jupiter-suno-top.service" ];
+    after = [ "postgresql.service" ];
+    requires = [ "postgresql.service" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+    script = ''
+      url="$(cat ${config.sops.secrets.suno_database_url.path})"
+      pw="$(printf '%s' "$url" | sed -n 's|^postgresql://suno:\([A-Za-z0-9]*\)@.*|\1|p')"
+      if [ -z "$pw" ]; then
+        echo "suno_database_url: could not parse password (expected postgresql://suno:<[A-Za-z0-9]>@...)" >&2
+        exit 1
+      fi
+      # Local unix socket, peer auth as the postgres superuser.
+      printf 'ALTER ROLE suno PASSWORD '"'"'%s'"'"';' "$pw" \
+        | ${pkgs.util-linux}/bin/runuser -u postgres -- ${pkgs.postgresql_18}/bin/psql -d jupiter -v ON_ERROR_STOP=1 -f -
+    '';
+  };
+
+  # ---- Public Suno trending harvester (schema `suno`) -----------------------
+  jupiter.services.sunoTop.enable = true;
 
   # Wire the procurement MCP into opencode (local stdio, per-session spawn on callisto) and
   # ensure its sops secrets are provisioned. The module itself declares the secrets; we just enable it.
