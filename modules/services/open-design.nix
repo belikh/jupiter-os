@@ -109,9 +109,9 @@ in
     # spawned opencode sessions the same way the interactive rig does:
     # EnvironmentFile carries MODEL_ROUTER_TOKEN (plus the provider keys
     # opencode's {env:} references need) straight into the unit.
-    systemd.services.open-design.serviceConfig.EnvironmentFile =
-      lib.mkIf (config.sops.secrets ? dsh_env)
-        [ config.sops.secrets.dsh_env.path ];
+    systemd.services.open-design.serviceConfig.EnvironmentFile = lib.mkIf (
+      config.sops.secrets ? dsh_env
+    ) [ config.sops.secrets.dsh_env.path ];
 
     # The upstream unit runs as `io` but nothing provisions the data dir
     # for that user — a directory first created under a different owner

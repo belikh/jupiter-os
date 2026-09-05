@@ -1,4 +1,9 @@
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 let
   cfg = config.jupiter.services.procurementMcp;
 in
@@ -35,17 +40,45 @@ in
     # procurement_apify_token: ENC[...]        # apify_api_… from console.apify.com
     # procurement_database_url: ENC[...]       # postgresql://procurement:***@10.1.1.3:5432/jupiter
     # Optional: procurement_ebay_app_id, procurement_ebay_cert_id, procurement_aliexpress_*
-    sops.secrets.procurement_tmapi_token = { sopsFile = ../../secrets/procurement.yaml; owner = "io"; group = "users"; mode = "0400"; };
-    sops.secrets.procurement_sociavault_key = { sopsFile = ../../secrets/procurement.yaml; owner = "io"; group = "users"; mode = "0400"; };
-    sops.secrets.procurement_apify_token = { sopsFile = ../../secrets/procurement.yaml; owner = "io"; group = "users"; mode = "0400"; };
-    sops.secrets.procurement_database_url = { sopsFile = ../../secrets/procurement.yaml; owner = "io"; group = "users"; mode = "0400"; };
+    sops.secrets.procurement_tmapi_token = {
+      sopsFile = ../../secrets/procurement.yaml;
+      owner = "io";
+      group = "users";
+      mode = "0400";
+    };
+    sops.secrets.procurement_sociavault_key = {
+      sopsFile = ../../secrets/procurement.yaml;
+      owner = "io";
+      group = "users";
+      mode = "0400";
+    };
+    sops.secrets.procurement_apify_token = {
+      sopsFile = ../../secrets/procurement.yaml;
+      owner = "io";
+      group = "users";
+      mode = "0400";
+    };
+    sops.secrets.procurement_database_url = {
+      sopsFile = ../../secrets/procurement.yaml;
+      owner = "io";
+      group = "users";
+      mode = "0400";
+    };
     # eBay app credentials + marketplace account deletion/closure compliance
     # token (the subscribe path that ENABLES a fresh production keyset).
-    sops.secrets.procurement_ebay_deletion_token = { sopsFile = ../../secrets/procurement.yaml; owner = "io"; group = "users"; mode = "0400"; };
+    sops.secrets.procurement_ebay_deletion_token = {
+      sopsFile = ../../secrets/procurement.yaml;
+      owner = "io";
+      group = "users";
+      mode = "0400";
+    };
 
     systemd.services.procurement-mcp = {
       description = "Procurement MCP — federated search (callisto)";
-      after = [ "network-online.target" "postgresql.service" ];
+      after = [
+        "network-online.target"
+        "postgresql.service"
+      ];
       wants = [ "network-online.target" ];
       wantedBy = [ "multi-user.target" ];
       environment = {

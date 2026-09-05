@@ -448,13 +448,41 @@ in
     # Procurement MCP — federated Chinese + AU procurement (integration-only, no scrapers).
     # Hosted on callisto; opencode spawns it per session as local stdio (mcp.procurement above).
     # Fleet Postgres on 10.1.1.3 `jupiter` db per stack law when DATABASE_URL is set.
-    sops.secrets.procurement_tmapi_token = { sopsFile = ../../secrets/procurement.yaml; owner = "io"; mode = "0400"; };
-    sops.secrets.procurement_sociavault_key = { sopsFile = ../../secrets/procurement.yaml; owner = "io"; mode = "0400"; };
-    sops.secrets.procurement_apify_token = { sopsFile = ../../secrets/procurement.yaml; owner = "io"; mode = "0400"; };
-    sops.secrets.procurement_database_url = { sopsFile = ../../secrets/procurement.yaml; owner = "io"; mode = "0400"; };
-    sops.secrets.procurement_ebay_app_id = { sopsFile = ../../secrets/procurement.yaml; owner = "io"; mode = "0400"; };
-    sops.secrets.procurement_ebay_cert_id = { sopsFile = ../../secrets/procurement.yaml; owner = "io"; mode = "0400"; };
-    sops.secrets.procurement_ebay_deletion_token = { sopsFile = ../../secrets/procurement.yaml; owner = "io"; mode = "0400"; };
+    sops.secrets.procurement_tmapi_token = {
+      sopsFile = ../../secrets/procurement.yaml;
+      owner = "io";
+      mode = "0400";
+    };
+    sops.secrets.procurement_sociavault_key = {
+      sopsFile = ../../secrets/procurement.yaml;
+      owner = "io";
+      mode = "0400";
+    };
+    sops.secrets.procurement_apify_token = {
+      sopsFile = ../../secrets/procurement.yaml;
+      owner = "io";
+      mode = "0400";
+    };
+    sops.secrets.procurement_database_url = {
+      sopsFile = ../../secrets/procurement.yaml;
+      owner = "io";
+      mode = "0400";
+    };
+    sops.secrets.procurement_ebay_app_id = {
+      sopsFile = ../../secrets/procurement.yaml;
+      owner = "io";
+      mode = "0400";
+    };
+    sops.secrets.procurement_ebay_cert_id = {
+      sopsFile = ../../secrets/procurement.yaml;
+      owner = "io";
+      mode = "0400";
+    };
+    sops.secrets.procurement_ebay_deletion_token = {
+      sopsFile = ../../secrets/procurement.yaml;
+      owner = "io";
+      mode = "0400";
+    };
 
     # ~/.config is already persisted for io where impermanence applies;
     # callisto runs plain ext4. Re-synced on every activation, so the

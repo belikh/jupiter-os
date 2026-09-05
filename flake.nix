@@ -371,15 +371,31 @@
       # (RemoveEnvironmentCleanupHook). 13.0.3 ships v137 prebuilds and the
       # fix, so the daemon stays on nodejs_24 (no v3 Node compile) and
       # Design Harness no longer crash-loops.
-      openDesignDaemonModule = { config, pkgs, lib, ... }: {
-        services.open-design.package = pkgs.callPackage ./pkgs/open-design-daemon {
-          inherit (pkgs) lib stdenv fetchPnpmDeps pnpmConfigHook makeWrapper python3 gnumake pkg-config;
-          nodejs = pkgs.nodejs_24;
-          pnpm_10 = pkgs.pnpm_10;
-          open-design = open-design;
-          jq = pkgs.jq;
+      openDesignDaemonModule =
+        {
+          config,
+          pkgs,
+          lib,
+          ...
+        }:
+        {
+          services.open-design.package = pkgs.callPackage ./pkgs/open-design-daemon {
+            inherit (pkgs)
+              lib
+              stdenv
+              fetchPnpmDeps
+              pnpmConfigHook
+              makeWrapper
+              python3
+              gnumake
+              pkg-config
+              ;
+            nodejs = pkgs.nodejs_24;
+            pnpm_10 = pkgs.pnpm_10;
+            open-design = open-design;
+            jq = pkgs.jq;
+          };
         };
-      };
 
     in
     {
@@ -498,19 +514,6 @@
       # modules/services/suno-backup.nix's pkgs.callPackage.
       packages.x86_64-linux.suno-backup = (
         import ./pkgs/suno-backup {
-          lib = nixpkgs.lib;
-          buildGoModule = nixpkgs.legacyPackages.x86_64-linux.buildGoModule;
-        }
-      );
-
-      # suno-top — Go daemon that harvests Suno's PUBLIC trending feed into
-      # the fleet Postgres (db `jupiter`, schema `suno`): unique clips' full
-      # objects (prompts/tags/counts) plus an append-only sighting log for
-      # play-count growth curves. Credential-free (all endpoints verified
-      # unauthenticated). Exposed standalone for vendorHash recompute, same
-      # reason as suno-backup above. Consumed by modules/services/suno-top.nix.
-      packages.x86_64-linux.suno-top = (
-        import ./pkgs/suno-top {
           lib = nixpkgs.lib;
           buildGoModule = nixpkgs.legacyPackages.x86_64-linux.buildGoModule;
         }

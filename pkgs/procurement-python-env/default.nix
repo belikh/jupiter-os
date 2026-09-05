@@ -67,13 +67,15 @@ let
     };
   };
 in
-python'.withPackages (ps: with ps; [
-  mcp
-  httpx
-  pydantic
-  pydantic-settings
-  python-dotenv
-  anyio
-  asyncpg
-  sqlalchemy
-])
+python'.withPackages (
+  ps: with ps; [
+    mcp
+    httpx
+    pydantic
+    pydantic-settings
+    python-dotenv
+    anyio
+    asyncpg
+    sqlalchemy
+  ]
+)

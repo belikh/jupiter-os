@@ -1,16 +1,16 @@
-{ lib
-, stdenv
-, fetchPnpmDeps
-, pnpmConfigHook
-, makeWrapper
-, python3
-, gnumake
-, pkg-config
-, nodejs
-, pnpm_10
-, open-design
-, jq
-,
+{
+  lib,
+  stdenv,
+  fetchPnpmDeps,
+  pnpmConfigHook,
+  makeWrapper,
+  python3,
+  gnumake,
+  pkg-config,
+  nodejs,
+  pnpm_10,
+  open-design,
+  jq,
 }:
 # OpenDesign daemon with better_sqlite3 bumped to 13.0.3 to fix Node 24.19
 # crash (RemoveEnvironmentCleanupHook: env != nullptr in
@@ -192,4 +192,4 @@ stdenv.mkDerivation (finalAttrs: {
     mainProgram = "od";
     platforms = platforms.linux ++ platforms.darwin;
   };
-  })
+})

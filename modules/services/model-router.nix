@@ -117,7 +117,10 @@ in
         RestrictNamespaces = true;
         RestrictSUIDSGID = true;
         LockPersonality = true;
-        SystemCallFilter = [ "@system-service" "~@privileged" ];
+        SystemCallFilter = [
+          "@system-service"
+          "~@privileged"
+        ];
         RestrictAddressFamilies = [
           "AF_INET"
           "AF_INET6"
