@@ -113,16 +113,26 @@ in
       config.sops.secrets ? dsh_env
     ) [ config.sops.secrets.dsh_env.path ];
 
-    # The upstream unit runs as `io` but nothing provisions the data dir
-    # for that user — a directory first created under a different owner
-    # (observed 2026-09-01: root-owned `open-design` user, EACCES
-    # crash-loop, 130+ restarts, web UI served 502s for a day) wedges the
-    # daemon forever. Re-assert ownership on every start so whichever way
-    # upstream moves the service user, the dir follows.
-    systemd.services.open-design.preStart = lib.mkIf (cfg.dataDir != null) ''
-      mkdir -p ${cfg.dataDir}
-      chown -R io:users ${cfg.dataDir}
-      chmod 750 ${cfg.dataDir}
-    '';
+    # The upstream unit runs as `io` on callisto but nothing provisions the
+    # data dir for that user — a directory first created under a different
+    # owner (observed 2026-09-01: root-owned, EACCES crash-loop, 130+
+    # restarts; again 2026-09-06: open-design:open-design 0750, preStart
+    # chown failing with EACCES) wedges the daemon forever. Re-assert
+    # ownership on every start so whichever way upstream moves the service
+    # user, the dir follows. This MUST be a root-run (`+`-prefixed)
+    # ExecStartPre, not preStart: preStart runs as the *service user*,
+    # which can never chown (and can't even read a 0750 dir owned by
+    # someone else). Owner is read from the unit's own configured
+    # User/Group so host overrides (callisto: io/users) are honoured.
+    systemd.services.open-design.preStart = lib.mkForce "";
+    systemd.services.open-design.serviceConfig.ExecStartPre = [
+      "+${
+        pkgs.writeShellScript "open-design-fix-datadir" ''
+          mkdir -p ${cfg.dataDir}
+          chown -R ${config.systemd.services.open-design.serviceConfig.User}:${config.systemd.services.open-design.serviceConfig.Group or "users"} ${cfg.dataDir}
+          chmod 750 ${cfg.dataDir}
+        ''
+      }"
+    ];
   };
 }
