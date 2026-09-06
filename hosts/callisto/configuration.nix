@@ -196,6 +196,9 @@
   # canonical activation-installed config. Binary itself is installed
   # per-user by the official installer pinned to V1 1.18.x.
   jupiter.core.opencode.enable = true;
+  # Second opencode environment (trial): mattpocock/skills registry ONLY,
+  # zero io skills/plugins/MCP. One-toggle removal if the trial is abandoned.
+  jupiter.core.opencode.mattUser = true;
 
   # Web UI for the rig (modules/services/opencode-web.nix): one opencode serve
   # behind the cloudflare tunnel at opencode.jupiter.au (basic-auth + Access).
@@ -697,11 +700,19 @@
     }
   ];
 
-  # Provision the `suno` role's password from the sops secret. Idempotent
-  # oneshot: parses the password out of the suno_database_url (keep it
-  # [A-Za-z0-9] so the sed extraction stays trivial) and ALTER ROLEs it.
-  # Runs before the harvester on every boot; ALTER is a no-op when unchanged.
-  systemd.services.jupiter-pg-provision-suno = {
+  # Provision the `suno` role's password from the sops secret — CONDITIONAL
+  # on the harvester being enabled (the module is the secret's declarer, so
+  # referencing it when disabled would fail evaluation). Idempotent oneshot:
+  # parses the password out of the suno_database_url (keep it [A-Za-z0-9] so
+  # the sed extraction stays trivial) and ALTER ROLEs it. Runs before the
+  # harvester on every boot; ALTER is a no-op when unchanged.
+  #
+  # G-E note (2026-09-06): suno_database_url is NOT YET in the vault — the
+  # suno feature's last unfinished step (mint the role password, add
+  # `suno_database_url: postgresql://suno:<pw>@10.1.1.3:5432/jupiter?sslmode=disable`
+  # to sops, flip sunoTop.enable back to true). Until then this whole unit is
+  # absent from the activation, and sops-nix doesn't see the missing key.
+  systemd.services.jupiter-pg-provision-suno = lib.mkIf config.jupiter.services.sunoTop.enable {
     description = "Set suno role password from sops secret";
     wantedBy = [ "multi-user.target" ];
     before = [ "jupiter-suno-top.service" ];
@@ -746,7 +757,12 @@
   };
 
   # ---- Public Suno trending harvester (schema `suno`) -----------------------
-  jupiter.services.sunoTop.enable = true;
+  # GATED OFF (2026-09-06): the module auto-declares the sops secret
+  # `suno_database_url`, which does not exist in the vault yet — enabling it
+  # now hard-fails sops-nix activation. Owner: mint the suno role password,
+  # add `suno_database_url: postgresql://suno:<pw>@10.1.1.3:5432/jupiter?sslmode=disable`
+  # to secrets/secrets.yaml, then flip this back to true.
+  jupiter.services.sunoTop.enable = false;
 
   # ---- HAOS guest host (Jupiter Quarters overhaul G-E, spec §7.2) -----------
   # Libvirt + KVM + OVMF substrate for the green-world HAOS guest. Guest

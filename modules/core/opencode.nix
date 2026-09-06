@@ -394,6 +394,76 @@ let
     if [ -f ${config.sops.secrets.procurement_ebay_deletion_token.path} ]; then export EBAY_DELETION_TOKEN="$(cat ${config.sops.secrets.procurement_ebay_deletion_token.path})"; fi
     exec "$HOME/.opencode/bin/opencode" "$@"
   '';
+
+  # ── matt second environment (jupiter.core.opencode.mattUser) ───────────
+  # Motivated 2026-09-06 by the failed XDG-isolation attempt: this opencode
+  # build resolves ~/.claude/skills and the legacy ~/.opencode/skills against
+  # the REAL home from the passwd entry (observed: HOME override ignored,
+  # 53 io skills leaked into the "isolated" env). A real user makes every
+  # ~/… scan land in an empty home by construction. Matt is a normal user
+  # (no wheel) whose ONLY purpose is trialling the mattpocock/skills
+  # registry — 37 skills, NONE of io's. SSH is io's existing authorised key:
+  # same human, zero new key material. Secrets: the sops `key` remap gives
+  # matt his own 0400 copies of the two provider keys the minimal config
+  # references, without widening io's entries or adding ciphertext. Removing
+  # the trial is one toggle (mattUser = false) + one user home cleanup.
+  # Values (bindings) live here in the let; config block wires them under
+  # lib.mkIf cfg.mattUser. Comments live here, not in the JSON.
+
+  # Minimal trial config: the two providers the routing uses, {env:} refs
+  # only, autoupdate capped at "notify" so binaries never self-update.
+  mattConfig = pkgs.writeText "opencode-matt.json" (
+    builtins.toJSON {
+      "$schema" = "https://opencode.ai/config.json";
+      model = "zai-coding/glm-5.3";
+      small_model = "groq/openai/gpt-oss-20b";
+      autoupdate = "notify";
+      instructions = [ "${australianEnglishInstructions}" ];
+      provider = {
+        "zai-coding" = {
+          npm = "@ai-sdk/openai-compatible";
+          name = "Z.AI coding plan";
+          options = {
+            baseURL = "https://api.z.ai/api/coding/paas/v4";
+            apiKey = "{env:Z_AI_API_KEY}";
+          };
+          models = {
+            "glm-5.3" = {
+              limit = {
+                context = 1000000;
+                output = 131072;
+              };
+            };
+          };
+        };
+        groq = {
+          npm = "@ai-sdk/openai-compatible";
+          name = "Groq";
+          options = {
+            baseURL = "https://api.groq.com/openai/v1";
+            apiKey = "{env:GROQ_API_KEY}";
+          };
+          models = {
+            "openai/gpt-oss-20b" = {
+              limit = {
+                context = 131072;
+                output = 65536;
+              };
+            };
+          };
+        };
+      };
+    }
+  );
+
+  # opencode-matt launcher: same secrets-by-path pattern as opencode-wrapped,
+  # but reading the MATT-owned remapped secret files. Run by anyone else, the
+  # cat fails closed (0400 matt-only) — acceptable: it's matt's tool.
+  opencode-matt-wrapped = pkgs.writeShellScriptBin "opencode-matt" ''
+    export Z_AI_API_KEY="$(cat ${config.sops.secrets.zai_api_key_matt.path})"
+    export GROQ_API_KEY="$(cat ${config.sops.secrets.groq_api_key_matt.path})"
+    exec "$HOME/.opencode/bin/opencode" "$@"
+  '';
 in
 {
   options.jupiter.core.opencode = {
@@ -402,10 +472,34 @@ in
       canonical config. Requires the per-user binary at ~/.opencode/bin/opencode
       (official installer, pinned to 1.18.22 and locked non-writable).
     '';
+
+    # Second opencode user ("matt") for trialling the mattpocock/skills
+    # registry in a fully separate account — motivated 2026-09-06 by the
+    # XDG-isolation attempt, which measurably leaked 53 main-env skills into
+    # the trial env: this opencode build resolves ~/.claude/skills and the
+    # legacy ~/.opencode/skills against the REAL home from the passwd entry
+    # (observed: HOME override ignored, 50 .claude + 3 .opencode skills
+    # visible in the "isolated" env). A real user makes every ~/… scan land
+    # in an empty home by construction — no escape-hatch flags, and the
+    # isolation holds across future opencode self-updates. The wrapper,
+    # config, and skills live in this module so the account is a one-line
+    # removal (jupiter.core.opencode.mattUser = false) if the trial is
+    # abandoned.
+    mattUser = lib.mkEnableOption ''
+      the "matt" second opencode environment: a normal (non-wheel) user with
+      its own opencode-matt launcher (matt-owned sops remaps of the existing
+      zai/groq keys), a minimal 2-provider config, and mattpocock/skills
+      registry skills ONLY — none of io's skills, agents, commands, plugins,
+      MCP servers, or session history. SSH via io's existing authorised key.
+    '';
   };
 
   config = lib.mkIf cfg.enable {
-    environment.systemPackages = [ opencode-wrapped ];
+    # io's wrapper always; matt's launcher only when his environment is on.
+    environment.systemPackages = [
+      opencode-wrapped
+    ]
+    ++ lib.optionals cfg.mattUser [ opencode-matt-wrapped ];
 
     # The installer binary at ~/.opencode/bin/opencode is upstream's
     # dynamically-linked generic-Linux build (needs only libc/libm/pthread/
@@ -490,6 +584,41 @@ in
     system.activationScripts.opencodeConfig = lib.stringAfter [ "users" ] ''
       install -D -m 0644 -o io -g users ${builtinConfig} /home/io/.config/opencode/opencode.json
     '';
+
+    # ── matt second environment ────────────────────────────────────────────
+    # All of this exists only when jupiter.core.opencode.mattUser is true.
+
+    users.users.matt = lib.mkIf cfg.mattUser {
+      isNormalUser = true;
+      # Same human, existing key material — zero new credentials.
+      openssh.authorizedKeys.keys = config.users.users.io.openssh.authorizedKeys.keys;
+    };
+
+    # Matt-readable copies of the two provider keys the minimal config
+    # references — the sops-nix `key` remap (README §"Share secrets between
+    # different users") points at the same YAML keys io's entries read, so
+    # no new ciphertext, io's 0400 entries untouched, nothing group-readable.
+    sops.secrets.zai_api_key_matt = lib.mkIf cfg.mattUser {
+      key = "zai_api_key";
+      owner = "matt";
+      mode = "0400";
+    };
+    sops.secrets.groq_api_key_matt = lib.mkIf cfg.mattUser {
+      key = "groq_api_key";
+      owner = "matt";
+      mode = "0400";
+    };
+
+    # Activation-install the canonical matt config (same doctrine as io's:
+    # the committed config always wins over TUI edits). Skills are NOT
+    # activation-managed — no pinned upstream exists for the skills.sh
+    # opencode-filtered subset; they're a one-time copy at provision time,
+    # then `skills update` as matt owns them.
+    system.activationScripts.opencodeMattConfig = lib.mkIf cfg.mattUser (
+      lib.stringAfter [ "users" ] ''
+        install -D -m 0644 -o matt -g users ${mattConfig} /home/matt/.config/opencode/opencode.json
+      ''
+    );
 
     # Global skill: github-project (Netresearch) — repository setup, branch
     # protection, issue hierarchies, auto-merge. Installed to both the
