@@ -49,6 +49,12 @@
     # `suno_database_url`. Co-located with Postgres on purpose — the daemon
     # is stateless apart from the DB.
     ../../modules/services/suno-top.nix
+    # HAOS guest host (Jupiter Quarters overhaul G-E, spec §7.2): libvirt +
+    # KVM + OVMF substrate for the green-world Home Assistant guest. The
+    # GUEST itself is defined imperatively via virt-install from the
+    # G-B-proven archive (operator run-cards drive the S/P/F ladder);
+    # this module only stands up the hypervisor layer.
+    ../../modules/services/haos-guest-host.nix
     # OpenDesign — local-first design product (daemon `od` + web frontend)
     ../../modules/services/open-design.nix
     # Model Router — self-hosted OpenAI-compatible gateway pooling free LLM
@@ -681,6 +687,14 @@
       name = "suno";
       ensureDBOwnership = false;
     }
+    {
+      # Green HAOS recorder backend (Jupiter Quarters overhaul G-E, spec §7.2
+      # + §3.3): the HAOS guest writes its recorder straight into fleet
+      # Postgres — no second SQLite. Role is fleet-scoped; the database is the
+      # existing shared `jupiter` db with its own schema created by HA.
+      name = "homeassistant";
+      ensureDBOwnership = false;
+    }
   ];
 
   # Provision the `suno` role's password from the sops secret. Idempotent
@@ -710,8 +724,37 @@
     '';
   };
 
+  # Provision the `homeassistant` role's password from the sops secret
+  # (pg_homeassistant_password — plain hex value). Same idempotent-oneshot
+  # pattern as suno; the green HAOS guest's recorder connects over TCP with
+  # scram using this password (db `jupiter`). ALTER is a no-op when unchanged.
+  sops.secrets.pg_homeassistant_password = { };
+  systemd.services.jupiter-pg-provision-homeassistant = {
+    description = "Set homeassistant role password from sops secret";
+    wantedBy = [ "multi-user.target" ];
+    after = [ "postgresql.service" ];
+    requires = [ "postgresql.service" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+    script = ''
+      pw="$(cat ${config.sops.secrets.pg_homeassistant_password.path})"
+      printf 'ALTER ROLE homeassistant PASSWORD '"'"'%s'"'"';' "$pw" \
+        | ${pkgs.util-linux}/bin/runuser -u postgres -- ${pkgs.postgresql_18}/bin/psql -d jupiter -v ON_ERROR_STOP=1 -f -
+    '';
+  };
+
   # ---- Public Suno trending harvester (schema `suno`) -----------------------
   jupiter.services.sunoTop.enable = true;
+
+  # ---- HAOS guest host (Jupiter Quarters overhaul G-E, spec §7.2) -----------
+  # Libvirt + KVM + OVMF substrate for the green-world HAOS guest. Guest
+  # lifecycle is operator-driven (S/P/F run-cards); the host layer is this
+  # flag. Sized context: 4 vCPU / 6 GiB guest [OJ spec §7.2] vs lenovo's
+  # proven 2-core/5,184 MB. Images on local disk (168G free post-GC) —
+  # never the iSCSI root, so guest I/O can't couple to europa.
+  jupiter.services.haosGuestHost.enable = true;
 
   # Wire the procurement MCP into opencode (local stdio, per-session spawn on callisto) and
   # ensure its sops secrets are provisioned. The module itself declares the secrets; we just enable it.

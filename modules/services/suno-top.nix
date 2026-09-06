@@ -106,7 +106,7 @@ in
         Type = "exec";
         # The DB URL goes in via the process environment, read from the sops
         # file at start (never a unit file, never the store).
-        ExecStart = pkgs.writeShell "suno-top-start" ''
+        ExecStart = pkgs.writeShellScript "suno-top-start" ''
           export SUNO_TOP_DATABASE_URL="$(cat ${config.sops.secrets.${cfg.databaseUrlSecret}.path})"
           exec ${lib.getExe pkg}
         '';
