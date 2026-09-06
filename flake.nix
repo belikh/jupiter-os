@@ -278,7 +278,11 @@
       # guarantee DHCP fires with no explicit `ip=` kernel param. iSCSI
       # login can't reach the portal without an address first, so this is
       # cheap insurance rather than an assumption.
-      callistoCmdLine = "init=${callistoBuild.toplevel}/init loglevel=4 ip=dhcp ${toString callistoConfig.boot.kernelParams}";
+      # iSCSI root uses default stage-1 init fallback (/nix/var/nix/profiles/system/init
+      # or /run/current-system/init on callisto's own root filesystem) rather than pinning
+      # an explicit `init=` toplevel path that may not yet be populated in callisto's store
+      # at netboot time ("stage2 init script not found" fix).
+      callistoCmdLine = "loglevel=4 ip=dhcp ${toString callistoConfig.boot.kernelParams}";
       # Keep in sync with modules/network/fleet.nix's
       # jupiter.fleet.addresses.europa (this is flake-output scope, before any
       # NixOS module exists to read the option from).
