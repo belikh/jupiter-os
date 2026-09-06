@@ -103,140 +103,10 @@
   # the full build closure of the retained builds.
   nix.settings.keep-outputs = true;
 
-  # ---- Remote builders: callisto + kiosks ------------------------------------
-  # Inline delegation (NOT modules/core/build-machines.nix — that module's
-  # enable flag is off here): callisto (6c/6t i5-8500T) plus the four kiosk
-  # i5-6300Us, each several times faster per core than this 2c/2t Opteron.
-  #
-  # Every listed builder is x86_64-v3-capable (callisto/kiosks are
-  # Skylake-class; the level was chosen fleet-wide as the lowest common
-  # floor, CPUID-proven on THIS Excavator chip 2026-08-22), so one
-  # gccarch-x86-64-v3 feature tag is honest everywhere: they can compile
-  # AND run-check every tagged derivation in any fleet closure, including
-  # europa's own. History: under per-host vendor tags (bdver4/skylake) this
-  # matrix needed per-CPU exclusions — advertising bdver4 toward callisto
-  # made perl's miniperl bootstrap SIGILL mid-build (pre-08fd609) because
-  # Coffee Lake lacks XOP/TBM/FMA4. The shared level retires that whole
-  # class of bug.
-  nix.distributedBuilds = true;
-  nix.buildMachines = [
-    {
-      hostName = config.jupiter.fleet.addresses.callisto;
-      system = "x86_64-linux";
-      protocol = "ssh-ng";
-      sshUser = "root";
-      sshKey = config.sops.secrets.nix_build_ssh_key.path;
-      maxJobs = 1;
+  # ---- Local builds --------------------------------------------------------
+  # No remote build delegation to callisto or kiosks. Europa builds its own
+  # gccarch-x86-64-v3 packages locally (its Excavator CPU is v3-complete).
 
-      speedFactor = 2;
-      supportedFeatures = [
-        "gccarch-x86-64-v3"
-        "big-parallel"
-      ];
-      mandatoryFeatures = [ ];
-    }
-    {
-      hostName = "amalthea.localdomain";
-      system = "x86_64-linux";
-      protocol = "ssh-ng";
-      sshUser = "root";
-      sshKey = config.sops.secrets.nix_build_ssh_key.path;
-      maxJobs = 1;
-
-      speedFactor = 1;
-      supportedFeatures = [
-        "gccarch-x86-64-v3"
-        "big-parallel"
-      ];
-      mandatoryFeatures = [ ];
-    }
-    {
-      hostName = "metis.localdomain";
-      system = "x86_64-linux";
-      protocol = "ssh-ng";
-      sshUser = "root";
-      sshKey = config.sops.secrets.nix_build_ssh_key.path;
-      maxJobs = 1;
-
-      speedFactor = 1;
-      supportedFeatures = [
-        "gccarch-x86-64-v3"
-        "big-parallel"
-      ];
-      mandatoryFeatures = [ ];
-    }
-    {
-      hostName = "adrastea.localdomain";
-      system = "x86_64-linux";
-      protocol = "ssh-ng";
-      sshUser = "root";
-      sshKey = config.sops.secrets.nix_build_ssh_key.path;
-      maxJobs = 1;
-
-      speedFactor = 1;
-      supportedFeatures = [
-        "gccarch-x86-64-v3"
-        "big-parallel"
-      ];
-      mandatoryFeatures = [ ];
-    }
-    {
-      hostName = "thebe.localdomain";
-      system = "x86_64-linux";
-      protocol = "ssh-ng";
-      sshUser = "root";
-      sshKey = config.sops.secrets.nix_build_ssh_key.path;
-      maxJobs = 1;
-
-      speedFactor = 1;
-      supportedFeatures = [
-        "gccarch-x86-64-v3"
-        "big-parallel"
-      ];
-      mandatoryFeatures = [ ];
-    }
-  ];
-
-  # SSH config for all builder hosts
-  programs.ssh.extraConfig = ''
-    Host ${config.jupiter.fleet.addresses.callisto}
-      IdentityFile ${config.sops.secrets.nix_build_ssh_key.path}
-      IdentitiesOnly yes
-    Host amalthea.localdomain
-      IdentityFile ${config.sops.secrets.nix_build_ssh_key.path}
-      IdentitiesOnly yes
-    Host metis.localdomain
-      IdentityFile ${config.sops.secrets.nix_build_ssh_key.path}
-      IdentitiesOnly yes
-    Host adrastea.localdomain
-      IdentityFile ${config.sops.secrets.nix_build_ssh_key.path}
-      IdentitiesOnly yes
-    Host thebe.localdomain
-      IdentityFile ${config.sops.secrets.nix_build_ssh_key.path}
-      IdentitiesOnly yes
-  '';
-
-  # Known host keys for all builders
-  programs.ssh.knownHosts = {
-    callisto = {
-      hostNames = [ config.jupiter.fleet.addresses.callisto ];
-      publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIINKUMgEPCzZRq74JtvkMmfmT6gOmZWGGq8G9lNqqKsU";
-    };
-    amalthea = {
-      hostNames = [ "amalthea.localdomain" ];
-      publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGQV+BzJbBfN+T3WKEUo4CzwJHS1B2bsnH5vglHmbP+Y";
-    };
-    thebe = {
-      hostNames = [ "thebe.localdomain" ];
-      publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOjnMhsh8PxlRW1tXYR4GjjDNa4J8os/4URkbD777JMg";
-    };
-    metis = {
-      hostNames = [ "metis.localdomain" ];
-      publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAB6bFJpQteERsDDg7otkc42JOWXDZUA9WprQ/gnEiAK";
-    };
-  };
-
-  sops.secrets.nix_build_ssh_key = { };
 
   # ---- Storage profile (OS SSD) --------------------------------------------
   # Stateful root (no impermanence — the NAS needs persistent state).
@@ -603,9 +473,6 @@
   # harmonia_sign_key: private Nix binary-cache signing key for Harmonia
   # (generated via nix-store --generate-binary-cache-key).
   sops.secrets.harmonia_sign_key = { };
-  # nix_build_ssh_key: private half of the dedicated builder keypair; the
-  # public half is in callisto's root authorized_keys (buildMachines above).
-  sops.secrets.nix_build_ssh_key = { };
   # screenscraper_creds / tgdb_apikey: ScreenScraper credentials + TheGamesDB
   # API key for the arcade-webapp scrape driver. Same sops keys the retired
   # rom-scraper.nix declared (values unchanged in secrets/secrets.yaml);
