@@ -278,11 +278,19 @@
       # guarantee DHCP fires with no explicit `ip=` kernel param. iSCSI
       # login can't reach the portal without an address first, so this is
       # cheap insurance rather than an assumption.
-      # iSCSI root uses default stage-1 init fallback (/nix/var/nix/profiles/system/init
-      # or /run/current-system/init on callisto's own root filesystem) rather than pinning
-      # an explicit `init=` toplevel path that may not yet be populated in callisto's store
-      # at netboot time ("stage2 init script not found" fix).
-      callistoCmdLine = "loglevel=4 ip=dhcp ${toString callistoConfig.boot.kernelParams}";
+      # RECOVERY PIN (2026-09-06): init= is hardcoded to the generation
+      # actually on callisto's iSCSI root (system-65, verified present with
+      # /init on the zvol 2026-09-06), NOT callistoBuild.toplevel from
+      # current main. Stage-1 defaults to /init when init= is absent, and
+      # callisto's root has no /init — omitting init= breaks boot with
+      # "stage 2 init script (/mnt-root//init) not found". Conversely the
+      # dynamic pin breaks boot whenever main moves ahead of callisto's
+      # deployed generation (the served path doesn't exist on disk yet).
+      # FOLLOW-UP: after callisto boots and `nixos-rebuild switch`es past
+      # system-65, restore `init=${callistoBuild.toplevel}/init` and
+      # republish PXE assets (systemctl start jupiter-pxe-assets on
+      # europa) — in that order (switch first, publish second).
+      callistoCmdLine = "init=/nix/store/c5p19178c0vg2ckbapb0g40irqv9n76a-nixos-system-callisto-jupiter-26.11.20260819.ffb3c9b/init loglevel=4 ip=dhcp ${toString callistoConfig.boot.kernelParams}";
       # Keep in sync with modules/network/fleet.nix's
       # jupiter.fleet.addresses.europa (this is flake-output scope, before any
       # NixOS module exists to read the option from).
