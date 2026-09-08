@@ -452,6 +452,45 @@ let
             };
           };
         };
+        # TokenRouter aggregator (api.tokenrouter.com) — same block as io's
+        # builtinConfig (model ids verified against its live /v1/models
+        # 2026-08-29; kimi-k3 output cap unpublished so no limit block).
+        # Requested for matt 2026-09-08; default routing stays zai-coding.
+        tokenrouter = {
+          npm = "@ai-sdk/openai-compatible";
+          name = "TokenRouter";
+          options = {
+            baseURL = "https://api.tokenrouter.com/v1";
+            apiKey = "{env:TOKENROUTER_API_KEY}";
+          };
+          models = {
+            "z-ai/glm-5.3-free" = {
+              limit = {
+                context = 1000000;
+                output = 131072;
+              };
+            };
+            "z-ai/glm-5.3-flash" = {
+              limit = {
+                context = 1000000;
+                output = 131072;
+              };
+            };
+            "moonshotai/kimi-k3" = { };
+            "qwen/qwen3.8-max" = {
+              limit = {
+                context = 1000000;
+                output = 131072;
+              };
+            };
+            "google/gemini-3.7-flash" = {
+              limit = {
+                context = 1048576;
+                output = 65536;
+              };
+            };
+          };
+        };
       };
     }
   );
@@ -462,7 +501,7 @@ let
   # secrets (e.g. io ran it by mistake) instead of launching with empty
   # keys against the wrong config.
   opencode-matt-wrapped = pkgs.writeShellScriptBin "opencode-matt" ''
-    for f in ${config.sops.secrets.zai_api_key_matt.path} ${config.sops.secrets.groq_api_key_matt.path}; do
+    for f in ${config.sops.secrets.zai_api_key_matt.path} ${config.sops.secrets.groq_api_key_matt.path} ${config.sops.secrets.tokenrouter_api_key_matt.path}; do
       if ! [ -r "$f" ]; then
         echo "opencode-matt: $f unreadable — this launcher is for matt (is HOME=/home/matt?)" >&2
         exit 1
@@ -470,6 +509,7 @@ let
     done
     export Z_AI_API_KEY="$(cat ${config.sops.secrets.zai_api_key_matt.path})"
     export GROQ_API_KEY="$(cat ${config.sops.secrets.groq_api_key_matt.path})"
+    export TOKENROUTER_API_KEY="$(cat ${config.sops.secrets.tokenrouter_api_key_matt.path})"
     exec "$HOME/.opencode/bin/opencode" "$@"
   '';
 in
@@ -626,6 +666,11 @@ in
     };
     sops.secrets.groq_api_key_matt = lib.mkIf cfg.mattUser {
       key = "groq_api_key";
+      owner = "matt";
+      mode = "0400";
+    };
+    sops.secrets.tokenrouter_api_key_matt = lib.mkIf cfg.mattUser {
+      key = "tokenrouter_api_key";
       owner = "matt";
       mode = "0400";
     };
