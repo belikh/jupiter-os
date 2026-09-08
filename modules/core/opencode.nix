@@ -598,6 +598,11 @@ in
 
     users.users.matt = lib.mkIf cfg.mattUser {
       isNormalUser = true;
+      # Own primary group — NOT the shared "users" group (see the group
+      # comment below). Verified necessary: declaring users.groups.matt
+      # alone left the primary group at the isNormalUser default ("users",
+      # gid 100) and the dsh_env leak survived a deploy before this line.
+      group = "matt";
       # Same human, existing key material — zero new credentials.
       openssh.authorizedKeys.keys = config.users.users.io.openssh.authorizedKeys.keys;
     };
