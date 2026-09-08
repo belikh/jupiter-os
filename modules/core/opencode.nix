@@ -457,9 +457,17 @@ let
   );
 
   # opencode-matt launcher: same secrets-by-path pattern as opencode-wrapped,
-  # but reading the MATT-owned remapped secret files. Run by anyone else, the
-  # cat fails closed (0400 matt-only) — acceptable: it's matt's tool.
+  # but reading the MATT-owned remapped secret files. Fails CLOSED: the
+  # [ -r ] guards abort with a clear error if the runner can't read matt's
+  # secrets (e.g. io ran it by mistake) instead of launching with empty
+  # keys against the wrong config.
   opencode-matt-wrapped = pkgs.writeShellScriptBin "opencode-matt" ''
+    for f in ${config.sops.secrets.zai_api_key_matt.path} ${config.sops.secrets.groq_api_key_matt.path}; do
+      if ! [ -r "$f" ]; then
+        echo "opencode-matt: $f unreadable — this launcher is for matt (is HOME=/home/matt?)" >&2
+        exit 1
+      fi
+    done
     export Z_AI_API_KEY="$(cat ${config.sops.secrets.zai_api_key_matt.path})"
     export GROQ_API_KEY="$(cat ${config.sops.secrets.groq_api_key_matt.path})"
     exec "$HOME/.opencode/bin/opencode" "$@"
@@ -593,6 +601,14 @@ in
       # Same human, existing key material — zero new credentials.
       openssh.authorizedKeys.keys = config.users.users.io.openssh.authorizedKeys.keys;
     };
+
+    # matt gets his own primary group ("matt") so he is NOT in the shared
+    # "users" group. Verified necessary 2026-09-08: the fleet's dsh_env
+    # secret is root:users 0440 (pre-existing decision so io can read it),
+    # and a plain isNormalUser lands in "users" as primary group — which
+    # let matt read the packed OPENCODE/PARALLEL/MODEL_ROUTER tokens and
+    # defeated this environment's credential isolation.
+    users.groups.matt = lib.mkIf cfg.mattUser { };
 
     # Matt-readable copies of the two provider keys the minimal config
     # references — the sops-nix `key` remap (README §"Share secrets between
