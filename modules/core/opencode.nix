@@ -370,6 +370,19 @@ let
   # hyperresearch's parallel lane (observed missing 2026-08-29: every
   # Parallel call died before reaching the network).
   opencode-wrapped = pkgs.writeShellScriptBin "opencode" ''
+    # Fail closed — same guard as opencode-matt (8b81796), added here after
+    # matt's ssh session hit a 14-line cat-error wall then a keyless launch
+    # running io's launcher as matt (2026-09-08). No secret leaked — every
+    # read correctly denied — but the wrapper must abort with one clear line
+    # instead of exporting empty keys. Guards only the two MANDATORY
+    # providers (default + small_model); the optional dsh_env/procurement
+    # exports keep their own [ -f ] tolerance.
+    for f in ${config.sops.secrets.zai_api_key.path} ${config.sops.secrets.groq_api_key.path}; do
+      if ! [ -r "$f" ]; then
+        echo "opencode: $f unreadable — this launcher is io's rig (matt's launcher is opencode-matt)" >&2
+        exit 1
+      fi
+    done
     export Z_AI_API_KEY="$(cat ${config.sops.secrets.zai_api_key.path})"
     export GROQ_API_KEY="$(cat ${config.sops.secrets.groq_api_key.path})"
     export OPENCODE_API_KEY="$(sed -n 's/^OPENCODE_API_KEY=//p' ${config.sops.secrets.dsh_env.path})"
