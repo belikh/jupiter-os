@@ -20,6 +20,8 @@ func TestEnvKeysCarryThrough(t *testing.T) {
 		"zai":         "Z_AI_API_KEY",
 		"opencode":    "OPENCODE_API_KEY",
 		"tokenrouter": "TOKENROUTER_API_KEY",
+		"tokenra":     "TOKENRA_API_KEY",
+		"bai":         "BAI_API_KEY",
 	}
 	got := 0
 	for _, p := range sd.Providers {

@@ -57,7 +57,8 @@ in
       description = ''
         Path to an environment file holding provider API keys for the
         first-boot vault bootstrap (GROQ_API_KEY, Z_AI_API_KEY,
-        OPENCODE_API_KEY, TOKENROUTER_API_KEY, ... — any seed env_key).
+        OPENCODE_API_KEY, TOKENROUTER_API_KEY, TOKENRA_API_KEY,
+        BAI_API_KEY, ... — any seed env_key).
         Wire a sops secret here, e.g. config.sops.secrets.model_router_env.path.
         The router copies keys into its encrypted vault and validates them
         with a one-probe check; after first boot the dashboard owns them.

@@ -71,17 +71,18 @@
       "id": "bai",
       "name": "B.AI",
       "base_url": "https://api.b.ai/v1",
-      "signup_url": "https://bai.ai",
-      "key_page_url": "https://bai.ai",
+      "signup_url": "https://b.ai",
+      "key_page_url": "https://b.ai",
       "window_hints": [
         {
           "kind": "rolling_headers",
-          "notes": "limited-time 0-credit promo — commercial eligibility tracked in hints"
+          "notes": "OpenAI-compatible gateway (chat/completions, responses, anthropic messages); limited-time 0-credit promo — commercial eligibility tracked in hints"
         }
       ],
       "initial_caps": {},
       "friction_flags": [],
-      "api_flavour": "openai"
+      "api_flavour": "openai",
+      "env_key": "BAI_API_KEY"
     },
     {
       "id": "anyapi",
@@ -637,6 +638,23 @@
         "key literally \"free\" — no signup"
       ],
       "api_flavour": "openai"
+    },
+    {
+      "id": "tokenra",
+      "name": "TokenRa",
+      "base_url": "https://tokenra.io/v1",
+      "signup_url": "https://tokenra.io",
+      "key_page_url": "https://tokenra.io",
+      "window_hints": [
+        {
+          "kind": "rolling_headers",
+          "notes": "paid discount gateway for Chinese frontier models (DeepSeek, Moonshot/Kimi, Zhipu/GLM, Qwen, MiniMax); OpenAI-compatible text models; no free tier — key onboarding only, no pool routing"
+        }
+      ],
+      "initial_caps": {},
+      "friction_flags": [],
+      "api_flavour": "openai",
+      "env_key": "TOKENRA_API_KEY"
     },
     {
       "id": "tokenrouter",
