@@ -918,6 +918,34 @@
       "local_slug": "",
       "status": "no_host",
       "notes": "Qwen lineage EOL 2026-07-27"
+    },
+    {
+      "family": "deepseek-v4",
+      "provider_id": "tokenra",
+      "local_slug": "deepseek-v4-flash",
+      "status": "free_capped",
+      "notes": "paid discount gateway — usage bills the key holder; slug observed on the live /v1/models catalogue, discovery confirms or tombstones"
+    },
+    {
+      "family": "glm-5.3",
+      "provider_id": "tokenra",
+      "local_slug": "glm-5.3",
+      "status": "free_capped",
+      "notes": "paid discount gateway — usage bills the key holder; slug observed on the live /v1/models catalogue, discovery confirms or tombstones"
+    },
+    {
+      "family": "kimi-k3",
+      "provider_id": "tokenra",
+      "local_slug": "kimi-k3",
+      "status": "free_capped",
+      "notes": "paid discount gateway — usage bills the key holder; slug observed on the live /v1/models catalogue, discovery confirms or tombstones"
+    },
+    {
+      "family": "minimax-m3",
+      "provider_id": "tokenra",
+      "local_slug": "minimax-m3",
+      "status": "free_capped",
+      "notes": "paid discount gateway — usage bills the key holder; slug observed on the live /v1/models catalogue, discovery confirms or tombstones"
     }
   ]
 }

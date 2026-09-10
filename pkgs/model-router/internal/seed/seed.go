@@ -28,7 +28,7 @@ var seedSig []byte
 // after generation and exists nowhere in the repository. Rotated 2026-09-10
 // (tokenra provider added, bai URLs corrected to b.ai); re-rotate on every
 // seed edit — the old private key is gone, so each edit mints a fresh pair.
-const seedPubHex = "6acb44d835bce264c6c77064e8182f8ecfc7fcb8faecaad8281313271a36ae46"
+const seedPubHex = "49dd86914bfa9221c2d4a3d42e40745363b3bbffe04c16beb373529e87c55de1"
 
 // Window kinds understood by the router's rate-window machinery.
 const (
