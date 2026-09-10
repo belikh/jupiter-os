@@ -76,7 +76,7 @@
       "window_hints": [
         {
           "kind": "rolling_headers",
-          "notes": "OpenAI-compatible gateway (chat/completions, responses, anthropic messages); limited-time 0-credit promo — commercial eligibility tracked in hints"
+          "notes": "OpenAI-compatible gateway (chat/completions, responses, anthropic messages); limited-time 0-credit promo — commercial eligibility tracked in hints; auth quirk (live 2026-09-10): Bearer 401s, x-api-key required — adapter sends both"
         }
       ],
       "initial_caps": {},
@@ -946,6 +946,76 @@
       "local_slug": "minimax-m3",
       "status": "free_capped",
       "notes": "paid discount gateway — usage bills the key holder; slug observed on the live /v1/models catalogue, discovery confirms or tombstones"
+    },
+    {
+      "family": "glm-5.2",
+      "provider_id": "bai",
+      "local_slug": "glm-5.2",
+      "status": "free_capped",
+      "notes": "paid gateway on 0-credit promo — usage bills the key holder; slug verified on the live /v1/models catalogue 2026-09-10"
+    },
+    {
+      "family": "glm-5.3",
+      "provider_id": "bai",
+      "local_slug": "glm-5.3",
+      "status": "free_capped",
+      "notes": "paid gateway on 0-credit promo — usage bills the key holder; slug verified on the live /v1/models catalogue 2026-09-10"
+    },
+    {
+      "family": "glm-5.3-flash",
+      "provider_id": "bai",
+      "local_slug": "glm-5.3-flash",
+      "status": "free_capped",
+      "notes": "paid gateway on 0-credit promo — usage bills the key holder; slug verified on the live /v1/models catalogue 2026-09-10"
+    },
+    {
+      "family": "kimi-k3",
+      "provider_id": "bai",
+      "local_slug": "kimi-k3",
+      "status": "free_capped",
+      "notes": "paid gateway on 0-credit promo — usage bills the key holder; slug verified on the live /v1/models catalogue 2026-09-10"
+    },
+    {
+      "family": "qwen3.8",
+      "provider_id": "bai",
+      "local_slug": "qwen3.8-max",
+      "status": "free_capped",
+      "notes": "paid gateway on 0-credit promo — usage bills the key holder; slug verified on the live /v1/models catalogue 2026-09-10"
+    },
+    {
+      "family": "qwen3.8",
+      "provider_id": "bai",
+      "local_slug": "qwen3.8-flash",
+      "status": "free_capped",
+      "notes": "paid gateway on 0-credit promo — usage bills the key holder; slug verified on the live /v1/models catalogue 2026-09-10"
+    },
+    {
+      "family": "qwen3.8",
+      "provider_id": "bai",
+      "local_slug": "qwen3.8-27b",
+      "status": "free_capped",
+      "notes": "paid gateway on 0-credit promo — usage bills the key holder; slug verified on the live /v1/models catalogue 2026-09-10"
+    },
+    {
+      "family": "deepseek-v4",
+      "provider_id": "bai",
+      "local_slug": "deepseek-v4-flash",
+      "status": "free_capped",
+      "notes": "paid gateway on 0-credit promo — usage bills the key holder; slug verified on the live /v1/models catalogue 2026-09-10"
+    },
+    {
+      "family": "deepseek-v4",
+      "provider_id": "bai",
+      "local_slug": "deepseek-v4-pro",
+      "status": "free_capped",
+      "notes": "paid gateway on 0-credit promo — usage bills the key holder; slug verified on the live /v1/models catalogue 2026-09-10"
+    },
+    {
+      "family": "minimax-m3",
+      "provider_id": "bai",
+      "local_slug": "minimax-m3",
+      "status": "free_capped",
+      "notes": "paid gateway on 0-credit promo — usage bills the key holder; slug verified on the live /v1/models catalogue 2026-09-10"
     }
   ]
 }

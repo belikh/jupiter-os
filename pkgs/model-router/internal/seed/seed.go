@@ -26,9 +26,10 @@ var seedSig []byte
 // seedPubHex is the Ed25519 public key (hex) whose private counterpart signed
 // seed.json. Only the public key is committed; the private key was discarded
 // after generation and exists nowhere in the repository. Rotated 2026-09-10
-// (tokenra provider added, bai URLs corrected to b.ai); re-rotate on every
-// seed edit — the old private key is gone, so each edit mints a fresh pair.
-const seedPubHex = "49dd86914bfa9221c2d4a3d42e40745363b3bbffe04c16beb373529e87c55de1"
+// (tokenra provider added; bai corrected to b.ai + 10 live-verified mappings);
+// re-rotate on every seed edit — the old private key is gone, so each edit
+// mints a fresh pair.
+const seedPubHex = "84be43d2bd7651a6e379b19c446cabe7d08fa1d4ba3e29f9b6473dfadd1588d8"
 
 // Window kinds understood by the router's rate-window machinery.
 const (

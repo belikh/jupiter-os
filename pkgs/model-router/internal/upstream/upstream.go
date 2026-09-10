@@ -95,6 +95,9 @@ func (a *OpenAIAdapter) Start(ctx context.Context, sc ScopeID, req Request) (*St
 	if a.APIKey != nil {
 		if k := a.APIKey(sc.Key); k != "" {
 			hreq.Header.Set("Authorization", "Bearer "+k)
+			// B.AI (api.b.ai) 401s Bearer but accepts x-api-key (live
+			// 2026-09-10); providers that don't read it just ignore it.
+			hreq.Header.Set("X-Api-Key", k)
 		}
 	}
 	resp, err := a.Client.Do(hreq)
@@ -115,6 +118,7 @@ func (a *OpenAIAdapter) ListModels(ctx context.Context) ([]string, error) {
 		// keyless endpoints like NIM answer anyway).
 		if k := a.APIKey(""); k != "" {
 			hreq.Header.Set("Authorization", "Bearer "+k)
+			hreq.Header.Set("X-Api-Key", k) // B.AI auth (see Start)
 		}
 	}
 	resp, err := a.Client.Do(hreq)
