@@ -224,24 +224,12 @@ func main() {
 		return nil
 	}
 	loop := discovery.New(sd, pools, machine, discAdapters, nil, aliasesFor)
-	// seed the pools from the catalogue immediately
-	disc2 := loop // alias for clarity
-	_ = disc2
-	// populate pools synchronously so the first request can route
-	for _, m := range sd.Models {
-		if m.Status != "free" && m.Status != "free_capped" && m.Status != "trial" {
-			continue
-		}
-		if _, ok := adapters[m.ProviderID]; !ok {
-			continue
-		}
-		pools.SetMembers(m.Family, append(pools.Members(m.Family), pool.Endpoint{
-			Scope:   health.Scope{Provider: m.ProviderID, Model: m.Family, Key: "default"},
-			Weights: map[string]float64{"rpm": 30},
-			Family:  m.Family,
-			LocalID: m.LocalSlug,
-		}))
-	}
+	// Pool seeding happened ABOVE via syncProviderKeys (per active vault
+	// alias). An older second pass here appended a Key:"default" endpoint
+	// for every mapping on top — keyless duplicates that 401 upstream,
+	// trip the classifier's key-fatal path, and exhaust families whose
+	// real endpoints are transiently down (observed live on qwen3.8:
+	// 6 endpoints = 3 groq + 3 bai where 3 should exist). Removed.
 
 	// facade: the OpenAI-compatible API
 	famFn := func() []string {
