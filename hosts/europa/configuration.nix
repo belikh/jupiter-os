@@ -427,11 +427,11 @@
     tgdbApikeyFile = config.sops.secrets.tgdb_apikey.path;
   };
 
-  # Suno account backup daemon — WAV masters + full per-clip metadata into
-  # /tank/archive/suno. The suno_cookie sops secret must hold the Clerk
-  # __client value (added to secrets/secrets.yaml, encrypted to europa's age
-  # key) before this activates.
-  jupiter.services.sunoBackup.enable = true;
+  # Suno account backup daemon — DISABLED 2026-09-13: Suno now enforces
+  # limited downloads, so the WAV backfill must stay off to preserve the
+  # remaining quota. Leave the module import in place; re-enable only after
+  # the quota situation is resolved.
+  jupiter.services.sunoBackup.enable = false;
 
   # Browser UI over that archive. Two doors: direct LAN at
   # http://10.1.1.2:8093 (the fast path — streams the 35-45MB lossless
