@@ -33,6 +33,32 @@
       autoprune = true;
     };
 
+    # Block-volume template, for the iSCSI zvol only. A zvol holding a host's
+    # live root is not an append-only archive: every `nixos-rebuild` rewrites
+    # large parts of the store, so a snapshot's cost scales with the churn
+    # between it and the next one, not with age. The `important` window (36
+    # hourly + 30 daily + 6 monthly + 1 yearly = up to 73 snapshots) held ~173G
+    # of the 280G zvol on a 464G pool shared with europa's /nix, and on
+    # 2026-09-01 the pool hit 100%: callisto's root went read-only and europa's
+    # next boot was an ENOSPC cascade (no random seed, no utmp, no nix-daemon
+    # socket, no resolvconf, no nginx).
+    #
+    # `monthly`/`yearly` are 0 on purpose. The OLDEST snapshot in the chain
+    # carries every block changed since it was taken, and that grows without
+    # bound between prunes — the single Sep-1 monthly held 67.2G by Sep 17
+    # (measured), dwarfing the 100M-1.4G daily deltas. On a churning zvol a
+    # long-horizon snapshot is the most expensive one there is. Six-hourly +
+    # weekly is the rollback window that actually pays for itself; anything
+    # older belongs in restic, not in snapshots that starve the host pool.
+    templates.zvol = {
+      hourly = 6;
+      daily = 7;
+      monthly = 0;
+      yearly = 0;
+      autosnap = true;
+      autoprune = true;
+    };
+
     datasets = {
       # Irreplaceable / important — frequent snapshots, recursive.
       "tank/personal" = {
@@ -106,14 +132,16 @@
 
       # callisto's iSCSI-root zvol (hosts/callisto/configuration.nix): the
       # diskless host's ENTIRE persistent state lives here — nix store, fleet
-      # Postgres, MQTT config, the opencode/hyperresearch rig. Hourly
-      # `important` snapshots are the cheapest insurance against a bad
-      # activation or rm on a box that cannot boot without this very volume.
+      # Postgres, MQTT config, the opencode/hyperresearch rig. Snapshots are
+      # cheap insurance against a bad activation or rm on a box that cannot
+      # boot without this very volume — but this is a zvol, so it uses the
+      # light `zvol` template, not `important`: see that template's comment
+      # for why 73 snapshots filled the pool on 2026-09-01.
       # NOTE 2026-08-26: the live target-served volume is on rpool — older
       # docs/plans saying tank/services/callisto-root describe a pre-migration
       # leftover (both zvols exist; only rpool is LIO-backed).
       "rpool/services/callisto-root" = {
-        useTemplate = [ "important" ];
+        useTemplate = [ "zvol" ];
         recursive = true;
       };
 
