@@ -85,7 +85,7 @@ jobs:
             if [ -z "${!name:-}" ]; then missing="$missing $name"; fi
           done
           if [ -n "$missing" ]; then
-            echo "::error::Copilot BYOK is incomplete — missing:$missing. All four values are required together; a partial set is treated as native OAuth (and can fail mid-run). Run scripts/niro-setup.sh copilot to configure them."
+            echo "::error::Copilot BYOK is incomplete — missing:$missing. All four values are required together; a partial set is treated as native OAuth (and can fail mid-run). Run scripts/niro-setup-deepseek.sh (guided) or scripts/niro-setup.sh copilot to configure them."
             exit 1
           fi
           echo "Copilot BYOK configuration present (values not printed)."

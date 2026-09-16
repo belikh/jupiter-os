@@ -101,9 +101,11 @@ In CI, dispatch the **Niro Find** workflow manually. It pins Niro v0.1.80 and
 one agent CLI version per provider, sets up the `niro-autonomous` GitHub
 environment (required reviewers optional but recommended), and uploads the
 report PDF and knowledge bundle as artifacts. Provider secrets/variables are
-configured once with `scripts/niro-setup.sh`; the workflow's guard steps fail
-fast, before any run, when the selected agent's provider configuration is
-incomplete.
+configured once — `scripts/niro-setup-deepseek.sh` walks the DeepSeek
+Copilot-BYOK path stage by stage (API key → variables → optional reviewers →
+bootstrap dispatch), and `scripts/niro-setup.sh` covers the other
+providers/non-interactive use. The workflow's guard steps fail fast, before
+any run, when the selected agent's provider configuration is incomplete.
 
 `headless: true` and `telemetry: false` are set in `niro.yaml` for a reason:
 the first prevents an autonomous run halting on an interactive
