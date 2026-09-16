@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "niro hook --event=session-start --agent=codex", "timeout": 30 } ] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "niro hook --event=prompt-submit --agent=codex", "timeout": 30 } ] }
+    ],
+    "PostToolUse": [
+      { "hooks": [ { "type": "command", "command": "niro hook --event=post-tool-use --agent=codex", "timeout": 30 } ] }
+    ],
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": "niro hook --event=stop --agent=codex", "timeout": 30 } ] }
+    ]
+  }
+}

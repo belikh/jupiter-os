@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      { "type": "command", "command": "niro hook --event=session-start --agent=copilot", "timeoutSec": 30 }
+    ],
+    "userPromptSubmitted": [
+      { "type": "command", "command": "niro hook --event=prompt-submit --agent=copilot", "timeoutSec": 30 }
+    ],
+    "postToolUse": [
+      { "type": "command", "command": "niro hook --event=post-tool-use --agent=copilot", "timeoutSec": 30 }
+    ],
+    "sessionEnd": [
+      { "type": "command", "command": "niro hook --event=session-end --agent=copilot", "timeoutSec": 10 }
+    ]
+  }
+}

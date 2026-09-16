@@ -1,0 +1,3 @@
+[mcp_servers.niro]
+command = "niro"
+args = ["serve"]

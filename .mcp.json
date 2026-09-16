@@ -1,8 +1,18 @@
 {
   "mcpServers": {
+    "niro": {
+      "command": "niro",
+      "args": [
+        "serve"
+      ]
+    },
     "nixos": {
       "command": "nix",
-      "args": ["run", "github:utensils/mcp-nixos", "--"]
+      "args": [
+        "run",
+        "github:utensils/mcp-nixos",
+        "--"
+      ]
     }
   }
 }

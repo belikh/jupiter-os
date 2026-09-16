@@ -1,0 +1,22 @@
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "niro hook --event=session-start --agent=claude" } ] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [ { "type": "command", "command": "niro hook --event=prompt-submit --agent=claude" } ] }
+    ],
+    "PostToolUse": [
+      { "hooks": [ { "type": "command", "command": "niro hook --event=post-tool-use --agent=claude" } ] }
+    ],
+    "PostToolUseFailure": [
+      { "hooks": [ { "type": "command", "command": "niro hook --event=post-tool-use --agent=claude" } ] }
+    ],
+    "Stop": [
+      { "hooks": [ { "type": "command", "command": "niro hook --event=stop --agent=claude" } ] }
+    ],
+    "SessionEnd": [
+      { "hooks": [ { "type": "command", "command": "niro hook --event=session-end --agent=claude" } ] }
+    ]
+  }
+}
