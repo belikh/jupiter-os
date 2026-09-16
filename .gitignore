@@ -42,3 +42,17 @@ igir.cache
 
 # opencode worktrees
 worktrees/
+# Niro (manual, find-only pentests; see .github/workflows/niro-find.yml).
+# The profile (niro.yaml, scope.yaml, harness/) is committed; generated
+# credentials/fixtures, runtime state and terminal artifacts stay local-only.
+niro/credentials.yaml
+niro/fixtures.yaml
+niro/state/
+niro/findings/
+niro/harness/run/
+niro/artifacts/
+
+# Build output from local JS tooling (nothing in the flake reads these;
+# .opencode/package.json can drop a node_modules beside itself).
+node_modules/
+dist/

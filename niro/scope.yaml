@@ -1,0 +1,53 @@
+# yaml-language-server: $schema=https://niro.apxlabs.ai/schema/v1/scope.json
+#
+# The network destinations Niro is authorized to test. Anything not listed is
+# denied by the attack sandbox's network policy.
+#
+# The sandbox firewall is compiled from this file once, at pentest start. Editing
+# targets mid-pentest has no effect until the NEXT pentest — close_pentest, then
+# start again to apply the change.
+#
+# Use one Niro config per environment. Keeping local, staging, and production
+# targets in separate config directories prevents a run from selecting the
+# wrong environment. For example, keep `niro/` and `niro-staging/` separate and
+# select an existing runtime with
+# `niro find --config-dir=niro-staging --url=https://staging.example.com`.
+# The URL selects the runtime; this file authorizes its host and port.
+#
+# Target syntax:
+#   api.staging.example.com:443        Exact host and port.
+#   api.staging.example.com:80,443     Multiple ports.
+#   api.staging.example.com:8000-8999  Port range.
+#   *.staging.example.com:443          Apex + one-label subdomain wildcard.
+#   10.0.42.0/24:443                   IPv4 CIDR.
+#   [2001:db8::/32]:443                IPv6 CIDR.
+#
+# Exclusions take precedence over allowed entries:
+# targets:
+#   - target: "*.staging.example.com:443"
+#   - target: "billing.staging.example.com:443"
+#     excluded: true
+#
+# Targets must be reachable from the Docker or Podman container. Niro maps
+# localhost and 127.0.0.1 to the host so locally running apps remain reachable.
+#
+# Email access is optional. Enable it only when a test must receive a signup,
+# password-reset, or one-time-code email. This permits access to Niro's mail
+# service; it does not add the mail service as a pentest target.
+# allow_email_access: true
+
+# ---------------------------------------------------------------------------
+# jupiterOS: the ONLY authorised target is the arcade-webapp runtime this
+# repository starts locally (niro/harness/start.sh), on port 18094.
+#
+# Loopback only, deliberately. Every other listening service in this estate
+# belongs to the production fleet (europa NAS/PXE/Harmonia, callisto
+# Postgres/MQTT/platform, the live kiosks). A Niro run must never reach them.
+# The harness binds 0.0.0.0:18094 so Niro's attack container can reach the
+# host listener, but this file authorises that listener only under its
+# loopback names — never a LAN IP, tailnet name, or CIDR. Do not widen this
+# list. A future fleet target gets its own environment profile (for example
+# niro-staging/) and a person authorises that exact host:port there.
+targets:
+  - target: "127.0.0.1:18094"
+  - target: "localhost:18094"

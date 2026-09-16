@@ -1,0 +1,230 @@
+name: Niro Find
+
+# Manual, find-only penetration testing for the jupiterOS Niro profile.
+#
+# Guardrails, all deliberate — do not relax them:
+#   * workflow_dispatch ONLY. Never add push / pull_request /
+#     pull_request_target triggers: `niro find --autonomous` grants the agent
+#     CLI full current-user host access without prompts, so an autonomous run
+#     must only ever start from a person dispatching a reviewed revision.
+#   * permissions: contents read, and checkout with persist-credentials false.
+#     The run needs to read the repository, nothing more.
+#   * `environment: niro-autonomous` is the second approval gate. GitHub
+#     creates the environment on first use; add required reviewers to it in
+#     repository settings for a human approval on every dispatch.
+#   * Loopback-only scope. The only reachable runtime is the arcade-webapp
+#     started locally by niro/harness/start.sh; no fleet host, LAN address,
+#     tailnet name or CIDR is authorised in niro/scope.yaml.
+#   * The pre-flight smoke uses port 18095, never Niro's 18094, so a leaked
+#     server can never occupy (or be mistaken for) the real target.
+#
+# Pinned versions (bump deliberately, then record the reason):
+#   * Niro v0.1.80
+#   * Copilot CLI 1.0.80 — deliberate. Niro v0.1.80's MCP server accepts the
+#     MCP clientInfo names `github-copilot` / `github-copilot-developer`;
+#     Copilot CLI 1.0.81+ announces `copilot-cli` and every MCP call is
+#     refused, stalling the run. Niro installs the latest CLI when none is on
+#     PATH, hence the explicit install below plus COPILOT_AUTO_UPDATE=false.
+#     Remove the pin only after verifying upstream accepts `copilot-cli`.
+#   * Claude Code 2.1.273, Codex 0.154.0 — current stable at the time of
+#     writing; pin exact versions rather than floating.
+
+on:
+  workflow_dispatch:
+    inputs:
+      agent:
+        description: Agent CLI Niro runs with
+        type: choice
+        options: [copilot, claude, codex]
+        default: copilot
+      goal:
+        description: Scope for this run — a bootstrap dispatch should pass a narrower goal
+        type: string
+        default: "Review the jupiterOS fleet configuration and test the local arcade-webapp runtime"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: niro-find-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  find:
+    name: Niro find (${{ inputs.agent }})
+    runs-on: ubuntu-latest
+    # Niro's own wall-clock cap (niro/niro.yaml defaults to 180 minutes) should
+    # end a run well before this job timeout; the timeout is the backstop.
+    timeout-minutes: 300
+    environment: niro-autonomous
+    env:
+      NIRO_CONFIG_DIR: niro
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0 (node24)
+        with:
+          persist-credentials: false
+
+      # ---- Guards: fail in seconds on incomplete provider config -------------
+      # A partial provider configuration can fail mid-run or silently fall back
+      # to native auth, so each selected agent's configuration is checked
+      # before anything expensive runs. One step per agent keeps unused
+      # providers' secrets out of the environment entirely.
+      - name: Guard — Copilot BYOK configuration
+        if: inputs.agent == 'copilot'
+        shell: bash
+        env:
+          COPILOT_PROVIDER_API_KEY: ${{ secrets.COPILOT_PROVIDER_API_KEY }}
+          COPILOT_PROVIDER_BASE_URL: ${{ vars.COPILOT_PROVIDER_BASE_URL }}
+          COPILOT_PROVIDER_TYPE: ${{ vars.COPILOT_PROVIDER_TYPE }}
+          COPILOT_MODEL: ${{ vars.COPILOT_MODEL }}
+        run: |
+          set -euo pipefail
+          missing=""
+          for name in COPILOT_PROVIDER_API_KEY COPILOT_PROVIDER_BASE_URL COPILOT_PROVIDER_TYPE COPILOT_MODEL; do
+            if [ -z "${!name:-}" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "::error::Copilot BYOK is incomplete — missing:$missing. All four values are required together; a partial set is treated as native OAuth (and can fail mid-run). Run scripts/niro-setup.sh copilot to configure them."
+            exit 1
+          fi
+          echo "Copilot BYOK configuration present (values not printed)."
+
+      - name: Guard — Claude Code authentication
+        if: inputs.agent == 'claude'
+        shell: bash
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+            echo "::error::Claude Code has no credentials. Set CLAUDE_CODE_OAUTH_TOKEN (claude setup-token) or ANTHROPIC_API_KEY. Run scripts/niro-setup.sh claude to configure one."
+            exit 1
+          fi
+          echo "Claude Code authentication present (values not printed)."
+
+      - name: Guard — Codex authentication
+        if: inputs.agent == 'codex'
+        shell: bash
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CODEX_AUTH_JSON_B64: ${{ secrets.CODEX_AUTH_JSON_B64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${OPENAI_API_KEY:-}" ] && [ -z "${CODEX_AUTH_JSON_B64:-}" ]; then
+            echo "::error::Codex has no credentials. Set OPENAI_API_KEY or CODEX_AUTH_JSON_B64 (base64 of ~/.codex/auth.json). Run scripts/niro-setup.sh codex to configure one."
+            exit 1
+          fi
+          echo "Codex authentication present (values not printed)."
+
+      # ---- Pre-flight: the app's own CI, then a smoke on a spare port --------
+      - name: Set up Go (version pinned by pkgs/arcade-webapp/go.mod)
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: pkgs/arcade-webapp/go.mod
+          cache-dependency-path: pkgs/arcade-webapp/go.sum
+
+      - name: Pre-flight — app CI and smoke on spare port 18095
+        run: ./scripts/niro-preflight.sh
+
+      # ---- Niro and the selected agent CLI, both pinned ---------------------
+      # Fetch-to-file rather than a curl|sh pipeline (no pipefail inside a
+      # pipeline means a failed download could run an empty script and exit 0).
+      - name: Install Niro (pinned v0.1.80)
+        shell: bash
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/niro-install.sh" \
+            https://raw.githubusercontent.com/apxlabs-ai/niro/main/install.sh
+          NIRO_VERSION=v0.1.80 sh "$RUNNER_TEMP/niro-install.sh"
+          niro version
+
+      - name: Install Copilot CLI (pinned 1.0.80)
+        if: inputs.agent == 'copilot'
+        run: npm install -g @github/copilot@1.0.80
+
+      - name: Install Claude Code CLI (pinned 2.1.273)
+        if: inputs.agent == 'claude'
+        run: npm install -g @anthropic-ai/claude-code@2.1.273
+
+      - name: Install Codex CLI (pinned 0.154.0)
+        if: inputs.agent == 'codex'
+        run: npm install -g @openai/codex@0.154.0
+
+      # ---- The run: find-only, autonomous, narrow goal -----------------------
+      # CI has no terminal for approvals, so --autonomous is mandatory; find
+      # never creates fix branches or pull requests.
+      - name: Run Niro find — Copilot
+        if: inputs.agent == 'copilot'
+        shell: bash
+        env:
+          NIRO_GOAL: ${{ inputs.goal }}
+          COPILOT_AUTO_UPDATE: "false" # keep the pinned 1.0.80 (see header)
+          COPILOT_PROVIDER_API_KEY: ${{ secrets.COPILOT_PROVIDER_API_KEY }}
+          COPILOT_PROVIDER_BASE_URL: ${{ vars.COPILOT_PROVIDER_BASE_URL }}
+          COPILOT_PROVIDER_TYPE: ${{ vars.COPILOT_PROVIDER_TYPE }}
+          COPILOT_MODEL: ${{ vars.COPILOT_MODEL }}
+        run: |
+          niro find \
+            --autonomous \
+            --agent=copilot \
+            --goal="$NIRO_GOAL" \
+            --config-dir="$NIRO_CONFIG_DIR" \
+            --include-findings=true \
+            --upload-debug-logs=false
+
+      - name: Run Niro find — Claude
+        if: inputs.agent == 'claude'
+        shell: bash
+        env:
+          NIRO_GOAL: ${{ inputs.goal }}
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          niro find \
+            --autonomous \
+            --agent=claude \
+            --goal="$NIRO_GOAL" \
+            --config-dir="$NIRO_CONFIG_DIR" \
+            --include-findings=true \
+            --upload-debug-logs=false
+
+      - name: Run Niro find — Codex
+        if: inputs.agent == 'codex'
+        shell: bash
+        env:
+          NIRO_GOAL: ${{ inputs.goal }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          CODEX_AUTH_JSON_B64: ${{ secrets.CODEX_AUTH_JSON_B64 }}
+        run: |
+          niro find \
+            --autonomous \
+            --agent=codex \
+            --goal="$NIRO_GOAL" \
+            --config-dir="$NIRO_CONFIG_DIR" \
+            --include-findings=true \
+            --upload-debug-logs=false
+
+      # ---- Artifacts ---------------------------------------------------------
+      # Both are named and archived (the default) so `gh run download` works.
+      # With archive:false the web UI would hand you the raw PDF, but CLI
+      # download fails on it ("not a valid zip") — reproducibility wins.
+      # knowledge.tar is only written on clean completion, so if-no-files-found
+      # stays ignore.
+      - name: Upload penetration-test report (PDF)
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: niro-penetration-test-report
+          path: ${{ env.NIRO_CONFIG_DIR }}/artifacts/penetration-test-report.pdf
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Upload Niro knowledge bundle
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: niro-knowledge
+          path: ${{ env.NIRO_CONFIG_DIR }}/artifacts/knowledge.tar
+          if-no-files-found: ignore
+          retention-days: 30
