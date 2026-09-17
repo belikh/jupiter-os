@@ -18,12 +18,14 @@
 #   vendor -march that implies XOP/FMA4/TBM/LWP/SSE4A and RDRND (gcc bug
 #   116854; this CPU lacks RDRAND entirely, per /proc/cpuinfo). zlib/gmp
 #   checkPhases SIGILLed on the GH runners executing that code.
-#   Phase 3 (now): "x86-64-v3". CPUID on THIS chip confirms every v3
-#   requirement (avx avx2 bmi1 bmi2 fma f16c movbe popcnt cx16 sse4_2), and
-#   v3 carries none of the vintage extensions or RDRND. One level fleet-wide
-#   = one shared closure family: europa, callisto and all kiosks substitute
-#   identical paths from Harmonia, and CI builders can compile AND run-check
-#   everything natively.
+#   Phase 3 (2026-08-22→2026-09-17): "x86-64-v3". CPUID on THIS chip confirmed
+#   every v3 requirement (avx avx2 bmi1 bmi2 fma f16c movbe popcnt cx16
+#   sse4_2), and v3 carries none of the vintage extensions or RDRND. One level
+#   fleet-wide = one shared closure family: europa, callisto and all kiosks
+#   substituted identical paths from Harmonia.
+#   Phase 4 (now): tuning REMOVED fleet-wide (owner decision 2026-09-17). All
+#   hosts take the stock nixpkgs baseline and substitute from cache.nixos.org;
+#   no gccarch tags, no Harmonia dependency for ordinary packages.
 {
   imports = [
     ../../modules/common.nix
@@ -92,7 +94,6 @@
   # Disable Lix (needs >8GB RAM to build); use standard Nix instead
   jupiter.core.lix.enable = false;
   nix.settings.system-features = lib.mkAfter [
-    "gccarch-x86-64-v3"
     "big-parallel"
   ];
   # Retain build-time outputs alongside the rooted runtime closures.
@@ -107,9 +108,10 @@
   # ---- Remote builder (callisto) -------------------------------------------
   # europa is the NAS, not a Skylake build-pool member (modules/core/
   # build-machines.nix covers callisto + the kiosks), so it is a CLIENT of the
-  # pool: callisto builds europa's gccarch-x86-64-v3 closure and europa never
-  # grinds heavy packages on its 2-core Excavator. This is the delegation
-  # CLAUDE.md describes ("europa delegates inline to nix.buildMachines").
+  # pool: callisto builds whatever cache.nixos.org doesn't already hold — the
+  # in-tree packages (meshcentral, dsh, arcade-webapp, …) — so europe never
+  # grinds them out on its 2-core Excavator. This is the delegation CLAUDE.md
+  # describes ("europa delegates inline to nix.buildMachines").
   #
   # Before 2026-09-17 europa carried a stale /root/.ssh/config pointing at
   # nix_build_ssh_key while the key itself was never declared on this host, so
@@ -130,7 +132,6 @@
       maxJobs = 1;
       speedFactor = 2;
       supportedFeatures = [
-        "gccarch-x86-64-v3"
         "big-parallel"
       ];
       mandatoryFeatures = [ ];
@@ -159,8 +160,11 @@
   # ---- ZFS NAS layer -------------------------------------------------------
   jupiter.nas.enable = true;
 
-  # ---- Tuned closure (fleet-shared x86-64-v3 level) -------------------------
-  jupiter.build.microarch = "x86-64-v3"; # lowest common ISA floor of every fleet CPU + CI builder
+  # ---- Closure: portable baseline ------------------------------------------
+  # x86-64-v3 tuning REMOVED 2026-09-17 (owner decision): no microarch flag,
+  # so every package is the stock nixpkgs x86_64-linux build and substitutes
+  # from cache.nixos.org. Harmonia + the callisto builder still cover the
+  # in-tree packages, but nothing is compiled for a non-baseline ISA any more.
 
   # ---- nixpkgs overlays ----------------------------------------------------
   # bmake's `deptgt-interrupt` unit test is timing-sensitive (it asserts a

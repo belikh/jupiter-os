@@ -165,20 +165,11 @@
   nix.settings.cores = 4;
   nix.settings.max-jobs = 1;
 
-  # Advertise capability to BUILD other hosts' tuned derivations.
-  # callisto's own closure is ALSO x86-64-v3-tuned now (jupiter.build.microarch
-  # = "x86-64-v3" below), so this advert matches its own tag. Without the
-  # matching gccarch-<arch> feature, Nix refuses to even attempt a tagged
-  # derivation here regardless of whether the CPU could run it.
-  #
-  # CPU confirmed 2026-07-20: i5-8500T is Coffee Lake — far above the v3
-  # floor, so the gccarch-x86-64-v3 advert is safe both ways (callisto can
-  # compile v3-tagged code AND run it in any checkPhase). Same is true of
-  # every kiosk (i5-6300U) and europa itself (CPUID-proven 2026-08-22), so
-  # one shared level serves the whole fleet; the old per-host bdver4/skylake
-  # tag matrix died with CI run 32540930884's SIGILL cascade.
+  # Advertise capability to BUILD for other hosts. With the fleet-wide
+  # x86-64-v3 tuning removed 2026-09-17 there is no gccarch tag any more: this
+  # builder only ever handles ordinary x86_64-linux derivations (the in-tree
+  # packages cache.nixos.org doesn't hold).
   nix.settings.system-features = lib.mkAfter [
-    "gccarch-x86-64-v3"
     "big-parallel"
   ];
 
@@ -190,7 +181,7 @@
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAILv1nEsuHqlA1ykn1p8wZmhhv1Y77cBxhgu2tAO3DhlP jupiter-fleet-nix-build"
   ];
 
-  jupiter.build.microarch = "x86-64-v3";
+  # (x86-64-v3 tuning removed fleet-wide 2026-09-17: stock baseline + cache.)
 
   # opencode agent rig (modules/core/opencode.nix): wrapped launcher +
   # canonical activation-installed config. Binary itself is installed

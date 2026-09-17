@@ -354,45 +354,28 @@ in
       authKeyFile = config.sops.secrets.tailscale_fleet_authkey.path;
     };
 
-    # ---- Own closure: tuned for the CPU --------------------------------------
-    # Skylake-class i5-6300U — comfortably above the fleet-wide x86-64-v3
-    # floor. CI (.github/workflows/ci.yml, main-only) builds and pushes this
-    # to Harmonia — the kiosk itself only ever substitutes the result, so the
-    # ~7.6GiB RAM caveat below (about ACCEPTING remote build jobs FROM other
-    # hosts) doesn't apply to tuning its own closure.
-    # Verify Harmonia has it before switching: `nix path-info --substituters
-    # http://10.1.1.2:5000 <toplevel>`.
-    jupiter.build.microarch = "x86-64-v3";
-
+    # ---- Own closure: stock baseline -----------------------------------------
+    # x86-64-v3 tuning removed fleet-wide 2026-09-17 (owner decision): the
+    # kiosk takes the stock nixpkgs baseline and substitutes from
+    # cache.nixos.org. No microarch flag, no Harmonia dependency.
+    #
     # ---- Idle-time distributed build server ---------------------------------
     # A kiosk spends ~99.9999% of its life displaying a static dashboard and
-    # idling — let the rest of the fleet borrow its CPU for builds.
-    #
-    # The single gccarch-x86-64-v3 tag is honest here by construction: v3 was
-    # chosen fleet-wide as the LOWEST common ISA floor, so this kiosk (like
-    # callisto and europa itself) can compile AND run-check every tagged
-    # derivation in any fleet closure. History: under per-host vendor tags
-    # the kiosks advertised "gccarch-skylake + gccarch-bdver4" on the theory
-    # that Skylake ⊇ Excavator's standard extensions — true for
-    # AVX2/FMA/BMI/F16C, but bdver4 also permits XOP/TBM/FMA4/LWP/SSE4A and
-    # RDRND (gcc bug 116854), none of which Skylake or any modern runner
-    # has; CI run 32540930884 died exactly there (zlib/gmp SIGILL in their
-    # checkPhases). The psABI level retires that reasoning entirely.
+    # idling — let the rest of the fleet borrow its CPU for builds. With the
+    # x86-64-v3 tuning gone there is no gccarch tag: the kiosk only handles
+    # ordinary x86_64-linux derivations (the in-tree packages cache.nixos.org
+    # doesn't hold).
     #
     # This is the REMOTE side of build eligibility — nix's own daemon here
-    # enforces system-features against what a dispatcher requests,
-    # independent of what the dispatcher's --builders string claims, so both
-    # sides need this tag or the remote refuses the job ("missing system
-    # features", confirmed hitting this in practice before this was added
-    # here). Caveat carried over from build-machines.nix: each kiosk only
-    # has ~7.6GiB RAM vs callisto's 64GB — a large tuned derivation
-    # (clang/llvm) landing here instead of callisto risks swap-thrashing or
-    # OOM. Acceptable per that module's reasoning.
+    # enforces system-features against what a dispatcher requests, independent
+    # of what the dispatcher's --builders string claims. Caveat carried over
+    # from build-machines.nix: each kiosk only has ~7.6GiB RAM vs callisto's
+    # 64GB — a large derivation (clang/llvm) landing here instead of callisto
+    # risks swap-thrashing or OOM. Acceptable per that module's reasoning.
     #
     # The pubkey matches the private half deployed as nix_build_ssh_key sops
     # secret fleet-wide via modules/core/build-machines.nix.
     nix.settings.system-features = lib.mkAfter [
-      "gccarch-x86-64-v3"
       "big-parallel"
     ];
 

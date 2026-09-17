@@ -7,10 +7,10 @@
 # Symmetric peer-to-peer build pool across all Skylake hosts in the fleet:
 # callisto (i5-8500T, 6c/6t, 64GB) + 4 dashboard kiosks (i5-6300U, 2c/4t, 7.6GB).
 #
-# All 5 hosts advertise gccarch-x86-64-v3 — the single fleet-wide psABI level
-# (lowest common floor: europa's Excavator CPUID-proves v3-complete; these
-# Skylake-class hosts are strictly above it), so every host can compile and
-# run-check any other host's tagged derivations.
+# The pool builds the fleet's in-tree packages (cache.nixos.org doesn't hold
+# them). x86-64-v3 tuning was removed fleet-wide 2026-09-17, so there are no
+# gccarch tags any more — every member builds ordinary x86_64-linux
+# derivations and any host may compile for any other.
 # Each host runs maxJobs=1 with cores=4, leaving headroom for its own workload
 # (callisto leaves 2 cores free; kiosks leave the dashboard session responsive).
 #
@@ -72,7 +72,6 @@ let
       maxJobs = 1;
       speedFactor = if isKiosk then 1 else 2; # callisto 2x faster than kiosks
       supportedFeatures = [
-        "gccarch-x86-64-v3"
         "big-parallel"
       ];
       mandatoryFeatures = [ ];
