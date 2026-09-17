@@ -632,34 +632,16 @@
   #     as everything else on this box; no separate backup story until real
   #     data exists.
   #
-  #   - Package: deliberately the NEWEST major (postgresql_18.x) — note the
-  #     upstream/stateVersion-driven default on this fleet would be
-  #     postgresql_17 (system.stateVersion = 26.05) — WITH europa's doCheck /
-  #     doInstallCheck override ported here. Measured before writing this
-  #     (2026-08-22): stock postgresql-18.4.drv
-  #     lsjbscjwnssxa39c9n4xbcwlvspak1l7 (and postgresql_17.10 equally) is
-  #     absent from BOTH places this host could get it — cache.nixos.org
-  #     never has microarch-tagged paths anyway (this host's closure is
-  #     jupiter.build.microarch = "x86-64-v3"), and Harmonia holds no postgres
-  #     build because no fleet closure ever contained one (`curl …/<hash>.
-  #     narinfo` → 404 both; `nix build --dry-run` of the callisto toplevel
-  #     lists the drv under "will be built"). So enabling the service forces
-  #     ONE local build regardless of version. That local build would run
-  #     postgresql's installCheckPhase initdb self-test, which is confirmed
-  #     to fail in callisto's build sandbox (hosts/europa/configuration.nix,
-  #     live finding 2026-08-07). Same class as bmake: the package compiles
-  #     fine, only its flaky sandbox-sensitive self-test breaks; silence
-  #     exactly those two phases here (host-local, like europa's) rather
-  #     than touching any stdenv. Runtime correctness is verified by
-  #     observation after switch (systemctl + psql roundtrip), not by the
-  #     package's own harness. The override can be dropped if Harmonia ever
-  #     carries this host's postgres build (the only plausible carrier —
-  #     cache.nixos.org can't serve v3-tagged paths); until then the
-  #     local build is unconditional.
-  jupiter.services.postgres.package = pkgs.postgresql_18.overrideAttrs {
-    doCheck = false;
-    doInstallCheck = false;
-  };
+  #   - Package: the NEWEST major (postgresql_18.x) — the upstream/
+  #     stateVersion-driven default on this fleet would be postgresql_17
+  #     (system.stateVersion = 26.05). The old doCheck/doInstallCheck
+  #     override was REMOVED 2026-09-17 with the rest of the fleet overrides:
+  #     its premise was that no substituter could carry postgres because the
+  #     closure was microarch-tagged (jupiter.build.microarch = "x86-64-v3"),
+  #     but v3 tuning is gone and postgresql-18.6 is now a cache.nixos.org
+  #     hit — so the package substitutes and its flaky sandbox
+  #     installCheckPhase never runs locally. Runtime correctness is still
+  #     verified by observation after switch (systemctl + psql roundtrip).
   jupiter.services.postgres.enable = true;
 
   # ---- Procurement MCP — fleet Postgres cache (10.1.1.3 `jupiter` db, schema `procurement`) ----

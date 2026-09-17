@@ -131,9 +131,11 @@ scripts; when a wrapper is unavoidable it follows the same threshold.
 
 - **Go: single hard pin** from nixpkgs, fleet-wide. Every Go derivation builds with
   the same toolchain; bumping the pin is a deliberate, repo-wide commit — never a
-  per-package escape hatch. Known debt: `crush` currently overrides with a newer Go
-  from unstable (`modules/core/crush.nix`); it collapses onto the pin at the next
-  bump rather than propagating the pattern.
+  per-package escape hatch. The former known debt — `crush` overriding with a newer
+  Go from unstable — was paid off in the 2026-09-16 nixpkgs bump: the pin now ships
+  Go 1.26.7, which satisfies crush's go.mod, so the `buildGoModule.override` and the
+  whole `nixpkgs-unstable` input are gone (`modules/core/crush.nix`). Back to one
+  Go toolchain, no per-package escape hatch.
 - **Vendored third-party assets** (htmx, AriaNg): allowed, stored in-tree or fetched
   by fixed hash in Nix, updated by deliberate commits. Never pulled at runtime,
   never via package managers.

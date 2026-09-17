@@ -11,13 +11,6 @@
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-unstable";
 
-    # Deliberately NOT `inputs.nixpkgs.follows`-ed to the pin above — this
-    # tracks nixos-unstable's own moving HEAD so modules/core/crush.nix can
-    # take crush from here (fast-moving upstream, want current releases)
-    # while every other package stays on the fleet's single pinned nixpkgs
-    # commit. Update independently with `nix flake update nixpkgs-unstable`.
-    nixpkgs-unstable.url = "github:nixos/nixpkgs/nixos-unstable";
-
     # Declarative partitioning (ZFS-on-root layouts in modules/storage/zfs-profiles.nix)
     disko = {
       url = "github:nix-community/disko";
@@ -97,7 +90,6 @@
     {
       self,
       nixpkgs,
-      nixpkgs-unstable,
       disko,
       impermanence,
       sops-nix,
@@ -210,13 +202,11 @@
             # currently off for europa and callisto.
             {
               nixpkgs.overlays = [
-                # modules/core/crush.nix packages crush itself, pinned
-                # straight to a GitHub release tag (nixpkgs' own crush
-                # derivation lags upstream releases too much) — but its
-                # go.mod requires a newer Go toolchain than this flake's
-                # pinned nixpkgs ships. Expose nixpkgs-unstable's `go` alone
-                # (not the whole package set) so crush.nix can build against
-                # it without floating anything else in the closure.
+                # (crush-go overlay REMOVED 2026-09-17: the 2026-09-16 nixpkgs
+                # bump brought Go 1.26.7, which satisfies crush 0.87.0's
+                # go.mod, so modules/core/crush.nix builds with the pinned Go
+                # directly and flake.nix no longer needs the nixpkgs-unstable
+                # input.)
                 (final: prev: {
                   # nixpkgs 2026-09-16 removed the `buildGo125Module` alias
                   # (Go 1.25 is EOL), but sops-nix — newest commit is
@@ -226,7 +216,6 @@
                   # references the name, so only sops-nix is affected. Drop
                   # this the moment sops-nix moves to buildGoModule.
                   buildGo125Module = prev.buildGoModule;
-                  crush-go = nixpkgs-unstable.legacyPackages.${prev.stdenv.hostPlatform.system}.go;
                   # The flake rev, fleet-wide (arcade remediation W4a):
                   # modules/services/arcade-webapp.nix stamps it into the
                   # webapp's version so a live binary identifies its tree

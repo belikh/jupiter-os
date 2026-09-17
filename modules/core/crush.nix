@@ -12,10 +12,12 @@ let
   # modules/core/ecc.nix — nixpkgs' own `crush` derivation lags upstream
   # releases (0.81.0 in nixpkgs vs 0.87.0 here as of 2026-07-26). Bump by
   # editing version/sha256/vendorHash (recompute vendorHash with
-  # lib.fakeHash + a build, same as any Go package). `crush-go` is the flake
-  # root's nixpkgs-unstable overlay — this release's go.mod needs a newer Go
-  # than the fleet's pinned nixpkgs ships.
-  crush = pkgs.buildGoModule.override { go = pkgs.crush-go; } rec {
+  # lib.fakeHash + a build, same as any Go package). Builds with the fleet's
+  # pinned Go directly: the 2026-09-16 nixpkgs bump brought Go 1.26.7, which
+  # satisfies crush 0.87.0's go.mod (go 1.26.5), retiring the old
+  # buildGoModule.override + nixpkgs-unstable escape hatch — the debt
+  # stack-guide §8 said would collapse at the next pin bump.
+  crush = pkgs.buildGoModule rec {
     pname = "crush";
     version = "0.87.0";
 

@@ -166,59 +166,18 @@
   # from cache.nixos.org. Harmonia + the callisto builder still cover the
   # in-tree packages, but nothing is compiled for a non-baseline ISA any more.
 
-  # ---- nixpkgs overlays ----------------------------------------------------
-  # bmake's `deptgt-interrupt` unit test is timing-sensitive (it asserts a
-  # SIGINT yields exit 130) and flakes non-deterministically under load / when
-  # the closure is microarch-tuned — on the first full tuned build it failed
-  # (expected 130, got 0), cascading through nix → nixos-system-europa and
-  # sinking the entire run. bmake compiles fine; only its check phase is flaky.
-  # This overlay is in scope when pallene builds .#nixosConfigurations.europa.
-  #
-  # postgresql-18.4's installCheckPhase (its own regression-test harness,
-  # which spins up a temp instance via `initdb --auth trust` under
-  # tmp_install/) fails on callisto's build sandbox -- confirmed live
-  # (2026-08-07): the package itself builds and installs cleanly (every
-  # binary/symlink completes), only the subsequent self-test's initdb call
-  # exits non-zero. The real initdb stderr is redirected into
-  # tmp_install/log/initdb-template.log inside the build sandbox, which is
-  # torn down on failure -- `nix log` only shows the wrapper, not that
-  # file, so the underlying cause (locale/sandbox-restriction on this
-  # builder, most likely) is unconfirmed. Same class of problem as bmake
-  # above: skip the check, don't chase a flaky/environment-sensitive test
-  # harness that doesn't affect the shipped binary. Nothing on europa
-  # actually runs postgresql as a service (headscale here uses sqlite) --
-  # it's only a transitive build dependency of something else in the
-  # closure.
-  #
-  # harmonia: the pr1139 ranged-206 patch overlay was REMOVED 2026-08-25.
-  # It was written against harmonia-v3.1.0 because nix-community/harmonia#1139
-  # (ranged NAR requests answering 200 instead of 206) was still unmerged;
-  # a nixpkgs bump since brought harmonia-3.2.0, whose source already contains
-  # the fix — patch(1) failed with "Reversed (or previously applied) patch
-  # detected!" in CI, breaking the europa closure build. Exactly the drop
-  # condition the removed comment named: a release containing #1139 arrived
-  # via the pin bump.
-  nixpkgs.overlays = [
-    (_final: prev: {
-      bmake = prev.bmake.overrideAttrs { doCheck = false; };
-      postgresql_18 = prev.postgresql_18.overrideAttrs {
-        doCheck = false;
-        doInstallCheck = false;
-      };
-    })
-    # stdenv-wide doCheck=false overlay: REMOVED 2026-08-16. 7efc8c4
-    # re-introduced it (europa-only) for the bdver4 local-build era, when
-    # gmp/libmpc `make check` SIGILLed on this RDRAND-less Excavator CPU
-    # under -march=bdver4 (gcc bug 116854). The overlay rewrites the output
-    # hash of EVERY doCheck=true derivation (zlib and friends) all the way
-    # down — measured 2026-08-16: 2308 unsubstitutable local builds vs ~70
-    # without it. That is exactly the buildability rule in CLAUDE.md:
-    # override the one package that misbehaves (bmake/postgresql_18 above),
-    # never the stdenv. The underlying RDRND hazard is gone for good under
-    # x86-64-v3: level baselines never imply RDRND, so gmp/libmpc checks run
-    # clean both on CI builders and on this CPU. Keep the lesson: if a
-    # single package's self-test misbehaves, override that package only.
-  ];
+  # ---- nixpkgs overlays: NONE ----------------------------------------------
+  # Every europa package override was removed 2026-09-17 (owner decision).
+  # The bmake and postgresql_18 `doCheck=false` overrides were both
+  # cache-mitigating workarounds that backfired: bmake sits upstream of
+  # `nix-manual`, so overriding it changed nix's hash and forced a source
+  # build of nix (verified: pkgs.nix = qfwk7cy without it, lqi2njw with it),
+  # and both packages are cache.nixos.org hits at the current pin. Leaving
+  # them untouched lets them substitute — and because they substitute, their
+  # flaky checkPhases never run locally, which is exactly what the overrides
+  # were trying to achieve. The earlier stdenv-wide `doCheck=false` overlay
+  # (removed 2026-08-16) proved the same rule at fleet scale: never rewrite a
+  # derivation to dodge a check; fix the pin or let the cache carry it.
 
   # ---- Networking ----------------------------------------------------------
   # Static identity below the DHCP pool so iSCSI/NFS clients have a stable
