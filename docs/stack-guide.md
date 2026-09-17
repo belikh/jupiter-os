@@ -16,6 +16,15 @@ no SPA frameworks, ever.
   Fileserver apps belong here by definition — Harmonia (binary cache serving
   `/nix/store` over HTTP) is exactly that, so it stays on europa permanently,
   not as an exception.
+  - **Exception — MeshCentral (2026-09-17, owner decision).** The MeshCentral
+    remote-management server (`modules/services/meshcentral.nix`) runs on
+    europa. The service is management infrastructure for the fleet: it must
+    outlive the hosts it manages, and callisto — the serving host — boots its
+    root over iSCSI from europa and may legitimately be down when someone needs
+    to reach a machine through MeshCentral. europa is the always-on host, so it
+    is the only member that can carry a management plane. This is a named,
+    deliberate exception; the default stays *callisto for everything
+    user-facing*.
 - **Cloudflare Tunnel is the perimeter.** Services bind locally; exposure happens
   through tunnels with Cloudflare Access in front. Auth-at-the-edge is the default;
   apps add their own auth only when they need identities finer than Access provides.
@@ -56,6 +65,14 @@ Banned outright:
   Postgres. (Rationale: one database to back up, tune, and reason about; fleet-wide
   Postgres on callisto, live since 2026-08-22.)
 - **Node/npm as a build dependency.** No `node_modules` anywhere in the flake.
+  - **Exception — MeshCentral (2026-09-17, owner decision).** MeshCentral is a
+    Node.js application with no non-Node implementation. It is the fleet's only
+    Node service, packaged in-tree at `pkgs/meshcentral` with nixpkgs'
+    `buildNpmPackage`: the source is pinned by `fetchFromGitHub` revision and
+    the dependency tree by `npmDepsHash`. No `node_modules` is committed; the
+    hash pins the tree `npm ci` assembles at build time. The runtime is
+    nixpkgs' `nodejs_22` (upstream's supported LTS). Do not read this as
+    licence to vend another JS service without its own entry here.
 - **New languages** (Python, Rust, Lua-as-logic, …) require this document changing
   first — same rule as the style guide's change process.
 
@@ -77,6 +94,13 @@ Banned outright:
 - **Postgres is canonical.** App state, dashboards config, user prefs: tables on
   callisto. One cluster, one backup story (restic), schema migrations owned by the
   module that introduced them.
+  - **Exception — MeshCentral (2026-09-17, owner decision).** MeshCentral's only
+    supported embedded database is NeDB (`@seald-io/nedb`); the sole alternative
+    it ships is MongoDB, and it has no Postgres backend. Its per-domain state
+    therefore lives as files under its own data directory on europa, not in the
+    fleet cluster. This is deliberate and bounded: it is management-plane state
+    for MeshCentral itself, not platform state, and Postgres remains canonical
+    for everything an application the platform owns needs to persist.
 - **Files are artifacts, not truth.** Generated/exported things — arcade inventory
   JSON, scraped Pegasus metadata, ROM trees — live on disk where the pipeline needs
   them, but the database records what matters about them. If a file and its row

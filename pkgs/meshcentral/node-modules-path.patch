@@ -1,0 +1,11 @@
+--- a/meshcentral.js
++++ b/meshcentral.js
+@@ -4199,7 +4199,7 @@
+                         if (ex.code == "ERR_PACKAGE_PATH_NOT_EXPORTED") { 
+                             var rootPath = __dirname;
+                             if ((__dirname.endsWith('/node_modules/meshcentral')) || (__dirname.endsWith('\\node_modules\\meshcentral')) || (__dirname.endsWith('/node_modules/meshcentral/')) || (__dirname.endsWith('\\node_modules\\meshcentral\\'))) { rootPath = require('path').join(__dirname, '../..'); }
+-                            var pkgPath = require('path').join(rootPath, 'node_modules', moduleName, 'package.json');
++                            var pkgPath = require('path').join(__dirname, 'node_modules', moduleName, 'package.json');
+                             if (require('fs').existsSync(pkgPath)) { modulePath = pkgPath; }
+                         } else { throw new Error(); }
+                     }

@@ -516,6 +516,23 @@
         }
       );
 
+      # meshcentral — web-based remote monitoring and management server, built
+      # from the owner's fork at a pinned revision (pkgs/meshcentral). Exposed
+      # standalone (untuned legacyPackages, same as dsh/ariang) so the
+      # npmDepsHash can be recomputed via `nix build .#meshcentral` without
+      # pulling europa's whole x86-64-v3-tuned closure. Consumed by europa via
+      # modules/services/meshcentral.nix's pkgs.callPackage. nodejs_22 is
+      # pinned explicitly: the fork's .npmrc sets engine-strict and upstream
+      # supports Node >=20 LTS.
+      packages.x86_64-linux.meshcentral = (
+        import ./pkgs/meshcentral {
+          lib = nixpkgs.lib;
+          fetchFromGitHub = nixpkgs.legacyPackages.x86_64-linux.fetchFromGitHub;
+          buildNpmPackage = nixpkgs.legacyPackages.x86_64-linux.buildNpmPackage;
+          nodejs = nixpkgs.legacyPackages.x86_64-linux.nodejs_22;
+        }
+      );
+
       # suno-backup — Go daemon that mirrors a Suno account's WAV masters +
       # the complete per-clip metadata into europa's tank/archive/suno dataset.
       # Built from in-tree stdlib-only source. Exposed standalone so the

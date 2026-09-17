@@ -45,6 +45,7 @@
     ../../modules/services/suno-backup.nix
     ../../modules/services/suno-web.nix
     ../../modules/services/aria2.nix
+    ../../modules/services/meshcentral.nix
     ../../modules/core/build-machines.nix
   ];
 
@@ -106,7 +107,6 @@
   # ---- Local builds --------------------------------------------------------
   # No remote build delegation to callisto or kiosks. Europa builds its own
   # gccarch-x86-64-v3 packages locally (its Excavator CPU is v3-complete).
-
 
   # ---- Storage profile (OS SSD) --------------------------------------------
   # Stateful root (no impermanence — the NAS needs persistent state).
@@ -467,6 +467,34 @@
     # Enable IPv6 DHT (--enable-dht6). Bind to europa's stable global unicast
     # address (the mngtmpaddr EUI-64 one, not the rotating temporaries).
     dhtListenAddr6 = "2402:1060:2305:0:d267:26ff:fed3:b0a5";
+  };
+
+  # ---- MeshCentral (remote management) ------------------------------------
+  # A named stack-guide §1 exception: the management plane lives on the
+  # always-on NAS rather than callisto, because callisto boots its root over
+  # iSCSI from europa and may legitimately be down when someone needs to reach
+  # a machine through MeshCentral. Built from the owner's fork
+  # (pkgs/meshcentral).
+  #
+  # LAN-only, direct TLS: MeshCentral terminates TLS itself on :443 and
+  # generates its own server certificate; the firewall opens :443 for the
+  # trusted home segment only. There is NO public ingress — no Cloudflare
+  # Tunnel route and no router port-forward (owner decision 2026-09-17).
+  # Agents and browsers reach it at europa's static LAN address, the same
+  # address every other host already dials europa on. redirPort 0 disables the
+  # :80 redirect listener — headscale already owns :80 for its ACME HTTP-01
+  # challenge.
+  #
+  # If this is ever exposed beyond the LAN, put an authenticating perimeter in
+  # front of it first: it is a remote-control plane (stack-guide §4).
+  jupiter.services.meshcentral = {
+    enable = true;
+    port = 443;
+    aliasPort = 443;
+    redirPort = 0;
+    cert = config.jupiter.fleet.addresses.europa;
+    certUrl = "https://${config.jupiter.fleet.addresses.europa}/";
+    openFirewall = true;
   };
 
   # ---- sops secrets --------------------------------------------------------
