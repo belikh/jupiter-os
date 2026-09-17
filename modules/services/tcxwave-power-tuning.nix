@@ -166,10 +166,12 @@ in
 
     # A kiosk has no operator tailing `journalctl` day to day, and every
     # persisted log line is a write the disk had to wake up for.
-    services.journald.extraConfig = ''
-      Storage=volatile
-      RuntimeMaxUse=64M
-    '';
+    # (`extraConfig` was removed upstream in the 2026-09-16 nixpkgs bump;
+    # settings.Journal writes the same journald.conf keys.)
+    services.journald.settings.Journal = {
+      Storage = "volatile";
+      RuntimeMaxUse = "64M";
+    };
 
     # Udev rules for integrated POS peripherals (MSR, customer display, etc.)
     # to grant the kiosk session user access to them via the video group.

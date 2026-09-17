@@ -222,6 +222,14 @@
                 # (not the whole package set) so crush.nix can build against
                 # it without floating anything else in the closure.
                 (final: prev: {
+                  # nixpkgs 2026-09-16 removed the `buildGo125Module` alias
+                  # (Go 1.25 is EOL), but sops-nix — newest commit is
+                  # 2026-09-09 — still calls it, so sops-install-secrets
+                  # throws at eval. Alias it to the current builder. The
+                  # override is scoped in effect: nixpkgs itself no longer
+                  # references the name, so only sops-nix is affected. Drop
+                  # this the moment sops-nix moves to buildGoModule.
+                  buildGo125Module = prev.buildGoModule;
                   crush-go = nixpkgs-unstable.legacyPackages.${prev.stdenv.hostPlatform.system}.go;
                   # The flake rev, fleet-wide (arcade remediation W4a):
                   # modules/services/arcade-webapp.nix stamps it into the
