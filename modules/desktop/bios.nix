@@ -76,6 +76,9 @@ in
         "noatime"
         "x-systemd.automount"
         "x-systemd.idle-timeout=300"
+        # Bounded: a missing/unreachable NAS tree must not stall activation
+        # for systemd's default 90s mount timeout.
+        "x-systemd.mount-timeout=30"
       ];
     };
 
@@ -84,8 +87,13 @@ in
       description = "Deploy BIOS/firmware files to retroarch system directory";
       wantedBy = [ "multi-user.target" ];
       before = [ "jupiter-arcade.service" ];
+      # WEAK dependency on purpose: a missing BIOS tree on the NAS (or an NFS
+      # timeout) must not fail activation. A hard `requires` here wedged every
+      # switch on callisto/kiosks once europa:/tank/archive/retro/bios did not
+      # exist — the mount timed out and switch-to-configuration exited 4,
+      # leaving the system activated but never persisted.
       after = [ "mnt-europa-bios.mount" ];
-      requires = [ "mnt-europa-bios.mount" ];
+      wants = [ "mnt-europa-bios.mount" ];
       serviceConfig = {
         Type = "oneshot";
         User = cfg.sessionUser;
@@ -93,6 +101,7 @@ in
         path = [
           pkgs.coreutils
           pkgs.rsync
+          pkgs.util-linux
         ];
       };
       script = ''
@@ -100,6 +109,14 @@ in
         BIOS_DIR="/home/${cfg.sessionUser}/.config/retroarch/system"
         SRC_ROOT="${cfg.mountBase}"
         mkdir -p "$BIOS_DIR"
+
+        # findmnt reads /proc/self/mountinfo and does NOT trigger the
+        # automount, so an absent NAS tree exits here instead of hanging on a
+        # second NFS timeout.
+        if ! findmnt -rn -M "$SRC_ROOT" >/dev/null 2>&1; then
+          echo "jupiter-bios: $SRC_ROOT is not mounted; skipping BIOS deploy"
+          exit 0
+        fi
 
         ${lib.concatMapStringsSep "\n" (sys: ''
           SYS_DIR="$SRC_ROOT/${sys}"

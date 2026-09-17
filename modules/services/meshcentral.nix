@@ -263,11 +263,19 @@ in
         DynamicUser = true;
         StateDirectory = "meshcentral";
         StateDirectoryMode = "0750";
-        # Writable even if a host overrides dataDir/filesDir off the
-        # StateDirectory: ProtectSystem=strict makes everything else read-only.
+        # StateDirectory already makes /var/lib/meshcentral writable; these
+        # explicit paths cover a host that points dataDir/filesDir elsewhere.
+        # The "-" prefix is REQUIRED: without it, systemd's mount-namespace
+        # setup aborts the whole switch when the path doesn't exist yet (the
+        # default subdirs are created by MeshCentral on first start):
+        #   Failed to set up mount namespacing:
+        #   /var/lib/private/meshcentral/data: No such file or directory
+        # DynamicUser turns /var/lib/meshcentral into a symlink to
+        # /var/lib/private/meshcentral, so the not-yet-created subdir resolves
+        # there and systemd refuses to bind a missing path without "-".
         ReadWritePaths = [
-          cfg.dataDir
-          cfg.filesDir
+          "-${cfg.dataDir}"
+          "-${cfg.filesDir}"
         ];
 
         # Node needs writable+executable memory (JIT), so unlike the Go

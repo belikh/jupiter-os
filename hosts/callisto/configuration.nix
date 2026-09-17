@@ -632,16 +632,18 @@
   #     as everything else on this box; no separate backup story until real
   #     data exists.
   #
-  #   - Package: the NEWEST major (postgresql_18.x) — the upstream/
-  #     stateVersion-driven default on this fleet would be postgresql_17
-  #     (system.stateVersion = 26.05). The old doCheck/doInstallCheck
-  #     override was REMOVED 2026-09-17 with the rest of the fleet overrides:
-  #     its premise was that no substituter could carry postgres because the
-  #     closure was microarch-tagged (jupiter.build.microarch = "x86-64-v3"),
-  #     but v3 tuning is gone and postgresql-18.6 is now a cache.nixos.org
-  #     hit — so the package substitutes and its flaky sandbox
-  #     installCheckPhase never runs locally. Runtime correctness is still
-  #     verified by observation after switch (systemctl + psql roundtrip).
+  #   - Package: the NEWEST major (postgresql_18.x). The wrapper default is
+  #     postgresql_17 (the stateVersion-26.05 default), but the live `jupiter`
+  #     database lives in the /var/lib/postgresql/18 cluster — so keep the v18
+  #     PIN explicit. Dropping it (as the 2026-09-17 override cleanup briefly
+  #     did) silently initialises a fresh v17 cluster and orphans `jupiter`,
+  #     hard-failing jupiter-pg-provision-homeassistant with "database
+  #     \"jupiter\" does not exist". The old doCheck/doInstallCheck override is
+  #     gone (stock postgresql-18.6 is a cache.nixos.org hit now, so its flaky
+  #     installCheckPhase never runs locally) — but the VERSION choice is
+  #     load-bearing, not the override. Runtime correctness is verified by
+  #     observation after switch (systemctl + psql roundtrip).
+  jupiter.services.postgres.package = pkgs.postgresql_18;
   jupiter.services.postgres.enable = true;
 
   # ---- Procurement MCP — fleet Postgres cache (10.1.1.3 `jupiter` db, schema `procurement`) ----
