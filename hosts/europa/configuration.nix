@@ -104,9 +104,52 @@
   # the full build closure of the retained builds.
   nix.settings.keep-outputs = true;
 
-  # ---- Local builds --------------------------------------------------------
-  # No remote build delegation to callisto or kiosks. Europa builds its own
-  # gccarch-x86-64-v3 packages locally (its Excavator CPU is v3-complete).
+  # ---- Remote builder (callisto) -------------------------------------------
+  # europa is the NAS, not a Skylake build-pool member (modules/core/
+  # build-machines.nix covers callisto + the kiosks), so it is a CLIENT of the
+  # pool: callisto builds europa's gccarch-x86-64-v3 closure and europa never
+  # grinds heavy packages on its 2-core Excavator. This is the delegation
+  # CLAUDE.md describes ("europa delegates inline to nix.buildMachines").
+  #
+  # Before 2026-09-17 europa carried a stale /root/.ssh/config pointing at
+  # nix_build_ssh_key while the key itself was never declared on this host, so
+  # europa->callisto SSH failed with "no such identity" and the delegation had
+  # silently never worked — europa self-built everything. The key is the fleet
+  # build key every builder already trusts at root (public half
+  # "jupiter-fleet-nix-build", pinned in callisto's authorized_keys).
+  sops.secrets.nix_build_ssh_key = { };
+
+  nix.distributedBuilds = true;
+  nix.buildMachines = [
+    {
+      hostName = config.jupiter.fleet.addresses.callisto;
+      system = "x86_64-linux";
+      protocol = "ssh-ng";
+      sshUser = "root";
+      sshKey = config.sops.secrets.nix_build_ssh_key.path;
+      maxJobs = 1;
+      speedFactor = 2;
+      supportedFeatures = [
+        "gccarch-x86-64-v3"
+        "big-parallel"
+      ];
+      mandatoryFeatures = [ ];
+    }
+  ];
+
+  programs.ssh.extraConfig = ''
+    Host ${config.jupiter.fleet.addresses.callisto}
+      IdentityFile ${config.sops.secrets.nix_build_ssh_key.path}
+      IdentitiesOnly yes
+  '';
+
+  # Pin callisto's host key declaratively (captured 2026-07-24; same value the
+  # disabled build-machines.nix module carries) so the builder connection never
+  # depends on a mutable known_hosts.
+  programs.ssh.knownHosts.callisto = {
+    hostNames = [ config.jupiter.fleet.addresses.callisto ];
+    publicKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIINKUMgEPCzZRq74JtvkMmfmT6gOmZWGGq8G9lNqqKsU";
+  };
 
   # ---- Storage profile (OS SSD) --------------------------------------------
   # Stateful root (no impermanence — the NAS needs persistent state).
