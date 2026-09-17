@@ -1,3 +1,15 @@
+# OpenDesign daemon (`od` CLI + /api server).
+#
+# The source arrives pre-patched (better-sqlite3 13.0.3 + matching lockfile)
+# from pkgs/open-design-patched — see that derivation for the Node 24.19
+# rationale. This package only builds and installs it.
+#
+# Vendored when upstream retired its Nix distribution (2026-08-31,
+# nexu-io/open-design@49cc5105). The workspace list is the transitive
+# `workspace:*` dependency closure of @open-design/daemon at the pinned
+# rev, in dependency order (verify against the repo's package.jsons when
+# bumping open-design-src; it matched the retired flake's
+# daemonWorkspacePaths at 0.22.1).
 {
   lib,
   stdenv,
@@ -9,67 +21,39 @@
   pkg-config,
   nodejs,
   pnpm_10,
-  open-design,
-  jq,
+  src,
+  version,
 }:
-# OpenDesign daemon with better_sqlite3 bumped to 13.0.3 to fix Node 24.19
-# crash (RemoveEnvironmentCleanupHook: env != nullptr in
-# Statement::~Statement). Upstream pins 12.10.0 (v131, Node 22) while the
-# fleet runs nodejs_24 v137 (24.19). 13.0.3 ships v137 prebuilds and the
-# V8 API fix, so the daemon stays on Node 24 (no v3 Node compile) and
-# Design Harness (od-next) no longer crash-loops.
 let
   pname = "open-design-daemon";
-  version = (lib.importJSON "${open-design}/package.json").version;
 
-  # Keep in sync with open-design/flake.nix daemonWorkspacePaths
+  # Transitive `workspace:*` runtime-dependency closure of @open-design/daemon
+  # at the pinned rev, in topological build order: each entry's workspace
+  # dependencies appear earlier in the list, because buildPhase runs
+  # `pnpm -C <target> run build` sequentially and tsc resolves the
+  # dependencies' emitted dist/. Recompute when bumping open-design-src
+  # (0.22.1 edges: sidecar → platform, launcher-proto → sidecar-proto,
+  # agui-adapter/plugin-runtime → contracts, contracts/sidecar-proto/
+  # launcher-proto → release).
   workspacePaths = [
     "packages/release"
     "packages/contracts"
-    "packages/registry-protocol"
     "packages/agui-adapter"
     "packages/plugin-runtime"
     "packages/sidecar-proto"
     "packages/launcher-proto"
-    "packages/sidecar"
     "packages/platform"
+    "packages/sidecar"
     "packages/diagnostics"
+    "packages/registry-protocol"
     "apps/daemon"
   ];
 
   pnpmWorkspaceFilters = map (workspacePath: "./${workspacePath}") workspacePaths;
 
-  # Patched src with better_sqlite3 bumped for Node 24.19. Overwrites BOTH
-  # apps/daemon/package.json AND the root pnpm-lock.yaml — fetchPnpmDeps and
-  # the install phase both run `pnpm install --frozen-lockfile`, which
-  # rejects a manifest whose specifiers don't match the lockfile
-  # (ERR_PNPM_OUTDATED_LOCKFILE). The lockfile alongside this default.nix
-  # was regenerated with `pnpm install` after the bump; refresh it whenever
-  # the pinned version changes.
-  patchedSrc = stdenv.mkDerivation {
-    name = "open-design-patched-src";
-    src = open-design;
-    nativeBuildInputs = [ jq ];
-    installPhase = ''
-      cp -r $src $out
-      chmod -R u+w $out
-      ${lib.getExe jq} --arg v "13.0.3" '.dependencies."better-sqlite3" = $v' $out/apps/daemon/package.json > $out/apps/daemon/package.json.tmp && mv $out/apps/daemon/package.json.tmp $out/apps/daemon/package.json
-      cp ${./pnpm-lock.yaml} $out/pnpm-lock.yaml
-      echo "Bumped better_sqlite3 to 13.0.3 for Node 24.19 in patchedSrc"
-      grep -q '"better-sqlite3": "13.0.3"' $out/apps/daemon/package.json || (echo "bump failed" >&2; exit 1)
-      grep -q 'better-sqlite3@13.0.3' $out/pnpm-lock.yaml || (echo "lockfile copy failed" >&2; exit 1)
-    '';
-  };
-
-  src = patchedSrc;
-  pnpmDepsSrc = patchedSrc;
-
-  # Use fakeHash to discover the correct pnpmDeps hash after the bump.
-  # First build will fail with “got: sha256-…”, copy that into pnpmDepsHash
-  # and rebuild. Keep the original hash as a comment for reference.
-  pnpmDepsHash = "sha256-t/ERjkHsCHqI24aCGJ10peRN4NkPdkG5gs+262eu37o="; # was lib.fakeHash, was (import "${open-design}/nix/pnpm-deps.nix").daemonHash for 12.10.0
-
-  pnpm_10_fixed = pnpm_10;
+  # Bump after changing src/lockfile/workspacePaths: `nix build .#open-design-daemon`
+  # reports the fetched-store hash in the mismatch error, copy it here.
+  pnpmDepsHash = "sha256-w5PgyUyslRbyv9BiGO2ySwgbCAXQ1oki8lzh6iVJsCU=";
 in
 stdenv.mkDerivation (finalAttrs: {
   inherit pname version src;
@@ -78,7 +62,7 @@ stdenv.mkDerivation (finalAttrs: {
 
   nativeBuildInputs = [
     nodejs
-    pnpm_10_fixed
+    pnpm_10
     pnpmConfigHook
     makeWrapper
     python3
@@ -88,9 +72,9 @@ stdenv.mkDerivation (finalAttrs: {
 
   pnpmDeps = fetchPnpmDeps {
     inherit (finalAttrs) pname version;
-    src = pnpmDepsSrc;
+    src = finalAttrs.src;
     hash = pnpmDepsHash;
-    pnpm = pnpm_10_fixed;
+    pnpm = pnpm_10;
     pnpmWorkspaces = pnpmWorkspaceFilters;
     fetcherVersion = 3;
   };
@@ -114,11 +98,12 @@ stdenv.mkDerivation (finalAttrs: {
 
     # Stage the upstream prebuild rather than building from source. 13.0.3
     # ships v137 prebuilds (Node 24 = ABI 137) — that is the entire point of
-    # the bump (see header). The node-gyp source build generated empty gyp
-    # targets under the Nix sandbox (TOUCH-only make, no CC/LD for either
-    # better_sqlite3 or test_extension) and never produced the .node; the
-    # prebuild is upstream's own Node-24 binary. node-gyp-build resolves
-    # build/Release first, so copy the platform prebuild there.
+    # the bump (see pkgs/open-design-patched). The node-gyp source build
+    # generated empty gyp targets under the Nix sandbox (TOUCH-only make, no
+    # CC/LD for either better_sqlite3 or test_extension) and never produced
+    # the .node; the prebuild is upstream's own Node-24 binary.
+    # node-gyp-build resolves build/Release first, so copy the platform
+    # prebuild there.
     echo "Staging better-sqlite3 13.x prebuild (Node $(node --version), ABI $(node -p process.versions.modules)) at $bsq_dir/build/Release/"
     (
       cd "$bsq_dir"

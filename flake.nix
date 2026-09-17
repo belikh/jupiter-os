@@ -85,16 +85,12 @@
     # callisto via modelRouterModule.
 
     # OpenDesign — local-first design product (daemon `od` + Next.js web
-    # frontend). Provides a NixOS module (services.open-design) and
-    # packages for daemon/web. Justified by a registered host that uses
-    # it: callisto enables jupiter.services.openDesign. Design artefacts
-    # are generated as real files (HTML/PDF/PPTX/MP4) via agent skills;
-    # the web frontend proxies /api/* to the daemon and serves the static
-    # SPA. Enabled on the serving host alongside dsh/opencode-web.
-    open-design = {
-      url = "github:nexu-io/open-design";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
+    # frontend). Uses only jupiter-vendored packaging now: upstream retired
+    # its official Nix distribution on 2026-08-31 (nexu-io/open-design@49cc5105
+    # removed flake.nix and nix/), so there is no flake to follow. The NixOS
+    # module is vendored at modules/services/open-design-*.nix and the
+    # daemon/web packages under pkgs/open-design-*; only the source pin
+    # (pkgs/open-design-src) moves upstream.
   };
 
   outputs =
@@ -108,7 +104,6 @@
       ha-linux-agent,
       jovian,
       suno-web,
-      open-design,
       ...
     }:
     let
@@ -136,11 +131,12 @@
                   # would perturb every host's pkgs — they're applied only on
                   # hosts that opt into the gaming stack below.
                   jovian.nixosModules.default
-                  # OpenDesign daemon + web frontend (services.open-design).
-                  # Imported fleet-wide (inert until services.open-design.enable
-                  # or jupiter.services.openDesign.enable is set), so every host
-                  # can opt in without a per-host flake import.
-                  open-design.nixosModules.default
+                  # OpenDesign's NixOS module is vendored in-tree
+                  # (modules/services/open-design-nixos.nix) and imported by the
+                  # jupiter wrapper modules/services/open-design.nix, so only
+                  # hosts that opt in evaluate it. Upstream retired its own
+                  # Nix distribution on 2026-08-31 — there is no flake module
+                  # to import any more.
                 ];
               }
             )
@@ -375,7 +371,7 @@
       # cannot be fetched by the builders) and the upstream NixOS module
       # is vendored at modules/services/model-router.nix, which the host
       # imports directly; this module only pins the package with the flake
-      # rev for version stamping, mirroring openDesignDaemonModule.
+      # rev for version stamping, mirroring openDesignPackagesModule.
       modelRouterModule =
         { pkgs, ... }:
         {
@@ -384,34 +380,31 @@
           };
         };
 
-      # OpenDesign daemon with better_sqlite3 bumped to 13.0.3 for Node 24.19.
-      # Upstream pins 12.10.0 (v131) which crashes on Node 24.19 v137
-      # (RemoveEnvironmentCleanupHook). 13.0.3 ships v137 prebuilds and the
-      # fix, so the daemon stays on nodejs_24 (no v3 Node compile) and
-      # Design Harness no longer crash-loops.
-      openDesignDaemonModule =
-        {
-          config,
-          pkgs,
-          lib,
-          ...
-        }:
+      # OpenDesign packages (vendored; upstream retired its Nix distribution
+      # on 2026-08-31). The source pin lives in pkgs/open-design-src, the
+      # better-sqlite3 13.0.3 patch + regenerated lockfile in
+      # pkgs/open-design-patched, and the daemon/web derivations beside it.
+      # Hand both packages to hosts that enable jupiter.services.openDesign.
+      openDesignPackagesModule =
+        { pkgs, ... }:
+        let
+          openDesignSrc = pkgs.callPackage ./pkgs/open-design-src { };
+          patchedSrc = pkgs.callPackage ./pkgs/open-design-patched {
+            inherit (openDesignSrc) src;
+          };
+        in
         {
           services.open-design.package = pkgs.callPackage ./pkgs/open-design-daemon {
-            inherit (pkgs)
-              lib
-              stdenv
-              fetchPnpmDeps
-              pnpmConfigHook
-              makeWrapper
-              python3
-              gnumake
-              pkg-config
-              ;
+            inherit (openDesignSrc) version;
+            src = patchedSrc;
             nodejs = pkgs.nodejs_24;
-            pnpm_10 = pkgs.pnpm_10;
-            open-design = open-design;
-            jq = pkgs.jq;
+            inherit (pkgs) pnpm_10;
+          };
+          services.open-design.webFrontend.package = pkgs.callPackage ./pkgs/open-design-web {
+            inherit (openDesignSrc) version;
+            src = patchedSrc;
+            nodejs = pkgs.nodejs_24;
+            inherit (pkgs) pnpm_10;
           };
         };
 
@@ -447,7 +440,7 @@
         # docs/callisto-iscsi-root-provisioning.md (live at 10.1.1.3, root
         # over ext4-iSCSI on europa's zvol).
         callisto = mkHost ./hosts/callisto/configuration.nix [
-          openDesignDaemonModule
+          openDesignPackagesModule
           modelRouterModule
         ];
 

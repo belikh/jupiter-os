@@ -7,12 +7,16 @@
 
 # OpenDesign — local-first design product (daemon `od` + Next.js web frontend).
 #
-# Upstream provides `services.open-design` (daemon + Caddy webFrontend) as a
-# fleet-wide module (imported in flake.nix via open-design.nixosModules.default).
-# This Jupiter wrapper provides the `jupiter.services.openDesign` toggle so
-# hosts opt in via the fleet's `jupiter.*` namespace, wiring sensible
-# defaults for the serving host (callisto) while leaving fine-grained
-# control to `services.open-design` when needed.
+# Upstream retired its official Nix distribution on 2026-08-31
+# (nexu-io/open-design@49cc5105), so the NixOS module is vendored here
+# (./open-design-nixos.nix + ./open-design-common.nix, copied from the last
+# shipping commit db9ebb7b) and the daemon/web packages are vendored under
+# pkgs/open-design-*. flake.nix injects both packages through the closure
+# module `openDesignPackagesModule`; this wrapper provides the
+# `jupiter.services.openDesign` toggle so hosts opt in via the fleet's
+# `jupiter.*` namespace, wiring sensible defaults for the serving host
+# (callisto) while leaving fine-grained control to `services.open-design`
+# when needed.
 #
 # Design artefacts are real files (HTML/PDF/PPTX/MP4) generated via agent
 # skills; the daemon discovers agents via PATH scanning, so the service's
@@ -27,6 +31,8 @@ let
   cfg = config.jupiter.services.openDesign;
 in
 {
+  imports = [ ./open-design-nixos.nix ];
+
   options.jupiter.services.openDesign = {
     enable = lib.mkEnableOption "OpenDesign — local-first design product (daemon `od` + web frontend)";
 
@@ -80,6 +86,27 @@ in
       webFrontend.enable = lib.mkDefault true;
 
       openFirewall = cfg.openFirewall;
+
+      # Browser-backed features need a Chrome/Chromium the daemon can exec:
+      #   - Design Browser / browser-use screenshots:
+      #     apps/daemon/src/browser-sessions.ts looks for a system
+      #     chrome/chromium on PATH, else OD_BROWSER_EXECUTABLE_PATH. None
+      #     exists on callisto, so POST /api/projects/:id/browser-sessions
+      #     returned 503 BROWSER_SESSION_START_FAILED.
+      #   - HyperFrames HTML→MP4 render: the bundled hyperframes CLI spawns
+      #     a puppeteer-controlled headless Chrome and resolves it through
+      #     HYPERFRAMES_BROWSER_PATH (config.chromePath →
+      #     PRODUCER_HEADLESS_SHELL_PATH → HYPERFRAMES_BROWSER_PATH →
+      #     ~/.cache/hyperframes → ~/.cache/puppeteer). None existed, so
+      #     every render failed at browser resolution.
+      # Point both at the fleet nixpkgs chromium. Note: pixel screenshot
+      # EXPORT (PNG/PDF/PPTX via the desktop Electron renderer) remains
+      # unavailable in a headless deployment — that path has no browser
+      # fallback.
+      extraEnv = {
+        OD_BROWSER_EXECUTABLE_PATH = "${pkgs.chromium}/bin/chromium";
+        HYPERFRAMES_BROWSER_PATH = "${pkgs.chromium}/bin/chromium";
+      };
     };
 
     # Upstream's nixos module sets `systemd.services.open-design.environment.PATH`
