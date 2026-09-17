@@ -24,7 +24,8 @@
   lib,
   pkgs,
   ...
-}: let
+}:
+let
   cfg = config.services.open-design;
 
   commonOpts = (import ./open-design-common.nix) {
@@ -89,174 +90,166 @@
   # user, so per-user profile dirs aren't included by default — operators
   # who install agents into a specific location should add it via
   # `services.open-design.extraBinPaths`.
-  daemonPathEntries =
-    [
-      "/run/wrappers/bin"
-      "/run/current-system/sw/bin"
-      "/nix/var/nix/profiles/default/bin"
-      "/usr/local/bin"
-      "/usr/bin"
-      "/bin"
-    ]
-    ++ cfg.extraBinPaths;
+  daemonPathEntries = [
+    "/run/wrappers/bin"
+    "/run/current-system/sw/bin"
+    "/nix/var/nix/profiles/default/bin"
+    "/usr/local/bin"
+    "/usr/bin"
+    "/bin"
+  ]
+  ++ cfg.extraBinPaths;
 
   # Conservative loopback check used to gate the allowedOrigins
   # assertion.
-  isLoopbackHost = h:
-    h == "127.0.0.1"
-    || h == "localhost"
-    || h == "::1"
-    || h == "[::1]"
-    || lib.hasPrefix "127." h;
+  isLoopbackHost =
+    h: h == "127.0.0.1" || h == "localhost" || h == "::1" || h == "[::1]" || lib.hasPrefix "127." h;
 
-  daemonEnvironment =
-    {
-      OD_PORT = toString cfg.port;
-      OD_DATA_DIR = toString cfg.dataDir;
-      PATH = lib.concatStringsSep ":" daemonPathEntries;
-    }
-    // lib.optionalAttrs cfg.webFrontend.enable {
-      # The daemon's /api origin allowlist needs to know about the caddy
-      # port or it will 403 SPA writes.
-      OD_WEB_PORT = toString cfg.webFrontend.port;
-    }
-    // lib.optionalAttrs (cfg.webFrontend.allowedOrigins != []) {
-      # Operator-declared external origins for the LAN-exposure escape
-      # hatch. Honored regardless of `webFrontend.enable` so operators
-      # exposing the daemon's `/api` directly (no bundled caddy in
-      # front) — the path documented under `openFirewall` — can still
-      # widen the daemon's same-origin allowlist via this option.
-      # Comma-joined; parsed by configuredAllowedOrigins() in
-      # apps/daemon/src/origin-validation.ts.
-      OD_ALLOWED_ORIGINS = lib.concatStringsSep "," cfg.webFrontend.allowedOrigins;
-    }
-    // cfg.extraEnv;
-in {
-  options.services.open-design =
-    commonOpts
-    // {
-      user = lib.mkOption {
-        type = lib.types.str;
-        default = "open-design";
-        description = "User the daemon runs as.";
-      };
-
-      group = lib.mkOption {
-        type = lib.types.str;
-        default = "open-design";
-        description = "Group the daemon runs as.";
-      };
-
-      openFirewall = lib.mkOption {
-        type = lib.types.bool;
-        default = false;
-        description = ''
-          Open the daemon `port` in the system firewall, plus
-          `webFrontend.port` when the bundled web service is enabled.
-
-          Note: by default both the daemon and the bundled web frontend
-          bind to loopback only, so opening the firewall has no effect
-          until you also widen the bind address — set
-          `services.open-design.webFrontend.host = "0.0.0.0"` and
-          declare `services.open-design.webFrontend.allowedOrigins` so
-          the daemon's CSRF gate accepts the externally reachable
-          origin the SPA is loaded from.
-
-          If you also need the daemon's `/api` exposed directly (i.e.
-          without the bundled caddy in front), set
-          `extraEnv.OD_BIND_HOST` to the externally reachable address
-          (e.g. a LAN IP or Tailscale host) — not `0.0.0.0`, since the
-          daemon's `Origin` allowlist is built from the literal bind
-          host and browsers send `Origin: http://<actual-host>:<port>`,
-          not `http://0.0.0.0:<port>`. Alternatively keep
-          `OD_BIND_HOST = "0.0.0.0"` and add the externally reachable
-          origin (e.g. `http://laptop.local:7456`) to
-          `webFrontend.allowedOrigins`, which feeds `OD_ALLOWED_ORIGINS`.
-        '';
-      };
+  daemonEnvironment = {
+    OD_PORT = toString cfg.port;
+    OD_DATA_DIR = toString cfg.dataDir;
+    PATH = lib.concatStringsSep ":" daemonPathEntries;
+  }
+  // lib.optionalAttrs cfg.webFrontend.enable {
+    # The daemon's /api origin allowlist needs to know about the caddy
+    # port or it will 403 SPA writes.
+    OD_WEB_PORT = toString cfg.webFrontend.port;
+  }
+  // lib.optionalAttrs (cfg.webFrontend.allowedOrigins != [ ]) {
+    # Operator-declared external origins for the LAN-exposure escape
+    # hatch. Honored regardless of `webFrontend.enable` so operators
+    # exposing the daemon's `/api` directly (no bundled caddy in
+    # front) — the path documented under `openFirewall` — can still
+    # widen the daemon's same-origin allowlist via this option.
+    # Comma-joined; parsed by configuredAllowedOrigins() in
+    # apps/daemon/src/origin-validation.ts.
+    OD_ALLOWED_ORIGINS = lib.concatStringsSep "," cfg.webFrontend.allowedOrigins;
+  }
+  // cfg.extraEnv;
+in
+{
+  options.services.open-design = commonOpts // {
+    user = lib.mkOption {
+      type = lib.types.str;
+      default = "open-design";
+      description = "User the daemon runs as.";
     };
 
-  config = lib.mkIf cfg.enable (lib.mkMerge [
-    {
-      users.users.${cfg.user} = {
-        isSystemUser = true;
-        group = cfg.group;
-        home = cfg.dataDir;
-        description = "OpenDesign daemon";
-      };
-      users.groups.${cfg.group} = {};
+    group = lib.mkOption {
+      type = lib.types.str;
+      default = "open-design";
+      description = "Group the daemon runs as.";
+    };
 
-      systemd.tmpfiles.rules = [
-        "d ${toString cfg.dataDir} 0750 ${cfg.user} ${cfg.group} - -"
-      ];
+    openFirewall = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        Open the daemon `port` in the system firewall, plus
+        `webFrontend.port` when the bundled web service is enabled.
 
-      networking.firewall.allowedTCPPorts =
-        lib.optional cfg.openFirewall cfg.port
-        ++ lib.optional (cfg.openFirewall && cfg.webFrontend.enable) cfg.webFrontend.port;
+        Note: by default both the daemon and the bundled web frontend
+        bind to loopback only, so opening the firewall has no effect
+        until you also widen the bind address — set
+        `services.open-design.webFrontend.host = "0.0.0.0"` and
+        declare `services.open-design.webFrontend.allowedOrigins` so
+        the daemon's CSRF gate accepts the externally reachable
+        origin the SPA is loaded from.
 
-      # Fail-closed: if the operator widens the bundled caddy bind to
-      # a non-loopback interface but does not declare which external
-      # origins the SPA will be loaded from, the daemon's CSRF gate
-      # will silently 403 every PUT/POST. Catch that at eval time.
-      assertions = [
-        {
-          assertion =
-            !cfg.webFrontend.enable
-            || isLoopbackHost cfg.webFrontend.host
-            || cfg.webFrontend.allowedOrigins != [];
-          message = ''
-            services.open-design.webFrontend.host = "${cfg.webFrontend.host}" exposes the
-            bundled web frontend on a non-loopback interface, but
-            services.open-design.webFrontend.allowedOrigins is empty.
+        If you also need the daemon's `/api` exposed directly (i.e.
+        without the bundled caddy in front), set
+        `extraEnv.OD_BIND_HOST` to the externally reachable address
+        (e.g. a LAN IP or Tailscale host) — not `0.0.0.0`, since the
+        daemon's `Origin` allowlist is built from the literal bind
+        host and browsers send `Origin: http://<actual-host>:<port>`,
+        not `http://0.0.0.0:<port>`. Alternatively keep
+        `OD_BIND_HOST = "0.0.0.0"` and add the externally reachable
+        origin (e.g. `http://laptop.local:7456`) to
+        `webFrontend.allowedOrigins`, which feeds `OD_ALLOWED_ORIGINS`.
+      '';
+    };
+  };
 
-            The daemon's same-origin allowlist would reject every API
-            write the SPA issues from that host. Either keep the
-            default loopback bind, or declare every external origin
-            the SPA will be loaded from, e.g.
+  config = lib.mkIf cfg.enable (
+    lib.mkMerge [
+      {
+        users.users.${cfg.user} = {
+          isSystemUser = true;
+          group = cfg.group;
+          home = cfg.dataDir;
+          description = "OpenDesign daemon";
+        };
+        users.groups.${cfg.group} = { };
 
-              services.open-design.webFrontend.allowedOrigins = [
-                "http://laptop.local:''${toString cfg.webFrontend.port}"
-              ];
-          '';
-        }
-      ];
-    }
+        systemd.tmpfiles.rules = [
+          "d ${toString cfg.dataDir} 0750 ${cfg.user} ${cfg.group} - -"
+        ];
 
-    (lib.mkIf cfg.autoStart {
-      systemd.services.open-design = {
-        description = "OpenDesign daemon";
-        wantedBy = ["multi-user.target"];
-        after = ["network-online.target"];
-        wants = ["network-online.target"];
+        networking.firewall.allowedTCPPorts =
+          lib.optional cfg.openFirewall cfg.port
+          ++ lib.optional (cfg.openFirewall && cfg.webFrontend.enable) cfg.webFrontend.port;
 
-        environment = daemonEnvironment;
-
-        serviceConfig =
+        # Fail-closed: if the operator widens the bundled caddy bind to
+        # a non-loopback interface but does not declare which external
+        # origins the SPA will be loaded from, the daemon's CSRF gate
+        # will silently 403 every PUT/POST. Catch that at eval time.
+        assertions = [
           {
+            assertion =
+              !cfg.webFrontend.enable
+              || isLoopbackHost cfg.webFrontend.host
+              || cfg.webFrontend.allowedOrigins != [ ];
+            message = ''
+              services.open-design.webFrontend.host = "${cfg.webFrontend.host}" exposes the
+              bundled web frontend on a non-loopback interface, but
+              services.open-design.webFrontend.allowedOrigins is empty.
+
+              The daemon's same-origin allowlist would reject every API
+              write the SPA issues from that host. Either keep the
+              default loopback bind, or declare every external origin
+              the SPA will be loaded from, e.g.
+
+                services.open-design.webFrontend.allowedOrigins = [
+                  "http://laptop.local:''${toString cfg.webFrontend.port}"
+                ];
+            '';
+          }
+        ];
+      }
+
+      (lib.mkIf cfg.autoStart {
+        systemd.services.open-design = {
+          description = "OpenDesign daemon";
+          wantedBy = [ "multi-user.target" ];
+          after = [ "network-online.target" ];
+          wants = [ "network-online.target" ];
+
+          environment = daemonEnvironment;
+
+          serviceConfig = {
             Type = "simple";
             User = cfg.user;
             Group = cfg.group;
             ExecStart = "${daemonExe} --port ${toString cfg.port} --no-open";
             Restart = "on-failure";
             RestartSec = 3;
-            ReadWritePaths = [(toString cfg.dataDir)];
+            ReadWritePaths = [ (toString cfg.dataDir) ];
           }
           // hardening
           // lib.optionalAttrs (cfg.environmentFile != null) {
             EnvironmentFile = toString cfg.environmentFile;
           };
-      };
-    })
+        };
+      })
 
-    (lib.mkIf cfg.webFrontend.enable {
-      systemd.services.open-design-web = {
-        description = "OpenDesign web frontend (static file server)";
-        wantedBy = ["multi-user.target"];
-        after = ["network-online.target"];
-        wants = ["network-online.target"];
+      (lib.mkIf cfg.webFrontend.enable {
+        systemd.services.open-design-web = {
+          description = "OpenDesign web frontend (static file server)";
+          wantedBy = [ "multi-user.target" ];
+          after = [ "network-online.target" ];
+          wants = [ "network-online.target" ];
 
-        serviceConfig =
-          {
+          serviceConfig = {
             Type = "simple";
             User = cfg.user;
             Group = cfg.group;
@@ -265,7 +258,8 @@ in {
             RestartSec = 3;
           }
           // hardening;
-      };
-    })
-  ]);
+        };
+      })
+    ]
+  );
 }

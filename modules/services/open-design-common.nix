@@ -11,7 +11,8 @@
   lib,
   pkgs,
   defaultDataDir,
-}: {
+}:
+{
   enable = lib.mkEnableOption "OpenDesign — local-first design product daemon";
 
   package = lib.mkOption {
@@ -45,13 +46,12 @@
   dataDir = lib.mkOption {
     type = lib.types.path;
     default = defaultDataDir;
-    defaultText =
-      lib.literalExpression
-      (
-        if defaultDataDir == "/var/lib/open-design"
-        then "\"/var/lib/open-design\""
-        else "\"\${config.home.homeDirectory}/.od\""
-      );
+    defaultText = lib.literalExpression (
+      if defaultDataDir == "/var/lib/open-design" then
+        "\"/var/lib/open-design\""
+      else
+        "\"\${config.home.homeDirectory}/.od\""
+    );
     description = ''
       Directory holding the daemon's runtime state: SQLite database
       (`app.sqlite`), per-project working trees under `projects/<id>/`,
@@ -86,7 +86,7 @@
 
   extraEnv = lib.mkOption {
     type = lib.types.attrsOf lib.types.str;
-    default = {};
+    default = { };
     description = ''
       Additional non-secret environment variables for the daemon
       service (e.g. `OD_CODEX_DISABLE_PLUGINS = "1"`). Secrets belong
@@ -101,7 +101,7 @@
 
   extraBinPaths = lib.mkOption {
     type = lib.types.listOf lib.types.str;
-    default = [];
+    default = [ ];
     description = ''
       Extra absolute directories to prepend to the daemon service's
       PATH. The daemon discovers agent CLIs (claude, codex, gemini,
@@ -188,7 +188,7 @@
 
     allowedOrigins = lib.mkOption {
       type = lib.types.listOf lib.types.str;
-      default = [];
+      default = [ ];
       description = ''
         Full HTTP(S) origins (`scheme://host[:port]`, no path) the
         daemon should accept as same-site for `/api/*` requests in
@@ -220,7 +220,10 @@
         reachable). Loopback origins on the daemon's own port are
         already accepted unconditionally — do not bother listing those.
       '';
-      example = ["http://laptop.local:5174" "https://laptop.local:5174"];
+      example = [
+        "http://laptop.local:5174"
+        "https://laptop.local:5174"
+      ];
     };
 
     package = lib.mkOption {

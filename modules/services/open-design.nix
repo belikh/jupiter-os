@@ -153,13 +153,13 @@ in
     # User/Group so host overrides (callisto: io/users) are honoured.
     systemd.services.open-design.preStart = lib.mkForce "";
     systemd.services.open-design.serviceConfig.ExecStartPre = [
-      "+${
-        pkgs.writeShellScript "open-design-fix-datadir" ''
-          mkdir -p ${cfg.dataDir}
-          chown -R ${config.systemd.services.open-design.serviceConfig.User}:${config.systemd.services.open-design.serviceConfig.Group or "users"} ${cfg.dataDir}
-          chmod 750 ${cfg.dataDir}
-        ''
-      }"
+      "+${pkgs.writeShellScript "open-design-fix-datadir" ''
+        mkdir -p ${cfg.dataDir}
+        chown -R ${config.systemd.services.open-design.serviceConfig.User}:${
+          config.systemd.services.open-design.serviceConfig.Group or "users"
+        } ${cfg.dataDir}
+        chmod 750 ${cfg.dataDir}
+      ''}"
     ];
   };
 }
