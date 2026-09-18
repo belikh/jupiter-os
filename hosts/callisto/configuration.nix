@@ -661,7 +661,9 @@
     {
       # Public Suno trending harvester (modules/services/suno-top.nix).
       # Schema-scoped like procurement: the daemon CREATEs `suno` schema +
-      # tables on first connect; grants are pattern-scoped to its own schema.
+      # tables on first connect, so the jupiter-pg-provision-suno oneshot
+      # below grants the role database-level CREATE — a fresh role has none,
+      # and `CREATE SCHEMA` is the daemon DDL's first statement.
       name = "suno";
       ensureDBOwnership = false;
     }
@@ -679,8 +681,12 @@
   # on the harvester being enabled (the module is the secret's declarer, so
   # referencing it when disabled would fail evaluation). Idempotent oneshot:
   # parses the password out of the suno_database_url (keep it [A-Za-z0-9] so
-  # the sed extraction stays trivial) and ALTER ROLEs it. Runs before the
-  # harvester on every boot; ALTER is a no-op when unchanged.
+  # the sed extraction stays trivial), ALTER ROLEs it, and grants the role
+  # database-level CREATE so the daemon can create schema `suno` on first
+  # connect (found by observation 2026-09-18: without the grant the daemon
+  # crash-loops on `CREATE SCHEMA IF NOT EXISTS suno` → permission denied).
+  # Runs before the harvester on every boot; both statements are no-ops when
+  # already applied.
   #
   # Resolved 2026-09-18: suno_database_url is in the vault (role password
   # minted and URL written via the host age recipient) and sunoTop.enable is
@@ -703,8 +709,10 @@
         echo "suno_database_url: could not parse password (expected postgresql://suno:<[A-Za-z0-9]>@...)" >&2
         exit 1
       fi
-      # Local unix socket, peer auth as the postgres superuser.
-      printf 'ALTER ROLE suno PASSWORD '"'"'%s'"'"';' "$pw" \
+      # Local unix socket, peer auth as the postgres superuser. ALTER sets the
+      # scram password; GRANT CREATE lets the daemon make its own `suno`
+      # schema on first connect.
+      printf 'ALTER ROLE suno PASSWORD '"'"'%s'"'"'; GRANT CREATE ON DATABASE jupiter TO suno;' "$pw" \
         | ${pkgs.util-linux}/bin/runuser -u postgres -- ${pkgs.postgresql_18}/bin/psql -d jupiter -v ON_ERROR_STOP=1 -f -
     '';
   };
