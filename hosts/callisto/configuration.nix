@@ -682,11 +682,10 @@
   # the sed extraction stays trivial) and ALTER ROLEs it. Runs before the
   # harvester on every boot; ALTER is a no-op when unchanged.
   #
-  # G-E note (2026-09-06): suno_database_url is NOT YET in the vault — the
-  # suno feature's last unfinished step (mint the role password, add
-  # `suno_database_url: postgresql://suno:<pw>@10.1.1.3:5432/jupiter?sslmode=disable`
-  # to sops, flip sunoTop.enable back to true). Until then this whole unit is
-  # absent from the activation, and sops-nix doesn't see the missing key.
+  # Resolved 2026-09-18: suno_database_url is in the vault (role password
+  # minted and URL written via the host age recipient) and sunoTop.enable is
+  # true, so this unit now runs on every boot. Until 2026-09-06 it was the
+  # suno feature's last unfinished step and was absent from the activation.
   systemd.services.jupiter-pg-provision-suno = lib.mkIf config.jupiter.services.sunoTop.enable {
     description = "Set suno role password from sops secret";
     wantedBy = [ "multi-user.target" ];
@@ -732,12 +731,12 @@
   };
 
   # ---- Public Suno trending harvester (schema `suno`) -----------------------
-  # GATED OFF (2026-09-06): the module auto-declares the sops secret
-  # `suno_database_url`, which does not exist in the vault yet — enabling it
-  # now hard-fails sops-nix activation. Owner: mint the suno role password,
-  # add `suno_database_url: postgresql://suno:<pw>@10.1.1.3:5432/jupiter?sslmode=disable`
-  # to secrets/secrets.yaml, then flip this back to true.
-  jupiter.services.sunoTop.enable = false;
+  # Enabled 2026-09-18: the vault now carries `suno_database_url`
+  # (postgresql://suno:<pw>@10.1.1.3:5432/jupiter?sslmode=disable), so the
+  # module's auto-declared sops secret resolves and activation is clean. The
+  # jupiter-pg-provision-suno oneshot above sets the role password from it
+  # before the daemon starts.
+  jupiter.services.sunoTop.enable = true;
 
   # ---- HAOS guest host (Jupiter Quarters overhaul G-E, spec §7.2) -----------
   # Libvirt + KVM + OVMF substrate for the green-world HAOS guest. Guest

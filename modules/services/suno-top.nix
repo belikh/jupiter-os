@@ -47,7 +47,7 @@ in
       description = ''
         Name of the sops secret holding the full Postgres connection URL for
         the `suno` role, e.g.
-        postgresql://suno:<password>@127.0.0.1:5432/jupiter?sslmode=disable
+        postgresql://suno:<password>@10.1.1.3:5432/jupiter?sslmode=disable
         (keep the password to [A-Za-z0-9] — the callisto provisioning oneshot
         parses it out of the URL to ALTER ROLE). Add the key to
         secrets/secrets.yaml and the host age recipient to .sops.yaml before
