@@ -5,17 +5,23 @@
   ...
 }:
 
-# Public Suno trending-feed harvester (fleet Postgres consumer).
+# Public Suno trending harvester (fleet Postgres consumer).
 #
 # Always-on Go service (pkgs/suno-top, built via pkgs.callPackage) that polls
-# Suno's PUBLIC trending feed and accumulates every unique clip into the fleet
-# Postgres (db `jupiter`, schema `suno`, DDL applied by the daemon on first
-# connect — same pattern as the procurement stack). Each clip is stored with
-# its complete object (prompts/tags/counts) plus an append-only sighting log
-# capturing play_count over time AND the clip's rank in the trending rotation.
-# Purpose: a queryable dataset of the public winners for hit-model research
-# and prompt-style distributions (cf. pkgs/suno-backup, which mirrors OUR
-# library to tank/archive/suno).
+# Suno's PUBLIC trending feed and walks PUBLIC creator profiles, accumulating
+# every unique qualifying clip into the fleet Postgres (db `jupiter`, schema
+# `suno`, DDL applied by the daemon on first connect — same pattern as the
+# procurement stack). Each clip is stored with its complete object
+# (prompts/tags/counts) plus an append-only sighting log capturing play_count
+# over time AND the clip's rank in the trending rotation. Only clips at or
+# above `minUpvotes` are stored (default 100). Purpose: a queryable dataset of
+# the public winners for hit-model research and prompt-style distributions
+# (cf. pkgs/suno-backup, which mirrors OUR library to tank/archive/suno).
+#
+# Volume comes from the creator crawl: the anonymous trending feed only ever
+# serves ~25 clips, but GET /api/profiles/<handle>/ is public, paginates a
+# creator's whole catalogue, and every seen clip queues its creator — so the
+# crawl walks the public catalogue breadth-first.
 #
 # Credential-free against Suno (all endpoints verified unauthenticated,
 # 2026-09-04 — see pkgs/suno-top/main.go header); the only secret is the
@@ -25,7 +31,9 @@
 #
 # Suno-side politeness budget (defaults): one discovery POST per interval
 # (3m → 480/day) + up to 20 recheck GETs per pass with a 45m per-clip
-# min-age. Single small JSON requests; SUNO_TOP_RECHECKS=0 disables rechecks.
+# min-age + one profile GET per creator per pass (10 → ~4.8k/day). Single
+# small JSON requests, 300ms apart in the crawl; SUNO_TOP_RECHECKS=0 and
+# SUNO_TOP_CREATORS=0 disable those lanes.
 let
   cfg = config.jupiter.services.sunoTop;
 
@@ -80,6 +88,26 @@ in
       default = "45m";
       description = "Minimum age before a clip is re-polled again.";
     };
+
+    creatorsPerPass = lib.mkOption {
+      type = lib.types.ints.unsigned;
+      default = 10;
+      description = ''
+        How many creators to walk one profile page each per pass (the volume
+        lane: every clip seen queues its creator, and each page yields ~20-30
+        more public clips). 0 disables the creator crawl.
+      '';
+    };
+
+    minUpvotes = lib.mkOption {
+      type = lib.types.ints.unsigned;
+      default = 100;
+      description = ''
+        Quality floor: only clips with at least this many upvotes are stored
+        in any lane (trending, recheck, creator crawl). Rows already stored
+        below the floor are pruned at startup. 0 disables the floor.
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -100,6 +128,8 @@ in
         SUNO_TOP_INTERVAL = cfg.interval;
         SUNO_TOP_RECHECKS = toString cfg.recheckPassSize;
         SUNO_TOP_RECHECK_MIN_AGE = cfg.recheckMinAge;
+        SUNO_TOP_CREATORS = toString cfg.creatorsPerPass;
+        SUNO_TOP_MIN_UPVOTES = toString cfg.minUpvotes;
       };
 
       serviceConfig = {

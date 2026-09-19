@@ -25,27 +25,41 @@
 //     clip object, unauthenticated. This turns early snapshots into growth
 //     curves: each pass re-polls the highest-play_count clips whose last
 //     recheck is older than recheck_min_age.
+//   - Creator crawl (THE VOLUME LEVER): GET
+//     https://studio-api.prod.suno.com/api/profiles/<handle>/ with
+//     ?clips_sort_by=created_at&playlists_sort_by=created_at&page=N returns
+//     the profile plus a page of that creator's public clips as FULL clip
+//     objects, unauthenticated and paginated all the way to `num_total_clips`
+//     (verified 2026-09-19: dheewatara = 4,117 clips over 207 pages). Every
+//     clip seen any way queues its handle in suno.creators; the crawl walks
+//     that queue one page per creator per pass, so coverage grows
+//     breadth-first across the entire public catalogue instead of the ~25 the
+//     anonymous trending feed serves.
 //
 // Deliberately NOT used: POST /api/feed/v3 (401 unauthenticated) and POST
 // /api/unified/search/omnisearch (401) — both need the Clerk session. This
 // daemon runs credential-free by design; suno-backup owns the cookie lane.
 //
 // Storage shape (schema `suno`, DDL idempotent, applied on start):
-//   suno.clips         one row per unique clip; raw jsonb keeps the COMPLETE
-//                      clip object verbatim; convenience columns (play_count,
-//                      tags, prompt, lyrics, style_prompt, …) are projections.
-//   suno.clip_sightings  append-only observation log: every trending sighting
-//                      (with its 1-based feed rank — the recommendation
-//                      algorithm's opinion, unrecoverable later) and every
-//                      recheck where counts changed. This table IS the
-//                      time-series: velocity curves, rotation re-promotions,
-//                      trending-rank history.
+//
+//	suno.clips         one row per unique clip; raw jsonb keeps the COMPLETE
+//	                   clip object verbatim; convenience columns (play_count,
+//	                   tags, prompt, lyrics, style_prompt, …) are projections.
+//	suno.creators      one row per handle discovered; a queue for the creator
+//	                   crawl (next_page cursor, done flag, failure backoff).
+//	suno.clip_sightings  append-only observation log: every trending sighting
+//	                   (with its 1-based feed rank — the recommendation
+//	                   algorithm's opinion, unrecoverable later) and, for
+//	                   recheck/creator sightings, only where a count changed.
+//	                   This table IS the time-series: velocity curves,
+//	                   rotation re-promotions, trending-rank history.
 //
 // Politeness budget (defaults): one discovery POST per interval (3m → 480/day)
-// plus up to 20 recheck GETs per pass with a 45m per-clip min-age (~19k/day
-// worst case, realistically far less). All single small JSON requests — one
-// browser tab's worth of traffic. Dial SUNO_TOP_RECHECKS=0 to disable
-// rechecks entirely; raise INTERVAL to slow everything down.
+// plus up to 20 recheck GETs per pass with a 45m per-clip min-age, plus one
+// profile GET per creator per pass (10 creators → ~4.8k/day, each yielding
+// 20-30 clips). All single small JSON requests — a browser tab's worth of
+// traffic. Dial SUNO_TOP_RECHECKS=0 / SUNO_TOP_CREATORS=0 to disable those
+// lanes; raise INTERVAL to slow everything down.
 package main
 
 import (
@@ -60,6 +74,7 @@ import (
 	"log/slog"
 	"math/big"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -73,9 +88,18 @@ import (
 const (
 	appName = "suno-top"
 
-	apiBase  = "https://studio-api.prod.suno.com"
-	feedPath = "/api/unified/feed"
-	clipPath = "/api/clip/"
+	apiBase     = "https://studio-api.prod.suno.com"
+	feedPath    = "/api/unified/feed"
+	clipPath    = "/api/clip/"
+	profilePath = "/api/profiles/"
+
+	// profilePageApprox is the page size the profile endpoint uses after page
+	// 1 (page 1 returns 30, the rest 20). Only used to decide when a walk is
+	// finished, never to size requests — the server owns the size.
+	profilePageApprox = 20
+
+	// creatorDelay paces the creator crawl between profile GETs.
+	creatorDelay = 300 * time.Millisecond
 
 	defaultUA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
 
@@ -91,6 +115,8 @@ type config struct {
 	pageSize      int
 	rechecks      int
 	recheckMinAge time.Duration
+	creators      int
+	minUpvotes    int
 	jitterFrac    float64
 	once          bool
 	httpTimeout   time.Duration
@@ -132,6 +158,8 @@ func loadConfig(log *slog.Logger) config {
 		pageSize:      ps,
 		rechecks:      geti("SUNO_TOP_RECHECKS", 20),
 		recheckMinAge: getd("SUNO_TOP_RECHECK_MIN_AGE", 45*time.Minute),
+		creators:      geti("SUNO_TOP_CREATORS", 10),
+		minUpvotes:    geti("SUNO_TOP_MIN_UPVOTES", 100),
 		jitterFrac:    getf("SUNO_TOP_JITTER", 0.15),
 		once:          os.Getenv("SUNO_TOP_ONCE") == "1",
 		httpTimeout:   getd("SUNO_TOP_HTTP_TIMEOUT", 30*time.Second),
@@ -147,6 +175,7 @@ func loadConfig(log *slog.Logger) config {
 	log.Info("config loaded",
 		"interval", cfg.interval, "page_size", cfg.pageSize,
 		"rechecks", cfg.rechecks, "recheck_min_age", cfg.recheckMinAge,
+		"creators", cfg.creators, "min_upvotes", cfg.minUpvotes,
 		"jitter", cfg.jitterFrac, "once", cfg.once)
 	return cfg
 }
@@ -170,6 +199,17 @@ type feedResponse struct {
 			ContentItem json.RawMessage `json:"content_item"`
 		} `json:"items"`
 	} `json:"feed"`
+}
+
+// profileResponse models GET /api/profiles/<handle>/. `clips` are FULL clip
+// objects (same shape as the feed's content_item) and are landed verbatim.
+type profileResponse struct {
+	UserID        string            `json:"user_id"`
+	DisplayName   string            `json:"display_name"`
+	Handle        string            `json:"handle"`
+	NumTotalClips int64             `json:"num_total_clips"`
+	CurrentPage   int               `json:"current_page"`
+	Clips         []json.RawMessage `json:"clips"`
 }
 
 // clipFields is the projection of the clip object we index. The FULL object
@@ -197,31 +237,31 @@ type clipFields struct {
 }
 
 type clipMetadata struct {
-	Prompt                *string `json:"prompt"`
-	Tags                  *string `json:"tags"`
-	GptDescriptionPrompt  *string `json:"gpt_description_prompt"`
-	Duration              *float64 `json:"duration"`
-	Type                  *string `json:"type"`
-	Task                  *string `json:"task"`
-	IsRemix               *bool   `json:"is_remix"`
+	Prompt               *string  `json:"prompt"`
+	Tags                 *string  `json:"tags"`
+	GptDescriptionPrompt *string  `json:"gpt_description_prompt"`
+	Duration             *float64 `json:"duration"`
+	Type                 *string  `json:"type"`
+	Task                 *string  `json:"task"`
+	IsRemix              *bool    `json:"is_remix"`
 }
 
 func parseClip(raw json.RawMessage) (clipFields, error) {
 	var cf clipFields
 	var top struct {
-		ID                string  `json:"id"`
-		Title             string  `json:"title"`
-		Handle            *string `json:"handle"`
-		DisplayName       *string `json:"display_name"`
-		UserID            *string `json:"user_id"`
-		PlayCount         *int64  `json:"play_count"`
-		UpvoteCount       *int64  `json:"upvote_count"`
-		CommentCount      *int64  `json:"comment_count"`
-		CreatedAt         *string `json:"created_at"`
-		MajorModelVersion *string `json:"major_model_version"`
-		ModelName         *string `json:"model_name"`
-		IsPublic          *bool   `json:"is_public"`
-		Explicit          *bool   `json:"explicit"`
+		ID                string       `json:"id"`
+		Title             string       `json:"title"`
+		Handle            *string      `json:"handle"`
+		DisplayName       *string      `json:"display_name"`
+		UserID            *string      `json:"user_id"`
+		PlayCount         *int64       `json:"play_count"`
+		UpvoteCount       *int64       `json:"upvote_count"`
+		CommentCount      *int64       `json:"comment_count"`
+		CreatedAt         *string      `json:"created_at"`
+		MajorModelVersion *string      `json:"major_model_version"`
+		ModelName         *string      `json:"model_name"`
+		IsPublic          *bool        `json:"is_public"`
+		Explicit          *bool        `json:"explicit"`
 		Metadata          clipMetadata `json:"metadata"`
 	}
 	if err := json.Unmarshal(raw, &top); err != nil {
@@ -356,6 +396,19 @@ func (c *sunoClient) fetchClip(ctx context.Context, id string) (json.RawMessage,
 	return raw, nil
 }
 
+// fetchCreatorClips pulls one page of a creator's public clips. The two sort
+// params are mandatory (the endpoint 422s without them) and `page` is 1-based,
+// returning 30 clips on page 1 and ~20 thereafter.
+func (c *sunoClient) fetchCreatorClips(ctx context.Context, handle string, page int) ([]json.RawMessage, profileResponse, error) {
+	var pr profileResponse
+	path := fmt.Sprintf("%s%s/?clips_sort_by=created_at&playlists_sort_by=created_at&page=%d",
+		profilePath, url.PathEscape(handle), page)
+	if err := c.getJSON(ctx, path, &pr); err != nil {
+		return nil, pr, fmt.Errorf("profile %s p%d: %w", handle, page, err)
+	}
+	return pr.Clips, pr, nil
+}
+
 // --------------------------------- Storage ----------------------------------
 
 const schemaDDL = `
@@ -391,12 +444,28 @@ CREATE INDEX IF NOT EXISTS suno_clips_play_count_idx ON suno.clips (play_count D
 CREATE INDEX IF NOT EXISTS suno_clips_created_at_idx ON suno.clips (created_at);
 CREATE INDEX IF NOT EXISTS suno_clips_last_rechecked_idx ON suno.clips (last_rechecked_at);
 
+CREATE TABLE IF NOT EXISTS suno.creators (
+	handle          text PRIMARY KEY,
+	user_id         text NOT NULL DEFAULT '',
+	display_name    text NOT NULL DEFAULT '',
+	total_clips     bigint NOT NULL DEFAULT 0,   -- profile num_total_clips
+	next_page       integer NOT NULL DEFAULT 1,  -- 1-based crawl cursor
+	clips_indexed   bigint NOT NULL DEFAULT 0,   -- clips stored from this creator
+	failures        integer NOT NULL DEFAULT 0,
+	done            boolean NOT NULL DEFAULT false,
+	last_error      text NOT NULL DEFAULT '',
+	discovered_at   timestamptz NOT NULL DEFAULT now(),
+	last_crawled_at timestamptz
+);
+
+CREATE INDEX IF NOT EXISTS suno_creators_queue_idx ON suno.creators (done, last_crawled_at, discovered_at);
+
 CREATE TABLE IF NOT EXISTS suno.clip_sightings (
 	id            bigserial PRIMARY KEY,
 	clip_id       text NOT NULL REFERENCES suno.clips(id) ON DELETE CASCADE,
 	seen_at       timestamptz NOT NULL DEFAULT now(),
-	source        text NOT NULL,           -- 'trending' | 'recheck'
-	trending_rank integer,                 -- 1-based position in the feed, NULL for rechecks
+	source        text NOT NULL,           -- 'trending' | 'recheck' | 'creator'
+	trending_rank integer,                 -- 1-based position in the feed, NULL otherwise
 	play_count    bigint NOT NULL,
 	upvote_count  bigint NOT NULL,
 	comment_count bigint NOT NULL DEFAULT 0
@@ -449,6 +518,23 @@ INSERT INTO suno.clip_sightings
 VALUES ($1,$2,$3,$4,$5,$6)
 `
 
+// creatorEnsure queues a handle for the creator crawl. Every clip seen by any
+// lane feeds this, so coverage grows breadth-first from whatever is discovered.
+const creatorEnsure = `
+INSERT INTO suno.creators (handle, user_id, display_name)
+VALUES ($1, $2, $3)
+ON CONFLICT (handle) DO UPDATE SET
+	user_id      = CASE WHEN EXCLUDED.user_id <> ''      THEN EXCLUDED.user_id      ELSE suno.creators.user_id END,
+	display_name = CASE WHEN EXCLUDED.display_name <> '' THEN EXCLUDED.display_name ELSE suno.creators.display_name END
+`
+
+// meetsThreshold is the quality gate: only clips at or above the configured
+// upvote floor enter the dataset. Applied in every lane, so trending picks a
+// low-upvote clip up again once it crosses the floor.
+func (c config) meetsThreshold(cf clipFields) bool {
+	return c.minUpvotes <= 0 || cf.UpvoteCount >= int64(c.minUpvotes)
+}
+
 // storeClip upserts one clip and appends a sighting row. Discovery sightings
 // are always recorded (the trending rank is signal); recheck sightings are
 // recorded only when a count actually changed (pure growth-curve points).
@@ -479,6 +565,12 @@ func storeClip(ctx context.Context, db *sql.DB, cf clipFields, raw json.RawMessa
 		return fmt.Errorf("upsert clip: %w", err)
 	}
 
+	if cf.Handle != "" {
+		if _, err := tx.ExecContext(ctx, creatorEnsure, cf.Handle, cf.UserID, cf.DisplayName); err != nil {
+			return fmt.Errorf("ensure creator: %w", err)
+		}
+	}
+
 	shouldRecord := source == "trending" ||
 		!exists ||
 		prevPlay.Int64 != cf.PlayCount ||
@@ -500,12 +592,18 @@ func storeClip(ctx context.Context, db *sql.DB, cf clipFields, raw json.RawMessa
 
 // pickRechecks selects the highest-play clips due for a re-poll: growth curves
 // matter most for the winners, and the min-age filter bounds request volume.
+//
+// The min age is passed as SECONDS and built with make_interval: a bare
+// time.Duration reaching Postgres is a plain int64 (database/sql/libpq), which
+// the server parses as a number of seconds-turned-interval — i.e. 45m becomes
+// 2700000000000s (~85,000 years) and rechecks never fire after the initial
+// last_rechecked_at IS NULL pass. Found live 2026-09-18.
 func pickRechecks(ctx context.Context, db *sql.DB, limit int, minAge time.Duration) ([]string, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT id FROM suno.clips
-		WHERE (last_rechecked_at IS NULL OR now() - last_rechecked_at > $1)
+		WHERE (last_rechecked_at IS NULL OR now() - last_rechecked_at > make_interval(secs => $1))
 		ORDER BY play_count DESC
-		LIMIT $2`, minAge, limit)
+		LIMIT $2`, minAge.Seconds(), limit)
 	if err != nil {
 		return nil, err
 	}
@@ -548,6 +646,9 @@ func (d *daemon) harvestPass(ctx context.Context) error {
 		cf, err := parseClip(raw)
 		if err != nil {
 			d.log.Warn("skipping unparseable clip", "err", err)
+			continue
+		}
+		if !d.cfg.meetsThreshold(cf) {
 			continue
 		}
 		var exists int
@@ -599,6 +700,9 @@ func (d *daemon) recheckPass(ctx context.Context) error {
 			d.log.Warn("recheck unparseable", "id", id, "err", err)
 			continue
 		}
+		if !d.cfg.meetsThreshold(cf) {
+			continue
+		}
 		if err := storeClip(ctx, d.db, cf, raw, "recheck", 0); err != nil {
 			d.log.Warn("recheck store failed", "id", id, "err", err)
 			continue
@@ -606,6 +710,152 @@ func (d *daemon) recheckPass(ctx context.Context) error {
 		updated++
 	}
 	d.log.Info("recheck pass done", "polled", len(ids), "stored", updated)
+	return nil
+}
+
+// --------------------------------- Creator crawl ----------------------------
+
+// seedCreators queues every handle already known from stored clips. Idempotent;
+// runs at startup so an existing database backfills the crawl queue.
+func (d *daemon) seedCreators(ctx context.Context) error {
+	res, err := d.db.ExecContext(ctx, `
+		INSERT INTO suno.creators (handle)
+		SELECT DISTINCT handle FROM suno.clips WHERE handle <> ''
+		ON CONFLICT (handle) DO NOTHING`)
+	if err != nil {
+		return fmt.Errorf("seed creators: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		d.log.Info("creator queue seeded", "added", n)
+	}
+	return nil
+}
+
+// pruneBelowThreshold enforces the upvote floor on an existing database: rows
+// (and their sightings, via cascade) below the floor are removed. No-op when
+// the floor is disabled.
+func (d *daemon) pruneBelowThreshold(ctx context.Context) error {
+	if d.cfg.minUpvotes <= 0 {
+		return nil
+	}
+	res, err := d.db.ExecContext(ctx, `DELETE FROM suno.clips WHERE upvote_count < $1`, d.cfg.minUpvotes)
+	if err != nil {
+		return fmt.Errorf("prune below threshold: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		d.log.Info("pruned clips below upvote floor", "deleted", n, "floor", d.cfg.minUpvotes)
+	}
+	return nil
+}
+
+type creatorCursor struct {
+	handle       string
+	nextPage     int
+	clipsIndexed int64
+}
+
+// pickCreators returns the next batch of creators to crawl, least-recently
+// crawled first. Not-done creators rotate through the queue, one page each, so
+// the walk advances breadth-first across every creator at once.
+func pickCreators(ctx context.Context, db *sql.DB, limit int) ([]creatorCursor, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT handle, next_page, clips_indexed FROM suno.creators
+		WHERE NOT done
+		ORDER BY last_crawled_at ASC NULLS FIRST, discovered_at ASC
+		LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var cs []creatorCursor
+	for rows.Next() {
+		var c creatorCursor
+		if err := rows.Scan(&c.handle, &c.nextPage, &c.clipsIndexed); err != nil {
+			return nil, err
+		}
+		cs = append(cs, c)
+	}
+	return cs, rows.Err()
+}
+
+// crawlCreatorsPass walks one page for each of a bounded number of creators,
+// storing every qualifying clip and advancing each creator's page cursor.
+func (d *daemon) crawlCreatorsPass(ctx context.Context) error {
+	if d.cfg.creators <= 0 {
+		return nil
+	}
+	cs, err := pickCreators(ctx, d.db, d.cfg.creators)
+	if err != nil {
+		return fmt.Errorf("pick creators: %w", err)
+	}
+	if len(cs) == 0 {
+		return nil
+	}
+	fresh, stored, finished := 0, 0, 0
+	for _, c := range cs {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+		clips, pr, err := d.suno.fetchCreatorClips(ctx, c.handle, c.nextPage)
+		if err != nil {
+			d.log.Warn("creator crawl failed", "handle", c.handle, "page", c.nextPage, "err", err)
+			_, _ = d.db.ExecContext(ctx, `
+				UPDATE suno.creators
+				SET failures = failures + 1,
+				    done = failures + 1 >= 5,
+				    last_error = $2,
+				    last_crawled_at = now()
+				WHERE handle = $1`, c.handle, err.Error())
+			continue
+		}
+		got, gotFresh := 0, 0
+		for _, raw := range clips {
+			cf, perr := parseClip(raw)
+			if perr != nil {
+				continue
+			}
+			if !d.cfg.meetsThreshold(cf) {
+				continue
+			}
+			var exists int
+			_ = d.db.QueryRowContext(ctx, `SELECT 1 FROM suno.clips WHERE id=$1`, cf.ID).Scan(&exists)
+			if serr := storeClip(ctx, d.db, cf, raw, "creator", 0); serr != nil {
+				d.log.Warn("creator store failed", "id", cf.ID, "err", serr)
+				continue
+			}
+			got++
+			if exists == 0 {
+				gotFresh++
+			}
+		}
+		indexed := c.clipsIndexed + int64(got)
+		done := len(clips) == 0 || (pr.NumTotalClips > 0 && indexed >= pr.NumTotalClips)
+		if _, uerr := d.db.ExecContext(ctx, `
+			UPDATE suno.creators SET
+				user_id = CASE WHEN $2 <> '' THEN $2 ELSE user_id END,
+				display_name = CASE WHEN $3 <> '' THEN $3 ELSE display_name END,
+				total_clips = GREATEST(total_clips, $4),
+				next_page = $5,
+				clips_indexed = $6,
+				failures = 0,
+				done = $7,
+				last_error = '',
+				last_crawled_at = now()
+			WHERE handle = $1`,
+			c.handle, pr.UserID, pr.DisplayName, pr.NumTotalClips, c.nextPage+1, indexed, done); uerr != nil {
+			d.log.Warn("creator cursor update failed", "handle", c.handle, "err", uerr)
+		}
+		stored += got
+		fresh += gotFresh
+		if done {
+			finished++
+		}
+		time.Sleep(creatorDelay)
+	}
+	d.log.Info("creator crawl pass done",
+		"creators", len(cs), "clips_stored", stored, "fresh", fresh, "finished", finished)
 	return nil
 }
 
@@ -682,15 +932,24 @@ func main() {
 		log.Error("schema setup failed", "err", err)
 		os.Exit(1)
 	}
+	if err := d.pruneBelowThreshold(ctx); err != nil {
+		log.Warn("threshold prune failed", "err", err)
+	}
+	if err := d.seedCreators(ctx); err != nil {
+		log.Warn("creator seed failed", "err", err)
+	}
 
 	runPass := func() {
-		pctx, cancel := context.WithTimeout(ctx, cfg.httpTimeout*time.Duration(2+cfg.rechecks))
+		pctx, cancel := context.WithTimeout(ctx, cfg.httpTimeout*time.Duration(3+cfg.rechecks+cfg.creators))
 		defer cancel()
 		if err := d.harvestPass(pctx); err != nil {
 			log.Warn("harvest pass failed", "err", err)
 		}
 		if err := d.recheckPass(pctx); err != nil {
 			log.Warn("recheck pass failed", "err", err)
+		}
+		if err := d.crawlCreatorsPass(pctx); err != nil {
+			log.Warn("creator crawl pass failed", "err", err)
 		}
 	}
 
