@@ -492,6 +492,13 @@
         }
       );
 
+      # suno-backfill — one-shot longitudinal re-scrape of a known id list
+      # (arXiv 2509.11824 suno_urls CSV) into fleet Postgres
+      # (suno.backfill_2024). Operator tool for the suno research lane; run
+      # on callisto with the suno_database_url sops secret. See
+      # pkgs/suno-backfill/default.nix for the full story.
+      packages.x86_64-linux.suno-backfill = nixpkgs.legacyPackages.x86_64-linux.callPackage ./pkgs/suno-backfill { };
+
       # ariang — AriaNg web UI for aria2, built from source at the commit
       # the in-tree task-name patch targets (upstream master d6a7653). Exposed
       # standalone (untuned legacyPackages, same as dsh) so the npm lock hash
