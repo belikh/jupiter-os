@@ -18,22 +18,31 @@
 # the public winners for hit-model research and prompt-style distributions
 # (cf. pkgs/suno-backup, which mirrors OUR library to tank/archive/suno).
 #
-# Volume comes from the creator crawl: the anonymous trending feed only ever
-# serves ~25 clips, but GET /api/profiles/<handle>/ is public, paginates a
-# creator's whole catalogue, and every seen clip queues its creator — so the
-# crawl walks the public catalogue breadth-first.
+# Volume comes from the discovery lanes, all credential-free:
+#   - creator crawl: GET /api/profiles/<handle>/ is public, paginates a
+#     creator's whole catalogue, and every seen clip queues its creator;
+#   - tag search: POST /api/search/ (search_type=tag_song) is public and
+#     returns the winners of any style tag, paginated up to 10k hits per tag;
+#     the tag queue is seeded from suno.com's styles sitemap (967 slugs);
+#   - playlists: GET /api/playlist/<id>/ is public; playlist ids come from
+#     profile responses (whose `playlists` array was previously discarded),
+#     the editorial indexes, and playlist owners — each playlist yields clips
+#     AND its owner handle, so the creator queue keeps refilling;
+#   - editorial indexes (homepage/explore) and contest base clips are queued
+#     at most once per `editorialInterval`.
 #
-# Credential-free against Suno (all endpoints verified unauthenticated,
-# 2026-09-04 — see pkgs/suno-top/main.go header); the only secret is the
-# fleet Postgres URL, sops-sourced. The URL MUST carry ?sslmode=disable —
-# the fleet Postgres serves scram-sha-256 without TLS (modules/services/
-# postgres.nix), and lib/pq defaults to sslmode=require.
+# Credential-free against Suno (all endpoints verified unauthenticated; see
+# pkgs/suno-top/main.go header); the only secret is the fleet Postgres URL,
+# sops-sourced. The URL MUST carry ?sslmode=disable — the fleet Postgres
+# serves scram-sha-256 without TLS (modules/services/postgres.nix), and
+# lib/pq defaults to sslmode=require.
 #
 # Suno-side politeness budget (defaults): one discovery POST per interval
-# (3m → 480/day) + up to 20 recheck GETs per pass with a 45m per-clip
-# min-age + one profile GET per creator per pass (10 → ~4.8k/day). Single
-# small JSON requests, 300ms apart in the crawl; SUNO_TOP_RECHECKS=0 and
-# SUNO_TOP_CREATORS=0 disable those lanes.
+# (3m → 480/day) + up to 20 recheck GETs per pass with a 45m per-clip min-age
+# + one profile GET per creator per pass (10 → ~4.8k/day) + 2 tag-search POSTs
+# and 3 playlist GETs and 5 seed GETs per pass (~3.8k/day combined). Single
+# small JSON requests, 300ms apart per lane. The search endpoint rate-limits
+# (429) under rapid bursts; set any lane to 0 to disable it.
 let
   cfg = config.jupiter.services.sunoTop;
 
@@ -108,6 +117,55 @@ in
         below the floor are pruned at startup. 0 disables the floor.
       '';
     };
+
+    tagsPerPass = lib.mkOption {
+      type = lib.types.ints.unsigned;
+      default = 2;
+      description = ''
+        How many style tags to walk one search page each per pass (the
+        tag-search firehose: POST /api/search/ with search_type=tag_song,
+        winners-first by upvote count, 10k hits per tag max). Tag queue is
+        seeded from suno.com's styles sitemap. 0 disables the lane.
+      '';
+    };
+
+    tagPageSize = lib.mkOption {
+      type = lib.types.ints.unsigned;
+      default = 100;
+      description = ''
+        Clips requested per tag-search page (server caps this at 100).
+      '';
+    };
+
+    playlistsPerPass = lib.mkOption {
+      type = lib.types.ints.unsigned;
+      default = 3;
+      description = ''
+        How many public playlists to walk one page each per pass. Playlist
+        ids come from profile responses, editorial indexes and playlist
+        owners; each page yields full clip objects plus the owner handle.
+        0 disables the lane.
+      '';
+    };
+
+    seedsPerPass = lib.mkOption {
+      type = lib.types.ints.unsigned;
+      default = 5;
+      description = ''
+        How many one-shot queued clip ids (contest base songs) to fetch per
+        pass. 0 disables the lane.
+      '';
+    };
+
+    editorialInterval = lib.mkOption {
+      type = lib.types.str;
+      default = "12h";
+      description = ''
+        Minimum time between refreshes of the editorial playlist indexes
+        (homepage/explore) and the contest seed queue (systemd time-span
+        string). Persisted in suno.meta, so restarts cannot bypass it.
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -130,6 +188,11 @@ in
         SUNO_TOP_RECHECK_MIN_AGE = cfg.recheckMinAge;
         SUNO_TOP_CREATORS = toString cfg.creatorsPerPass;
         SUNO_TOP_MIN_UPVOTES = toString cfg.minUpvotes;
+        SUNO_TOP_TAGS = toString cfg.tagsPerPass;
+        SUNO_TOP_TAG_PAGE_SIZE = toString cfg.tagPageSize;
+        SUNO_TOP_PLAYLISTS = toString cfg.playlistsPerPass;
+        SUNO_TOP_SEEDS = toString cfg.seedsPerPass;
+        SUNO_TOP_EDITORIAL_INTERVAL = cfg.editorialInterval;
       };
 
       serviceConfig = {

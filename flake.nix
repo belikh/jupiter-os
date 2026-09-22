@@ -499,6 +499,13 @@
       # pkgs/suno-backfill/default.nix for the full story.
       packages.x86_64-linux.suno-backfill = nixpkgs.legacyPackages.x86_64-linux.callPackage ./pkgs/suno-backfill { };
 
+      # suno-top — credential-free public-catalogue harvester daemon
+      # (trending feed + creator crawl + tag search + playlist/editorial
+      # discovery; see pkgs/suno-top/main.go). Exposed so
+      # `nix build .#suno-top` verifies the in-tree Go source standalone;
+      # consumed by callisto via modules/services/suno-top.nix.
+      packages.x86_64-linux.suno-top = nixpkgs.legacyPackages.x86_64-linux.callPackage ./pkgs/suno-top { };
+
       # ariang — AriaNg web UI for aria2, built from source at the commit
       # the in-tree task-name patch targets (upstream master d6a7653). Exposed
       # standalone (untuned legacyPackages, same as dsh) so the npm lock hash
