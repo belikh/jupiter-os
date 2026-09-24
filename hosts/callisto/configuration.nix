@@ -864,6 +864,20 @@
   systemd.services.open-design-web.serviceConfig.Group = lib.mkForce "users";
   systemd.services.open-design-web.serviceConfig.ProtectHome = lib.mkForce false;
 
+  systemd.services.bob-audio-review = {
+    description = "Katter Hansard audio review site";
+    wantedBy = [ "multi-user.target" ];
+    after = [ "network-online.target" ];
+    serviceConfig = {
+      User = "matt";
+      Group = "users";
+      WorkingDirectory = "/home/matt/projects/bob";
+      ExecStart = "${pkgs.python3}/bin/python -m tools.review_server --root /home/matt/projects/bob/data/audio_pilot --host 10.1.1.3 --port 8766";
+      Restart = "on-failure";
+      RestartSec = 5;
+    };
+  };
+
   jupiter.services.cloudflareTunnel = {
     enable = true;
     tunnelId = "85534a9c-2c13-412c-a658-322f7c36edc7";
@@ -889,6 +903,11 @@
         # Caddy serves the SPA on 5174 and proxies /api/* to the daemon
         # on 7457. Keep port in sync with services.open-design.webFrontend.port.
         port = 5174;
+      }
+      {
+        hostname = "bob.jupiter.au";
+        host = "10.1.1.3";
+        port = 8766;
       }
       {
         hostname = "procurement.jupiter.au";
