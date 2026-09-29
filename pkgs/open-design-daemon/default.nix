@@ -53,7 +53,7 @@ let
 
   # Bump after changing src/lockfile/workspacePaths: `nix build .#open-design-daemon`
   # reports the fetched-store hash in the mismatch error, copy it here.
-  pnpmDepsHash = "sha256-w5PgyUyslRbyv9BiGO2ySwgbCAXQ1oki8lzh6iVJsCU=";
+  pnpmDepsHash = "sha256-vIC+5YfoL5BAwdsP58EdsuSPu1eE8Uq7DwtxUZgfma4=";
 in
 stdenv.mkDerivation (finalAttrs: {
   inherit pname version src;
