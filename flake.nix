@@ -506,6 +506,13 @@
       # consumed by callisto via modules/services/suno-top.nix.
       packages.x86_64-linux.suno-top = nixpkgs.legacyPackages.x86_64-linux.callPackage ./pkgs/suno-top { };
 
+      # roster-writer — the ISS/Kronos roster sole-writer (spec §8.1/§8.2):
+      # n8n-parity parser (PARITY.md), fleet-Postgres custody + retained MQTT
+      # contract for HA. Exposed so `nix build .#roster-writer` verifies the
+      # in-tree Go source standalone; consumed by callisto via
+      # modules/services/roster-writer.nix.
+      packages.x86_64-linux.roster-writer = nixpkgs.legacyPackages.x86_64-linux.callPackage ./pkgs/roster-writer { };
+
       # ariang — AriaNg web UI for aria2, built from source at the commit
       # the in-tree task-name patch targets (upstream master d6a7653). Exposed
       # standalone (untuned legacyPackages, same as dsh) so the npm lock hash
