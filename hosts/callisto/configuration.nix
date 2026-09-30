@@ -715,8 +715,8 @@
     description = "Set suno role password from sops secret";
     wantedBy = [ "multi-user.target" ];
     before = [ "jupiter-suno-top.service" ];
-    after = [ "postgresql.service" ];
-    requires = [ "postgresql.service" ];
+    after = [ "postgresql.service" "postgresql-setup.service" ];
+    requires = [ "postgresql.service" "postgresql-setup.service" ];
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
@@ -744,8 +744,8 @@
   systemd.services.jupiter-pg-provision-homeassistant = {
     description = "Set homeassistant role password from sops secret";
     wantedBy = [ "multi-user.target" ];
-    after = [ "postgresql.service" ];
-    requires = [ "postgresql.service" ];
+    after = [ "postgresql.service" "postgresql-setup.service" ];
+    requires = [ "postgresql.service" "postgresql-setup.service" ];
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
@@ -773,8 +773,8 @@
   systemd.services.jupiter-pg-provision-n8n = {
     description = "Set n8n role password from sops secret";
     wantedBy = [ "multi-user.target" ];
-    after = [ "postgresql.service" ];
-    requires = [ "postgresql.service" ];
+    after = [ "postgresql.service" "postgresql-setup.service" ];
+    requires = [ "postgresql.service" "postgresql-setup.service" ];
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
