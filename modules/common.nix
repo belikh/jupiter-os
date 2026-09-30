@@ -97,6 +97,11 @@
   boot.loader.systemd-boot.enable = lib.mkDefault true;
   boot.loader.efi.canTouchEfiVariables = lib.mkDefault true;
 
+  # Bound boot-menu growth: with 1G ESPs and ~7 MB per generation, 20 entries
+  # leaves ample headroom while keeping a deep rollback window. Aligned with
+  # the 30-day GC below (nixos-review F-10).
+  boot.loader.systemd-boot.configurationLimit = lib.mkDefault 20;
+
   # Left unset, systemd-boot maps `null` to "menu-force" — wait forever at the
   # boot menu. Never what an appliance or headless host wants after an
   # unattended reboot.
@@ -210,6 +215,8 @@
   nix.gc = {
     automatic = true;
     dates = "weekly";
-    options = "--delete-older-than 14d";
+    # 30d, aligned with boot-entry retention so generations and loader entries
+    # expire together (nixos-review F-10).
+    options = "--delete-older-than 30d";
   };
 }

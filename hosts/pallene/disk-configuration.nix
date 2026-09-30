@@ -33,6 +33,7 @@
     device = "/dev/sda";
     efiSupport = false;
     efiInstallAsRemovable = false;
+    configurationLimit = 20;
   };
   boot.loader.timeout = 0;
 
