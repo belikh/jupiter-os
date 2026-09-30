@@ -1,8 +1,11 @@
 # Incident note: 2026-09-08 TokenRouter key exposure in verification transcript
 
-**Severity:** medium (single shared provider credential, no fleet secrets).
-**Status at writing:** rotation **not yet done** — owner action required (see
-"Required follow-ups").
+**Severity:** low (single shared provider credential, no fleet secrets; the
+key currently carries zero credits and accesses nothing).
+**Status:** rotation **not done** — deliberately deferred 2026-09-30
+(nixos-review F-02, ledger `R1-D1`): the key is inert while the account is
+unfunded; rotate it before the account is funded again, or by the 2026-12-28
+trigger.
 
 ## What happened
 
@@ -70,6 +73,12 @@ Two compounding factors:
    sessions if the dashboard shows recent activity from an unexpected IP.
 3. This note is the required incident record; no repo copy of the value
    exists to scrub (the transcript copy is outside repo control).
+
+**2026-09-30 update:** rotation deferred per the nixos-review remediation
+(grilling decision, ledger `R1-D1`, trigger 2026-12-28). The credential is
+inert — zero credits, no account access — so urgency is low; the moment the
+account is funded, rotate before use (console → `sops set` → redeploy both
+wrappers).
 
 ## Prevention
 
