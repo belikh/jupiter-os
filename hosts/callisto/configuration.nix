@@ -675,6 +675,13 @@
       name = "homeassistant";
       ensureDBOwnership = false;
     }
+    {
+      # n8n keep-set landing (Jupiter Quarters G-E, spec §7.3): owns its
+      # same-named database for migrations; password via the provision
+      # oneshot below.
+      name = "n8n";
+      ensureDBOwnership = true;
+    }
   ];
 
   # Shadow-phase recorder access for the green HAOS guest (Jupiter Quarters
@@ -748,6 +755,57 @@
       printf 'ALTER ROLE homeassistant PASSWORD '"'"'%s'"'"';' "$pw" \
         | ${pkgs.util-linux}/bin/runuser -u postgres -- ${pkgs.postgresql_18}/bin/psql -d jupiter -v ON_ERROR_STOP=1 -f -
     '';
+  };
+
+  # ---- n8n keep-set landing (Jupiter Quarters overhaul G-E, spec §7.3) ------
+  # The second service off the old world, packaged as a NixOS service with
+  # fleet-Postgres storage: DynamicUser + systemd LoadCredential for the
+  # _FILE secrets (the module's documented pattern). Loopback-only until the
+  # service ladder promotes it; the old CT102 instance keeps serving until
+  # the G-E rungs clear, so BOTH can run in parallel — the keep-set workflows
+  # migrate with fresh instance credentials after first start.
+  sops.secrets.pg_n8n_password = { };
+  sops.secrets.n8n_encryption_key = { };
+
+  services.postgresql.ensureDatabases = [ "n8n" ];
+  # (the n8n role joins the shared ensureUsers list above)
+
+  systemd.services.jupiter-pg-provision-n8n = {
+    description = "Set n8n role password from sops secret";
+    wantedBy = [ "multi-user.target" ];
+    after = [ "postgresql.service" ];
+    requires = [ "postgresql.service" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+    script = ''
+      pw="$(cat ${config.sops.secrets.pg_n8n_password.path})"
+      printf 'ALTER ROLE n8n PASSWORD '"'"'%s'"'"';' "$pw" \
+        | ${pkgs.util-linux}/bin/runuser -u postgres -- ${pkgs.postgresql_18}/bin/psql -d jupiter -v ON_ERROR_STOP=1 -f -
+    '';
+  };
+
+  services.n8n = {
+    enable = true;
+    openFirewall = false; # loopback until the G-E service ladder promotes it
+    environment = {
+      N8N_HOST = "127.0.0.1";
+      N8N_PORT = 5678;
+      N8N_PROTOCOL = "http";
+      N8N_SECURE_COOKIE = false; # plain-HTTP loopback during migration
+      GENERIC_TIMEZONE = "Australia/Brisbane";
+      N8N_DIAGNOSTICS_ENABLED = false;
+      N8N_VERSION_NOTIFICATIONS_ENABLED = false;
+      N8N_METRICS = true;
+      DB_TYPE = "postgresdb";
+      DB_POSTGRESDB_HOST = "127.0.0.1";
+      DB_POSTGRESDB_PORT = 5432;
+      DB_POSTGRESDB_DATABASE = "n8n";
+      DB_POSTGRESDB_USER = "n8n";
+      DB_POSTGRESDB_PASSWORD_FILE = config.sops.secrets.pg_n8n_password.path;
+      N8N_ENCRYPTION_KEY_FILE = config.sops.secrets.n8n_encryption_key.path;
+    };
   };
 
   # ---- Public Suno trending harvester (schema `suno`) -----------------------
