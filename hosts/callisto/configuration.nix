@@ -49,6 +49,11 @@
     # `suno_database_url`. Co-located with Postgres on purpose — the daemon
     # is stateless apart from the DB.
     ../../modules/services/suno-top.nix
+    # Kronos roster sole-writer (spec §8.1/§8.2): n8n-parity poller →
+    # fleet Postgres custody + retained MQTT contract for HA. Replaces the
+    # n8n roster/change workflows; secrets via sops (roster_ical_url,
+    # pg_roster_password, mqtt_roster_password).
+    ../../modules/services/roster-writer.nix
     # HAOS guest host (Jupiter Quarters overhaul G-E, spec §7.2): libvirt +
     # KVM + OVMF substrate for the green-world Home Assistant guest. The
     # GUEST itself is defined imperatively via virt-install from the
@@ -242,7 +247,25 @@
           "readwrite ha-linux-agent/#"
         ];
       };
+      roster-writer = {
+        passwordFile = config.sops.secrets.mqtt_roster_password.path;
+        acl = [
+          "readwrite jupiter/schedule/shift/#"
+          "readwrite homeassistant/sensor/jupiter_next_shift_roster/#"
+          "readwrite homeassistant/sensor/jupiter_next_shift/#"
+        ];
+      };
     };
+  };
+
+  sops.secrets.mqtt_roster_password = { };
+
+  # ---- Kronos roster sole-writer (modules/services/roster-writer.nix) ----
+  # Dual-run phase: writes Postgres custody + publishes the MQTT contract to
+  # sensor.next_shift_roster while the n8n writer keeps the live ghost. The
+  # atomic flip republishes discovery as `next_shift` (objectId option).
+  jupiter.services.rosterWriter = {
+    enable = true;
   };
 
   # ---- Local model server (jupiter.services.llm) — DISABLED 2026-08-15 ----
@@ -668,6 +691,15 @@
       ensureDBOwnership = false;
     }
     {
+      # Kronos roster sole-writer (modules/services/roster-writer.nix).
+      # Existing tables (G-D custody) are granted by the
+      # jupiter-pg-provision-roster oneshot; the roster_feed_state table is
+      # created there too, so the daemon runs DML-only apart from its
+      # CREATE-TABLE-IF-NOT-EXISTS safety check (schema CREATE granted).
+      name = "roster";
+      ensureDBOwnership = false;
+    }
+    {
       # Green HAOS recorder backend (Jupiter Quarters overhaul G-E, spec §7.2
       # + §3.3): the HAOS guest writes its recorder straight into fleet
       # Postgres — no second SQLite. Role is fleet-scoped; the database is the
@@ -815,6 +847,39 @@
       GRANT INSERT, SELECT ON ops.n8n_errors TO n8n;
       GRANT USAGE ON SEQUENCE ops.n8n_errors_id_seq TO n8n;
       GRANT SELECT ON ops.n8n_errors TO homeassistant;
+SQL
+    '';
+  };
+
+  # roster-writer store (spec §8.2): password + DML grants on the roster
+  # custody tables (G-D), plus the writer's own feed-state table, so the
+  # daemon runs DML-only apart from its defensive IF-NOT-EXISTS check.
+  systemd.services.jupiter-pg-provision-roster = {
+    description = "Set roster role password + grants from sops secret";
+    wantedBy = [ "multi-user.target" ];
+    after = [ "postgresql.service" "postgresql-setup.service" ];
+    requires = [ "postgresql.service" "postgresql-setup.service" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+    script = ''
+      pw="$(cat ${config.sops.secrets.pg_roster_password.path})"
+      printf 'ALTER ROLE roster PASSWORD '"'"'%s'"'"';' "$pw" \
+        | ${pkgs.util-linux}/bin/runuser -u postgres -- ${pkgs.postgresql_18}/bin/psql -d jupiter -v ON_ERROR_STOP=1 -f -
+      ${pkgs.util-linux}/bin/runuser -u postgres -- ${pkgs.postgresql_18}/bin/psql -d jupiter -v ON_ERROR_STOP=1 -f - <<'SQL'
+      GRANT CONNECT ON DATABASE jupiter TO roster;
+      GRANT USAGE, CREATE ON SCHEMA public TO roster;
+      CREATE TABLE IF NOT EXISTS public.roster_feed_state (
+        only_row boolean PRIMARY KEY DEFAULT true CHECK (only_row),
+        ics_raw text,
+        content_hash text,
+        fetched_at timestamptz,
+        changes_detected integer NOT NULL DEFAULT 0
+      );
+      GRANT SELECT, INSERT, UPDATE, DELETE ON
+        public.shift_roster, public.shift_history, public.shift_change_log,
+        public.roster_feed_state TO roster;
 SQL
     '';
   };
