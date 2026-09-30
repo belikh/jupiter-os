@@ -42,12 +42,15 @@ the plan's §7.A made local and mechanical.
 5. **Every task closes on an evidence record:** a command, a result, and
    an artefact path. "Done" without a run is a failure by definition —
    the single lesson the August record teaches.
-6. **Deployment to europa or any kiosk is denied to agents.** Deny-first
-   rules in `.opencode/opencode.json` (nixos-rebuild switch/test/boot,
-   ssh root@\*, force-pushes). Host switches and live observations run
-   through the operator-assisted path and must produce the before/after
-   evidence artefacts the plan specifies (Lane E). Live deployment stays
-   on the CI dispatch path.
+6. **Agents may deploy, under rails.** Host switches run as root on the
+   target host and close on before/after evidence records (rule 5).
+   Configuration changes go canary-first: deploy one host, verify by
+   observation, then the remainder. Destructive or irreversible actions
+   — GC with root deletion, disk or key operations, fleet-wide rollout —
+   require explicit, quoted operator authorisation per action.
+   `.opencode/opencode.json` enforces the rails (force-push denied,
+   destructive commands prompt). The CI dispatch path remains the
+   default route for main-built closures.
 7. **Findings over workarounds.** Evidence contradicting the plan's
    assumptions — above all europa's *inferred* unit state (never
    observed; the stale comment at `hosts/europa/configuration.nix` still
@@ -283,7 +286,7 @@ prose.
 ## 7. W1 completion record — Phase 0 Lane T (exposure triage)
 
 All changes are module/config changes: **they take effect at each host's
-next deploy** (constitution rule 6 — agent deployment is denied). Operator
+next deploy** (constitution rule 6 as it then stood — agent deployment was denied). Operator
 steps in the residue list below.
 
 | Task | Change (file:line) | Command | Result | Artefact |
