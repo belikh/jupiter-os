@@ -786,6 +786,39 @@
     '';
   };
 
+  # BAR-ERR store (spec §8.3): ops schema for n8n error digests. The n8n
+  # role writes (its Error Handler workflow); homeassistant reads for the
+  # office-grid sensor. Idempotent — safe on every activation.
+  systemd.services.jupiter-pg-provision-ops = {
+    description = "Create ops schema + grants for n8n error digests";
+    wantedBy = [ "multi-user.target" ];
+    after = [ "postgresql.service" "postgresql-setup.service" ];
+    requires = [ "postgresql.service" "postgresql-setup.service" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+    script = ''
+      ${pkgs.util-linux}/bin/runuser -u postgres -- ${pkgs.postgresql_18}/bin/psql -d jupiter -v ON_ERROR_STOP=1 -f - <<'SQL'
+      CREATE SCHEMA IF NOT EXISTS ops;
+      CREATE TABLE IF NOT EXISTS ops.n8n_errors (
+        id bigserial PRIMARY KEY,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        workflow_name text,
+        wf_id text,
+        execution_id bigint,
+        err_message text,
+        err_stack text
+      );
+      GRANT CONNECT ON DATABASE jupiter TO n8n;
+      GRANT USAGE ON SCHEMA ops TO n8n, homeassistant;
+      GRANT INSERT, SELECT ON ops.n8n_errors TO n8n;
+      GRANT USAGE ON SEQUENCE ops.n8n_errors_id_seq TO n8n;
+      GRANT SELECT ON ops.n8n_errors TO homeassistant;
+SQL
+    '';
+  };
+
   services.n8n = {
     enable = true;
     openFirewall = false; # loopback until the G-E service ladder promotes it
