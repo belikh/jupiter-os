@@ -955,6 +955,9 @@
   # Wire the procurement MCP into opencode (local stdio, per-session spawn on callisto) and
   # ensure its sops secrets are provisioned. The module itself declares the secrets; we just enable it.
   jupiter.services.procurementMcp.enable = true;
+  # Public ingress path-scoping: only the compliance proxy may be exposed
+  # (nixos-review F-04).
+  jupiter.services.procurementMcp.complianceProxy.enable = true;
 
   # ---- Cloudflare Tunnel (dedicated per-host tunnel) ------------------------
   # europa's tunnel can't serve dsh: its cloudflared can't reach THIS host's
@@ -1109,12 +1112,12 @@
       }
       {
         hostname = "procurement.jupiter.au";
-        # Procurement MCP streamable-HTTP (modules/services/procurement-mcp.nix).
         # Publicly reachable ONLY for eBay marketplace account deletion
-        # notifications compliance (/ebay/notifications GET+POST) — the MCP
-        # endpoint itself (/mcp) rides the same port loopback-side; gate
-        # wider exposure via Cloudflare Access if ever needed.
-        port = 8787;
+        # notifications compliance: the tunnel targets the path-scoped loopback
+        # proxy (jupiter.services.procurementMcp.complianceProxy), which
+        # forwards /ebay/notifications and 404s everything else — never the MCP
+        # port itself (nixos-review F-04).
+        port = 8788;
       }
     ];
   };

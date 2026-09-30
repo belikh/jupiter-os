@@ -31,6 +31,20 @@ in
       default = "/home/io/projects/procurement";
       description = "Checkout containing server.py (callisto local checkout).";
     };
+
+    complianceProxy = {
+      enable = lib.mkEnableOption "the loopback path-scoped proxy for eBay's compliance endpoint";
+
+      port = lib.mkOption {
+        type = lib.types.port;
+        default = 8788;
+        description = ''
+          Loopback port for the compliance proxy. The public ingress must
+          target this port, never the MCP port: only /ebay/notifications is
+          forwarded, everything else (notably /mcp) is 404 (nixos-review F-04).
+        '';
+      };
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -132,8 +146,30 @@ in
       };
     };
 
-    # Reverse-proxy note — procurement-mcp is loopback-only (127.0.0.1:${toString cfg.port}).
-    # opencode connects via remote URL, not via the Cloudflare tunnel, so no ingress rule is added.
-    # To expose publicly, add a callisto cloudflare tunnel ingress similar to opencode-web/dsh.
+    # Path-scoped public entry for eBay's marketplace account deletion
+    # compliance. The tunnel targets THIS loopback port; the MCP listener
+    # (cfg.port) stays loopback-only (nixos-review F-04).
+    services.nginx = lib.mkIf cfg.complianceProxy.enable {
+      enable = true;
+      virtualHosts."procurement-compliance" = {
+        listen = [
+          {
+            addr = "127.0.0.1";
+            port = cfg.complianceProxy.port;
+          }
+        ];
+        locations."^~ /ebay/notifications" = {
+          proxyPass = "http://127.0.0.1:${toString cfg.port}";
+          extraConfig = ''
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+          '';
+        };
+        locations."/" = {
+          return = "404";
+        };
+      };
+    };
   };
 }
