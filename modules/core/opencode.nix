@@ -523,6 +523,19 @@ let
     export Z_AI_API_KEY="$(cat ${config.sops.secrets.zai_api_key_matt.path})"
     export GROQ_API_KEY="$(cat ${config.sops.secrets.groq_api_key_matt.path})"
     export TOKENROUTER_API_KEY="$(cat ${config.sops.secrets.tokenrouter_api_key_matt.path})"
+    # EmDash CLI (jupiter.au CMS) — used by the build-in-public skill from
+    # matt's sessions: personal API token + Cloudflare Access service-token
+    # headers (EMDASH_HEADERS is newline-separated "Name: Value" pairs, the
+    # format the EmDash client parses). All-or-nothing and optional: absent
+    # secrets leave both unset and the CLI reports "Not logged in" instead.
+    if [ -r ${config.sops.secrets.emdash_token.path} ] \
+      && [ -r ${config.sops.secrets.cf_access_client_id.path} ] \
+      && [ -r ${config.sops.secrets.cf_access_client_secret.path} ]; then
+      export EMDASH_TOKEN="$(cat ${config.sops.secrets.emdash_token.path})"
+      export EMDASH_HEADERS="$(printf 'CF-Access-Client-Id: %s\nCF-Access-Client-Secret: %s' \
+        "$(cat ${config.sops.secrets.cf_access_client_id.path})" \
+        "$(cat ${config.sops.secrets.cf_access_client_secret.path})")"
+    fi
     exec "$HOME/.opencode/bin/opencode" "$@"
   '';
 in
@@ -684,6 +697,23 @@ in
     };
     sops.secrets.tokenrouter_api_key_matt = lib.mkIf cfg.mattUser {
       key = "tokenrouter_api_key";
+      owner = "matt";
+      mode = "0400";
+    };
+
+    # EmDash CMS (jupiter.au) credentials for matt's rig — consumed by the
+    # build-in-public skill's `npx emdash` calls, exported by the launcher
+    # above. New YAML keys (no io counterpart), written by the capture
+    # wizard; missing values are tolerated.
+    sops.secrets.emdash_token = lib.mkIf cfg.mattUser {
+      owner = "matt";
+      mode = "0400";
+    };
+    sops.secrets.cf_access_client_id = lib.mkIf cfg.mattUser {
+      owner = "matt";
+      mode = "0400";
+    };
+    sops.secrets.cf_access_client_secret = lib.mkIf cfg.mattUser {
       owner = "matt";
       mode = "0400";
     };
