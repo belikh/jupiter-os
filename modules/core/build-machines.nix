@@ -46,6 +46,11 @@ let
       name = "adrastea";
       host = "adrastea.localdomain";
       isKiosk = true;
+      # Not yet physically installed (placeholder disk + age key). Without a
+      # pinned SSH host key every dispatch to it fails host-key verification
+      # (nixos-review F-05), so it stays out of the pool until install time,
+      # when this becomes true together with its knownHosts pin below.
+      installed = false;
     }
     {
       name = "thebe";
@@ -77,11 +82,16 @@ let
       mandatoryFeatures = [ ];
     };
 
-  # All builders (the full symmetric pool)
-  allBuilders = map mkBuilder allSkylakeHosts;
+  # All builders (the full symmetric pool, minus hosts not yet in service)
+  allBuilders = map mkBuilder (lib.filter (h: h.installed or true) allSkylakeHosts);
 
-  # For a given host, its REMOTE builders are all OTHER Skylake hosts
-  remoteBuilders = lib.filter (b: b.hostName != cfg.selfHost) allBuilders;
+  # For a given host, its REMOTE builders are all OTHER Skylake hosts.
+  # Filter by entry NAME: a builder's hostName is an address/mDNS name (e.g.
+  # 10.1.1.3, metis.localdomain), so comparing hostName against selfHost never
+  # matched and every host listed itself as a remote builder.
+  remoteBuilders = map mkBuilder (
+    lib.filter (h: (h.installed or true) && h.name != cfg.selfHost) allSkylakeHosts
+  );
 in
 {
   imports = [ ../network/fleet.nix ];
