@@ -525,16 +525,19 @@ let
     export TOKENROUTER_API_KEY="$(cat ${config.sops.secrets.tokenrouter_api_key_matt.path})"
     # EmDash CLI (jupiter.au CMS) — used by the build-in-public skill from
     # matt's sessions: personal API token + Cloudflare Access service-token
-    # headers (EMDASH_HEADERS is newline-separated "Name: Value" pairs, the
-    # format the EmDash client parses). All-or-nothing and optional: absent
-    # secrets leave both unset and the CLI reports "Not logged in" instead.
+    # headers. All-or-nothing and optional: absent secrets leave these unset
+    # and the CLI reports "Not logged in" instead. The components are exported
+    # separately because CLI 1.0.1's `whoami` drops custom headers entirely
+    # (env and -H alike); the skill passes them as explicit -H flags on every
+    # command, which is the proven-working form.
     if [ -r ${config.sops.secrets.emdash_token.path} ] \
       && [ -r ${config.sops.secrets.cf_access_client_id.path} ] \
       && [ -r ${config.sops.secrets.cf_access_client_secret.path} ]; then
       export EMDASH_TOKEN="$(cat ${config.sops.secrets.emdash_token.path})"
+      export CF_ACCESS_CLIENT_ID="$(cat ${config.sops.secrets.cf_access_client_id.path})"
+      export CF_ACCESS_CLIENT_SECRET="$(cat ${config.sops.secrets.cf_access_client_secret.path})"
       export EMDASH_HEADERS="$(printf 'CF-Access-Client-Id: %s\nCF-Access-Client-Secret: %s' \
-        "$(cat ${config.sops.secrets.cf_access_client_id.path})" \
-        "$(cat ${config.sops.secrets.cf_access_client_secret.path})")"
+        "$CF_ACCESS_CLIENT_ID" "$CF_ACCESS_CLIENT_SECRET")"
     fi
     exec "$HOME/.opencode/bin/opencode" "$@"
   '';
