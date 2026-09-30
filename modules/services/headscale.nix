@@ -447,6 +447,9 @@ in
       description = "Headscale control plane server";
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
+      # enable = true only writes the unit; without wantedBy the control
+      # plane never starts (nixos-review 2026-09-30 F-01).
+      wantedBy = [ "multi-user.target" ];
       # switch-to-configuration only auto-restarts a service when the UNIT
       # itself changes — plain environment.etc content changes (this
       # config.yaml) are invisible to it otherwise, so every config fix

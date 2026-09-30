@@ -131,6 +131,9 @@ in
       description = "Tailscale daemon (Jupiter tailnet)";
       after = [ "network-online.target" ];
       wants = [ "network-online.target" ];
+      # enable = true only writes the unit; without wantedBy nothing starts it
+      # (nixos-review 2026-09-30 F-01).
+      wantedBy = [ "multi-user.target" ];
       serviceConfig = {
         ExecStart = "${pkgs.tailscale}/bin/tailscaled --state=${cfg.stateDir}/tailscaled.state --socket=${cfg.stateDir}/tailscaled.sock --port=41641";
         Restart = "on-failure";
@@ -152,6 +155,9 @@ in
         "network-online.target"
         "tailscaled.service"
       ];
+      # Runs the declarative `tailscale up` on every start; needs an
+      # install target of its own (nixos-review 2026-09-30 F-01).
+      wantedBy = [ "multi-user.target" ];
       serviceConfig = {
         Type = "oneshot";
         RemainAfterExit = true;

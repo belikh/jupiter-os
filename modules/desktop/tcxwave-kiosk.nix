@@ -336,23 +336,10 @@ in
     #   '';
     # Left out until verified on hardware so we don't ship a wrong transform.
 
-    # Tailscale client for Jupiter tailnet. Reusable tag:fleet pre-auth key,
-    # shared fleet-wide via sops — self-registers on switch, no manual
-    # `headscale auth register` step needed.
-    sops.secrets.tailscale_fleet_authkey = { };
-    jupiter.services.tailscale = {
-      enable = true;
-      # NOT https://headscale.jupiter.au: that's Cloudflare-Tunnel-fronted,
-      # and cloudflared cannot carry the TS2021/DERP protocols at all
-      # (github.com/cloudflare/cloudflared#883, confirmed live). Goes
-      # through the public neptune.jupiter.au:8080 port-forward instead,
-      # where headscale terminates real TLS itself (see
-      # hosts/europa/configuration.nix's jupiter.services.headscale.tls).
-      serverUrl = "https://neptune.jupiter.au:8080";
-      tags = [ "tag:fleet" ];
-      acceptRoutes = true;
-      authKeyFile = config.sops.secrets.tailscale_fleet_authkey.path;
-    };
+    # Kiosks are deliberately OFF the tailnet (nixos-review 2026-09-30): the
+    # tailnet's only consumer is CI, kiosk builds and admin run over the LAN,
+    # and nothing has ever used a kiosk's tailscale client. europa (control
+    # plane + client) and callisto (admin) keep their clients.
 
     # ---- Own closure: stock baseline -----------------------------------------
     # x86-64-v3 tuning removed fleet-wide 2026-09-17 (owner decision): the
