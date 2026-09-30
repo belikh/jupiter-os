@@ -990,4 +990,32 @@
       }
     ];
   };
+
+  # G-E S-rung shadow receipts (Jupiter Quarters migration): daily sample of
+  # recorder growth, n8n health, egress-guard hits and green-guest state,
+  # appended to /root/shadow-receipts.log. Window artefact — remove at G-F.
+  systemd.services.shadow-receipt = {
+    description = "S-rung shadow receipt sampler (G-E)";
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = pkgs.writeShellScript "shadow-receipt" ''
+        OUT=/root/shadow-receipts.log
+        TS=$(${pkgs.coreutils}/bin/date -Is)
+        HA_STATES=$(${pkgs.util-linux}/bin/runuser -u postgres -- ${config.services.postgresql.package}/bin/psql -d jupiter -tAc "SELECT count(*) FROM hass.states" 2>/dev/null)
+        HA_EVENTS=$(${pkgs.util-linux}/bin/runuser -u postgres -- ${config.services.postgresql.package}/bin/psql -d jupiter -tAc "SELECT count(*) FROM hass.events" 2>/dev/null)
+        N8N_HTTP=$(${pkgs.curl}/bin/curl -s -m 5 -o /dev/null -w "%{http_code}" http://127.0.0.1:5678/healthz)
+        GUARD_HITS=$(${pkgs.iptables}/bin/iptables -L FORWARD -v -n 2>/dev/null | ${pkgs.gawk}/bin/awk '/virbr0/ {sum+=$1} END {print sum+0}')
+        GUEST=$(${pkgs.libvirt}/bin/virsh domstate green-hass 2>/dev/null | head -1)
+        echo "$TS ha_states=$HA_STATES ha_events=$HA_EVENTS n8n=$N8N_HTTP guard_drops=$GUARD_HITS guest=$GUEST" >> $OUT
+      '';
+    };
+  };
+  systemd.timers.shadow-receipt = {
+    description = "Daily S-rung shadow receipt (G-E)";
+    wantedBy = [ "timers.target" ];
+    timerConfig = {
+      OnCalendar = "*-*-* 06:00:00";
+      Persistent = true;
+    };
+  };
 }
