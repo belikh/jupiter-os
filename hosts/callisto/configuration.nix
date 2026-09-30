@@ -677,6 +677,18 @@
     }
   ];
 
+  # Shadow-phase recorder access for the green HAOS guest (Jupiter Quarters
+  # overhaul G-E, spec §3.3): the guest lives on libvirt's NAT subnet until
+  # the G-F cutover moves it to the LAN, and its recorder writes straight
+  # into fleet Postgres. Its source address (192.168.122.0/24) isn't covered
+  # by the fleet-LAN scram rule above — first boot failed closed with
+  # `no pg_hba.conf entry for host "192.168.122.139"` (2026-09-30), which is
+  # exactly the honest failure we want rather than a silent misroute. This
+  # line retires with the NAT attachment at G-F; the LAN rule then covers it.
+  services.postgresql.authentication = lib.mkAfter ''
+    host jupiter homeassistant 192.168.122.0/24 scram-sha-256
+  '';
+
   # Provision the `suno` role's password from the sops secret — CONDITIONAL
   # on the harvester being enabled (the module is the secret's declarer, so
   # referencing it when disabled would fail evaluation). Idempotent oneshot:
