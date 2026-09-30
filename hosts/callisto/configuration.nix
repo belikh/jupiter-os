@@ -1104,7 +1104,23 @@ SQL
         N8N_HTTP=$(${pkgs.curl}/bin/curl -s -m 5 -o /dev/null -w "%{http_code}" http://127.0.0.1:5678/healthz)
         GUARD_HITS=$(${pkgs.iptables}/bin/iptables -L FORWARD -v -n 2>/dev/null | ${pkgs.gawk}/bin/awk '/virbr0/ {sum+=$1} END {print sum+0}')
         GUEST=$(${pkgs.libvirt}/bin/virsh domstate green-hass 2>/dev/null | head -1)
-        echo "$TS ha_states=$HA_STATES ha_events=$HA_EVENTS n8n=$N8N_HTTP guard_drops=$GUARD_HITS guest=$GUEST" >> $OUT
+        # Roster dual-run sample (roster-writer vs the n8n ghost, both read
+        # through the live HA API) — minute-precision compare, no secrets out.
+        ROSTER="roster=match_unavailable"
+        TOKEN_FILE=/home/io/.config/ha-strategy/llat-new.env
+        if [ -r "$TOKEN_FILE" ]; then
+          TOKEN=$(head -1 "$TOKEN_FILE")
+          GHOST=$(${pkgs.curl}/bin/curl -s -m 8 -H "Authorization: Bearer $TOKEN" http://10.1.1.72:8123/api/states/sensor.next_shift | grep -oE '"state": *"[^"]*"' | head -1 | cut -d'"' -f4 | cut -c1-16)
+          MQTT=$(${pkgs.curl}/bin/curl -s -m 8 -H "Authorization: Bearer $TOKEN" http://10.1.1.72:8123/api/states/sensor.jupiter_platform_next_shift | grep -oE '"state": *"[^"]*"' | head -1 | cut -d'"' -f4 | cut -c1-16)
+          PG_NEXT=$(${pkgs.util-linux}/bin/runuser -u postgres -- ${config.services.postgresql.package}/bin/psql -d jupiter -tAc "SELECT to_char(start_utc AT TIME ZONE 'UTC','YYYY-MM-DD\"T\"HH24:MI') FROM public.shift_roster WHERE is_next" 2>/dev/null | head -1)
+          ROSTER="roster=ghost:''${GHOST} mqtt:''${MQTT} pg:''${PG_NEXT}"
+          if [ -n "$GHOST" ] && [ "$GHOST" = "$MQTT" ] && [ "$GHOST" = "$PG_NEXT" ]; then
+            ROSTER="$ROSTER roster_match=yes"
+          else
+            ROSTER="$ROSTER roster_match=NO"
+          fi
+        fi
+        echo "$TS ha_states=$HA_STATES ha_events=$HA_EVENTS n8n=$N8N_HTTP guard_drops=$GUARD_HITS guest=$GUEST $ROSTER" >> $OUT
       '';
     };
   };
