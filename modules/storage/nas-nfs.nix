@@ -27,6 +27,14 @@
     # no_subtree_check suppresses spurious ESTALE errors on crossing
     /tank/archive/retro  ${config.jupiter.fleet.lanCidr}(ro,sync,no_subtree_check,crossmnt,no_root_squash)
 
+    # callisto bulk data. callisto has no local disk — its root is a 275G
+    # zvol on rpool (europa's SSD mirror) carried over iSCSI, and it fills
+    # up. Growing service data (HAOS guest images, etc.) goes here on the
+    # big tank pool instead. Read-write and scoped to callisto alone;
+    # no_root_squash so root-owned services on callisto can write (same
+    # rationale as the retro export).
+    /tank/services/callisto  ${config.jupiter.fleet.addresses.callisto}/32(rw,sync,no_subtree_check,no_root_squash)
+
     # ci-distributed.yml's raw --log-format internal-json build logs
     # (root:root 0644, world-readable — no squash tricks needed). callisto
     # is the only consumer (jupiter-nom-web, modules/services/nom-web.nix),

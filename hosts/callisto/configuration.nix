@@ -356,6 +356,23 @@
     ];
   };
 
+  # ---- Bulk data on europa's tank pool --------------------------------------
+  # Root is a 275G iSCSI zvol on europa's SSD mirror and keeps filling.
+  # Put growing service data here instead — europa's tank pool is 16.4T.
+  # Export in modules/storage/nas-nfs.nix (read-write, callisto-scoped).
+  fileSystems."/mnt/europa" = {
+    device = "${config.jupiter.fleet.addresses.europa}:/tank/services/callisto";
+    fsType = "nfs";
+    # hard (default) not soft: this holds real data, not throwaway logs.
+    # _netdev so the mount waits for the network; callisto's root is already
+    # iSCSI-on-europa, so europa is up before stage 2 regardless.
+    options = [
+      "rw"
+      "noatime"
+      "_netdev"
+    ];
+  };
+
   # tmpfs for Nix sandbox build directory (/build) — speeds up I/O-heavy builds
   # (linking, unpacking, writing build outputs). 20GB limit (callisto has 64GB RAM;
   # maxJobs=1 * cores=4 means at most one large build at a time; 20GB leaves
