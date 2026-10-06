@@ -288,10 +288,15 @@ in
         ProtectKernelTunables = true;
         ProtectKernelModules = true;
         ProtectControlGroups = true;
+        # AF_NETLINK is required: Node's os.networkInterfaces() (and libuv's
+        # uv_interface_addresses) enumerate interfaces over a netlink socket,
+        # so without it MeshCentral crashes at startup with EAFNOSUPPORT
+        # (errno 97) in meshscanner.js getInterfaceList.
         RestrictAddressFamilies = [
           "AF_INET"
           "AF_INET6"
           "AF_UNIX"
+          "AF_NETLINK"
         ];
         RestrictNamespaces = true;
         LockPersonality = true;
