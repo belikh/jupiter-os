@@ -56,6 +56,7 @@
 
   # Baseline admin tooling, present on every host (headless or not).
   environment.systemPackages = with pkgs; [
+    file
     git
     htop
     ripgrep
