@@ -360,6 +360,16 @@
   # Root is a 275G iSCSI zvol on europa's SSD mirror and keeps filling.
   # Put growing service data here instead — europa's tank pool is 16.4T.
   # Export in modules/storage/nas-nfs.nix (read-write, callisto-scoped).
+  #
+  # Tuned 2026-10 for SMALL-FILE / metadata-heavy access, where the cost is
+  # RPC round-trips rather than bandwidth (callisto's single I219-LM is 1GbE
+  # anyway, and root iSCSI shares that link, so bandwidth tuning is moot).
+  # nconnect=4 opens four TCP connections, each with its own RPC slot table,
+  # so metadata ops stop serialising behind one connection; actimeo=60 holds
+  # attribute/dentry caches longer to skip repeated GETATTR/LOOKUP; and
+  # lookupcache=all also caches negative lookups. Safe because the export is
+  # callisto-scoped (its /32) — this is the only NFS client, so there is no
+  # second writer for the longer cache window to go stale against.
   fileSystems."/mnt/europa" = {
     device = "${config.jupiter.fleet.addresses.europa}:/tank/services/callisto";
     fsType = "nfs";
@@ -370,8 +380,22 @@
       "rw"
       "noatime"
       "_netdev"
+      "nconnect=4"
+      "actimeo=60"
+      "lookupcache=all"
     ];
   };
+
+  # NFS client RPC concurrency. The default tcp_slot_table_entries is 2 PER
+  # connection — only 8 outstanding RPCs across nconnect=4 — which throttles
+  # exactly the metadata-heavy (small-file) workload this mount now serves.
+  # Set via the sunrpc MODULE parameter, not boot.kernel.sysctl: it must take
+  # effect before the nfs client mounts, and /proc/sys/sunrpc does not exist
+  # until the module loads. sunrpc is a loadable module on the stock NixOS
+  # kernel, so modprobe.d is the durable hook.
+  boot.extraModprobeConfig = ''
+    options sunrpc tcp_slot_table_entries=32 tcp_max_slot_table_entries=32
+  '';
 
   # tmpfs for Nix sandbox build directory (/build) — speeds up I/O-heavy builds
   # (linking, unpacking, writing build outputs). 20GB limit (callisto has 64GB RAM;

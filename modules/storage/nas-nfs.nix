@@ -33,7 +33,17 @@
     # big tank pool instead. Read-write and scoped to callisto alone;
     # no_root_squash so root-owned services on callisto can write (same
     # rationale as the retro export).
-    /tank/services/callisto  ${config.jupiter.fleet.addresses.callisto}/32(rw,sync,no_subtree_check,no_root_squash)
+    #
+    # `async`, NOT `sync` (changed 2026-10, explicitly requested): this
+    # dataset lives on tank (the spinning-rust mirror), and a `sync` export
+    # forces a ZFS fsync per small-file WRITE — which is exactly what made
+    # many-small-file writes crawl. `async` lets nfsd reply before the data
+    # is committed, so those writes batch into the normal ZIL/txg flush.
+    # ACCEPTED TRADE: a europa power loss / panic can lose or tear recent
+    # writes to this export. It is callisto-scoped and holds regenerable-ish
+    # service data; do NOT extend `async` to the exports above without the
+    # same call, and back out if this ever holds the only copy of anything.
+    /tank/services/callisto  ${config.jupiter.fleet.addresses.callisto}/32(rw,async,no_subtree_check,no_root_squash)
 
     # ci-distributed.yml's raw --log-format internal-json build logs
     # (root:root 0644, world-readable — no squash tricks needed). callisto
