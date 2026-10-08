@@ -10,7 +10,7 @@
 #     callisto enables it: it is the sole host with enough RAM (~62Gi) to hold
 #     the Qwen3-Coder-30B-A3B GGUF alongside its build-server workload.
 #   * client — `jupiter.services.llm.clientUrl` is the base URL OpenAI-
-#     compatible clients (crush's `llamacpp` provider) use to reach the model.
+#     compatible clients use to reach the model.
 #     common.nix defaults it fleet-wide to callisto's static LAN address so
 #     every host dials the shared server; callisto pins it back to localhost
 #     to skip the LAN hop. Code/prompts never leave the trusted LAN.
@@ -25,7 +25,7 @@
 # as the fleet build server. A dense 7-14B is faster but falls below agentic
 # coding needs; the leaderboard 35B-class dense models assume server hardware.
 # Qwen3-Coder-30B-A3B (30B total / ~3B active MoE) keeps per-token CPU cost
-# low while its agentic-coding + function-calling handle opencode/crush's
+# low while its agentic-coding + function-calling handle opencode's
 # multi-step tool loops. Q4_K_M (~18Gi) fits callisto's RAM with headroom.
 let
   cfg = config.jupiter.services.llm;
@@ -65,10 +65,10 @@ in
       default = "http://${cfg.host}:${toString cfg.port}";
       defaultText = lib.literalExpression ''"http://\${config.jupiter.services.llm.host}:\${toString config.jupiter.services.llm.port}"'';
       description = ''
-        Base URL that client agents (crush's `llamacpp` provider) use to reach
+        Base URL that client agents use to reach
         the model. Defaults to the local server address; hosts that only
-        consume the fleet server (modules/core/crush.nix sets this fleet-wide
-        in common.nix) point it at the host that actually runs it.
+        consume the fleet server (modules/common.nix sets this fleet-wide)
+        point it at the host that actually runs it.
       '';
     };
 

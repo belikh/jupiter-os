@@ -135,8 +135,8 @@ in
 
   config = lib.mkIf cfg.enable {
     # The __client refresh token — a long-lived session credential. Read at
-    # activation (never in the store). Mirrors modules/core/crush.nix's
-    # sops.secrets pattern. Owner root, mode 0400 (the service runs as root so
+    # activation (never in the store). Mirrors the sops.secrets pattern used
+    # by other modules. Owner root, mode 0400 (the service runs as root so
     # it can write the dataset).
     sops.secrets.${cfg.cookieSecret} = {
       owner = "root";

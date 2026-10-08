@@ -8,7 +8,7 @@
 let
   cfg = config.jupiter.core.zed;
 
-  # The z.ai endpoint + GLM-4.6 constants are shared with crush.nix's
+  # The z.ai endpoint + GLM-4.6 constants are shared with opencode.nix's
   # provider block (both wrap the same account); the schemas are tool-specific
   # so they are NOT merged — keep the URLs/model names in sync by hand.
   zedSettings = pkgs.writeText "zed-settings.json" (

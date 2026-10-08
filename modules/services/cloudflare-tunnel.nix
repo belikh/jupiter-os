@@ -36,7 +36,7 @@ in
     # edge-routed requests for hostnames its own ingress list doesn't know
     # (Cloudflare picks any healthy connector), so each host runs a tunnel
     # of its own with a complete ingress list for the hostnames routed to
-    # it. callisto's tunnel (dsh.jupiter.au) is cloudflare_callisto_cert.
+    # it. callisto's tunnel is cloudflare_callisto_cert.
     credentialSecret = lib.mkOption {
       type = lib.types.str;
       default = "cloudflare_cert";

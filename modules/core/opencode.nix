@@ -22,13 +22,14 @@
 #      package: opencode's plugin host and the per-user layout assume
 #      ~/.opencode/bin.
 #   2. ONE canonical /home/io/.config/opencode/opencode.json,
-#      activation-installed from the Nix store on every switch (crush.nix
-#      pattern) — local edits made through the TUI are re-synced away, so
-#      the committed config always wins. Contents follow the remediation
-#      program in research report opencode-config-improve-1c323b §4:
+#      activation-installed from the Nix store on every switch (the
+#      activation-install pattern) — local edits made through the TUI are
+#      re-synced away, so the committed config always wins. Contents follow
+#      the remediation program in research report
+#      opencode-config-improve-1c323b §4:
 #      pinned model routing, permission lockdown, task-deny globs for the
 #      ultracode subagents, single MCP chokepoint.
-#   3. sops secret declarations. zai_api_key/groq_api_key match crush.nix's
+#   3. sops secret declarations. zai_api_key/groq_api_key match zed.nix's
 #      entries verbatim (identical attrs merge cleanly when both modules
 #      are enabled). OPENCODE_API_KEY is NOT its own secret: it is sed-
 #      extracted from the packed dsh_env env file, which callisto already
@@ -55,8 +56,8 @@ let
   githubProjectSkill = pkgs.fetchFromGitHub {
     owner = "netresearch";
     repo = "github-project-skill";
-    rev = "v2.17.0";
-    hash = "sha256-tUx89rf5hxoTp25MBdmMLUvB59vAbingERbKtRCeJB4=";
+    rev = "v2.19.4";
+    hash = "sha256-HBEF+tmCkO10H7Di1WI9KiK9kWMf11PjVJx0R+tAUv0=";
   };
 
   # THE canonical config (see module header). Comments live here, not in
@@ -137,7 +138,7 @@ let
         };
       };
       provider = {
-        # Same endpoint/account as dsh settingsFile + crush.json; keys come
+        # Same endpoint/account as the zed/open-design provider blocks; keys come
         # from the environment the wrapper exports (never stored in JSON).
         "zai-coding" = {
           npm = "@ai-sdk/openai-compatible";
@@ -735,7 +736,7 @@ in
     # Global skill: github-project (Netresearch) — repository setup, branch
     # protection, issue hierarchies, auto-merge. Installed to both the
     # universal ~/.agents/skills and the OpenCode-specific path so every
-    # session (regardless of discovery order) sees it. Pinned to v2.17.0.
+    # session (regardless of discovery order) sees it. Pinned to v2.19.4.
     system.activationScripts.githubProjectSkill = lib.stringAfter [ "users" ] ''
       for dest in /home/io/.agents/skills/github-project /home/io/.config/opencode/skills/github-project; do
         mkdir -p "$(dirname "$dest")"

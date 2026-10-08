@@ -81,16 +81,12 @@
 
   # ---- Dev / agent tooling ------------------------------------------------
   # Same reasoning as the firmware line above: common.nix defaults zed (GUI
-  # editor), ecc (Node.js agent CLI), and antigravity/agy (Google agent CLI)
-  # on for the bootstrap host, but europa is a headless STORAGE-ONLY NAS with
-  # no display and no interactive dev sessions — all four are pure closure
-  # bloat on a bdver4-tuned, cache-sensitive host (and zed/crush even pull a
-  # sops secret decrypted on every activation for binaries that can't start).
+  # editor) on for the bootstrap host, but europa is a headless STORAGE-ONLY
+  # NAS with no display and no interactive dev sessions — it is pure closure
+  # bloat on a bdver4-tuned, cache-sensitive host (zed even pulls a sops
+  # secret decrypted on every activation for a binary that can't start).
   # Opt out; the future dev workstation (himalia) opts in.
   jupiter.core.zed.enable = false;
-  jupiter.core.crush.enable = false;
-  jupiter.core.ecc.enable = false;
-  jupiter.core.antigravity.enable = false;
   # Disable Lix (needs >8GB RAM to build); use standard Nix instead
   jupiter.core.lix.enable = false;
   nix.settings.system-features = lib.mkAfter [
@@ -318,8 +314,7 @@
       }
       {
         # Home Assistant MCP server (mcp-ha-connect) on the HA box at 10.1.1.72.
-        # Was exposed for the Aeon agent's GitHub-Actions skills (removed
-        # 2026-08-22); left routing pending a use-or-delete decision. The
+        # Routing left pending a use-or-delete decision. The
         # /private_<token> path is the shared secret and is NOT stored here.
         hostname = "ha-mcp.jupiter.au";
         host = config.jupiter.fleet.addresses.homeassistant;

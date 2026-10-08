@@ -6,10 +6,10 @@
 }:
 
 # AriaNg — the browser-based UI for aria2's JSON-RPC. Built from source
-# (upstream master d6a7653, the commit this tree's task-name patch is based
-# on) so the patch below applies cleanly, instead of the prebuilt AllInOne
-# zip the module used to fetch (1.3.12, which carries no source-level patch
-# site).
+# (upstream 56d44dc, v1.3.15 — the source file the task-name patch targets is
+# byte-identical to the previous pin, so the patch still applies) instead of
+# the prebuilt AllInOne zip the module used to fetch (1.3.12, which carries no
+# source-level patch site).
 #
 # package-lock.json next to this file is the upstream lockfile re-generated
 # with a modern npm (`npm install --package-lock-only --no-audit --no-fund`):
@@ -24,13 +24,13 @@
 # wrapped in tryFn (gulpfile.js) so the source tree needs no .git dir.
 buildNpmPackage rec {
   pname = "ariang";
-  version = "1.3.14";
+  version = "1.3.15";
 
   src = fetchFromGitHub {
     owner = "mayswind";
     repo = "AriaNg";
-    rev = "d6a765377e1eecfbcc387dcb824124df114decfb";
-    hash = "sha256-NLXgszZUBF/LC2moWe4wQQbMDkhdvNxYeL+AO1fhQMw=";
+    rev = "56d44dc9e822a6f59aae13a542a0cab6cf292d30";
+    hash = "sha256-YgT5lUwer5tkP2gHYkTY1LhPJN51nZjSztp7oq0mgXw=";
   };
 
   patches = [ ./aria-task-name-from-dir.patch ];

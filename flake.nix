@@ -202,11 +202,9 @@
             # currently off for europa and callisto.
             {
               nixpkgs.overlays = [
-                # (crush-go overlay REMOVED 2026-09-17: the 2026-09-16 nixpkgs
-                # bump brought Go 1.26.7, which satisfies crush 0.87.0's
-                # go.mod, so modules/core/crush.nix builds with the pinned Go
-                # directly and flake.nix no longer needs the nixpkgs-unstable
-                # input.)
+                # (A crush-specific Go overlay lived here until 2026-09-17;
+                # crush was then removed from the fleet entirely, so no
+                # per-package Go override is needed here any more.)
                 (final: prev: {
                   # nixpkgs 2026-09-16 removed the `buildGo125Module` alias
                   # (Go 1.25 is EOL), but sops-nix — newest commit is
@@ -477,20 +475,8 @@
       # gccarch-x86-64-v3 is available.
       packages.x86_64-linux.pxe-netboot-assets = pxeNetbootAssets;
 
-      # dsh — DeepSeek Harness CLI + web UI (see pkgs/dsh). Built from the
-      # published npm tarball with a generated prod-only lockfile; exposed
-      # standalone (untuned legacyPackages, like nom-web) so the npm
-      # lock hash can be recomputed via `nix build .#dsh` without pulling
-      # callisto's whole skylake-tuned closure. Consumed by the host via
-      # modules/services/dsh.nix's pkgs.callPackage.
-      packages.x86_64-linux.dsh = (
-        import ./pkgs/dsh {
-          lib = nixpkgs.lib;
-          buildNpmPackage = nixpkgs.legacyPackages.x86_64-linux.buildNpmPackage;
-          nodejs = nixpkgs.legacyPackages.x86_64-linux.nodejs;
-          fetchurl = nixpkgs.legacyPackages.x86_64-linux.fetchurl;
-        }
-      );
+      # dsh — DeepSeek Harness CLI + web UI: REMOVED 2026-10 (module
+      # modules/services/dsh.nix + pkgs/dsh deleted with it).
 
       # suno-backfill — one-shot longitudinal re-scrape of a known id list
       # (arXiv 2509.11824 suno_urls CSV) into fleet Postgres

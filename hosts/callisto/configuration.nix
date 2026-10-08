@@ -32,13 +32,10 @@
     ../../modules/services/procurement-mcp.nix
     # Tailscale client for Jupiter tailnet
     ../../modules/services/tailscale.nix
-    # Aeon autonomous agent framework dashboard
     # nom-web: browser UI for jupiter-ci build logs
     ../../modules/services/nom-web.nix
-    # DeepSeek Harness (dsh): agent harness web UI on :3080
-    ../../modules/services/dsh.nix
     # Dedicated Cloudflare tunnel for this host's public hostnames
-    # (dsh.jupiter.au → loopbound-bound dsh via cloudflared running here)
+    # (opencode/design/etc. via cloudflared running here)
     ../../modules/services/cloudflare-tunnel.nix
     # opencode web UI: one serve behind the tunnel at opencode.jupiter.au
     ../../modules/services/opencode-web.nix
@@ -70,7 +67,7 @@
     # upstream nix/module with the package default pointed in-tree. The
     # flake's modelRouterModule (mkHost extras) stamps the rev.
     # Public at router.jupiter.au via this host's Cloudflare tunnel (ingress
-    # + DNS added 2026-09-01 alongside dsh/opencode/design).
+    # + DNS added 2026-09-01 alongside opencode/design).
     ../../modules/services/model-router.nix
     # jupiterOS Arcade: boots straight into the gamescope/Pegasus session on
     # tty1 (modules/desktop/arcade-console.nix) with full kiosk collection
@@ -273,8 +270,8 @@
   # the emulators need the UHD 630 iGPU, which llama-server's Vulkan offload
   # was monopolizing. Disabled "for now" per io — re-enable by uncommenting
   # when the arcade experiment ends or the GPU is re-partitioned. Until then
-  # the fleet has NO model server: every host's crush client still dials
-  # http://10.1.1.3:8081 (modules/common.nix default) and will fail.
+  # the fleet has NO local model server (jupiter.services.llm.clientUrl is
+  # currently unconsumed in-tree after crush's removal).
   # jupiter.services.llm.enable = true;
   # jupiter.services.llm.host = "0.0.0.0";
   # jupiter.services.llm.exposeLan = true;
@@ -286,13 +283,13 @@
   # tier behind one OpenAI-compatible endpoint on loopback :8080, proxied
   # publicly at router.jupiter.au through this host's tunnel. Provider keys
   # bootstrap from the dsh_env sops secret (same GROQ/Z_AI/OPENCODE/TOKEN
-  # ROUTER keys the crush wrappers use) into the router's own encrypted
+  # ROUTER keys the opencode wrappers use) into the router's own encrypted
   # vault on first boot; the dashboard (router.jupiter.au) owns them after.
-  # opencode + OpenDesign + dsh all point at it as their provider (see the
-  # opencode-web and dsh sections — provider entries added 2026-09-01).
+  # opencode + OpenDesign point at it as their provider (see the opencode-web
+  # section — provider entries added 2026-09-01).
   jupiter.services.modelRouter = {
     enable = true;
-    envFile = config.sops.secrets.dsh_env.path; # same provider keys as dsh
+    envFile = config.sops.secrets.dsh_env.path; # same provider keys as opencode
   };
 
   hardware.graphics.enable = true;
@@ -325,18 +322,6 @@
     # pip-installed into ~/Projects/hyperresearch-opencode/.venv as io).
     pkgs.python3
   ];
-
-  # ---- GitHub token (dsh) ----------------------------------------------------
-  # One shared repo-scope GitHub PAT, historically provisioned for the Aeon
-  # dashboard (removed 2026-08-22); dsh still uses it for authenticated
-  # `git push` from the agent shell (jupiter.services.dsh.ghTokenFile).
-  # Owner/group follow the only remaining reader; rename the sops key in a
-  # dedicated secrets-edit change if the historical name ever bothers you.
-  sops.secrets.aeon_gh_token = {
-    owner = "dsh";
-    group = "dsh";
-    mode = "0440";
-  };
 
   # ---- nom-web: browser UI for ci-distributed.yml's build logs -------------
   # Reads europa's /var/log/jupiter-ci over NFS (export in
@@ -415,265 +400,12 @@
     openFirewall = true;
   };
 
-  # ---- DeepSeek Harness (dsh) — agent harness web UI ------------------------
-  # Binds loopback ONLY by upstream design (0.1.0-rc.6's schema accepts just
-  # 127.0.0.1|0.0.0.0 and the CLI rejects 0.0.0.0 as a safety guard — see
-  # modules/services/dsh.nix). Public reachability is the dedicated
-  # Cloudflare tunnel below, whose cloudflared runs on this host and proxies
-  # to localhost:3080. The web app's /api trust fence keys on the Host
-  # header, so the public hostname must be passed as a trusted host.
-  #
-  # Models: the settings/credentials UI plane is hard-gated to loopback by
-  # upstream rc.6 (PRIVILEGED_METHODS in dsh-client-connection — no auth
-  # layer exists yet), so providers are provisioned HOST-SIDE instead:
-  # settingsFile declares OpenAI-compatible providers using keys already
-  # in sops (z.ai coding plan + groq, shared with the crush/zed wrappers;
-  # opencode Go + Zen free under OPENCODE_API_KEY), with apiKeyEnv
-  # references resolved from the dsh_env sops secret. DeepSeek
-  # itself stays available via Settings → Models if ever provisioned
-  # loopback-side. Model ids fetched live from each endpoint's /models
-  # (z.ai/groq/Go 2026-08-17; Zen free tier 2026-08-20 — the free rows rotate,
-  # they were the *-free ids + big-pickle that day — catalogs don't refresh
-  # themselves, see dsh-llm-pi-ai §Known Limitations). The free Zen models
-  # answer keyless, but apiKeyEnv stays OPENCODE_API_KEY (same dsh_env key
-  # as the Go catalog) so the provider profile keeps one credential shape.
-  #
-  # contextWindow/maxTokens are stamped per model because dsh's fallback for
-  # a hand-declared, unsized model is 262144/32768 (DEFAULT_CONTEXT_WINDOW /
-  # DEFAULT_MAX_TOKENS in dsh-llm-pi-ai config.d.ts) — wrong in BOTH
-  # directions here (groq/compound truly outputs 8k; kimi-k2.7-code truly
-  # outputs 256k). Values from models.dev (2026-08-20), cross-checked
-  # against each gateway's published specs; an explicitly configured
-  # maxTokens also becomes that model's per-request default output cap,
-  # which is what we want instead of the 32k fallback. reasoningEfforts is
-  # deliberately NOT set anywhere: its wire spelling is per-gateway
-  # (PiAiThinkingFormat) and a wrong guess breaks requests mid-turn — all
-  # these models still reason by default without the knob. hy3-preview is
-  # absent from models.dev's Go catalog; sized from its sibling hy3.
-  jupiter.services.dsh = {
-    enable = true;
-    trustedHosts = [ "dsh.jupiter.au" ];
-    environmentFile = config.sops.secrets.dsh_env.path;
-    # GitHub token for `git push` from the agent shell (key name is
-    # historical — it was provisioned for the removed Aeon dashboard).
-    ghTokenFile = config.sops.secrets.aeon_gh_token.path;
-    settingsFile =
-      (pkgs.writeText "dsh-settings.yaml" ''
-        # Default model for new sessions/agents (settings ns: agent-default-model)
-        agent-default-model:
-          provider: zai-coding
-          model: glm-5.3
-
-        llm-pi-ai:
-          providers:
-            zai-coding:
-              displayName: Z.AI (coding plan)
-              apiKeyEnv: Z_AI_API_KEY
-              api: openai-completions
-              baseURL: https://api.z.ai/api/coding/paas/v4
-              models:
-                - id: glm-5.3
-                  contextWindow: 1000000
-                  maxTokens: 131072
-                - id: glm-5.2
-                  contextWindow: 1000000
-                  maxTokens: 131072
-                - id: glm-5.1
-                  contextWindow: 200000
-                  maxTokens: 131072
-                - id: glm-5
-                  contextWindow: 204800
-                  maxTokens: 131072
-                - id: glm-5-turbo
-                  contextWindow: 200000
-                  maxTokens: 131072
-                - id: glm-4.7
-                  contextWindow: 204800
-                  maxTokens: 131072
-                - id: glm-4.6
-                  contextWindow: 204800
-                  maxTokens: 131072
-                - id: glm-4.5-air
-                  contextWindow: 131072
-                  maxTokens: 98304
-            groq:
-              displayName: Groq
-              apiKeyEnv: GROQ_API_KEY
-              api: openai-completions
-              baseURL: https://api.groq.com/openai/v1
-              models:
-                - id: llama-3.3-70b-versatile
-                  contextWindow: 131072
-                  maxTokens: 32768
-                # llama-3.1-8b-instant removed 2026-08-26: dropped from this
-                # key's live /models catalog (rotation confirmed by API).
-                - id: openai/gpt-oss-20b
-                - id: openai/gpt-oss-120b
-                  contextWindow: 131072
-                  maxTokens: 65536
-                - id: openai/gpt-oss-20b
-                  contextWindow: 131072
-                  maxTokens: 65536
-                - id: qwen/qwen3.6-27b
-                  contextWindow: 131072
-                  maxTokens: 16384
-                - id: groq/compound
-                  contextWindow: 131072
-                  maxTokens: 8192
-                - id: groq/compound-mini
-                  contextWindow: 131072
-                  maxTokens: 8192
-            opencode-go:
-              displayName: OpenCode Go
-              apiKeyEnv: OPENCODE_API_KEY
-              api: openai-completions
-              baseURL: https://opencode.ai/zen/go/v1
-              models:
-                - id: deepseek-v4-pro
-                  contextWindow: 1000000
-                  maxTokens: 384000
-                - id: deepseek-v4-flash
-                  contextWindow: 1000000
-                  maxTokens: 384000
-                - id: glm-5.3
-                  contextWindow: 1000000
-                  maxTokens: 131072
-                - id: glm-5.2
-                  contextWindow: 1000000
-                  maxTokens: 131072
-                - id: glm-5.1
-                  contextWindow: 202752
-                  maxTokens: 32768
-                - id: glm-5
-                  contextWindow: 202752
-                  maxTokens: 32768
-                - id: minimax-m3
-                  contextWindow: 1000000
-                  maxTokens: 131072
-                - id: minimax-m2.7
-                  contextWindow: 204800
-                  maxTokens: 131072
-                - id: minimax-m2.5
-                  contextWindow: 204800
-                  maxTokens: 65536
-                - id: kimi-k3
-                  contextWindow: 1048576
-                  maxTokens: 131072
-                - id: kimi-k2.7-code
-                  contextWindow: 262144
-                  maxTokens: 262144
-                - id: kimi-k2.6
-                  contextWindow: 262144
-                  maxTokens: 65536
-                - id: kimi-k2.5
-                  contextWindow: 262144
-                  maxTokens: 65536
-                - id: qwen3.8-max
-                  contextWindow: 1000000
-                  maxTokens: 131072
-                - id: qwen3.7-max
-                  contextWindow: 1000000
-                  maxTokens: 65536
-                - id: qwen3.7-plus
-                  contextWindow: 1000000
-                  maxTokens: 65536
-                - id: qwen3.6-plus
-                  contextWindow: 1000000
-                  maxTokens: 65536
-                - id: qwen3.5-plus
-                  contextWindow: 262144
-                  maxTokens: 65536
-                - id: mimo-v2-pro
-                  contextWindow: 1048576
-                  maxTokens: 128000
-                - id: mimo-v2-omni
-                  contextWindow: 262144
-                  maxTokens: 128000
-                - id: mimo-v2.5-pro
-                  contextWindow: 1048576
-                  maxTokens: 128000
-                - id: mimo-v2.5
-                  contextWindow: 1000000
-                  maxTokens: 128000
-                - id: hy3
-                  contextWindow: 256000
-                  maxTokens: 64000
-                - id: hy3-preview
-                  contextWindow: 256000
-                  maxTokens: 64000
-                - id: gpt-5.6-luna
-                  contextWindow: 1050000
-                  maxTokens: 128000
-                - id: grok-4.5
-                  contextWindow: 500000
-                  maxTokens: 500000
-            opencode-zen:
-              displayName: OpenCode Zen (free)
-              apiKeyEnv: OPENCODE_API_KEY
-              api: openai-completions
-              baseURL: https://opencode.ai/zen/v1
-              models:
-                - id: big-pickle
-                  contextWindow: 200000
-                  maxTokens: 32000
-                - id: deepseek-v4-flash-free
-                  contextWindow: 200000
-                  maxTokens: 128000
-                - id: hy3-free
-                  contextWindow: 190000
-                  maxTokens: 64000
-                - id: laguna-s-2.1-free
-                  contextWindow: 256000
-                  maxTokens: 32000
-                - id: mimo-v2.5-free
-                  contextWindow: 200000
-                  maxTokens: 32000
-                - id: nemotron-3.5-lightning-free
-                  contextWindow: 262144
-                  maxTokens: 262144
-                - id: nemotron-3-ultra-free
-                  contextWindow: 1000000
-                  maxTokens: 128000
-            # Model Router — the fleet's own gateway (jupiter.services.
-            # modelRouter; router.jupiter.au / loopback :8080 on this
-            # host). Model ids are the router's pool FAMILIES; the limits
-            # are each family's worst-case free member (seed matrix, same
-            # stamps as modules/core/opencode.nix's model-router block).
-            # apiKeyEnv resolves from this same dsh_env file, where the
-            # router's client token also lands for its first boot.
-            model-router:
-              displayName: Model Router (jupiter)
-              apiKeyEnv: MODEL_ROUTER_TOKEN
-              api: openai-completions
-              baseURL: http://127.0.0.1:8080/v1
-              models:
-                - id: glm-4x-flash
-                  contextWindow: 131072
-                  maxTokens: 32768
-                - id: glm-5.2
-                  contextWindow: 262144
-                  maxTokens: 32768
-                - id: qwen3.8
-                  contextWindow: 131072
-                  maxTokens: 32768
-                - id: kimi-k3
-                  contextWindow: 1000000
-                  maxTokens: 131072
-                - id: deepseek-v4-flash
-                  contextWindow: 1000000
-                  maxTokens: 131072
-                - id: glm-5.3-flash
-                  contextWindow: 1000000
-                  maxTokens: 131072
-      '').outPath;
-  };
-
-  # Keys for the providers above (same values as the crush/zed secrets,
-  # packed as one env file — restic_env pattern).
+  # Keys for the providers above (same values as the zed secrets, packed as
+  # one env file — restic_env pattern). Consumed by opencode (io's wrapper +
+  # the web serve), open-design, and model-router's first-boot bootstrap.
   # Group widened 2026-08-25 for the opencode rig: modules/core/opencode.nix's
   # launcher seds OPENCODE_API_KEY out of this file as io, so io needs read
-  # access. Owner stays root — dsh's systemd unit reads EnvironmentFile as
-  # root before dropping privileges, so the service is unaffected.
+  # access. Owner stays root.
   sops.secrets.dsh_env = {
     group = "users";
     mode = "0440";
@@ -1001,20 +733,18 @@
   jupiter.services.procurementMcp.complianceProxy.enable = true;
 
   # ---- Cloudflare Tunnel (dedicated per-host tunnel) ------------------------
-  # europa's tunnel can't serve dsh: its cloudflared can't reach THIS host's
-  # loopback-bound dsh, and a second connector on europa's tunnel would be
-  # edge-routed requests its ingress doesn't know (see
+  # A dedicated tunnel per host: a second connector on europa's tunnel would
+  # be edge-routed requests its ingress doesn't know (see
   # modules/services/cloudflare-tunnel.nix). Tunnel "jupiter-callisto"
   # (85534a9c) created 2026-08-16 via `cloudflared tunnel create`; creds in
-  # the cloudflare_callisto_cert sops secret; DNS dsh.jupiter.au → tunnel
-  # via `cloudflared tunnel route dns`.
+  # the cloudflare_callisto_cert sops secret.
   # ---- OpenDesign ---------------------------------------------------------
   # Local-first design product: daemon `od` + web frontend (static SPA +
-  # Caddy proxy). Runs alongside dsh/opencode on the serving host.
+  # Caddy proxy). Runs alongside opencode on the serving host.
   # Uses the default ports (daemon 7457, web 5174) and dataDir
   # /var/lib/open-design on the iSCSI root.
   #
-  # Public reachability is the same Cloudflare tunnel as dsh/opencode
+  # Public reachability is the same Cloudflare tunnel as opencode
   # (design.jupiter.au): webFrontend binds loopback only; cloudflared
   # proxies to it. No firewall widening needed for tunnel access.
   jupiter.services.openDesign = {
@@ -1145,12 +875,6 @@
     # This host serves no Harmonia — leave europa's cache hostname out.
     harmoniaHostname = null;
     extraIngress = [
-      {
-        hostname = "dsh.jupiter.au";
-        # cloudflared runs here; dsh is loopback-only. host defaults to
-        # localhost, which is exactly right.
-        port = 3080;
-      }
       {
         hostname = "opencode.jupiter.au";
         # opencode web UI (modules/services/opencode-web.nix). host defaults to

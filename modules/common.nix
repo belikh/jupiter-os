@@ -18,10 +18,7 @@
     # valid (idempotent) for hosts that don't take all of common.nix.
     ./network/fleet.nix
     ./core/impermanence.nix
-    ./core/antigravity-cli.nix
-    ./core/ecc.nix
     ./core/zed.nix
-    ./core/crush.nix
     ./core/opencode.nix
     ./core/lix.nix
     ./boot/fallout-splash.nix
@@ -37,18 +34,16 @@
   # Dev/agent tooling — default-on for the bootstrap so the admin has them on
   # the live host (amalthea), but mkDefault so appliance hosts (NAS, kiosks)
   # that never run interactive dev sessions can opt out per-host.
-  jupiter.core.ecc.enable = lib.mkDefault true;
   jupiter.core.zed.enable = lib.mkDefault true;
-  jupiter.core.crush.enable = lib.mkDefault true;
-  jupiter.core.antigravity.enable = lib.mkDefault true;
   jupiter.core.branding.enable = true;
 
   # The fleet model server (modules/services/llama-server.nix) runs on
   # callisto — the only host with enough RAM to host the Qwen3-Coder-30B-A3B
-  # GGUF alongside its build-server workload. Every host's crush dials it by
-  # callisto's static DHCP-reserved IP (same pattern as the broker address in
-  # modules/services/customer-display.nix / arcade-inventory.nix). callisto
-  # itself overrides clientUrl back to localhost in its own config.
+  # GGUF alongside its build-server workload. clientUrl is the base URL
+  # OpenAI-compatible clients dial it by (callisto's static DHCP-reserved IP).
+  # Currently unconsumed in-tree (crush, the last in-tree client, was removed
+  # 2026-10); kept for external/on-demand use. callisto itself overrides
+  # clientUrl back to localhost in its own config.
   jupiter.services.llm.clientUrl = lib.mkDefault "http://${config.jupiter.fleet.addresses.callisto}:8081";
 
   nixpkgs.config.allowUnfree = true;

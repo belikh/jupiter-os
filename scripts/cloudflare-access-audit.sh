@@ -30,8 +30,6 @@ KNOWN_PUBLIC=(
 
 # Hostnames that MUST have Access + policy me; anonymous must be blocked.
 MUST_SECURE=(
-  dsh.jupiter.au
-  aeon.jupiter.au
   nom.jupiter.au
   ariang.jupiter.au
   n8n.jupiter.au
@@ -308,7 +306,7 @@ classify_one() {
     if [[ "$class" == "dangling" ]]; then
       notes="${notes}; must-secure but no DNS/tunnel yet — app should still exist"
       # If must-secure and we have app_id empty, flag as exposed for gate purposes when DNS exists;
-      # if no DNS at all this function is only called for tunneled CNAMEs. aeon may have app w/o DNS.
+      # if no DNS at all this function is only called for tunneled CNAMEs.
       class="exposed"
     else
       class="exposed"
@@ -376,7 +374,7 @@ for row in "${CNAME_ROWS[@]+"${CNAME_ROWS[@]}"}"; do
       probe_code:$probe_code,probe_status:$probe_status,probe_reason:$probe_reason,notes:$notes}')")
 done
 
-# Also report must-secure hosts that have Access apps but no DNS CNAME (e.g. aeon)
+# Also report must-secure hosts that have Access apps but no DNS CNAME
 for host in "${MUST_SECURE[@]}"; do
   already=0
   for r in "${ROWS[@]+"${ROWS[@]}"}"; do

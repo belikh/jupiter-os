@@ -23,16 +23,17 @@
 }:
 rec {
   # Package.json at the pin reads 0.23.1; upstream does not re-bump it per
-  # release, and the newest release tag at/under this rev is
-  # open-design-v0.24.1 (its changelog commit is an ancestor of this rev,
-  # so that release's content is included). Version follows package.json,
-  # as at the previous pin.
+  # release. Version follows package.json, as at the previous pin. Bumped to
+  # the 2026-10-08 rev: the workspace manifests (root/pnpm-workspace/apps
+  # daemon+web) are byte-identical to the previous pin, so the vendored
+  # pnpm-lock.yaml and the pnpmDeps hashes in open-design-{patched,daemon,web}
+  # remain valid — no lockfile regen was needed.
   version = "0.23.1";
-  rev = "64710082d02c041da47bf8c6d6c5316b36b28b22";
+  rev = "e38462fd50ef8c911c50acc9ccd4b11186655ed9";
   src = fetchFromGitHub {
     owner = "nexu-io";
     repo = "open-design";
     inherit rev;
-    hash = "sha256-Z5hToAuGFDCRJyWucHZsCpKp3at/VmzQPbAl9FVzWfY=";
+    hash = "sha256-3IZ2P5maXIce4zxFo532HjByBPdon1v9JMnlODdsGmA=";
   };
 }

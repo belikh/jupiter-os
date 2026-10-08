@@ -13,7 +13,7 @@
 # sessions. Auth is two layers: opencode's HTTP basic auth (OPENCODE_SERVER_
 # PASSWORD) PLUS Cloudflare Access on the public hostname (configured
 # dashboard-side). The cloudflare ingress rule itself is added in the host
-# config (callisto) next to the existing dsh.jupiter.au rule.
+# config (callisto) alongside the other tunnel ingress rules.
 let
   cfg = config.jupiter.services.opencodeWeb;
 in
