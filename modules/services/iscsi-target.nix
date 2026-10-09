@@ -130,6 +130,34 @@ in
       '';
     };
 
+    sync = lib.mkOption {
+      type = lib.types.enum [
+        "standard"
+        "always"
+        "disabled"
+      ];
+      default = "disabled";
+      description = ''
+        ZFS `sync` policy for the backing zvol. `standard` (the ZFS default)
+        commits every synchronous write to the ZIL before acknowledging it.
+        Correct for durability, but the consumer here is the initiator's ROOT,
+        where a `nixos-rebuild`/`nix-collect-garbage` issues a very large
+        number of fsyncs (Nix fsyncs on essentially every store-path
+        registration), each waiting on the target's SSD round trip under
+        iSCSI. When that latency exceeds the initiator's ~30s sd timeout the
+        target aborts the write (`Unable to recover from DataOut timeout …
+        closing iSCSI connection`), the initiator's root I/O blocks and the
+        host hard-hangs (observed repeatedly 2026-10-09/10). `disabled`
+        acknowledges synchronous writes without the ZIL commit, removing the
+        stall, at the cost of crash durability: a power loss / pool panic can
+        lose recently-fsynced data and corrupt the initiator's filesystem.
+        Defaulting to `disabled` is deliberate for this module because it
+        backs a host's ROOT and because a stall here does not degrade the
+        host, it wedges it; set `standard` (or `always`) where crash
+        durability outranks latency. Reverting is a plain `zfs set`.
+      '';
+    };
+
     initiatorIqn = lib.mkOption {
       type = lib.types.str;
       description = ''
@@ -246,6 +274,7 @@ in
         # by `zfs send`), so a create-time-only property would silently never
         # apply to the volume actually in use. `zfs set` is idempotent.
         zfs set primarycache="${cfg.primarycache}" "${cfg.zvolDataset}"
+        zfs set sync="${cfg.sync}" "${cfg.zvolDataset}"
       '';
     };
 

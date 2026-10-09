@@ -124,6 +124,24 @@
   # blessed fix is to not run the waiter at all.
   systemd.network.wait-online.enable = false;
 
+  # NEVER `nixos-rebuild switch`/`test` on this host — use `boot` (+ republish
+  # PXE assets, + reboot). Activating a new generation STOPS
+  # `iscsid.service`/`iscsid.socket` and re-execs (upgrades) systemd, and
+  # iscsid is what keeps the iSCSI session carrying THIS ROOT alive. Observed
+  # 2026-10-09/10: switch-to-configuration printed "stopping the following
+  # units: …, iscsid.service, iscsid.socket, …" then "restarting systemd...",
+  # PID1's D-Bus connection dropped ("Connection is closed"), the root went
+  # away and the box hard-hung until power-cycled — repeatedly, including on
+  # switches with zero store writes. `boot` writes the generation without
+  # running the activation, so nothing stops the initiator.
+  # See docs/callisto-iscsi-root-provisioning.md.
+  #
+  # These two keep a stray `switch` from stopping/restarting iscsid when the
+  # unit changes (both default true). NOTE: the socket unit is still eligible
+  # (NixOS exposes no per-socket stopIfChanged); `boot` remains the safe path.
+  systemd.services.iscsid.stopIfChanged = false;
+  systemd.services.iscsid.restartIfChanged = false;
+
   fileSystems."/" = {
     device = "/dev/disk/by-path/ip-${config.jupiter.fleet.addresses.europa}:3260-iscsi-iqn.2026-07.au.jupiter:europa:callisto-root-lun-0";
     fsType = "ext4";

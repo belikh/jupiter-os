@@ -144,3 +144,42 @@ callisto's mounted root. `boot` builds and sets the new generation as
 default without touching the running system, so the fix takes effect on the
 next (deliberate, verified) reboot instead of live-testing it against a
 mounted disk.
+
+## Known gotcha: on callisto, `switch` stops `iscsid` — deploy with `boot`
+
+The gotcha above is europa-side (`iscsi-target.service`). There is a matching
+one on callisto's own side, and it is the reason this host cannot be
+`switch`ed at all.
+
+`nixos-rebuild switch`/`test` on callisto activates the new generation in
+place, and part of that activation **stops `iscsid.service` and
+`iscsid.socket` and re-execs (upgrades) systemd**. `iscsid` is what keeps the
+iSCSI session carrying callisto's ROOT (`/dev/sda`) alive, so stopping it
+severs the root mid-activation: PID1's D-Bus connection drops
+(`Connection is closed` / `Connection reset by peer`), the root becomes
+unreachable, and the box hard-hangs until it is power-cycled. This happens
+with zero flake changes and zero store writes — it is the activation
+restarting the storage stack, not I/O. Observed repeatedly 2026-10-09/10,
+e.g.:
+
+    switch-to-configuration: stopping the following units: …, iscsid.service, iscsid.socket, …
+    switch-to-configuration: restarting systemd...
+    switch-to-configuration: Failed to restart nixos-activation.service: Connection is closed
+    [ssh] Connection reset by peer
+
+**Use `boot`, never `switch`/`test`, on callisto.** `boot` builds and sets the
+new generation without running the activation, so nothing stops the
+initiator. Because callisto PXE-boots a generation pinned by `init=` in the
+served `boot.ipxe`, the full sequence is:
+
+1. `ssh root@callisto -- nixos-rebuild boot --flake github:belikh/jupiter-os#callisto`
+   (writes the new toplevel onto callisto's iSCSI root)
+2. publish the PXE assets on europa so `boot.ipxe`'s `init=` names that
+   toplevel
+3. reboot callisto — a fresh PXE + iSCSI boot establishes the session cleanly
+
+`hosts/callisto/configuration.nix` additionally sets
+`systemd.services.iscsid.stopIfChanged = false;` and `restartIfChanged =
+false;` so a stray `switch` does not stop/restart the initiator. The socket
+unit is still eligible (NixOS exposes no per-socket override), so `boot`
+remains the safe path.
