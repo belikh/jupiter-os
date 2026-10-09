@@ -76,6 +76,12 @@ stdenv.mkDerivation (finalAttrs: {
   env = {
     NODE_ENV = "production";
     OD_DAEMON_URL = "";
+    # Next 16's `next build` typecheck worker exceeds Node's default V8 heap
+    # (~4G) and aborts with "Ineffective mark-compacts near heap limit"
+    # (SIGABRT) during "Running TypeScript". Raise the ceiling so the build
+    # completes on the fleet's 64G builder (callisto) / CI; callisto pushes
+    # the result to Harmonia so europa substitutes instead of building here.
+    NODE_OPTIONS = "--max-old-space-size=8192";
   };
 
   buildPhase = ''
