@@ -213,7 +213,17 @@
 
   # Web UI for the rig (modules/services/opencode-web.nix): one opencode serve
   # behind the cloudflare tunnel at opencode.jupiter.au (basic-auth + Access).
-  jupiter.services.opencodeWeb.enable = true;
+  # Serves MATT's second environment (the mattpocock/skills trial), not io's
+  # rig: run as matt, exec the opencode-matt sops-keyed launcher, and do NOT
+  # source io's dsh_env (matt cannot read it — his launcher exports the keys
+  # from his own remapped sops files). rootDir defaults to /home/matt/projects.
+  jupiter.services.opencodeWeb = {
+    enable = true;
+    user = "matt";
+    group = "matt";
+    launcher = "opencode-matt";
+    envFile = null;
+  };
 
   # Symmetric peer-to-peer build pool: callisto + 4 kiosks
   jupiter.core.buildMachines = {
