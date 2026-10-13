@@ -50,6 +50,9 @@
   hardware.enableRedistributableFirmware = lib.mkDefault true;
 
   # Baseline admin tooling, present on every host (headless or not).
+  # binutils is here for `strings` (bin inspection); xxd for hex dumps of
+  # firmware/dumps — both come up on every binary-triage job and neither is
+  # in the stock minimal PATH.
   environment.systemPackages = with pkgs; [
     file
     git
@@ -61,6 +64,8 @@
     curl
     tmux
     nix-output-monitor
+    binutils
+    xxd
   ];
 
   # nh (nix helper) fleet-wide. programs.nh is the nixpkgs-blessed module (not
