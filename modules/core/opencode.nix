@@ -799,7 +799,7 @@ let
         exec "$HOME/.opencode/bin/opencode" "$@"
         ;;
       *)
-        exec "$HOME/.opencode/bin/opencode" --server "$mattServerUrl" "$@"
+        exec "$HOME/.opencode/bin/opencode" --server "${mattServerUrl}" "$@"
         ;;
     esac
   '';
