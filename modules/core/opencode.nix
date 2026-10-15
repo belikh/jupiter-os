@@ -773,10 +773,17 @@ let
     # failed the same way, twice). So CLIENT invocations attach to the
     # always-on systemd server instead of spawning a private one; server /
     # lifecycle subcommands pass straight through. The client needs the same
-    # basic-auth credentials the server was started with.
+    # basic-auth credentials the server was started with — and it reads them
+    # from a DIFFERENT variable than the server does: OPENCODE_SERVER_PASSWORD
+    # sets the server's password, OPENCODE_PASSWORD sends it (verified on
+    # callisto 2026-10-16 against a scratch-db server: no auth → 401, matching
+    # curl → 200, client with OPENCODE_PASSWORD → sessions JSON, wrong value →
+    # "Server ... rejected the password"). Setting only the first silently
+    # leaves every client rejected.
     if [ -r ${config.sops.secrets.opencode_server_password_matt.path} ]; then
       export OPENCODE_SERVER_USERNAME="opencode"
       export OPENCODE_SERVER_PASSWORD="$(cat ${config.sops.secrets.opencode_server_password_matt.path})"
+      export OPENCODE_PASSWORD="$OPENCODE_SERVER_PASSWORD"
     fi
     # EmDash CLI (jupiter.au CMS) — used by the build-in-public skill from
     # matt's sessions: personal API token + Cloudflare Access service-token
