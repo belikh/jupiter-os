@@ -217,13 +217,24 @@
   # rig: run as matt, exec the opencode-matt sops-keyed launcher, and do NOT
   # source io's dsh_env (matt cannot read it — his launcher exports the keys
   # from his own remapped sops files). rootDir defaults to /home/matt/projects.
+  # The basic-auth password is mandatory in opencode 2 (v1 served unsecured and
+  # leaned on Access alone) and would otherwise be a random per-start value
+  # printed to the journal, so it comes from the matt-owned sops secret and is
+  # shared with matt's clients through the opencode-matt launcher.
   jupiter.services.opencodeWeb = {
     enable = true;
     user = "matt";
     group = "matt";
     launcher = "opencode-matt";
     envFile = null;
+    serverPasswordFile = config.sops.secrets.opencode_server_password_matt.path;
   };
+
+  # Keep the interactive clients on the server systemd already runs: two
+  # opencode servers on one account means two writers on the same SQLite
+  # store (observed 2026-10-15 — "SQLiteError: database is locked" killing
+  # the web server's v1-migration INSERT).
+  jupiter.core.opencode.mattServerUrl = "http://127.0.0.1:${toString config.jupiter.services.opencodeWeb.port}";
 
   # Symmetric peer-to-peer build pool: callisto + 4 kiosks
   jupiter.core.buildMachines = {

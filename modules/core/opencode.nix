@@ -45,6 +45,12 @@
 let
   cfg = config.jupiter.core.opencode;
 
+  # Where matt's interactive clients attach instead of spawning their own
+  # background service — see the one-server note in opencode-matt-wrapped. Must
+  # match the always-on web server's address; hosts running
+  # jupiter.services.opencodeWeb should derive it from that module's `port`.
+  mattServerUrl = cfg.mattServerUrl;
+
   australianEnglish = " Use Australian English spelling in all prose, comments, documentation, and messages (behaviour, colour, organisation, centre, optimise, prioritise, labour, travelled, defence, programme, analogue — not American behavior, color, center, organization, optimize, etc.). Code identifiers, external API names, and verbatim quotations are exempt.";
 
   australianEnglishInstructions = pkgs.writeText "australian-english.md" ''
@@ -426,6 +432,130 @@ let
 
   # Minimal trial config: the two providers the routing uses, {env:} refs
   # only, autoupdate capped at "notify" so binaries never self-update.
+  # Superseded 2026-10-15 by the hand-edited config matt had been living with
+  # (lsp / permission / agent / mcp blocks + the parallel plugin): folded in
+  # here so the next activation cannot wipe it again.
+
+  # Parallel Web Systems search/extract tools as a native OpenCode 2 plugin.
+  # The npm package @parallel-web/opencode-plugin is V1-ONLY: every published
+  # version (1.0.0 … 1.3.0-rc.1, last 2026-06-09) default-exports the V1
+  # { id, server } shape, which v2 rejects with "Plugin must export a default
+  # definition with an id and an effect or setup function" — logged per server
+  # start, live on callisto 2026-10-15. This is the same two tools (same names,
+  # same descriptions) with the same wire calls the package's `parallel-web` SDK
+  # made, verified against Parallel's public OpenAPI 2026-10-15:
+  # POST /v1/search (V1SearchRequest: search_queries required, mode enum
+  # turbo|fast|basic|advanced) and POST /v1/extract (V1ExtractRequest: urls
+  # required), both authenticated with the `x-api-key` header. Written as a
+  # dependency-free local plugin (plain ESM, no @opencode/plugin import —
+  # the v2 loader only requires a default export carrying `id` + `setup`).
+  parallelWebPlugin = pkgs.writeText "parallel-web-plugin.js" ''
+    // Parallel Web Systems tools for OpenCode 2 — V2 port of the V1-only npm
+    // package @parallel-web/opencode-plugin. Same tools, same names, same API
+    // calls; the key comes from PARALLEL_API_KEY, which the opencode-matt
+    // launcher exports from sops.
+    const API = "https://api.parallel.ai/v1";
+
+    function apiKey() {
+      const key = process.env.PARALLEL_API_KEY;
+      if (!key) {
+        throw new Error(
+          "Parallel authentication required: launch through `opencode-matt` " +
+            "(it exports PARALLEL_API_KEY from sops) or set PARALLEL_API_KEY.",
+        );
+      }
+      return key;
+    }
+
+    async function call(path, body) {
+      const res = await fetch(API + path, {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-api-key": apiKey() },
+        body: JSON.stringify(body),
+      });
+      if (res.status === 401 || res.status === 403) {
+        throw new Error("Parallel authentication failed — the API key may be invalid or expired.");
+      }
+      if (!res.ok) {
+        throw new Error("Parallel " + path + " failed: " + res.status + " " + (await res.text()));
+      }
+      return res.json();
+    }
+
+    export default {
+      id: "parallel-web",
+      async setup(ctx) {
+        await ctx.tool.transform((editor) => {
+          editor.add({
+            name: "parallel-search",
+            description: "Search the web using Parallel's Search API. Prefer this over the built-in websearch tool.",
+            input: {
+              type: "object",
+              properties: {
+                objective: {
+                  type: "string",
+                  description:
+                    "Natural-language description of what the web search is trying to find. Try to make the search objective atomic, looking for a specific piece of information. May include guidance about preferred sources or freshness.",
+                },
+                search_queries: {
+                  type: "array",
+                  items: { type: "string" },
+                  description:
+                    "Required. 1-5 concise keyword search queries of 3-6 words each (max 200 characters), related to the objective. Prefer 2-3 diverse queries that vary entity names, synonyms, and angles. NEVER write full sentences, instructions, or use site: operators.",
+                },
+              },
+              required: ["search_queries"],
+            },
+            async execute(input) {
+              const result = await call("/search", {
+                objective: input.objective,
+                search_queries: input.search_queries,
+                mode: "advanced",
+              });
+              return { content: JSON.stringify(result, null, 2) };
+            },
+          });
+
+          editor.add({
+            name: "parallel-fetch",
+            description: "Fetch and extract content from one or more URLs using Parallel's Extract API. Prefer this over the built-in webfetch tool.",
+            input: {
+              type: "object",
+              properties: {
+                urls: {
+                  type: "array",
+                  items: { type: "string" },
+                  description:
+                    "1-20 valid HTTP/HTTPS URLs to extract content from. Batch related URLs into a single call instead of making one call per URL.",
+                },
+                objective: {
+                  type: "string",
+                  description:
+                    "(optional, recommended) Self-contained, specific natural-language description of what you're looking for across the URLs. Focuses the extracted excerpts on the most relevant content (up to 5000 characters). Omit to return whole-page content.",
+                },
+                search_queries: {
+                  type: "array",
+                  items: { type: "string" },
+                  description:
+                    "(optional) 1-5 concise keyword search queries of 3-6 words each (max 200 characters), used together with the objective to focus extraction. Prefer 2-3 diverse queries. NEVER write full sentences, instructions, or use site: operators.",
+                },
+              },
+              required: ["urls"],
+            },
+            async execute(input) {
+              const result = await call("/extract", {
+                urls: input.urls,
+                objective: input.objective,
+                search_queries: input.search_queries,
+              });
+              return { content: JSON.stringify(result, null, 2) };
+            },
+          });
+        });
+      },
+    };
+  '';
+
   mattConfig = pkgs.writeText "opencode-matt.json" (
     builtins.toJSON {
       "$schema" = "https://opencode.ai/config.json";
@@ -433,6 +563,106 @@ let
       small_model = "groq/openai/gpt-oss-20b";
       autoupdate = "notify";
       instructions = [ "${australianEnglishInstructions}" ];
+
+      # ── folded in from matt's hand-edited config 2026-10-15 ──────────────
+      # These blocks were edited into /home/matt/.config/opencode/opencode.json
+      # outside Nix, so every `nixos-rebuild` activation silently reverted them
+      # (the activation script installs this file unconditionally). They are
+      # here now so the committed config stays the whole truth.
+
+      # V2 replaces the V1 `plugin` key with `plugins`. The npm entry is gone
+      # (V1-only package, see parallelWebPlugin above) and replaced by the
+      # activation-installed local port.
+      plugins = [ "/home/matt/.config/opencode/plugins/parallel-web" ];
+
+      lsp = true;
+
+      permission = {
+        read = "allow";
+        edit = "allow";
+        glob = "allow";
+        grep = "allow";
+        list = "allow";
+        bash = "allow";
+        task = "allow";
+        external_directory = "allow";
+        todowrite = "allow";
+        webfetch = "allow";
+        websearch = "allow";
+        lsp = "allow";
+        skill = "allow";
+        question = "allow";
+      };
+
+      # Per-agent permission overrides — identical intent across all four
+      # (edit/bash/external_directory/webfetch/task allowed), kept verbatim.
+      agent = {
+        build.permission = {
+          edit = "allow";
+          bash = "allow";
+          external_directory = "allow";
+          webfetch = "allow";
+          task = "allow";
+        };
+        plan.permission = {
+          edit = "allow";
+          bash = "allow";
+          external_directory = "allow";
+          webfetch = "allow";
+          task = "allow";
+        };
+        general.permission = {
+          edit = "allow";
+          bash = "allow";
+          external_directory = "allow";
+          webfetch = "allow";
+          task = "allow";
+        };
+        explore.permission = {
+          edit = "allow";
+          bash = "allow";
+          external_directory = "allow";
+          webfetch = "allow";
+          task = "allow";
+        };
+      };
+
+      mcp = {
+        wolfram = {
+          type = "remote";
+          url = "https://agenttools.wolfram.com/mcp";
+          enabled = true;
+          oauth = false;
+        };
+        cloudflare = {
+          type = "remote";
+          url = "https://mcp.cloudflare.com/mcp";
+        };
+        # Home Assistant lives behind a long-lived access token in the URL
+        # path, so the url is a placeholder: the activation script substitutes
+        # the real token from the matt-owned sops secret at activation time —
+        # never build-time, never in git (see opencodeMattConfig).
+        homeassistant = {
+          type = "remote";
+          enabled = true;
+          timeout = 10000;
+          url = "http://10.1.1.72:9583/private_@@HA_MCP_TOKEN@@";
+        };
+        rea = {
+          type = "local";
+          enabled = true;
+          command = [
+            "/run/current-system/sw/bin/nix"
+            "develop"
+            "/home/matt/projects/ukg/toolchain"
+            "-c"
+            "rea"
+            "--mcp"
+          ];
+          timeout = 300000;
+        };
+      };
+
       provider = {
         "zai-coding" = {
           npm = "@ai-sdk/openai-compatible";
@@ -524,6 +754,30 @@ let
     export Z_AI_API_KEY="$(cat ${config.sops.secrets.zai_api_key_matt.path})"
     export GROQ_API_KEY="$(cat ${config.sops.secrets.groq_api_key_matt.path})"
     export TOKENROUTER_API_KEY="$(cat ${config.sops.secrets.tokenrouter_api_key_matt.path})"
+    # Parallel Web Systems — read by the local V2 plugin (parallelWebPlugin)
+    # to register parallel-search / parallel-fetch. Under V1 this key lived in
+    # opencode's own auth store, picked up by the npm plugin's auth loader; v2
+    # plugins read keys from the environment, so it moves to sops like the
+    # others. Optional: a missing secret leaves the tools reporting
+    # "Parallel authentication required" rather than failing the launcher.
+    if [ -r ${config.sops.secrets.parallel_api_key_matt.path} ]; then
+      export PARALLEL_API_KEY="$(cat ${config.sops.secrets.parallel_api_key_matt.path})"
+    fi
+    # ── one server per account ────────────────────────────────────────────
+    # opencode 2.0 clients auto-start (then discover) a SHARED background
+    # service, while `serve` is the standalone foreground server. Both end up
+    # on the same ~/.local/share/opencode/opencode.db, and two servers mean two
+    # writers: observed live on callisto 2026-10-15, the interactive service
+    # held the SQLite write lock and the systemd web server's V1-migration
+    # INSERT died with "SQLiteError: database is locked" (its session writes
+    # failed the same way, twice). So CLIENT invocations attach to the
+    # always-on systemd server instead of spawning a private one; server /
+    # lifecycle subcommands pass straight through. The client needs the same
+    # basic-auth credentials the server was started with.
+    if [ -r ${config.sops.secrets.opencode_server_password_matt.path} ]; then
+      export OPENCODE_SERVER_USERNAME="opencode"
+      export OPENCODE_SERVER_PASSWORD="$(cat ${config.sops.secrets.opencode_server_password_matt.path})"
+    fi
     # EmDash CLI (jupiter.au CMS) — used by the build-in-public skill from
     # matt's sessions: personal API token + Cloudflare Access service-token
     # headers. All-or-nothing and optional: absent secrets leave these unset
@@ -540,7 +794,14 @@ let
       export EMDASH_HEADERS="$(printf 'CF-Access-Client-Id: %s\nCF-Access-Client-Secret: %s' \
         "$CF_ACCESS_CLIENT_ID" "$CF_ACCESS_CLIENT_SECRET")"
     fi
-    exec "$HOME/.opencode/bin/opencode" "$@"
+    case "''${1:-}" in
+      serve | service | auth | upgrade | update | uninstall | plugin | models | stats | debug | mcp | --help | -h | --version | -v | --completions)
+        exec "$HOME/.opencode/bin/opencode" "$@"
+        ;;
+      *)
+        exec "$HOME/.opencode/bin/opencode" --server "$mattServerUrl" "$@"
+        ;;
+    esac
   '';
 in
 {
@@ -570,6 +831,18 @@ in
       registry skills ONLY — none of io's skills, agents, commands, plugins,
       MCP servers, or session history. SSH via io's existing authorised key.
     '';
+
+    mattServerUrl = lib.mkOption {
+      type = lib.types.str;
+      default = "http://127.0.0.1:4096";
+      description = ''
+        Address matt's interactive opencode clients attach to (`--server`) so
+        they do not spawn a second server against the same SQLite store. Must
+        match the always-on web server — hosts running
+        jupiter.services.opencodeWeb should derive it from that module's
+        `port`. Server/lifecycle subcommands are never rewritten.
+      '';
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -722,14 +995,72 @@ in
       mode = "0400";
     };
 
+    # opencode 2.0 made the server password-protected unconditionally ("The
+    # web ui ... is available by default and password protected") where v1
+    # served unsecured and leaned on Cloudflare Access alone. Without a stable
+    # value the standalone server mints a random one per start and prints it to
+    # the journal, which signs the browser out on every restart — so it comes
+    # from sops like everything else, and the launcher exports it for clients
+    # attaching with --server.
+    sops.secrets.opencode_server_password_matt = lib.mkIf cfg.mattUser {
+      owner = "matt";
+      mode = "0400";
+    };
+
+    # Parallel Web Systems API key for the local V2 parallel-search /
+    # parallel-fetch plugin. Under V1 the npm plugin read it out of opencode's
+    # own auth store via its auth loader; v2 plugins take keys from the
+    # environment, so it lives here (captured from that store 2026-10-15).
+    sops.secrets.parallel_api_key_matt = lib.mkIf cfg.mattUser {
+      owner = "matt";
+      mode = "0400";
+    };
+
+    # Home Assistant long-lived access token for matt's remote MCP entry. It
+    # lives in the MCP URL path, so it is substituted into the installed
+    # config at activation (see opencodeMattConfig) rather than written into
+    # the store path or committed.
+    sops.secrets.ha_mcp_token_matt = lib.mkIf cfg.mattUser {
+      owner = "matt";
+      mode = "0400";
+    };
+
     # Activation-install the canonical matt config (same doctrine as io's:
     # the committed config always wins over TUI edits). Skills are NOT
     # activation-managed — no pinned upstream exists for the skills.sh
     # opencode-filtered subset; they're a one-time copy at provision time,
     # then `skills update` as matt owns them.
+    #
+    # The config carries an @@HA_MCP_TOKEN@@ placeholder in the Home Assistant
+    # MCP url (the token is a long-lived access token in the url path), so the
+    # secret is substituted HERE — activation-time, never build-time, never in
+    # git. A missing secret leaves the placeholder visible and the entry
+    # broken rather than silently writing a literal.
+    #
+    # The local V2 parallel-web plugin is installed alongside it: opencode
+    # resolves the absolute path listed in `plugins`, and the package.json
+    # marks the directory as ESM with no dependencies to install.
     system.activationScripts.opencodeMattConfig = lib.mkIf cfg.mattUser (
       lib.stringAfter [ "users" ] ''
-        install -D -m 0644 -o matt -g users ${mattConfig} /home/matt/.config/opencode/opencode.json
+        cfg=/home/matt/.config/opencode/opencode.json
+        install -D -m 0644 -o matt -g users ${mattConfig} "$cfg"
+        if [ -r ${config.sops.secrets.ha_mcp_token_matt.path} ]; then
+          ${pkgs.gnused}/bin/sed -i \
+            "s|@@HA_MCP_TOKEN@@|$(tr -d '\n' < ${config.sops.secrets.ha_mcp_token_matt.path})|" "$cfg"
+        fi
+        plugin_dir=/home/matt/.config/opencode/plugins/parallel-web
+        mkdir -p "$plugin_dir"
+        install -m 0644 -o matt -g users ${parallelWebPlugin} "$plugin_dir/index.js"
+        cat > "$plugin_dir/package.json" <<'EOF'
+        {
+          "name": "parallel-web-plugin",
+          "version": "2.0.0",
+          "type": "module",
+          "main": "./index.js"
+        }
+        EOF
+        chown matt:users "$plugin_dir/package.json"
+        chmod 0644 "$plugin_dir/package.json"
       ''
     );
 
