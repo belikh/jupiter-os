@@ -11,11 +11,24 @@
 # "matt" second environment): the UI opens sessions in ANY subdirectory of
 # the account's projects dir on the fly, so there is no static per-project
 # port bookkeeping — "I have an idea" is just opening that folder in the UI.
-# Multi-project/multi-thread = multiple in-UI sessions. Auth is two layers:
-# opencode's HTTP basic auth (OPENCODE_SERVER_PASSWORD) PLUS Cloudflare Access
-# on the public hostname (configured dashboard-side). The cloudflare ingress
-# rule itself is added in the host config (callisto) alongside the other
-# tunnel ingress rules.
+# Multi-project/multi-thread = multiple in-UI sessions.
+#
+# Auth has three parts since opencode 2 (2026-10-15):
+#   * Cloudflare Access on the public hostname — the real gate, and the only
+#     user-facing one. Configured dashboard-side.
+#   * opencode's HTTP basic auth (OPENCODE_SERVER_PASSWORD / serverPasswordFile)
+#     on the origin itself, which v2 now requires unconditionally. v1 served
+#     unsecured, so this layer did not exist before.
+#   * the Caddy hop in front (authProxy below), whose only job is to make v2's
+#     layer invisible to the browser. A browser will not authenticate itself:
+#     the UI document GET / is served 200, then every /api/* fetch comes back
+#     401, and browsers never raise a basic-auth dialog for fetch/XHR — so the
+#     page loads and then silently does nothing. Caddy injects the credential
+#     for tunnel traffic and nothing else changes. cloudflared still cannot
+#     inject a header itself (no such option in its ingress rules), which is
+#     why the hop exists rather than being configured in the tunnel.
+# The client side (TUI, `opencode api`) is unaffected: those attach to the
+# server directly and send the password from OPENCODE_PASSWORD.
 let
   cfg = config.jupiter.services.opencodeWeb;
   home = "/home/${cfg.user}";
@@ -36,6 +49,34 @@ let
     + lib.optionalString (
       cfg.envFile != null
     ) "set -a; [ -f ${cfg.envFile} ] && . ${cfg.envFile}; set +a; ";
+  # Caddy hop in front of the server for tunnel traffic: loopback-only, and
+  # the only thing it does is inject the basic-auth credential that opencode 2
+  # now always requires. `@@CREDENTIAL@@` is substituted at service start from
+  # the sops secret, so nothing secret is baked into the store and a rotated
+  # password is picked up on the next restart without a rebuild. flush_interval
+  # -1 keeps the UI's /event stream unbuffered; the long timeouts keep
+  # long-lived streaming sessions from being cut.
+  #
+  # Reuses the shape already proven on this host for design.jupiter.au
+  # (open-design-web: Caddy in front of the daemon behind the tunnel).
+  authProxyCaddyfile = pkgs.writeText "opencode-web-auth-proxy.Caddyfile" ''
+    {
+      auto_https off
+      admin off
+      persist_config off
+    }
+
+    http://127.0.0.1:${toString cfg.authProxy.port} {
+      reverse_proxy 127.0.0.1:${toString cfg.port} {
+        header_up Authorization "Basic @@CREDENTIAL@@"
+        flush_interval -1
+        transport http {
+          read_timeout 86400s
+          write_timeout 86400s
+        }
+      }
+    }
+  '';
 in
 {
   options.jupiter.services.opencodeWeb = {
@@ -92,6 +133,30 @@ in
       default = null;
       description = "File with OPENCODE_SERVER_PASSWORD; null = rely on Cloudflare Access.";
     };
+
+    # The loopback Caddy hop that makes opencode 2's mandatory basic auth
+    # invisible to browsers. Point the tunnel ingress at `authProxy.port`
+    # instead of `port`; the server keeps its own auth for direct loopback
+    # use. Defaults on whenever a server password is configured, because that
+    # is exactly the case a browser cannot satisfy on its own.
+    authProxy = {
+      enable = lib.mkOption {
+        type = lib.types.bool;
+        default = cfg.serverPasswordFile != null;
+        description = ''
+          Run the Caddy hop in front of the server that injects the basic-auth
+          credential. Required for any browser access on opencode 2, which
+          always protects its server; the tunnel ingress must target this
+          proxy's port rather than the server's.
+        '';
+      };
+
+      port = lib.mkOption {
+        type = lib.types.port;
+        default = 4097;
+        description = "Loopback port the proxy listens on (the tunnel's upstream).";
+      };
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -126,6 +191,64 @@ in
         ExecStart = "${pkgs.bash}/bin/bash -c '${envPreamble}exec ${launcher} serve --port ${toString cfg.port} --hostname 127.0.0.1'";
         Restart = "on-failure";
         RestartSec = 5;
+      };
+    };
+
+    # Caddy hop in front of the server for tunnel traffic. The rendered
+    # Caddyfile carries the credential and lives in the unit's own
+    # RuntimeDirectory (0700).
+    systemd.services.opencode-web-auth-proxy = lib.mkIf cfg.authProxy.enable {
+      description = "Caddy hop in front of the opencode web UI (injects the server credential)";
+      after = [
+        "network-online.target"
+        "opencode-web.service"
+      ];
+      wants = [
+        "network.target"
+        "network-online.target"
+        "opencode-web.service"
+      ];
+      wantedBy = [ "multi-user.target" ];
+      serviceConfig = {
+        Type = "simple";
+        User = cfg.user;
+        Group = cfg.group;
+        RuntimeDirectory = "opencode-web-auth-proxy";
+        RuntimeDirectoryMode = "0700";
+        # Keep caddy out of the account's home: it only needs the config it is
+        # handed plus a scratch dir for autosave (disabled in the Caddyfile).
+        environment = [
+          "XDG_DATA_HOME=/run/opencode-web-auth-proxy"
+          "XDG_CONFIG_HOME=/run/opencode-web-auth-proxy"
+        ];
+        # The credential is rendered into the RuntimeDirectory rather than
+        # passed as an argument, so it never appears in `ps` output or in the
+        # unit's environment.
+        ExecStart = ''
+          set -euo pipefail
+          dir=/run/opencode-web-auth-proxy
+          umask 077
+          cred=$(printf 'opencode:%s' "$(cat ${cfg.serverPasswordFile})" | ${pkgs.coreutils}/bin/base64 -w0)
+          ${pkgs.gnused}/bin/sed "s|@@CREDENTIAL@@|$cred|" ${authProxyCaddyfile} > "$dir/Caddyfile"
+          # Canonicalise the formatting in place so caddy doesn't warn about an
+          # unformatted Caddyfile on every start (the store copy is indented
+          # to suit the Nix source, not caddy's tab style).
+          ${lib.getExe pkgs.caddy} fmt --overwrite "$dir/Caddyfile"
+          exec ${lib.getExe pkgs.caddy} run --config "$dir/Caddyfile" --adapter caddyfile
+        '';
+        Restart = "on-failure";
+        RestartSec = 5;
+        NoNewPrivileges = true;
+        PrivateTmp = true;
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        ProtectKernelTunables = true;
+        ProtectKernelModules = true;
+        ProtectControlGroups = true;
+        RestrictSUIDSGID = true;
+        RestrictNamespaces = true;
+        LockPersonality = true;
+        MemoryDenyWriteExecute = true;
       };
     };
   };

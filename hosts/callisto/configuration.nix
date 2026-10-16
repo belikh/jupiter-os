@@ -916,9 +916,12 @@
     extraIngress = [
       {
         hostname = "opencode.jupiter.au";
-        # opencode web UI (modules/services/opencode-web.nix). host defaults to
-        # localhost; the serve binds 127.0.0.1:4096.
-        port = 4096;
+        # opencode web UI (modules/services/opencode-web.nix). Targets the
+        # Caddy authProxy hop, NOT the opencode server directly: v2 always
+        # password-protects its server and a browser will not authenticate
+        # itself (the UI document is served, then every /api/* fetch 401s).
+        # The hop injects the credential; Cloudflare Access stays the gate.
+        port = config.jupiter.services.opencodeWeb.authProxy.port;
       }
       {
         hostname = "design.jupiter.au";
