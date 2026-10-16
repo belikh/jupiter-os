@@ -77,6 +77,22 @@ let
       }
     }
   '';
+  # A store-side script rather than an inline `bash -c` blob: systemd's
+  # ExecStart= must name an executable (an inline script body fails with
+  # 203/EXEC), and this keeps the quoting honest — the credential is read at
+  # runtime, so nothing secret is in the store.
+  authProxyScript = pkgs.writeShellScript "opencode-web-auth-proxy.sh" ''
+    set -euo pipefail
+    dir=/run/opencode-web-auth-proxy
+    umask 077
+    cred=$(printf 'opencode:%s' "$(cat ${cfg.serverPasswordFile})" | ${pkgs.coreutils}/bin/base64 -w0)
+    ${pkgs.gnused}/bin/sed "s|@@CREDENTIAL@@|$cred|" ${authProxyCaddyfile} > "$dir/Caddyfile"
+    # Canonicalise the formatting in place so caddy doesn't warn about an
+    # unformatted Caddyfile on every start (the store copy is indented to suit
+    # the Nix source, not caddy's tab style).
+    ${lib.getExe pkgs.caddy} fmt --overwrite "$dir/Caddyfile"
+    exec ${lib.getExe pkgs.caddy} run --config "$dir/Caddyfile" --adapter caddyfile
+  '';
 in
 {
   options.jupiter.services.opencodeWeb = {
@@ -221,21 +237,10 @@ in
           "XDG_DATA_HOME=/run/opencode-web-auth-proxy"
           "XDG_CONFIG_HOME=/run/opencode-web-auth-proxy"
         ];
-        # The credential is rendered into the RuntimeDirectory rather than
-        # passed as an argument, so it never appears in `ps` output or in the
-        # unit's environment.
-        ExecStart = ''
-          set -euo pipefail
-          dir=/run/opencode-web-auth-proxy
-          umask 077
-          cred=$(printf 'opencode:%s' "$(cat ${cfg.serverPasswordFile})" | ${pkgs.coreutils}/bin/base64 -w0)
-          ${pkgs.gnused}/bin/sed "s|@@CREDENTIAL@@|$cred|" ${authProxyCaddyfile} > "$dir/Caddyfile"
-          # Canonicalise the formatting in place so caddy doesn't warn about an
-          # unformatted Caddyfile on every start (the store copy is indented
-          # to suit the Nix source, not caddy's tab style).
-          ${lib.getExe pkgs.caddy} fmt --overwrite "$dir/Caddyfile"
-          exec ${lib.getExe pkgs.caddy} run --config "$dir/Caddyfile" --adapter caddyfile
-        '';
+        # The credential is rendered into the RuntimeDirectory by the script rather
+        # than passed as an argument, so it never appears in `ps` output or in
+        # the unit's environment.
+        ExecStart = "${authProxyScript}";
         Restart = "on-failure";
         RestartSec = 5;
         NoNewPrivileges = true;
