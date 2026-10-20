@@ -990,6 +990,11 @@
       '';
     };
   };
+  # Aquila ESP32-S3 CSI: NixOS defaults networking.firewall.enable = true,
+  # which blocks inbound UDP from the sensor nodes. Disabled so CSI datagrams
+  # from 10.1.1.232 (and any fleet node) reach UDP 9100/9101 on callisto.
+  networking.firewall.enable = false;
+
   systemd.timers.shadow-receipt = {
     description = "Daily S-rung shadow receipt (G-E)";
     wantedBy = [ "timers.target" ];
