@@ -20,6 +20,7 @@
     ./core/impermanence.nix
     ./core/zed.nix
     ./core/opencode.nix
+    ./core/claude-code.nix
     ./core/lix.nix
     ./boot/fallout-splash.nix
     ./core/build-tuning.nix

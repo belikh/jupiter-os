@@ -211,6 +211,11 @@
   # zero io skills/plugins/MCP. One-toggle removal if the trial is abandoned.
   jupiter.core.opencode.mattUser = true;
 
+  # Claude Code CLI (modules/core/claude-code.nix): Anthropic's native
+  # `claude` binary, installed system-wide so any user on the serving host
+  # can run it. Auth is per-user (`claude setup-token` or ANTHROPIC_API_KEY).
+  jupiter.core.claudeCode.enable = true;
+
   # Web UI for the rig (modules/services/opencode-web.nix): one opencode serve
   # behind the cloudflare tunnel at opencode.jupiter.au (basic-auth + Access).
   # Serves MATT's second environment (the mattpocock/skills trial), not io's
