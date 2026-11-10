@@ -1,11 +1,5 @@
 {
   "mcpServers": {
-    "niro": {
-      "command": "niro",
-      "args": [
-        "serve"
-      ]
-    },
     "nixos": {
       "command": "nix",
       "args": [
