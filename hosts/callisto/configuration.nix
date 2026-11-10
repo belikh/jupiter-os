@@ -880,38 +880,6 @@
   systemd.services.open-design-web.serviceConfig.Group = lib.mkForce "users";
   systemd.services.open-design-web.serviceConfig.ProtectHome = lib.mkForce false;
 
-  systemd.services.bob-audio-review = {
-    description = "Katter Hansard audio review site";
-    wantedBy = [ "multi-user.target" ];
-    after = [ "network-online.target" ];
-    serviceConfig = {
-      User = "matt";
-      Group = "users";
-      WorkingDirectory = "/home/matt/projects/bob";
-      ExecStart = "${pkgs.python3}/bin/python -m tools.review_server --root /home/matt/projects/bob/data/audio_pilot --host 10.1.1.3 --port 8766";
-      Restart = "on-failure";
-      RestartSec = 5;
-    };
-  };
-
-  # Static file server for the IRIX 6.5.7m kernel/firmware port-analysis
-  # report — hand-written HTML in /home/matt/projects/irix-port-analysis,
-  # served live from disk so edits show up on reload. Loopback only; the
-  # cloudflareTunnel ingress below fronts it at irix.jupiter.au.
-  systemd.services.irix-report = {
-    description = "IRIX port analysis report (static site)";
-    wantedBy = [ "multi-user.target" ];
-    after = [ "network-online.target" ];
-    serviceConfig = {
-      User = "matt";
-      Group = "users";
-      WorkingDirectory = "/home/matt/projects/irix-port-analysis";
-      ExecStart = "${pkgs.python3}/bin/python -m http.server 8790 --bind 127.0.0.1 --directory /home/matt/projects/irix-port-analysis";
-      Restart = "on-failure";
-      RestartSec = 5;
-    };
-  };
-
   jupiter.services.cloudflareTunnel = {
     enable = true;
     tunnelId = "85534a9c-2c13-412c-a658-322f7c36edc7";
@@ -936,11 +904,6 @@
         port = 5174;
       }
       {
-        hostname = "bob.jupiter.au";
-        host = "10.1.1.3";
-        port = 8766;
-      }
-      {
         hostname = "procurement.jupiter.au";
         # Publicly reachable ONLY for eBay marketplace account deletion
         # notifications compliance: the tunnel targets the path-scoped loopback
@@ -948,14 +911,6 @@
         # forwards /ebay/notifications and 404s everything else — never the MCP
         # port itself (nixos-review F-04).
         port = 8788;
-      }
-      {
-        hostname = "irix.jupiter.au";
-        # IRIX port-analysis report (systemd.services.irix-report); host
-        # defaults to localhost, which is where the static server binds.
-        # Mirrored state only until #99 is resolved — the edge follows the
-        # dashboard config, so the CNAME + public hostname must exist there.
-        port = 8790;
       }
     ];
   };
