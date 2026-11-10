@@ -2,7 +2,7 @@
   description = "Jupiter OS";
 
   # Deliberately minimal input set. The previous tree (see the master branch)
-  # pulled in chaotic-nyx, jovian, home-manager, deploy-rs, terranix and a
+  # pulled in chaotic-nyx, home-manager, deploy-rs, terranix and a
   # private ha-linux-agent flake for every host, which made a clean build
   # effectively impossible (uncached CachyOS kernels, microarch-tuned
   # closures, unfetchable inputs). Each input below is required by amalthea
@@ -32,25 +32,6 @@
     # Home Assistant companion agent
     ha-linux-agent = {
       url = "github:belikh/ha-linux-agent";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
-    # SteamOS-style gaming stack (gamescope "gaming mode" session, Steam Deck
-    # quirks, gamescope cap_sys_nice wrapper). Pulled in by the TCx Wave kiosks'
-    # dashboard-gaming mode (modules/gaming/console.nix). Its nixos module is
-    # imported fleet-wide (inert until jovian.steam.* is enabled); its overlay
-    # is applied only on hosts that enable jupiter.gaming.console, so the
-    # jovian-provided packages don't perturb europa/callisto's closures.
-    #
-    # NOTE: chaotic-nyx was evaluated and DROPPED. Forcing it to follow this
-    # flake's nixpkgs (the repo convention) caused patch skew — chaotic's
-    # mangohud override reapplied a patch nixpkgs already ships, breaking the
-    # whole gaming closure's build. jovian alone covers the stack the kiosks
-    # need; chaotic's only ungated extras (proton-cachyos, gamescope_git) are
-    # dispensable (Steam ships Proton; jovian provides gamescope). Re-add only
-    # if a host genuinely needs a chaotic-only package, and don't force follows.
-    jovian = {
-      url = "github:Jovian-Experiments/Jovian-NixOS";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
@@ -85,7 +66,6 @@
       impermanence,
       sops-nix,
       ha-linux-agent,
-      jovian,
       suno-web,
       ...
     }:
@@ -108,47 +88,12 @@
                   impermanence.nixosModules.impermanence
                   disko.nixosModules.disko
                   ha-linux-agent.nixosModules.default
-                  # jovian's nixos module is inert unless jovian.steam.* is
-                  # enabled, so importing it fleet-wide is free (just option
-                  # definitions). The jovian + chaotic OVERLAYS, by contrast,
-                  # would perturb every host's pkgs — they're applied only on
-                  # hosts that opt into the gaming stack below.
-                  jovian.nixosModules.default
                   # OpenDesign's NixOS module is vendored in-tree
                   # (modules/services/open-design-nixos.nix) and imported by the
                   # jupiter wrapper modules/services/open-design.nix, so only
                   # hosts that opt in evaluate it. Upstream retired its own
                   # Nix distribution on 2026-08-31 — there is no flake module
                   # to import any more.
-                ];
-              }
-            )
-            # On hosts that enable jupiter.gaming.console, make jovian's
-            # packages resolvable (gamescope-session, steamos-manager, …) by
-            # applying its overlay to this host's pkgs. Gated so
-            # europa/callisto/pallene never see it (buildability: keep their
-            # closures substitutable from cache.nixos.org + Harmonia, untouched by
-            # a gaming overlay). The `or` guards handle the hosts that don't
-            # import console.nix (so `jupiter.gaming` is absent).
-            #
-            # mangohud fixup: jovian's overlay backports two MangoHud patches
-            # (0805396, 2c1dc528) that nixpkgs has SINCE merged upstream, so
-            # applying jovian's overlay to this newer nixpkgs double-applies
-            # them and breaks the build ("Reversed or previously applied
-            # patch"). Restore stock nixpkgs mangohud — the backports aren't
-            # kiosk-critical and stock substitutes from cache.nixos.org. Drop
-            # this once jovian upstream removes the now-redundant backports.
-            (
-              { config, ... }:
-              let
-                gamingConsole = (config.jupiter.gaming or { }).console or { };
-              in
-              {
-                nixpkgs.overlays = nixpkgs.lib.mkIf (gamingConsole.enable or false) [
-                  jovian.overlays.default
-                  (_final: _prev: {
-                    mangohud = nixpkgs.legacyPackages.x86_64-linux.mangohud;
-                  })
                 ];
               }
             )

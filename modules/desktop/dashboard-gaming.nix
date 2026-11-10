@@ -166,19 +166,14 @@ in
     # Enable the Arcade module if arcade mode is enabled
     jupiter.arcade.enable = cfg.modes.arcade.enable;
 
-    # --- Gaming software stack (Jovian), NO SDDM autostart -------------------
+    # --- Gaming software stack, no SDDM ---------------------------------------
     # Stock kernel + stock Mesa: these are low-power Intel (HD 520) kiosks on
-    # ZFS, not CachyOS boxes. gamingMode.autoStart = false is load-bearing:
-    # jovian's autoStart would enable SDDM (conflicts with cage); we drive each
-    # session via the jupiter-<mode> services below instead. (The console
-    # module pins the stock kernel itself — no kernel/Mesa toggles here.)
+    # ZFS, not CachyOS boxes. Each session runs as a jupiter-<mode> service
+    # below. (The console module pins the stock kernel itself.)
     jupiter.gaming.console = {
       enable = true;
       gpu = "intel";
       user = cfg.sessionUser;
-      # Jovian gaming mode is off: the arcade mode runs as a Cage service and
-      # does not use jovian.steam, SDDM autologin or NetworkManager.
-      gamingMode.enable = false;
     };
 
     users.users.${cfg.sessionUser} = {

@@ -1,13 +1,14 @@
 # Bazzite-style gaming stack for NixOS.
 #
 # A reusable, opt-in profile that reproduces the modern (2026) Bazzite gaming
-# experience on NixOS, built on Jovian-NixOS (the SteamOS "gaming mode"
-# gamescope session, Steam Deck quirks, gamescope cap_sys_nice wrapper, and the
-# gamescope/Steam software stack).
+# experience on NixOS from nixpkgs: Steam, gamescope with a cap_sys_nice
+# wrapper, gamemode, emulators and controller support. Jovian-NixOS was removed
+# from the flake on 2026-11-10 (the SteamOS gaming-mode session, Steam Deck
+# quirks and Decky options went with it).
 #
 # chaotic-nyx was evaluated and deliberately NOT pulled in: forcing it to follow
 # this flake's nixpkgs (the repo convention) caused patch skew that broke the
-# build (mangohud double-patch). Jovian alone covers everything the fleet needs.
+# build (mangohud double-patch).
 # This module once carried `cachyOsKernel`/`mesaGit` toggles referencing
 # chaotic-only packages (linuxPackages_cachyos does not exist in nixpkgs);
 # they were removed 2026-08-17 — dead interface surface that could only ever
@@ -15,10 +16,6 @@
 # input. The stock kernel is also a hard buildability rule for ZFS hosts.
 #
 # Attach it to ANY host by flipping `jupiter.gaming.console.enable = true;`.
-# jovian's nixos module is imported for every host in flake.nix (inert until
-# used), and jovian's overlay is applied only on hosts that enable this profile
-# (also in flake.nix), so the options resolve everywhere but jovian's packages
-# never perturb a non-gaming host's closure.
 #
 # Two ideas are borrowed from GLF-OS (the French gaming NixOS distro):
 #   * `apps.<name>` — a data-driven per-application toggle catalogue (see
@@ -125,7 +122,7 @@ in
   imports = [ ./controllers.nix ];
 
   options.jupiter.gaming.console = {
-    enable = lib.mkEnableOption "Bazzite-style gaming stack (Jovian gaming mode)";
+    enable = lib.mkEnableOption "Bazzite-style gaming stack";
 
     gpu = lib.mkOption {
       type = lib.types.enum [
@@ -140,49 +137,8 @@ in
     user = lib.mkOption {
       type = lib.types.str;
       default = "io";
-      description = "User that owns the Steam install and auto-logs into gaming mode.";
+      description = "User that owns the Steam install.";
     };
-
-    gamingMode = {
-      enable = lib.mkOption {
-        type = lib.types.bool;
-        default = false;
-        description = ''
-          Enable the SteamOS-like gamescope "gaming mode" session (Jovian). When
-          false you still get the full gaming software stack on a normal desktop;
-          when true the host gains Jovian's gamescope/Steam session machinery.
-          NOTE: jovian's native session boots via an SDDM autologin into
-          gamescope-wayland (see jovian's modules/steam/autostart.nix) — that
-          conflicts with another compositor owning the seat (e.g. cage). Leave
-          `autoStart = false` on hosts that manage the session themselves
-          (modules/desktop/dashboard-gaming.nix runs its own start/stoppable
-          gamescope service instead of SDDM autologin).
-        '';
-      };
-
-      autoStart = lib.mkOption {
-        type = lib.types.bool;
-        default = true;
-        description = ''
-          Boot straight into gaming mode via an SDDM autologin. Disable on hosts
-          that coexist with another compositor (cage) and drive the gamescope
-          session through a custom unit instead.
-        '';
-      };
-
-      desktopSession = lib.mkOption {
-        type = lib.types.nullOr lib.types.str;
-        default = null;
-        description = ''
-          Desktop session Steam's 'Switch to Desktop' hands off to (null disables
-          the button / relaunches gaming mode). Only meaningful with autoStart.
-        '';
-      };
-    };
-
-    decky.enable = lib.mkEnableOption "Decky Loader (Steam plugin manager)";
-
-    steamdeck.enable = lib.mkEnableOption "Steam Deck / handheld hardware quirks (Jovian devices.steamdeck)";
 
     # Per-application toggles, generated from `appCatalog`. Default on unless
     # the catalogue entry sets `default = false` (e.g. niche emulators), so
@@ -249,27 +205,6 @@ in
     # ntsync gives Proton/Wine a fast in-kernel sync primitive (Bazzite default).
     boot.kernelModules = [ "ntsync" ];
 
-    # --- Gaming mode session (Jovian) ----------------------------------------
-    jovian = {
-      steam = lib.mkIf cfg.gamingMode.enable {
-        enable = true;
-        user = cfg.user;
-        autoStart = cfg.gamingMode.autoStart;
-        desktopSession = cfg.gamingMode.desktopSession;
-      };
-      devices.steamdeck.enable = cfg.steamdeck.enable;
-      decky-loader.enable = cfg.decky.enable;
-    };
-
-    # The Deck UI's first-run wizard ("Choose your network") enumerates
-    # NetworkManager connections, not raw interfaces — on a wired-only kiosk
-    # with no NetworkManager it shows "No networks found" and blocks even
-    # though ethernet/DHCP is working fine underneath (confirmed live on
-    # amalthea). This is jovian's own documented requirement (nix flake check
-    # already warns about it); no static IP or custom networking is
-    # configured on these kiosks so NetworkManager taking over DHCP is safe.
-    networking.networkmanager.enable = lib.mkIf cfg.gamingMode.enable true;
-
     # --- Steam, gamescope, gamemode (the always-on core runtime) -------------
     programs.steam = {
       enable = true;
@@ -281,13 +216,8 @@ in
       # skew). Steam ships its own Proton; add proton-ge-bin per-user if wanted.
     };
 
-    # gamescope: jovian.steam already installs a cap_sys_nice wrapper for
-    # gamescope (modules/steam/steam.nix), so when the Jovian gaming-mode
-    # session is on we DON'T also enable programs.gamescope — the two would
-    # conflict on security.wrappers.gamescope.source. When gamingMode is off
-    # (desktop-only gaming, no jovian session), programs.gamescope provides the
-    # wrapper itself.
-    programs.gamescope = lib.mkIf (!cfg.gamingMode.enable) {
+    # Wrapper with cap_sys_nice so gamescope can raise its scheduling priority.
+    programs.gamescope = {
       enable = true;
       capSysNice = true;
     };
