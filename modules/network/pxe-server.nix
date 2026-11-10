@@ -15,8 +15,9 @@
 #                         flake.nix, part of THIS host's closure. Nothing in
 #                         it references the netbooting client's config.
 #   `assetsDir` (HTTP)  — boot.ipxe + the client's kernel/initrd. A MUTABLE
-#                         directory, published out-of-band by
-#                         jupiter-pxe-assets.service (below). Deliberately
+#                         directory on callisto's NFS export, written by
+#                         callisto's jupiter-pxe-publish.service
+#                         (modules/network/pxe-publish.nix). Deliberately
 #                         not a store path in this host's config: naming one
 #                         would put the client's whole (differently-tuned)
 #                         closure inside the server's, so building europa
@@ -52,30 +53,18 @@ in
 
     assetsDir = lib.mkOption {
       # str, NOT path: types.path accepts a Nix path literal, and
-      # interpolating one copies it into the store — which would put a store
-      # path back into this host's config and silently reintroduce the exact
-      # coupling this split removes. A runtime directory is a string.
+      # interpolating one copies it into the store, which would put a store
+      # path back into this host's config and reintroduce the coupling this
+      # split removes. A runtime directory is a string.
       type = lib.types.str;
-      default = "/var/lib/pxe-netboot";
+      default = "/tank/services/callisto/pxe";
       description = ''
-        Mutable directory holding the HTTP-served half of the netboot chain.
-        `''${assetsDir}/current` is a symlink to a built
-        `pxe-netboot-assets` store path (boot.ipxe + bzImage + initrd) and is
-        what nginx serves; it doubles as the indirect GC root pinning those
-        paths. Populated by jupiter-pxe-assets.service, never by activation —
-        a store path named here would drag the netbooting client's closure
-        into this host's.
-      '';
-    };
-
-    assetsFlakeRef = lib.mkOption {
-      type = lib.types.str;
-      default = "github:belikh/jupiter-os#pxe-netboot-assets";
-      description = ''
-        Flake reference jupiter-pxe-assets.service builds and links into
-        `assetsDir`. Pulled from the pushed remote, matching the fleet's
-        deploy discipline (hosts build from github:belikh/jupiter-os, so a
-        change must be committed + pushed before it is publishable).
+        Directory holding the HTTP-served half of the netboot chain.
+        `''${assetsDir}/current` is a relative symlink to
+        `releases/<hash>` (boot.ipxe + bzImage + initrd) and is what nginx
+        serves. The directory lives on the callisto-scoped NFS export, where
+        callisto's jupiter-pxe-publish.service writes it. This host never
+        builds the assets.
       '';
     };
 
@@ -113,60 +102,9 @@ in
       };
     };
 
-    systemd.tmpfiles.rules = [
-      "d ${cfg.assetsDir} 0755 root root - -"
-    ];
-
-    # Publisher for the HTTP half. Manual/one-shot ON PURPOSE — no timer, no
-    # wantedBy — because the assets must track callisto's DEPLOYED generation,
-    # not whatever `main` happens to hold: boot.ipxe pins `init=` to a specific
-    # toplevel, and stage-1 switch_roots into that path on callisto's own iSCSI
-    # root, so publishing ahead of callisto's `nixos-rebuild switch` would
-    # serve a path that doesn't exist there. Order of operations is therefore:
-    # push to main → switch callisto → `systemctl start jupiter-pxe-assets`
-    # here. A failed run changes nothing (the old `current` symlink, and its GC
-    # root, stay put), so callisto keeps netbooting what it booted last time.
-    systemd.services.jupiter-pxe-assets = {
-      description = "Publish the PXE netboot assets (boot.ipxe + kernel + initrd)";
-      after = [ "network-online.target" ];
-      wants = [ "network-online.target" ];
-      # Environment/path mirror nixpkgs' own nixos-upgrade.service (the other
-      # unit in the tree that runs a flake-fetching `nix` command): nix needs
-      # its envVars, a writable HOME for the eval/fetch cache, the proxy vars,
-      # and the tarball-unpacking tools on PATH.
-      environment =
-        config.nix.envVars
-        // {
-          HOME = "/root";
-        }
-        // config.networking.proxy.envVars;
-      path = [
-        pkgs.coreutils
-        pkgs.gnutar
-        pkgs.xz.bin
-        pkgs.gzip
-        # openssh: building callisto's gccarch-x86-64-v3 closure means delegating
-        # to callisto over ssh-ng://root@10.1.1.3 (europa's only machine in
-        # /etc/nix/machines, advertising gccarch-x86-64-v3). nix shells out
-        # to `ssh` from PATH for that delegation, so without openssh here the
-        # publish dies "Could not find executable 'ssh' / Cannot build
-        # system-path.drv: missing system features". Confirmed 2026-08-14.
-        pkgs.openssh
-        # No git: assetsFlakeRef is a `github:` (tarball) ref, and every flake
-        # input is too, so nothing here shells out to git. Leaving it off keeps
-        # a from-source git out of this host's microarch-tuned closure.
-        config.nix.package.out
-      ];
-      serviceConfig.Type = "oneshot";
-      # --out-link registers an indirect GC root, which is the only thing
-      # keeping the served kernel/initrd alive in this host's store now that no
-      # system closure references them. europa has a stateful root (no
-      # impermanence), so the symlink survives reboots.
-      script = ''
-        exec nix build --refresh --print-build-logs \
-          --out-link "${cfg.assetsDir}/current" "${cfg.assetsFlakeRef}"
-      '';
-    };
+    # The assets live on a ZFS dataset that must be mounted before nginx
+    # resolves `current`.
+    systemd.services.nginx.unitConfig.RequiresMountsFor = [ cfg.assetsDir ];
 
     networking.firewall.allowedUDPPorts = [ 69 ];
     networking.firewall.allowedTCPPorts = [ cfg.httpPort ];

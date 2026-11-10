@@ -206,13 +206,12 @@
       # login can't reach the portal without an address first, so this is
       # cheap insurance rather than an assumption.
       # The cmdLine's `init=` pins the served kernel/initrd and the userland
-      # they boot to ONE generation — which is why the assets must be
-      # published AFTER callisto has switched to that generation, so the
-      # path exists on callisto's own iSCSI root. Publish order: switch
-      # callisto first, then `systemctl start jupiter-pxe-assets` on
-      # europa. Publishing ahead serves a path that doesn't exist on disk
-      # and stage-1 fails with "stage 2 init script not found" (2026-09-06:
-      # recovery-pinned to system-65 until callisto switched past it).
+      # they boot to ONE generation. callisto builds these assets itself
+      # (`systemctl start jupiter-pxe-publish` on callisto, see
+      # modules/network/pxe-publish.nix), so the toplevel is already in its
+      # store when they are published. Serving a toplevel that is not on
+      # callisto's iSCSI root fails stage 1 with "stage 2 init script not
+      # found" (2026-09-06).
       # NOTE: stage-1 defaults to /init when init= is absent, and
       # callisto's root has no /init — init= must never be omitted here.
       callistoCmdLine = "init=${callistoBuild.toplevel}/init loglevel=4 ip=dhcp ${toString callistoConfig.boot.kernelParams}";
@@ -256,7 +255,7 @@
         }
       ];
       # HTTP-served half — the callisto-derived files. Published into
-      # jupiter.pxe.assetsDir by jupiter-pxe-assets.service, NOT wired into
+      # jupiter.pxe.assetsDir by callisto's jupiter-pxe-publish.service, NOT wired into
       # any host's config: a store-path reference from europa is exactly the
       # coupling this split exists to remove.
       pxeNetbootAssets = untunedPkgs.linkFarm "pxe-netboot-assets" [
@@ -387,13 +386,11 @@
 
       # The HTTP half: boot.ipxe + callisto's bzImage/initrd. Deliberately a
       # standalone package rather than part of europa's system closure, so
-      # building europa never builds callisto. europa publishes it with
-      #   systemctl start jupiter-pxe-assets.service
-      # (jupiter.pxe.assetsFlakeRef points at this attr) — run that AFTER
-      # callisto has switched to the generation being served, since boot.ipxe
-      # pins `init=` to that toplevel and the path has to exist on callisto's
-      # own iSCSI root. v3-tagged: only substitutes/builds where
-      # gccarch-x86-64-v3 is available.
+      # building europa never builds callisto. callisto builds and publishes it
+      # to europa with
+      #   systemctl start jupiter-pxe-publish.service
+      # (jupiter.pxe.publish.flakeRef points at this attr). v3-tagged: only
+      # substitutes/builds where gccarch-x86-64-v3 is available.
       packages.x86_64-linux.pxe-netboot-assets = pxeNetbootAssets;
 
       # dsh — DeepSeek Harness CLI + web UI: REMOVED 2026-10 (module

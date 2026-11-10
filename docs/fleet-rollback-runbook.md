@@ -26,9 +26,10 @@ were fixing (`systemctl status <unit>`).
 
 - **callisto** boots via PXE from europa and pins `init=` to a callisto
   toplevel. After any switch or rollback on callisto, republish the PXE assets
-  so the pinned `init` exists in its store; publishing runs after the switch by
-  design (`jupiter-pxe-assets.service`). If callisto is unreachable over SSH,
-  PXE is its console.
+  with `systemctl start jupiter-pxe-publish` on callisto (it builds them there
+  and writes them to europa). To roll back without a build, repoint
+  `/mnt/europa/pxe/current` at an older `releases/<hash>`. If callisto is
+  unreachable over SSH, PXE is its console.
 - **kiosks** have physical screens/keyboards; **europa** has the console;
   **pallene** has the VPS serial/VNC console.
 

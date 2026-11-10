@@ -54,42 +54,49 @@ is split:
 | Artifact | Contents | Where it lives | Served over |
 |---|---|---|---|
 | `.#pxe-tftproot` | `ipxe.efi`, `undionly.kpxe` | europa's system closure (`jupiter.pxe.root`) | TFTP (:69) |
-| `.#pxe-netboot-assets` | `boot.ipxe`, `bzImage`, `initrd` | `/var/lib/pxe-netboot/current` — a symlink, not a closure reference | HTTP (:8082) |
+| `.#pxe-netboot-assets` | `boot.ipxe`, `bzImage`, `initrd` | `/tank/services/callisto/pxe/current` on europa (a relative symlink to `releases/<hash>`), written by callisto | HTTP (:8082) |
 
 iPXE's embedded script is a static chainload to
 `http://10.1.1.2:8082/boot.ipxe`, so everything callisto-specific is fetched
 at runtime from the mutable half.
 
-**Publish (on europa, as root):**
+**Publish (on callisto, as root):**
 
 ```bash
-systemctl start jupiter-pxe-assets.service   # nix build --out-link /var/lib/pxe-netboot/current
+systemctl start jupiter-pxe-publish.service
 ```
 
-**Order matters.** `boot.ipxe` pins `init=<callisto-toplevel>/init`, and
-stage-1 `switch_root`s into that path *on callisto's own iSCSI root* — so the
-generation being served has to already exist there:
+Callisto builds `.#pxe-netboot-assets` itself, copies `boot.ipxe`, `bzImage`
+and `initrd` to `/mnt/europa/pxe/releases/<hash>/` (europa's
+`/tank/services/callisto/pxe`, the callisto-scoped NFS export), and repoints
+`/mnt/europa/pxe/current`. Europa only serves the directory over HTTP and
+never builds the assets. The last 3 releases are kept for rollback: repoint
+`current` at an older `releases/<hash>`.
 
-1. commit + push to `main`
-2. `nixos-rebuild switch` **on callisto** (writes the new toplevel to its root)
-3. `systemctl start jupiter-pxe-assets.service` **on europa**
+`boot.ipxe` pins `init=<callisto-toplevel>/init`. The toplevel is built on
+callisto, so it is already in callisto's store when the assets are published.
+Publishing therefore no longer has to wait for a `nixos-rebuild`. Run
+`nixos-rebuild boot` first anyway, so the generation you reboot into is the
+one you published. The unit is one-shot with no timer so that a reboot only
+picks up assets someone published on purpose. A failed run leaves the previous
+`current` symlink untouched.
 
-The unit is one-shot with no timer on purpose: an automatic pull of `main`
-would race ahead of step 2 and serve a path callisto doesn't have. A failed
-run leaves the previous `current` symlink (and its indirect GC root)
-untouched, so callisto keeps netbooting the last-published generation.
-
-**First-time bootstrap (the one ordering trap).** nginx serves `current`, so
-between switching europa to the split config and the first publish there is a
-window where the HTTP half 404s and callisto cannot netboot. Close it by
-publishing *before* switching europa — the unit doesn't exist yet, but its
-command does, and it also GC-roots the kernel/initrd that europa's outgoing
-closure was pinning:
+**First-time bootstrap.** Europa's nginx used to serve
+`/var/lib/pxe-netboot/current`. After europa switches to the new config it
+serves `/tank/services/callisto/pxe/current` instead, which is empty until the
+first publish. Publish before switching europa. The unit does not exist on
+callisto until it has been rebuilt, so run its commands by hand:
 
 ```bash
-mkdir -p /var/lib/pxe-netboot
-nix build github:belikh/jupiter-os#pxe-netboot-assets \
-  --out-link /var/lib/pxe-netboot/current
+# on callisto
+out=$(nix build --refresh --print-out-paths \
+  --out-link /var/lib/jupiter-pxe/result \
+  github:belikh/jupiter-os#pxe-netboot-assets)
+id=$(basename "$out" | cut -c1-32)
+mkdir -p /mnt/europa/pxe/releases/$id
+cp -L "$out"/{boot.ipxe,bzImage,initrd} /mnt/europa/pxe/releases/$id/
+ln -sfn releases/$id /mnt/europa/pxe/current
+# on europa
 nixos-rebuild switch --flake github:belikh/jupiter-os#europa
 ```
 

@@ -90,10 +90,10 @@ refs (MQTT, builds) dial it by IP.
 - **PXE netboot → europa** (`modules/network/pxe-server.nix` via `flake.nix`
   `pxeModule`): europa's closure holds ONLY static iPXE/TFTP binaries; the
   callisto-derived `boot.ipxe`/`bzImage`/`initrd` are the standalone
-  `.#pxe-netboot-assets` package, published to `/var/lib/pxe-netboot/current`
-  by `jupiter-pxe-assets.service`. Order matters: publish runs **after**
-  callisto switches to that generation (`init=` pins a callisto toplevel on
-  iSCSI root), so building europa never builds callisto.
+  `.#pxe-netboot-assets` package, built on callisto and published to europa's
+  `/tank/services/callisto/pxe/current` (NFS export) by callisto's
+  `jupiter-pxe-publish.service` (`modules/network/pxe-publish.nix`), so
+  building europa never builds callisto.
 - **Harmonia → europa `:5000`** (`services.harmonia`): read-only binary cache
   over HTTP serving europa's `/nix/store`. A **fileserver app on the NAS host,
   permanent by definition** — not an exception to europa's storage-only rule.

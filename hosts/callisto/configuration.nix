@@ -29,6 +29,8 @@
     ../../modules/services/mqtt.nix
     # PostgreSQL server (fleet SQL database; see modules/services/postgres.nix)
     ../../modules/services/postgres.nix
+    # Builds this host's PXE assets and publishes them to europa
+    ../../modules/network/pxe-publish.nix
     # Federated procurement MCP (Chinese + AU marketplaces, integration-only)
     ../../modules/services/procurement-mcp.nix
     # Tailscale client for Jupiter tailnet
@@ -98,8 +100,8 @@
   # blessed fix is to not run the waiter at all.
   systemd.network.wait-online.enable = false;
 
-  # NEVER `nixos-rebuild switch`/`test` on this host — use `boot` (+ republish
-  # PXE assets, + reboot). Activating a new generation STOPS
+  # NEVER `nixos-rebuild switch`/`test` on this host — use `boot` (+ run
+  # `systemctl start jupiter-pxe-publish` to republish the PXE assets, + reboot). Activating a new generation STOPS
   # `iscsid.service`/`iscsid.socket` and re-execs (upgrades) systemd, and
   # iscsid is what keeps the iSCSI session carrying THIS ROOT alive. Observed
   # 2026-10-09/10: switch-to-configuration printed "stopping the following
@@ -296,6 +298,8 @@
   # jupiter.services.llm.clientUrl = "http://127.0.0.1:8081";
 
   hardware.graphics.enable = true;
+
+  jupiter.pxe.publish.enable = true;
 
   # Vulkan / Mesa diagnostics (vulkaninfo).
   # `gh` for interactive admin (`gh run list`, `gh secret list`) without
