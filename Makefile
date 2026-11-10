@@ -2,12 +2,13 @@
 
 # CVE scan of one host's system derivation with vulnix (NVD match on
 # name+version; hits are leads, see .opencode/skills/nixos-updates/references/cve-triage.md).
-# Scans the .drv closure, so build-time tools (binutils, cargo) appear too.
+# Scans the .drv closure, so build-time tools (binutils, cargo) appear too;
+# CI scans the built toplevel instead (runtime closure only).
 # Exit 2 means vulnerabilities were found.
 # Usage: make vulnix HOST=europa
 HOST ?= europa
 vulnix:
-	nix run nixpkgs#vulnix -- $$(nix eval --raw .#nixosConfigurations.$(HOST).config.system.build.toplevel.drvPath)
+	nix run nixpkgs#vulnix -- -w vulnix.whitelist.toml $$(nix eval --raw .#nixosConfigurations.$(HOST).config.system.build.toplevel.drvPath)
 
 # Build every registered host closure (the 4 dashboard kiosks).
 build-all:

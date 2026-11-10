@@ -4,8 +4,10 @@ name: vulnix
 # (https://github.com/nix-community/vulnix). Matches derivation name+version
 # against NVD, so hits are leads, not conclusions; triage rules are in
 # .opencode/skills/nixos-updates/references/cve-triage.md. The scan reads the
-# .drv closure, so build-time tools appear too. Findings go to the job
-# summary and do not fail the job; only a scan error does.
+# built toplevel's runtime closure (no build-time tools). No host sets
+# jupiter.build.microarch, so the build substitutes from cache.nixos.org.
+# Name collisions are suppressed by vulnix.whitelist.toml. Findings go to the
+# job summary and do not fail the job; only a build or scan error does.
 on:
   schedule:
     - cron: "17 5 * * 1" # Mondays 05:17 UTC
@@ -17,7 +19,7 @@ permissions:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -28,10 +30,10 @@ jobs:
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
       - name: Scan ${{ matrix.host }}
         run: |
-          drv=$(nix eval --raw ".#nixosConfigurations.${{ matrix.host }}.config.system.build.toplevel.drvPath")
+          out=$(nix build --no-link --print-out-paths ".#nixosConfigurations.${{ matrix.host }}.config.system.build.toplevel")
           # vulnix exits 2 when it finds vulnerabilities; any other non-zero is an error.
           rc=0
-          nix run nixpkgs#vulnix -- "$drv" > vulnix.txt || rc=$?
+          nix run nixpkgs#vulnix -- -w vulnix.whitelist.toml "$out" > vulnix.txt || rc=$?
           if [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ]; then
             cat vulnix.txt
             exit "$rc"
