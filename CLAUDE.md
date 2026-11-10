@@ -271,3 +271,17 @@ unified platform landing) → ganymede (resolver/services) → himalia
 unified-platform modules and Home-Assistant absorption (API-first, until
 headless). Port each from `archive/full-fleet-reference`, keeping the
 buildability rules above.
+
+## Agent skills
+
+### Issue tracker
+
+Issues are tracked in GitHub Issues (belikh/jupiter-os) via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default label vocabulary — each label string equals its role name: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` at the repo root plus `docs/adr/`. See `docs/agents/domain.md`.
