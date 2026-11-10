@@ -654,7 +654,9 @@
   };
 
   services.n8n = {
-    enable = true;
+    # Disabled 2026-11-10. The n8n database, role and secrets stay, so
+    # re-enabling restores the workflows.
+    enable = false;
     openFirewall = false; # loopback until the G-E service ladder promotes it
     environment = {
       N8N_HOST = "127.0.0.1";
