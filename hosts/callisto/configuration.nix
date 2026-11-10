@@ -681,7 +681,8 @@
   # module's auto-declared sops secret resolves and activation is clean. The
   # jupiter-pg-provision-suno oneshot above sets the role password from it
   # before the daemon starts.
-  jupiter.services.sunoTop.enable = true;
+  # Disabled 2026-11-10. The suno schema, role and data in Postgres stay.
+  jupiter.services.sunoTop.enable = false;
 
   # ---- HAOS guest host (Jupiter Quarters overhaul G-E, spec §7.2) -----------
   # Libvirt + KVM + OVMF substrate for the green-world HAOS guest. Guest
