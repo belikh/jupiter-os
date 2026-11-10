@@ -304,14 +304,7 @@
         hostname = "headscale.jupiter.au";
         port = 8080;
       }
-      {
-        # nom-web (browser UI for jupiter-ci build logs) runs on callisto,
-        # not here — cloudflared can proxy to any LAN host it can reach.
-        # See modules/services/nom-web.nix / hosts/callisto/configuration.nix.
-        hostname = "nom.jupiter.au";
-        host = config.jupiter.fleet.addresses.callisto;
-        port = 8092;
-      }
+
       {
         # Home Assistant MCP server (mcp-ha-connect) on the HA box at 10.1.1.72.
         # Routing left pending a use-or-delete decision. The
@@ -346,7 +339,7 @@
       }
     ];
   };
-  services.harmonia.cache.enable = true;
+  services.harmonia.cache.enable = false;
   services.harmonia.cache.signKeyPaths = [ config.sops.secrets.harmonia_sign_key.path ];
   services.harmonia.cache.settings = {
     real_nix_store = "/nix/store";
@@ -361,7 +354,7 @@
 
   # Receiving side for CI's `nix copy` pushes (jupiter-ci trusted user +
   # per-build GC roots, keep last 3 main builds).
-  jupiter.core.ciCacheReceiver.enable = true;
+  jupiter.core.ciCacheReceiver.enable = false;
 
   # Syncthing hub — canonical synced copy lives on tank/personal (mirror +
   # sanoid snapshots + future restic offsite).
@@ -421,7 +414,7 @@
   #     sops block below (the webapp module stays deliberately sops-free,
   #     D-P2b).
   jupiter.services.arcadeWebapp = {
-    enable = true;
+    enable = false;
     openFirewall = true;
     aria2SecretFile = config.sops.secrets.jupiter_aria2_rpc_secret.path;
     screenscraperCredsFile = config.sops.secrets.screenscraper_creds.path;
@@ -442,13 +435,13 @@
   # memory (~40MB for the current ~18.7k clips) and refreshes every 5m to
   # pick up whatever the backfill has just pulled down.
   jupiter.services.sunoWeb = {
-    enable = true;
+    enable = false;
     openFirewall = true;
   };
 
   # aria2 + AriaNg web UI — LAN at http://10.1.1.2:8083
   jupiter.services.aria2 = {
-    enable = true;
+    enable = false;
     downloadDir = "/tank/downloads";
     openFirewall = true;
     # AriaNg (web UI) defaults its RPC connection to this host's LAN
