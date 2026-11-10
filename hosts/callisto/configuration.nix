@@ -33,8 +33,6 @@
     ../../modules/services/procurement-mcp.nix
     # Tailscale client for Jupiter tailnet
     ../../modules/services/tailscale.nix
-    # nom-web: browser UI for jupiter-ci build logs
-    ../../modules/services/nom-web.nix
     # Dedicated Cloudflare tunnel for this host's public hostnames
     # (opencode/design/etc. via cloudflared running here)
     ../../modules/services/cloudflare-tunnel.nix
@@ -310,24 +308,6 @@
     pkgs.python3
   ];
 
-  # ---- nom-web: browser UI for ci-distributed.yml's build logs -------------
-  # Reads europa's /var/log/jupiter-ci over NFS (export in
-  # modules/storage/nas-nfs.nix); `soft` so a dead europa doesn't hang the
-  # service. Reached publicly at nom.jupiter.au via europa's Cloudflare
-  # Tunnel (extraIngress in hosts/europa/configuration.nix), so the port only
-  # needs to be open to the LAN, not the internet.
-  fileSystems."/mnt/jupiter-ci-logs" = {
-    device = "${config.jupiter.fleet.addresses.europa}:/var/log/jupiter-ci";
-    fsType = "nfs";
-    options = [
-      "ro"
-      "noatime"
-      "soft"
-      "timeo=50"
-      "retrans=2"
-    ];
-  };
-
   # ---- Bulk data on europa's tank pool --------------------------------------
   # Root is a 275G iSCSI zvol on europa's SSD mirror and keeps filling.
   # Put growing service data here instead — europa's tank pool is 16.4T.
@@ -380,11 +360,6 @@
       "mode=1777"
       "noatime"
     ];
-  };
-
-  jupiter.services.nomWeb = {
-    enable = true;
-    openFirewall = true;
   };
 
   # Keys for the providers above (same values as the zed secrets, packed as
