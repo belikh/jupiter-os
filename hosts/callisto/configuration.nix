@@ -25,6 +25,7 @@
 {
   imports = [
     ../../modules/common.nix
+    ../../modules/boot/iscsi-root.nix
     ../../modules/services/mqtt.nix
     # PostgreSQL server (fleet SQL database; see modules/services/postgres.nix)
     ../../modules/services/postgres.nix
@@ -77,35 +78,28 @@
   networking.hostId = "ca11157c";
 
   # ---- Root over iSCSI -----------------------------------------------------
-  # boot.iscsi-initiator (nixos/modules/services/networking/iscsi/root-initiator.nix)
-  # HARD-asserts `!boot.initrd.systemd.enable` — it uses preLVMCommands/
-  # extraUtilsCommands, which the systemd-stage-1 initrd doesn't implement
-  # at all ("systemd stage 1 does not support iscsi yet" is its own literal
-  # assertion message). This is the one non-optional trade of this whole
-  # design: callisto loses systemd-stage-1's tooling in exchange for a
-  # working iSCSI root, on this one host only.
-  boot.initrd.systemd.enable = false;
-
-  # The module also forces networking.useNetworkd = true and
-  # networking.useDHCP = false itself (unconditional assignments, not
-  # mkDefault) — don't set those separately here, they'd conflict. It adds
-  # the iscsi_tcp kernel module, the iscsid/iscsiadm binaries, and
-  # boot.initrd.network.enable = true (generic initrd DHCP, the classic-initrd
-  # equivalent of what systemd-stage-1's network.enable does) on its own.
-  # The only thing left to us is the NIC driver, which (unlike
-  # netboot-minimal's RAM-resident environment, which had "no hardware scan
-  # behind it") this classic initrd can autoload via udev the normal way —
-  # same mechanism every disk-based NixOS install already relies on.
+  # nixpkgs removed boot.iscsi-initiator along with the scripted initrd
+  # (NixOS/nixpkgs#573038, 26.11). modules/boot/iscsi-root.nix is the systemd
+  # stage 1 replacement (adapted from nixpkgs PR #545932): iscsid and the
+  # target login run as initrd units ordered before sysroot.mount. It also
+  # forces networking.useNetworkd = true and useDHCP = false itself — don't
+  # set those here. The NIC driver is the only hardware piece left to us; the
+  # initrd loads it via udev like any disk-based install.
   boot.initrd.availableKernelModules = [ "e1000e" ]; # onboard Intel I219-LM
-  boot.iscsi-initiator = {
+  jupiter.boot.iscsiRoot = {
+    enable = true;
     name = "iqn.2026-07.au.jupiter:callisto";
     discoverPortal = "${config.jupiter.fleet.addresses.europa}:3260";
     target = "iqn.2026-07.au.jupiter:europa:callisto-root";
+    # Stage-2 networkd renews the lease the initrd obtained and uses the same
+    # MAC-based DHCP client id, so the UniFi reservation (c4:65:16:b8:76:03 ->
+    # 10.1.1.3) hands out the same address in both stages.
+    nic = "eno1";
   };
 
-  # networkd has NO managed interfaces in stage 2 (the root-initiator module
-  # forces networkd, but eno1's address comes from initrd DHCP and the
-  # interface stays "unmanaged"), so systemd-networkd-wait-online can never
+  # Before the iSCSI module managed eno1 in stage 2, networkd had NO managed
+  # interfaces here (eno1's address came from initrd DHCP and the interface
+  # stayed "unmanaged"), so systemd-networkd-wait-online could never
   # succeed — every nixos-rebuild restart of it hung 2 minutes, timed out, and
   # aborted switch-to-configuration MID-ACTIVATION (after the stop phase,
   # before the start phase), killing the arcade session on every switch and

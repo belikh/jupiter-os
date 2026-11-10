@@ -66,11 +66,6 @@ in
     # to wait on, and a quiet, parallel initrd instead of a serial one.
     boot.loader.timeout = 0;
 
-    # Stage-1 init as systemd: udev/module loading runs in parallel instead of
-    # the legacy serial shell script. Also required by zfs-profiles.nix's
-    # initrd rollback service.
-    boot.initrd.systemd.enable = true;
-
     # Skip NixOS's broad default initrd module set (covers arbitrary unknown
     # hardware) and list only what this specific, known machine needs to find
     # its root device and basic input. The 128GB SSD is a SanDisk Z400s on the
