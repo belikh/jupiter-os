@@ -98,3 +98,55 @@ comment = "Name collision with an unrelated product; reviewed 2026-11-10."
 cve = ["CVE-2021-21684", "CVE-2022-30947", "CVE-2022-36882", "CVE-2022-36883", "CVE-2022-36884", "CVE-2022-38663"]
 until = "2027-02-10"
 comment = "Name collision with an unrelated product; reviewed 2026-11-10."
+
+# Verified against the NVD CVE records on 2026-11-10: not applicable to the package nixpkgs ships.
+
+["ada-4.0.0"]
+cve = ["CVE-2024-9410"]
+until = "2027-02-10"
+comment = "CVE-2024-9410 is Ada.cx's Sentry configuration, not the ada URL library."
+
+["brotli-1.2.1"]
+cve = ["CVE-2026-111497"]
+until = "2027-02-10"
+comment = "NVD range is 1.2.0 up to but excluding 1.2.1, so 1.2.1 is fixed."
+
+["gcc-16.2.0"]
+cve = ["CVE-2023-4039"]
+until = "2027-02-10"
+comment = "AArch64-only stack-protector issue (disputed); all hosts are x86_64."
+
+["perl-5.42.3"]
+cve = ["CVE-2026-8376", "CVE-2026-13221", "CVE-2026-57432"]
+until = "2027-02-10"
+comment = "NVD range is 5.41.0 before 5.42.3-RC1; vulnix does not order the -RC1 suffix, 5.42.3 is fixed."
+
+["perl-5.42.3-env"]
+cve = ["CVE-2026-8376", "CVE-2026-13221", "CVE-2026-57432"]
+until = "2027-02-10"
+comment = "Same as perl-5.42.3."
+
+["zlib-1.3.2"]
+cve = ["CVE-2026-27820", "CVE-2023-6992"]
+until = "2027-02-10"
+comment = "CVE-2026-27820 is the Ruby zlib gem; CVE-2023-6992 is Cloudflare's zlib fork."
+
+["snappy-1.2.2"]
+cve = ["CVE-2023-28115", "CVE-2023-41330"]
+until = "2027-02-10"
+comment = "Both CVEs are the KnpLabs snappy PHP library, not Google snappy."
+
+["orc-0.4.44"]
+cve = ["CVE-2025-47436"]
+until = "2027-02-10"
+comment = "CVE-2025-47436 is Apache ORC, not the Orc compiler used by GStreamer."
+
+["openvswitch-4.0.0"]
+cve = ["CVE-2023-5366"]
+until = "2027-02-10"
+comment = "Fixed in 2023; the NVD range is a date, not a version, so vulnix cannot compare it."
+
+["libmpeg2-0.5.1"]
+cve = ["CVE-2022-37416"]
+until = "2027-02-10"
+comment = "CVE-2022-37416 is Ittiam's libmpeg2 (Android), not the videolan libmpeg2 library."
