@@ -20,7 +20,7 @@
 # defaults initrd networks to KeepConfiguration=dhcp-on-stop.
 #
 # Stage 2 keeps iscsid (services.openiscsi) so the kernel session that carries
-# / can recover from a dropped connection. `nic` optionally gives stage-2
+# / can recover from a dropped connection. `mac` optionally gives stage-2
 # networkd a matching DHCP .network so the lease is renewed; without it the NIC
 # is unmanaged after switch-root and the address expires with the lease.
 
@@ -112,15 +112,17 @@ in
       description = "Lines appended to the initrd iscsid.conf.";
     };
 
-    nic = lib.mkOption {
+    mac = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;
-      example = "eno1";
+      example = "c4:65:16:b8:76:03";
       description = ''
-        Name of the NIC that carries the iSCSI session. When set, stage-2
-        networkd manages it with DHCPv4 and ClientIdentifier=mac, so the lease
-        is renewed and the address matches the one the initrd obtained. When
-        null the NIC stays unmanaged in stage 2.
+        MAC address of the NIC that carries the iSCSI session. When set,
+        networkd manages that NIC with DHCPv4 and ClientIdentifier=mac in both
+        the initrd and stage 2. It is matched by MAC, not name, so a rename
+        between the stages cannot orphan the root NIC. The lease is renewed
+        and the address matches the one a MAC-keyed DHCP reservation hands
+        out. When null the NIC stays unmanaged in stage 2.
       '';
     };
   };
@@ -187,20 +189,20 @@ in
           };
         };
       }
-      (lib.mkIf (cfg.nic != null) {
+      (lib.mkIf (cfg.mac != null) {
         # Initrd side of the DHCP identity: MAC-based client id, so a
         # MAC-keyed DHCP reservation yields the same address as in stage 2.
         systemd.network.networks."10-iscsi-root" = {
-          matchConfig.Name = cfg.nic;
+          matchConfig.MACAddress = cfg.mac;
           networkConfig.DHCP = "ipv4";
           dhcpV4Config.ClientIdentifier = "mac";
         };
       })
     ];
 
-    systemd.network.networks = lib.mkIf (cfg.nic != null) {
+    systemd.network.networks = lib.mkIf (cfg.mac != null) {
       "10-iscsi-root" = {
-        matchConfig.Name = cfg.nic;
+        matchConfig.MACAddress = cfg.mac;
         networkConfig = {
           DHCP = "ipv4";
           # The root filesystem lives behind this NIC: never flush its lease

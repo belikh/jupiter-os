@@ -94,7 +94,7 @@
     # Stage-2 networkd renews the lease the initrd obtained and uses the same
     # MAC-based DHCP client id, so the UniFi reservation (c4:65:16:b8:76:03 ->
     # 10.1.1.3) hands out the same address in both stages.
-    nic = "eno1";
+    mac = "c4:65:16:b8:76:03";
   };
 
   # Before the iSCSI module managed eno1 in stage 2, networkd had NO managed

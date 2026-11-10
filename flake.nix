@@ -581,6 +581,10 @@
       checks.x86_64-linux =
         (builtins.mapAttrs (_: host: host.config.system.build.toplevel) self.nixosConfigurations)
         // {
+          # systemd-initrd iSCSI root (modules/boot/iscsi-root.nix, used by
+          # callisto): two-VM boot from an iSCSI LUN over DHCP.
+          iscsi-root = untunedPkgs.testers.runNixOSTest ./tests/iscsi-root.nix;
+
           arcade-webapp-vm = untunedPkgs.testers.runNixOSTest {
             name = "arcade-webapp-vm";
 
