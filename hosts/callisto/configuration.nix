@@ -60,14 +60,6 @@
     ../../modules/services/haos-guest-host.nix
     # OpenDesign — local-first design product (daemon `od` + web frontend)
     ../../modules/services/open-design.nix
-    # jupiterOS Arcade: boots straight into the gamescope/Pegasus session on
-    # tty1 (modules/desktop/arcade-console.nix) with full kiosk collection
-    # parity — console ROMs (modules/desktop/cartridges.nix) + eXo DOS/Win
-    # collections (modules/desktop/exodos.nix), both read from europa over
-    # NFS (export in modules/storage/nas-nfs.nix already covers the LAN).
-    ../../modules/desktop/arcade-console.nix
-    ../../modules/desktop/cartridges.nix
-    ../../modules/desktop/exodos.nix
   ];
 
   networking.hostName = "callisto";
@@ -307,25 +299,7 @@
 
   hardware.graphics.enable = true;
 
-  # ---- jupiterOS Arcade -----------------------------------------------------
-  # Boot straight into the Pegasus arcade on tty1 over the HDMI display
-  # (HDMI-A-1 confirmed connected 2026-08-15). Full kiosk collection parity:
-  # console ROM sets (PS1/PS2 incl. — the Resident Evil archive lives on
-  # europa's optical dataset) + the eXo DOS/Win3x/Win9x collections. gamescope
-  # + emulators render on the UHD 630 via Mesa (hardware.graphics above);
-  # stock nixpkgs gamescope, no Jovian/Steam/NM stack — see the module header
-  # for why the kiosk's dashboard-gaming path is deliberately not used here.
-  jupiter.arcadeConsole.enable = true;
-  # The office arcade's display IS its audio output: LG TV on HDMI-A-1.
-  # Without this, PulseAudio's heuristics pick the (silent) built-in analog
-  # speakers over HDMI — game audio went nowhere until routed 2026-08-16.
-  jupiter.arcadeConsole.audioOutput = "hdmi";
-  jupiter.cartridges.enable = true;
-  jupiter.exodos.enable = true;
-
-  # Vulkan / Mesa diagnostics (vulkaninfo) — same tool modules/gaming/console.nix
-  # installs for the same reason, kept independent here since that module is
-  # gamescope-specific and not something callisto should pull in.
+  # Vulkan / Mesa diagnostics (vulkaninfo).
   # `gh` for interactive admin (`gh run list`, `gh secret list`) without
   # digging a store path out of whichever unit bundles it.
   environment.systemPackages = [
