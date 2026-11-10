@@ -163,7 +163,7 @@ jobs:
           # pre-check races (lock can appear between check and install).
           # DPkg::Lock::Timeout makes apt WAIT natively instead of exiting 100.
           sudo apt-get -o DPkg::Lock::Timeout=300 update
-          sudo apt-get -o DPkg::Lock::Timeout=300 install -y qemu-user-static binfmt-support
+          sudo apt-get -o DPkg::Lock::Timeout=300 install -y qemu-user-binfmt binfmt-support
           sudo update-binfmts --enable qemu-i386 || true
 
       # Cache Nix evaluation/download cache by nixpkgs commit (flake.lock hash) —
@@ -418,7 +418,7 @@ jobs:
           # pre-check races (lock can appear between check and install).
           # DPkg::Lock::Timeout makes apt WAIT natively instead of exiting 100.
           sudo apt-get -o DPkg::Lock::Timeout=300 update
-          sudo apt-get -o DPkg::Lock::Timeout=300 install -y qemu-user-static binfmt-support
+          sudo apt-get -o DPkg::Lock::Timeout=300 install -y qemu-user-binfmt binfmt-support
           sudo update-binfmts --enable qemu-i386 || true
 
       - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1

@@ -1372,8 +1372,12 @@ let
     # non-empty body, and the size matching what the SAME VM serves on
     # a fresh (post-restart) request — the byte source is the embed.FS,
     # so both reads must agree exactly.
-    curl -s --limit-rate 2k -o /tmp/w4a-drain.out -w '%{http_code} %{size_download}' \
-      "$base/static/htmx.min.js" > /tmp/w4a-drain.code &
+    # `command curl` bypasses the curl() wrapper defined near the top of this
+    # script (--max-time 10): this transfer takes ~25 s by design, so the
+    # wrapper's 10 s cap killed it at 20520 bytes. Its own cap is 90 s.
+    ( command curl -sS --max-time 90 --limit-rate 2k -o /tmp/w4a-drain.out -w '%{http_code} %{size_download}' \
+        "$base/static/htmx.min.js" > /tmp/w4a-drain.code 2> /tmp/w4a-drain.err
+      echo "$?" > /tmp/w4a-drain.rc ) &
 
     drain_pid=$!
     # DEBUG sampler: every second, snapshot the drain connection's TCP
@@ -1413,6 +1417,8 @@ let
       sysctl net.ipv4.tcp_wmem net.ipv4.tcp_rmem net.core.wmem_default net.core.rmem_default net.ipv4.tcp_retries2 2>/dev/null || true
       echo "smoke: DEBUG ss all (filter syntax fallback):"
       ss -ti 2>/dev/null | head -20 || true
+      echo "smoke: DEBUG drain curl exit code: $(cat /tmp/w4a-drain.rc 2>/dev/null) stderr: $(cat /tmp/w4a-drain.err 2>/dev/null)"
+      curl --version | head -1
       echo "smoke: DEBUG drain curl timing file:"
       cat /tmp/w4a-drain.code || true
       fail "W4a drain: in-flight body $drain_size bytes, want the full $fresh_size (connection severed mid-drain?)"
@@ -1442,6 +1448,18 @@ let
     # the assertion is about the ROW, not the duration.
     curl -s -o /dev/null -H "$HX" -X POST "$base/verify" &
     verify_pid=$!
+    # Kill only once the batch has recorded its 'running' row. Killing as
+    # soon as the POST was launched let the webapp die before the run row
+    # existed, so the sweep had nothing to close and the marker never
+    # appeared.
+    seen_running=0
+    for _ in $(seq 1 120); do
+      if curl -sf "$base/partials/status" | grep -q '<span class="pill running">running'; then
+        seen_running=1; break
+      fi
+      sleep 0.5
+    done
+    [ "$seen_running" = 1 ] || fail "W4a sweep: POST /verify never produced a 'running' run row to kill under"
     killed=0
     for _ in $(seq 1 30); do
       pid=$(systemctl show jupiter-arcade-webapp -p MainPID --value)

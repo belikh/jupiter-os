@@ -80,8 +80,17 @@ done
 		t.Fatalf("igir.New: %v", nerr)
 	}
 
-	// Stub Fresh1G1R: serves the gb fixture DAT for any *.dat path.
+	// Stub Fresh1G1R: serves the gb fixture DAT for any *.dat path and a
+	// fixed commit SHA at /commit.json. The SHA differs from the fixture
+	// lock's corpus commit, so a refresh installs a new generation. Without
+	// CommitURL the fetcher called api.github.com, which a CI runner can
+	// fail to reach; the fallback to the lock's pin then tripped the lock
+	// mismatch guard.
 	stub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/commit.json" {
+			_, _ = w.Write([]byte(`{"sha":"` + strings.Repeat("a", 40) + `"}`))
+			return
+		}
 		if !strings.HasSuffix(r.URL.Path, ".dat") {
 			http.NotFound(w, r)
 			return
@@ -91,8 +100,9 @@ done
 	t.Cleanup(stub.Close)
 
 	fetcher := &dats.Fetcher{
-		BaseURL: stub.URL,
-		Dir:     filepath.Join(root, "metadata", "no-intro-dats"),
+		BaseURL:   stub.URL,
+		CommitURL: stub.URL + "/commit.json",
+		Dir:       filepath.Join(root, "metadata", "no-intro-dats"),
 		St:      st,
 	}
 

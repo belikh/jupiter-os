@@ -231,7 +231,7 @@ jobs:
           # pre-check races (lock can appear between check and install).
           # DPkg::Lock::Timeout makes apt WAIT natively instead of exiting 100.
           sudo apt-get -o DPkg::Lock::Timeout=300 update
-          sudo apt-get -o DPkg::Lock::Timeout=300 install -y qemu-user-static binfmt-support
+          sudo apt-get -o DPkg::Lock::Timeout=300 install -y qemu-user-binfmt binfmt-support
           sudo update-binfmts --enable qemu-i386 || true
 
       # ---- Tailscale + build ----
