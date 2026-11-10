@@ -59,16 +59,6 @@
     ../../modules/services/haos-guest-host.nix
     # OpenDesign — local-first design product (daemon `od` + web frontend)
     ../../modules/services/open-design.nix
-    # Model Router — self-hosted OpenAI-compatible gateway pooling free LLM
-    # inference tiers (41 providers in the signed seed; learned quota ledger
-    # with reset scheduling; per-endpoint health reasons; Zeus dashboard).
-    # Upstream (private): github.com/belikh/model-router; the Go source is
-    # vendored at pkgs/model-router (ADR-0002 D2) and this module is the
-    # upstream nix/module with the package default pointed in-tree. The
-    # flake's modelRouterModule (mkHost extras) stamps the rev.
-    # Public at router.jupiter.au via this host's Cloudflare tunnel (ingress
-    # + DNS added 2026-09-01 alongside opencode/design).
-    ../../modules/services/model-router.nix
     # jupiterOS Arcade: boots straight into the gamescope/Pegasus session on
     # tty1 (modules/desktop/arcade-console.nix) with full kiosk collection
     # parity — console ROMs (modules/desktop/cartridges.nix) + eXo DOS/Win
@@ -321,21 +311,6 @@
   # jupiter.services.llm.exposeLan = true;
   # jupiter.services.llm.clientUrl = "http://127.0.0.1:8081";
 
-  # ---- Model Router (jupiter.services.modelRouter) — ENABLED 2026-09-01 ----
-  # The fleet's model server answer, replacing the disabled llama-server
-  # above: instead of one local GPU model, it pools every free LLM inference
-  # tier behind one OpenAI-compatible endpoint on loopback :8080, proxied
-  # publicly at router.jupiter.au through this host's tunnel. Provider keys
-  # bootstrap from the dsh_env sops secret (same GROQ/Z_AI/OPENCODE/TOKEN
-  # ROUTER keys the opencode wrappers use) into the router's own encrypted
-  # vault on first boot; the dashboard (router.jupiter.au) owns them after.
-  # opencode + OpenDesign point at it as their provider (see the opencode-web
-  # section — provider entries added 2026-09-01).
-  jupiter.services.modelRouter = {
-    enable = true;
-    envFile = config.sops.secrets.dsh_env.path; # same provider keys as opencode
-  };
-
   hardware.graphics.enable = true;
 
   # ---- jupiterOS Arcade -----------------------------------------------------
@@ -446,7 +421,7 @@
 
   # Keys for the providers above (same values as the zed secrets, packed as
   # one env file — restic_env pattern). Consumed by opencode (io's wrapper +
-  # the web serve), open-design, and model-router's first-boot bootstrap.
+  # the web serve) and open-design.
   # Group widened 2026-08-25 for the opencode rig: modules/core/opencode.nix's
   # launcher seds OPENCODE_API_KEY out of this file as io, so io needs read
   # access. Owner stays root.
