@@ -82,8 +82,9 @@ refs (MQTT, builds) dial it by IP.
   tests, VM lanes); its per-host build-host job was removed 2026-11-11. The
   `workflow_dispatch`-only `ci-distributed*.yml` workflows still build closures
   and push them over the tailnet to Harmonia (`nix copy --to ssh://europa` as
-  `jupiter-ci`) — `docs/ci-harmonia-push-runbook.md`. They failed with SSH
-  `Permission denied` for `jupiter-ci` on 2026-11-10. The old pallene push path
+  `jupiter-ci`) — `docs/ci-harmonia-push-runbook.md`. The removed build-host job
+  failed with SSH `Permission denied` for `jupiter-ci` on 2026-11-10; the
+  distributed workflows use the same key and are untested since. The old pallene push path
   (`modules/services/build-server.nix`) is orphaned.
   `modules/core/build-machines.nix` (delegation) is **disabled fleet-wide**
   (commented out of `common.nix`; europa delegates inline to callisto via
