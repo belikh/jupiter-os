@@ -4,7 +4,7 @@ name: vulnix
 # (https://github.com/nix-community/vulnix). Matches derivation name+version
 # against NVD, so hits are leads, not conclusions; triage rules are in
 # .opencode/skills/nixos-updates/references/cve-triage.md. The scan reads the
-# built toplevel's runtime closure (no build-time tools). No host sets
+# built toplevel's runtime closure (vulnix -C; no build-time tools). No host sets
 # jupiter.build.microarch, so the build substitutes from cache.nixos.org.
 # Name collisions are suppressed by vulnix.whitelist.toml. Findings go to the
 # job summary and do not fail the job; only a build or scan error does.
@@ -44,7 +44,7 @@ jobs:
           rc=0
           for attempt in 1 2 3 4 5; do
             rc=0
-            nix run nixpkgs#vulnix -- -w vulnix.whitelist.toml "$out" > vulnix.txt || rc=$?
+            nix run nixpkgs#vulnix -- -C -w vulnix.whitelist.toml "$out" > vulnix.txt || rc=$?
             [ "$rc" -eq 0 ] || [ "$rc" -eq 2 ] && break
             echo "vulnix attempt $attempt exited $rc; retrying in 30 s" >&2
             sleep 30
