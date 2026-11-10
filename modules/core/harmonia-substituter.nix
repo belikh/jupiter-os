@@ -47,12 +47,14 @@ in
   options.jupiter.core.harmoniaSubstituter = {
     enable = lib.mkOption {
       type = lib.types.bool;
-      default = true;
+      default = false;
       description = ''
         Subscribe this host to europa's Harmonia binary cache ahead of
-        cache.nixos.org. Default-on for every fleet host: once populated by CI
-        (or the build server), Harmonia is the source for closures that are
-        expensive to rebuild and any gccarch-tagged paths.
+        cache.nixos.org. Default-off since europa's services.harmonia.cache
+        was disabled: with no server listening on europa:5000, every host
+        that subscribed (europa included) failed its builds on the dead
+        substituter. Set to true on all hosts together with
+        services.harmonia.cache.enable on europa.
       '';
     };
 
