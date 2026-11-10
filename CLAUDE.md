@@ -78,11 +78,12 @@ refs (MQTT, builds) dial it by IP.
 - **MQTT → callisto `10.1.1.3`** (`modules/services/mqtt.nix`): kiosk
   ha-agents + Home Assistant → mosquitto (static `mqttHost`). House event
   bus; Postgres stores what must persist (stack-guide §5).
-- **Builds → CI, not pallene:** GitHub Actions builds closures on free
-  `ubuntu-latest`, pushes them over the tailnet to Harmonia (`nix copy --to
-  ssh://europa` as `jupiter-ci`, **main-only**, incremental via post-build-hook,
-  last 3 main builds/host pinned as GC roots) — `docs/ci-harmonia-push-runbook.md`.
-  Replaces decommissioned Attic (#63). The old pallene push path
+- **Builds → CI, not pallene:** `ci.yml` only checks (fmt, eval, arcade-webapp
+  tests, VM lanes); its per-host build-host job was removed 2026-11-11. The
+  `workflow_dispatch`-only `ci-distributed*.yml` workflows still build closures
+  and push them over the tailnet to Harmonia (`nix copy --to ssh://europa` as
+  `jupiter-ci`) — `docs/ci-harmonia-push-runbook.md`. They failed with SSH
+  `Permission denied` for `jupiter-ci` on 2026-11-10. The old pallene push path
   (`modules/services/build-server.nix`) is orphaned.
   `modules/core/build-machines.nix` (delegation) is **disabled fleet-wide**
   (commented out of `common.nix`; europa delegates inline to callisto via
