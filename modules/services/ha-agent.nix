@@ -146,6 +146,13 @@ in
       extraGroups = lib.mkIf (cfg.role == "kiosk") [ "video" ];
     };
 
+    # Memory ceiling. The agent's steady state is under 20 MB; 256M leaves
+    # more than ten times that as headroom. The upstream unit sets
+    # Restart=on-failure, and a MemoryMax OOM kill counts as a failure, so a
+    # future leak restarts the service after RestartSec instead of growing
+    # to gigabytes (callisto reached 3.9 GB in 17 days, 2026-11-10).
+    systemd.services.ha-linux-agent.serviceConfig.MemoryMax = "256M";
+
     services.ha-linux-agent = {
       enable = true;
       role = cfg.role;
