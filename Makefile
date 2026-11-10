@@ -1,4 +1,13 @@
-.PHONY: build-all check update fmt fmt-check verify-arcade status-arcade fixture-arcade test-arcade-webapp check-arcade-webapp check-ledger docs docs-serve
+.PHONY: vulnix build-all check update fmt fmt-check verify-arcade status-arcade fixture-arcade test-arcade-webapp check-arcade-webapp check-ledger docs docs-serve
+
+# CVE scan of one host's system derivation with vulnix (NVD match on
+# name+version; hits are leads, see .opencode/skills/nixos-updates/references/cve-triage.md).
+# Scans the .drv closure, so build-time tools (binutils, cargo) appear too.
+# Exit 2 means vulnerabilities were found.
+# Usage: make vulnix HOST=europa
+HOST ?= europa
+vulnix:
+	nix run nixpkgs#vulnix -- $$(nix eval --raw .#nixosConfigurations.$(HOST).config.system.build.toplevel.drvPath)
 
 # Build every registered host closure (the 4 dashboard kiosks).
 build-all:
