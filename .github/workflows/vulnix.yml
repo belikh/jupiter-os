@@ -1,0 +1,47 @@
+name: vulnix
+
+# Weekly CVE scan of each host's system derivation with vulnix
+# (https://github.com/nix-community/vulnix). Matches derivation name+version
+# against NVD, so hits are leads, not conclusions; triage rules are in
+# .opencode/skills/nixos-updates/references/cve-triage.md. The scan reads the
+# .drv closure, so build-time tools appear too. Findings go to the job
+# summary and do not fail the job; only a scan error does.
+on:
+  schedule:
+    - cron: "17 5 * * 1" # Mondays 05:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # amalthea stands in for the kiosks (shared tcxwave-kiosk module).
+        host: [europa, callisto, amalthea]
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0 (node24)
+      - uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+      - name: Scan ${{ matrix.host }}
+        run: |
+          drv=$(nix eval --raw ".#nixosConfigurations.${{ matrix.host }}.config.system.build.toplevel.drvPath")
+          # vulnix exits 2 when it finds vulnerabilities; any other non-zero is an error.
+          rc=0
+          nix run nixpkgs#vulnix -- "$drv" > vulnix.txt || rc=$?
+          if [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ]; then
+            cat vulnix.txt
+            exit "$rc"
+          fi
+          {
+            echo "## vulnix: ${{ matrix.host }}"
+            echo
+            grep -m1 'derivations with active advisories' vulnix.txt || echo "No active advisories."
+            echo
+            echo '```'
+            cat vulnix.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
