@@ -587,9 +587,7 @@ in
       # crash-looping pipeline webapp on europa must keep trying for
       # minutes, and the bursts the L2 smoke itself induces (restart +
       # kill -9 + restart inside one run) must not trip the limiter:
-      # 6 starts / 300 s mirrors the kiosk session ladder's budget
-      # (modules/lib.nix sessionLadder — the same grammar the W4c spec
-      # landed for the cabinet plane).
+      # 6 starts / 300 s keeps retrying for minutes before parking the unit.
       startLimitIntervalSec = 300;
       startLimitBurst = 6;
 

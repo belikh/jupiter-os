@@ -87,8 +87,8 @@ in
       # NOT `//`: `//` replaces the whole io attrset, so a host setting
       # jupiter.core.impermanence.users.io would silently DROP these admin
       # defaults instead of extending them. Under mkMerge the submodule
-      # option merge applies and the lists concatenate (e.g. dashboard-gaming
-      # adds the gamer user; cartridges adds its own entry).
+      # option merge applies and the lists concatenate (e.g. a host-specific
+      # service account adds its own entry).
       users = lib.mkMerge [
         (lib.optionalAttrs cfg.persistAdminHome {
           io = {

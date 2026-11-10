@@ -31,18 +31,8 @@ in
     ../services/tcxwave-power-tuning.nix
     ../services/tcxwave-touch-wake.nix
     ./dashboard-kiosk.nix
-    ./dashboard-gaming.nix
-    # jupiterOS Arcade: Pegasus frontend for the HA-switchable gaming session.
-    ./arcade.nix
-    # eXo collection launch stack (eXoDOS/eXoWin3x/eXoWin9x from europa over
-    # NFS + per-kiosk overlayfs + exo-launch). Contributes the collections
-    # Pegasus shows; arcade.nix owns Pegasus itself.
-    ./exodos.nix
-    # Nintendo cartridge console collections (No-Intro NES/SNES/GB/GBC/GBA/N64)
-    # from europa over a read-only NFS mount + retroarch with cores + per-kiosk
-    # persisted saves. Sibling contributor to exodos.nix; see
-    # modules/desktop/cartridges.nix and docs/adr/0001-*.
-    ./cartridges.nix
+    # ha-agent: this profile sets jupiter.services.haAgent below.
+    ../services/ha-agent.nix
     # Open-source driver + animation for the integrated customer-facing line
     # display (0x0f66:0x4500). Verified live on amalthea 2026-07-25
     # (tcxwave-cdp-anim.service running against the real hardware). See the
@@ -135,29 +125,6 @@ in
       url = cfg.dashboardUrl;
     };
 
-    # Dashboard ↔ gaming modes, switchable from Home Assistant. Adds a
-    # jupiter-<mode>.service per enabled mode on a shared tty1; all session
-    # modes plus the Cage dashboard collapse into one HA `select` (launcher
-    # group "session"). ONLY `arcade` mode is enabled (Pegasus frontend;
-    # dashboard-gaming.nix sets jupiter.arcade.enable from this mode toggle).
-    jupiter.dashboardGaming = {
-      enable = true;
-      modes.arcade.enable = true;
-    };
-
-    # eXo collections (eXoDOS/eXoWin3x/eXoWin9x) in the arcade session:
-    # per-collection NFS mounts of europa's curated datasets + per-kiosk
-    # overlayfs for saves/extractions + exo-launch. See
-    # modules/desktop/exodos.nix.
-    jupiter.exodos.enable = true;
-
-    # Nintendo cartridge console collections (No-Intro NES/SNES/GB/GBC/GBA/N64)
-    # in the arcade session: read-only NFS mount of europa's scraped cartridge
-    # tree + retroarch with the needed libretro cores + per-kiosk saves.
-    # ROMs + metadata are bulk-staged/scraped on europa (arcade-webapp);
-    # this module only consumes them. See modules/desktop/cartridges.nix.
-    jupiter.cartridges.enable = true;
-
     jupiter.boot.falloutSplash.enable = true;
 
     # Cool animations on the integrated customer-facing line display (the 2x20
@@ -224,27 +191,6 @@ in
     # manages the connection declaratively via ensureProfiles with PSK from sops.
     sops.secrets.wifi_psk = lib.mkIf cfg.wifi.enable { };
 
-    # nixpkgs' hardware/xone.nix (hardware.xone.enable, on for every kiosk via
-    # modules/gaming/console.nix's arcade-mode Xbox controller support)
-    # unconditionally adds mt76x2u — thebe's own wifi chip — to
-    # boot.blacklistedKernelModules alongside xpad. Confirmed live
-    # (2026-07-30): `modprobe --showconfig` showed `blacklist mt76x2u` coming
-    # from /etc/modprobe.d/nixos.conf, traced to that nixpkgs module, not
-    # anything in this repo. Two clean reboots with the blacklist in place
-    # showed wlp0s20f0u4u5 never appearing and no mt76x2u in `lsmod`, while a
-    # bare `modprobe mt76x2u` (which ignores blacklist entries — those only
-    # gate udev-alias/systemd-modules-load autoload) loaded it immediately
-    # and it associated normally. Only thebe has this adapter, so only thebe
-    # needs to override the blacklist; mkForce replaces the whole merged list
-    # (tcxwave-power-tuning.nix's "pcspkr" + xone.nix's "xpad"/"mt76x2u"), so
-    # the entries thebe still wants (xpad, still needed to avoid conflicting
-    # with xone/xpadneo; pcspkr) have to be repeated here explicitly.
-    boot.blacklistedKernelModules = lib.mkIf cfg.wifi.enable (
-      lib.mkForce [
-        "xpad"
-        "pcspkr"
-      ]
-    );
     boot.kernelModules = lib.mkIf cfg.wifi.enable [ "mt76x2u" ];
 
     # Declarative NetworkManager profile for wifi. The PSK is NOT inlined into
@@ -375,7 +321,7 @@ in
 
     services.pulseaudio = {
       enable = true;
-      systemWide = false; # Per-user mode, running as the gamer user
+      systemWide = false; # Per-user mode, running as the session user
     };
   };
 }

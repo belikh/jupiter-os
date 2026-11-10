@@ -70,8 +70,8 @@ Live state, verification dates and staleness caveats live in
   is entrusted with its secrets only in the moment it becomes itself.
 - **Play → a service.** europa runs the cartridge pipeline (DAT
   currency, aria2 fetch, igir verify, scrape to Pegasus metadata)
-  behind the arcade webapp; the kiosks mount the results read-only and
-  flip into gaming mode to play them. Play is scheduled, cached and
+  behind the arcade webapp. The kiosks no longer play them (their gaming
+  stack was removed 2026-11-10). Play is scheduled, cached and
   verified like any other service. Why should it not be.
 
 ## Doctrine
@@ -104,7 +104,7 @@ Held to be true, and learned the expensive way:
 flake.nix      entry point; every registered host is also a flake check
 hosts/         one directory per moon (configuration.nix)
 modules/       reusable NixOS modules behind jupiter.* options
-               (boot/ core/ desktop/ gaming/ network/ services/
+               (boot/ core/ desktop/ network/ services/
                storage/); common.nix is the base layer
 pkgs/          flake packages: ariang, dsh, nom-web, suno-backup,
                arcade-webapp

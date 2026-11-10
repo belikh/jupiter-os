@@ -105,8 +105,8 @@ platform (modular core absorbing arcade/suno/Home-Assistant views API-first)
 targets callisto, backed by the fleet Postgres (live there since 2026-08-22,
 verified listening on :5432).
 **europa is NAS-only** (storage, NFS, PXE binaries, Harmonia). **Kiosks are
-thin web clients** — fullscreen browsers pointed at the platform; Pegasus/QML
-is gaming mode only. Do not stand up user-facing services anywhere else
+thin web clients** — fullscreen browsers pointed at the platform; the gaming
+stack (Pegasus, Steam, emulators) was removed 2026-11-10. Do not stand up user-facing services anywhere else
 without changing stack-guide first.
 
 ## Layout
@@ -116,13 +116,13 @@ without changing stack-guide first.
   a newer Go than the fleet pin — legacy debt; stack-guide §8 mandates a
   single hard pin and crush collapses onto it at the next pin bump, so do NOT
   copy this pattern — plus disko, impermanence, sops-nix, ha-linux-agent,
-  `jovian` for the kiosks' gaming stack, `suno-web` for the Suno-archive
+  `suno-web` for the Suno-archive
   browser). `mkHost` injects flake modules via a lexical closure — avoid
   `specialArgs`. Every host in `nixosConfigurations` is also a flake check.
 - `hosts/<name>/` — per-host config (`configuration.nix`). Hosts are named
   after Jupiter's moons (the brand leans on this — style-guide §1).
 - `modules/` — reusable NixOS modules behind a `jupiter.*` options namespace,
-  category subdirs (`boot/`, `core/`, `desktop/`, `gaming/`, `network/`,
+  category subdirs (`boot/`, `core/`, `desktop/`, `network/`,
   `services/`, `storage/`). `common.nix` at the `modules/` root is the base
   layer.
 - `pkgs/` — flake packages: `ariang` (vendored third-party UI),
@@ -132,17 +132,15 @@ without changing stack-guide first.
   `pkgs/arcade-webapp/`: DAT currency, aria2 download control, igir
   verify/organize, Skyscraper-scrape into Pegasus metadata, launcher-DB
   generation, curation, and the fleet inventory JSON it serves at
-  `/inventory.json`); kiosks consume the results read-only over NFS and
-  mount the eXo DOS/Win3x collections (`modules/desktop/exodos.nix`),
-  which the webapp imports read-only for browse/curation/coverage. The
+  `/inventory.json`). The kiosks no longer consume it: their gaming
+  stack (Pegasus, Steam, Heroic, Lutris, RetroArch, the eXo collections,
+  `modules/gaming/`, `dashboard-gaming.nix`) was removed 2026-11-10 to
+  drop ~40 CVE-flagged packages (ffmpeg 6/7, lutris, retroarch). The
   old per-job units (rom-acquire/rom-dats/rom-verify oneshots, the
   rom-scrape timer, the arcade-inventory timer) are removed from the
   flake (their scripts live in `scripts/deprecated/`); europa's live
   cutover is a coordinator-gated deploy. Arcade management UI follows
   stack-guide §2 absorption into the unified platform.
-  `modules/gaming/console.nix` is the Bazzite-style Jovian gaming stack
-  (gamescope "gaming mode", Steam, peripherals), flipped into via
-  `modules/desktop/dashboard-gaming.nix`.
 - `secrets/secrets.yaml` — sops-nix + age. Recipients (one age key per host
   plus the admin key) listed in `.sops.yaml`.
 
@@ -266,7 +264,7 @@ registered, CI-green, awaiting physical install) → europa (live,
 untuned since 2026-08-13) → callisto (registered CI-green, **live with
 iSCSI root**, skylake-tuned, serving host: MQTT live, fleet Postgres +
 unified platform landing) → ganymede (resolver/services) → himalia
-(laptop) → edge layers: gaming mode polish, **brand identity DONE**
+(laptop) → edge layers: **brand identity DONE**
 (`docs/style-guide.md` ZEUS + `docs/stack-guide.md`), next edge work =
 unified-platform modules and Home-Assistant absorption (API-first, until
 headless). Port each from `archive/full-fleet-reference`, keeping the
