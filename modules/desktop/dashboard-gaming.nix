@@ -176,10 +176,9 @@ in
       enable = true;
       gpu = "intel";
       user = cfg.sessionUser;
-      gamingMode = {
-        enable = true;
-        autoStart = false;
-      };
+      # Jovian gaming mode is off: the arcade mode runs as a Cage service and
+      # does not use jovian.steam, SDDM autologin or NetworkManager.
+      gamingMode.enable = false;
     };
 
     users.users.${cfg.sessionUser} = {
