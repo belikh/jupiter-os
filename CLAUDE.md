@@ -5,7 +5,7 @@ NixOS monorepo for the Jupiter home/lab infrastructure, currently being
 **rebuilt from scratch one machine at a time**. `main` is the working trunk.
 The previous full-fleet tree lives on the `archive/full-fleet-reference`
 branch and serves as the design reference; it was never buildable end-to-end
-(see README.md for why). Do not copy code from it wholesale — port pieces
+(see README.rst for why). Do not copy code from it wholesale — port pieces
 only when the machine that needs them is brought up.
 
 ## Authority documents — read these before surface work
