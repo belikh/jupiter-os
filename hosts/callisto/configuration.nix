@@ -31,6 +31,8 @@
     ../../modules/services/postgres.nix
     # Builds this host's PXE assets and publishes them to europa
     ../../modules/network/pxe-publish.nix
+    # BOOTP/TFTP for the SGI Indy's factory PROM (IRIX 7 hardware bring-up)
+    ../../modules/network/sgi-netboot.nix
     # Federated procurement MCP (Chinese + AU marketplaces, integration-only)
     ../../modules/services/procurement-mcp.nix
     # Tailscale client for Jupiter tailnet
@@ -306,6 +308,19 @@
   hardware.graphics.enable = true;
 
   jupiter.pxe.publish.enable = true;
+
+  # Netboot the Indy from its factory PROM: `boot -f bootp()irix7` at the
+  # Command Monitor. The image is built in the IRIX 7 tree by
+  # `tools/indy-netboot.sh /var/lib/sgi-netboot`. Only this MAC is answered,
+  # and only plain BOOTP; the Indy's DHCP still comes from UniFi.
+  jupiter.sgiNetboot = {
+    enable = true;
+    interface = "eno1";
+    serverAddress = config.jupiter.fleet.addresses.callisto;
+    network = "10.1.1.0";
+    clients."08:00:69:12:12:12" = "10.1.1.112";
+    owner = "matt";
+  };
 
   # Vulkan / Mesa diagnostics (vulkaninfo).
   # `gh` for interactive admin (`gh run list`, `gh secret list`) without
