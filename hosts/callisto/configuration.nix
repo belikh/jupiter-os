@@ -309,8 +309,9 @@
 
   jupiter.pxe.publish.enable = true;
 
-  # Netboot the Indy from its factory PROM: `boot -f bootp()irix7` at the
-  # Command Monitor. The image is built in the IRIX 7 tree by
+  # Netboot the Indy from its factory PROM: `boot -f bootp()<name>` at the
+  # Command Monitor fetches /var/lib/sgi-netboot/<name> (`irix7`, `redox`,
+  # `haiku`). The images are built out of tree, for example by
   # `tools/indy-netboot.sh /var/lib/sgi-netboot`. Only this MAC is answered,
   # and only plain BOOTP; the Indy's DHCP still comes from UniFi.
   jupiter.sgiNetboot = {

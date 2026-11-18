@@ -24,8 +24,10 @@
 #
 #   - The PROM reads the TFTP server's data port as a signed 16-bit number,
 #     so `tftp-port-range` stays below 32768.
-#   - The PROM requests whatever name is typed at its prompt; dnsmasq returns
-#     `bootFile` in the BOOTP reply, so boot with `boot -f bootp()<bootFile>`.
+#   - The PROM fetches the file named in the BOOTP reply when the reply names
+#     one, whatever was typed at its prompt. `bootFile` is null by default, so
+#     the reply carries only the server address and `boot -f bootp()<name>`
+#     fetches <name> from `root`. Set `bootFile` to pin every boot to one file.
 #
 # `root` is a mutable directory, not a store path: the boot image is rebuilt
 # out of tree (the IRIX 7 kernel, `tools/indy-netboot.sh <root>`) and must not
@@ -66,9 +68,14 @@ in
     };
 
     bootFile = lib.mkOption {
-      type = lib.types.str;
-      default = "irix7";
-      description = "File name, relative to `root`, returned in the BOOTP reply.";
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      example = "irix7";
+      description = ''
+        File name, relative to `root`, returned in the BOOTP reply. The PROM
+        then fetches this file whatever name was typed. Null sends no file
+        name, and the PROM fetches the name typed after `bootp()`.
+      '';
     };
 
     root = lib.mkOption {
@@ -96,7 +103,7 @@ in
         dhcp-range = "${cfg.network},static";
         dhcp-host = lib.mapAttrsToList (mac: ip: "${mac},${ip}") cfg.clients;
         dhcp-ignore = "tag:!bootp";
-        dhcp-boot = "${cfg.bootFile},,${cfg.serverAddress}";
+        dhcp-boot = "${lib.optionalString (cfg.bootFile != null) cfg.bootFile},,${cfg.serverAddress}";
         enable-tftp = true;
         tftp-root = cfg.root;
         tftp-port-range = "20000,32000";
