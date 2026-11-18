@@ -858,6 +858,14 @@
         # port itself (nixos-review F-04).
         port = 8788;
       }
+      {
+        # webfs: read-only static file store for the SGI Indy's root
+        # (run by hand on this host, not a unit yet). Loopback only; the
+        # tunnel connector runs here, so no firewall change is needed.
+        hostname = "webfs-2026.jupiter.au";
+        host = "127.0.0.1";
+        port = 8734;
+      }
     ];
   };
 
