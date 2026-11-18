@@ -309,9 +309,8 @@
 
   jupiter.pxe.publish.enable = true;
 
-  # Netboot the Indy from its factory PROM: `boot -f bootp()<name>` at the
-  # Command Monitor fetches /var/lib/sgi-netboot/<name> (`irix7`, `redox`,
-  # `haiku`). The images are built out of tree, for example by
+  # Netboot the Indy from its factory PROM: `boot -f bootp()irix7` at the
+  # Command Monitor. The image is built in the IRIX 7 tree by
   # `tools/indy-netboot.sh /var/lib/sgi-netboot`. Only this MAC is answered,
   # and only plain BOOTP; the Indy's DHCP still comes from UniFi.
   jupiter.sgiNetboot = {
@@ -320,10 +319,6 @@
     serverAddress = config.jupiter.fleet.addresses.callisto;
     network = "10.1.1.0";
     clients."08:00:69:12:12:12" = "10.1.1.112";
-    # The Indy PROM (5.3 Rev B7) answers "file not found on server" when the
-    # reply names no file, so every boot gets this one until the server can
-    # return the requested name.
-    bootFile = "irix7";
     owner = "matt";
   };
 
