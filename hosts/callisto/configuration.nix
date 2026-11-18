@@ -320,6 +320,10 @@
     serverAddress = config.jupiter.fleet.addresses.callisto;
     network = "10.1.1.0";
     clients."08:00:69:12:12:12" = "10.1.1.112";
+    # The Indy PROM (5.3 Rev B7) answers "file not found on server" when the
+    # reply names no file, so every boot gets this one until the server can
+    # return the requested name.
+    bootFile = "irix7";
     owner = "matt";
   };
 
